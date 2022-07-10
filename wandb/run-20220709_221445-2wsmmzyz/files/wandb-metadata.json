@@ -1,0 +1,24 @@
+{
+    "os": "Linux-5.10.112-108.499.amzn2.x86_64-x86_64-with-glibc2.2.5",
+    "python": "3.8.5",
+    "heartbeatAt": "2022-07-09T22:14:46.358470",
+    "startedAt": "2022-07-09T22:14:45.704978",
+    "docker": null,
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "gpu_count": 8,
+    "cpu_count": 48,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "test_trl_gptneo.py",
+    "codePath": "test_trl_gptneo.py",
+    "git": {
+        "remote": "https://github.com/CarperAI/trl",
+        "commit": "4fe9988eb8adf0227c26432f8eb3e57a66556350"
+    },
+    "email": null,
+    "root": "/home/louis/alex/trl",
+    "host": "compute-od-gpu-dy-p4d-24xlarge-57",
+    "username": "louis",
+    "executable": "/home/louis/alex/base/bin/python"
+}
