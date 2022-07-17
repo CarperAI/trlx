@@ -16,16 +16,16 @@ from trl.ppo import PPOTrainer
 from trl.core import build_bert_batch_from_txt, listify_batch
 
 config = {
-	"model_name": "EleutherAI/gpt-neo-125M",
+	"model_name": "EleutherAI/gpt-neo-1.3B",
 	"steps": 20000,
-	"batch_size": 64,
-	"forward_batch_size": 16,
+	"batch_size": 128,
+	"forward_batch_size": 32,
 	"ppo_epochs": 4,
 	"txt_in_min_len": 2,
 	"txt_in_max_len": 8,
 	"txt_out_min_len": 4,
 	"txt_out_max_len": 16,
-	"lr": 1.41e-5,
+	"lr": 5e-6,
 	"init_kl_coef":0.2,
 	"target": 6,
 	"horizon":10000,
@@ -41,7 +41,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("DEVICE: ", device)
 pipe_device = 0 if torch.cuda.is_available() else -1
 
-wandb.init(name='trl-test-neo', project='trl-test', config=config,)
+wandb.init(name='trl-test-neo-1.3B', project='trl-test', config=config,)
 
 # load imdb with datasets
 ds = load_dataset('imdb', split='train')
@@ -66,7 +66,12 @@ sentiment_pipe(text, **sent_kwargs)
 gptneo_model = GPTNeoHeadWithValueModel.from_pretrained(config['model_name'])
 gptneo_model_ref = GPTNeoHeadWithValueModel.from_pretrained(config['model_name'])
 
-gptneo_tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
+gpt_blocks = list(gptneo_model.transformer.h)[:-1]
+for m in gpt_blocks:
+	for p in m.parameters():
+		p.requires_grad = False
+
+gptneo_tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neo-1.3B")
 gptneo_tokenizer.pad_token = gptneo_tokenizer.eos_token
 
 wandb.watch(gptneo_model, log='all')
@@ -174,10 +179,10 @@ game_data['response (after)'] = [gptneo_tokenizer.decode(response_tensors[i]) fo
 
 #### sentiment analysis of query/response pairs before/after
 texts = [q + r for q,r in zip(game_data['query'], game_data['response (before)'])]
-game_data['rewards (before)'] = [output[1]["score"] for output in sentiment_pipe(texts, **sent_kwargs)]
+game_data['rewards (before)'] = [output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in sentiment_pipe(texts, **sent_kwargs)]
 
 texts = [q + r for q,r in zip(game_data['query'], game_data['response (after)'])]
-game_data['rewards (after)'] = [output[1]["score"] for output in sentiment_pipe(texts, **sent_kwargs)]
+game_data['rewards (after)'] = [output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in sentiment_pipe(texts, **sent_kwargs)]
 
 # store results in a dataframe
 df_results = pd.DataFrame(game_data)
