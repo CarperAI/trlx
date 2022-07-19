@@ -97,6 +97,7 @@ class PPOTrainer:
                 'init_kl_coef' (float): Initial KL penalty coefficient (used for adaptive and linear control), default: 0.2
                 'target' (float): Target KL value for adaptive KL control, default: 6.0
                 'horizon' (float): Horizon for adaptive KL control, default: 10000
+                'accelerator': For multi-gpu
 
         """
         self.ppo_params = self.default_params
@@ -108,6 +109,11 @@ class PPOTrainer:
         self.data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
         self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
+
+        # Set up huggingface accelerator
+        self.accelerator = None
+        if ppo_params.get('accelerator') is not None:
+            self.accelerator = ppo_params['accelerator']
 
         if self.ppo_params['adap_kl_ctrl']:
             self.kl_ctl = AdaptiveKLController(self.ppo_params['init_kl_coef'],
@@ -210,7 +216,10 @@ class PPOTrainer:
         loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
         loss = loss_p + loss_v
         self.optimizer.zero_grad()
-        loss.backward()
+        if self.accelerator is None:
+            loss.backward()
+        else:
+            self.accelerator.backward(loss)
         self.optimizer.step()
         return train_stats
 

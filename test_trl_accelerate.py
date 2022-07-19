@@ -5,15 +5,16 @@ import os
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from accelerate import Accelerator
+
 tqdm.pandas()
 
 from datasets import load_dataset
 
 from transformers import AutoTokenizer, pipeline
 
-from trl.gpt2 import GPT2HeadWithValueModel, respond_to_batch
+from trl.gptj import GPTJHeadWithValueModel
 from trl.ppo import PPOTrainer
-from trl.core import build_bert_batch_from_txt, listify_batch
 
 config = {
 	"model_name": "lvwerra/gpt2-imdb",
@@ -38,8 +39,7 @@ config = {
 }
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("DEVICE: ", device)
+
 pipe_device = 0 if torch.cuda.is_available() else -1
 
 wandb.init(name='trl-test', project='trl-test', config=config,)
@@ -63,16 +63,26 @@ sentiment_pipe(text, **sent_kwargs)
 text = 'this movie was really good!!'
 sentiment_pipe(text, **sent_kwargs)
 
-gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
-gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
+# Adding accelerator
+accelerator = Accelerator()
+device = accelerator.device
+print("DEVICE: ", device)
 
-gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
+gpt2_model = GPTJHeadWithValueModel.from_pretrained("EleutherAI/gpt-j-6B", cache_dir='/fsx/alex/transformers_cache/')
+gpt2_model_ref = GPTJHeadWithValueModel.from_pretrained("EleutherAI/gpt-j-6B", cache_dir='/fsx/alex/transformers_cache/')
+
+gpt_blocks = list(gpt2_model.transformer.h)[:-1]
+for m in gpt_blocks:
+	for p in m.parameters():
+		p.requires_grad = False
+
+gpt2_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 
 wandb.watch(gpt2_model, log='all')
 
-gpt2_model.to(device)
-gpt2_model_ref.to(device)
+#gpt2_model.to(device)
+#gpt2_model_ref.to(device)
 
 class LengthSampler:
 	def __init__(self, min_value, max_value):
@@ -103,15 +113,19 @@ def collater(data):
 
 dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
-ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config)
+ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config, accelerator=accelerator)
 
 total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
+
+# Prepare accelerator
+gpt2_model, optimizer = accelerator.prepare(gpt2_model, ppo_trainer.optimizer)
+ppo_trainer.optimizer = optimizer
 
 print("NUM EPOCHS: ", total_ppo_epochs)
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
 	logs, timing = dict(), dict()
 	t0 = time.time()
-	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
+	query_tensors = [torch.tensor(t).long() for t in batch["tokens"]]
 
 	#### Get response from gpt2
 	t = time.time()
@@ -129,7 +143,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
 	texts = [q + r for q,r in zip(batch['query'], batch['response'])]
 	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
 	#print(pipe_outputs)
-	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs]).to(device)
+	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs])
 	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step
@@ -161,10 +175,10 @@ response_tensors_ref, response_tensors = [], []
 #### get response from gpt2 and gpt2_ref
 for i in range(bs):
 	gen_len = output_size()
-	output = gpt2_model_ref.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device),
+	output = gpt2_model_ref.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0),
 									 max_new_tokens=gen_len, **gen_kwargs).squeeze()[-gen_len:]
 	response_tensors_ref.append(output)
-	output = gpt2_model.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device),
+	output = gpt2_model.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0),
 								 max_new_tokens=gen_len, **gen_kwargs).squeeze()[-gen_len:]
 	response_tensors.append(output)
 
