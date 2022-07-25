@@ -13,7 +13,7 @@ from datasets import load_dataset
 
 from transformers import AutoTokenizer, pipeline
 
-from trl.gpt2 import GPT2HeadWithValueModel
+from trl.gptj import GPTJHeadWithValueModel
 from trl.ppo import PPOTrainer
 
 config = {
@@ -69,15 +69,15 @@ print("DEVICE: ", device)
 if accelerator.is_main_process:
 	wandb.init(name='trl-test', project='trl-test', config=config,)
 
-gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
-gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
+gpt2_model = GPTJHeadWithValueModel.from_pretrained("EleutherAI/gpt-j-6B", cache_dir='/fsx/alex/transformers_cache/')
+gpt2_model_ref = GPTJHeadWithValueModel.from_pretrained("EleutherAI/gpt-j-6B", cache_dir='/fsx/alex/transformers_cache/')
 
-#gpt_blocks = list(gpt2_model.transformer.h)[:-1]
-#for m in gpt_blocks:
-#	for p in m.parameters():
-#		p.requires_grad = False
+gpt_blocks = list(gpt2_model.transformer.h)[:-1]
+for m in gpt_blocks:
+	for p in m.parameters():
+		p.requires_grad = False
 
-gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
+gpt2_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 if accelerator.is_main_process:
 	wandb.watch(gpt2_model, log='all')
@@ -119,18 +119,14 @@ ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config, a
 total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
 
 # Prepare accelerator
-# fsdp requires model is prepared before optimizer for memory efficiency
-gpt2_model = accelerator.prepare(gpt2_model)
-optimizer, dataloader = accelerator.prepare(ppo_trainer.optimizer, dataloader)
-# Fix for running without fsdp or deepspeed
-#gpt2_model = gpt2_model.module
+gpt2_model, optimizer, dataloader = accelerator.prepare(gpt2_model, ppo_trainer.optimizer, dataloader)
 ppo_trainer.optimizer = optimizer
 
 print("NUM EPOCHS: ", total_ppo_epochs)
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
 	logs, timing = dict(), dict()
 	t0 = time.time()
-	query_tensors = [torch.tensor(t).long() for t in batch["tokens"]]
+	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
 
 	#### Get response from gpt2
 	t = time.time()
@@ -146,9 +142,9 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	#### Compute sentiment score
 	t = time.time()
 	texts = [q + r for q,r in zip(batch['query'], batch['response'])]
-	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)[0]
+	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
 	#print(pipe_outputs)
-	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs]) # .to(device)
+	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs])
 	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step
