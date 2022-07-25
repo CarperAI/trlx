@@ -4,7 +4,7 @@ distributed_type: FSDP
 fsdp_config:
   fsdp_auto_wrap_policy: SIZE_BASED_WRAP
   fsdp_backward_prefetch_policy: BACKWARD_PRE
-  min_num_params: 100000000
+  min_num_params: 2000
   offload_params: false
   sharding_strategy: 1
 machine_rank: 0

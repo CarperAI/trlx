@@ -114,23 +114,24 @@ def collater(data):
 
 dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
-ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config, accelerator=accelerator)
+ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, device, **config, accelerator=accelerator)
 
 total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
 
 # Prepare accelerator
 # fsdp requires model is prepared before optimizer for memory efficiency
+gpt2_model = gpt2_model.to(accelerator.device)
 gpt2_model = accelerator.prepare(gpt2_model)
 optimizer, dataloader = accelerator.prepare(ppo_trainer.optimizer, dataloader)
 # Fix for running without fsdp or deepspeed
 #gpt2_model = gpt2_model.module
 ppo_trainer.optimizer = optimizer
 
-print("NUM EPOCHS: ", total_ppo_epochs)
+print("NUM EPOCHS: ", total_ppo_epochs) if accelerator.is_main_process else None
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
 	logs, timing = dict(), dict()
 	t0 = time.time()
-	query_tensors = [torch.tensor(t).long() for t in batch["tokens"]]
+	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
 
 	#### Get response from gpt2
 	t = time.time()
@@ -146,9 +147,11 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	#### Compute sentiment score
 	t = time.time()
 	texts = [q + r for q,r in zip(batch['query'], batch['response'])]
-	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)[0]
-	#print(pipe_outputs)
-	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs]) # .to(device)
+	# Ouptut is a list of lists of containing two dictionaries corresponding to pos/neg class and score
+	# may be dependent on the hf version
+	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
+	
+	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
 	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step
@@ -169,6 +172,9 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 		wandb.log(logs)
 
 	#### get a batch from the dataset
+
+accelerator.wait_for_everyone()
+
 bs = 16
 game_data = dict()
 ds.set_format("pandas")
@@ -209,6 +215,8 @@ print()
 print('median:')
 display(df_results[["rewards (before)", "rewards (after)"]].median())
 
+
+accelerator.wait_for_everyone()
 if accelerator.is_main_process:
-	gpt2_model.save_pretrained('gptj-imdb-pos-v2', push_to_hub=False)
-	gpt2_tokenizer.save_pretrained('gptj-imdb-pos-v2', push_to_hub=False)
+	gpt2_model = accelerator.unwrap_model(gpt2_model)
+	accelerator.save(gpt2_model.state_dict(), 'gpt2-imbd-pos-vs')

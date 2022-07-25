@@ -75,7 +75,7 @@ class PPOTrainer:
         "ppo_epochs": 4,
     }
 
-    def __init__(self, model, ref_model, tokenizer, **ppo_params):
+    def __init__(self, model, ref_model, tokenizer, device, **ppo_params):
         """
         Initialize PPOTrainer.
 
@@ -114,6 +114,7 @@ class PPOTrainer:
         self.accelerator = None
         if ppo_params.get('accelerator') is not None:
             self.accelerator = ppo_params['accelerator']
+        self.device = device
 
         if self.ppo_params['adap_kl_ctrl']:
             self.kl_ctl = AdaptiveKLController(self.ppo_params['init_kl_coef'],
@@ -147,6 +148,9 @@ class PPOTrainer:
         t = time.time()
         logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
         timing['time/ppo/forward_pass'] = time.time()-t
+        print('logprobs size', len(logprobs))
+        print('ref_logprobs size', len(ref_logprobs))
+        print('values size', len(values))
 
         t = time.time()
         rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
@@ -157,6 +161,9 @@ class PPOTrainer:
         idxs = list(range(bs))
         for _ in range(self.ppo_params['ppo_epochs']):
             random.shuffle(idxs)
+            print('len rewards', len(rewards))
+            print('len queries', len(queries))
+            print('batch size', bs)
             for i in range(bs):
                 idx = idxs[i]
                 train_stats = self.train_minibatch(logprobs[idx].unsqueeze(0), values[idx].unsqueeze(0),
@@ -200,7 +207,8 @@ class PPOTrainer:
             input_ids = self.data_collator([torch.cat([q, r]) for q, r in zip(query_batch, response_batch)])["input_ids"]
             with torch.no_grad():
                 logits, _, v = self.model(input_ids)
-                ref_logits, _, _ = self.ref_model(input_ids)
+                ref_logits, _, _ = self.ref_model(input_ids.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
+                ref_logits = ref_logits.to(self.device)
             logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
             ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
             for j in range(fbs):
