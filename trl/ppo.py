@@ -148,9 +148,9 @@ class PPOTrainer:
         t = time.time()
         logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
         timing['time/ppo/forward_pass'] = time.time()-t
-        print('logprobs size', len(logprobs))
-        print('ref_logprobs size', len(ref_logprobs))
-        print('values size', len(values))
+        #print('logprobs size', len(logprobs))
+        #print('ref_logprobs size', len(ref_logprobs))
+        #print('values size', len(values))
 
         t = time.time()
         rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
@@ -161,9 +161,9 @@ class PPOTrainer:
         idxs = list(range(bs))
         for _ in range(self.ppo_params['ppo_epochs']):
             random.shuffle(idxs)
-            print('len rewards', len(rewards))
-            print('len queries', len(queries))
-            print('batch size', bs)
+            #print('len rewards', len(rewards))
+            #print('len queries', len(queries))
+            #print('batch size', bs)
             for i in range(bs):
                 idx = idxs[i]
                 train_stats = self.train_minibatch(logprobs[idx].unsqueeze(0), values[idx].unsqueeze(0),

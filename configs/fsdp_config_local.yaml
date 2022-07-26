@@ -13,5 +13,5 @@ main_process_port: null
 main_training_function: main
 mixed_precision: 'no'
 num_machines: 1
-num_processes: 8
+num_processes: 2
 use_cpu: false
