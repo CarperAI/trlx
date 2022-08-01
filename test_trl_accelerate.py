@@ -21,8 +21,8 @@ config = {
 	"cls_model_name": "lvwerra/distilbert-imdb",
 	"steps": 20000,
 	"batch_size": 4,
-	"forward_batch_size": 4,
-	"ppo_epochs": 4,
+	"forward_batch_size": 1,
+	"ppo_epochs": 1,
 	"txt_in_min_len": 2,
 	"txt_in_max_len": 8,
 	"txt_out_min_len": 4,
@@ -55,11 +55,35 @@ sent_kwargs = {
 
 sentiment_pipe = pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device=pipe_device)
 
-text = 'this movie was really bad!!'
-sentiment_pipe(text, **sent_kwargs)
+class LengthSampler:
+	def __init__(self, min_value, max_value):
+		self.values = list(range(min_value, max_value))
+	def __call__(self):
+		return np.random.choice(self.values)
 
-text = 'this movie was really good!!'
-sentiment_pipe(text, **sent_kwargs)
+input_size = LengthSampler(config["txt_in_min_len"], config["txt_in_max_len"])
+output_size = LengthSampler(config["txt_out_min_len"], config["txt_out_max_len"])
+#input_size = config["txt_in_max_len"]
+#output_size = config["txt_out_max_len"
+
+gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
+gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
+
+gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
+gpt2_tokenizer.padding_size = "left"
+def tokenize(sample):
+	encoding = gpt2_tokenizer(sample["review"], padding='max_length', max_length=input_size(), truncation=True)
+	sample["tokens"] = encoding['input_ids']
+	sample["attention_mask"] = encoding['attention_mask']
+	sample["query"] = gpt2_tokenizer.decode(sample["tokens"])
+	return sample
+
+ds = ds.map(tokenize, batched=False)
+
+def collater(data):
+	return dict((key, [d[key] for d in data]) for key in data[0])
+
+dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
 # Adding accelerator
 accelerator = Accelerator()
@@ -77,35 +101,13 @@ gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
 #	for p in m.parameters():
 #		p.requires_grad = False
 
-gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
-gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 if accelerator.is_main_process:
 	wandb.watch(gpt2_model, log='all')
 
 #gpt2_model.to(device)
 #gpt2_model_ref.to(device)
 
-#class LengthSampler:
-#	def __init__(self, min_value, max_value):
-#		self.values = list(range(min_value, max_value))
-#	def __call__(self):
-#		return np.random.choice(self.values)
 
-#input_size = LengthSampler(config["txt_in_min_len"], config["txt_in_max_len"])
-#output_size = LengthSampler(config["txt_out_min_len"], config["txt_out_max_len"])
-input_size = config["txt_in_max_len"]
-output_size = config["txt_out_max_len"]
-
-gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
-gpt2_tokenizer.padding_size = "left"
-def tokenize(sample):
-	encoding = gpt2_tokenizer(sample["review"], padding='max_length', max_length=input_size, truncation=True)
-	sample["tokens"] = encoding['input_ids']
-	sample["attention_mask"] = encoding['attention_mask']
-	sample["query"] = gpt2_tokenizer.decode(sample["tokens"])
-	return sample
-
-ds = ds.map(tokenize, batched=False)
 
 gen_kwargs = {
 	"min_length":-1,
@@ -114,11 +116,6 @@ gen_kwargs = {
 	"do_sample": True,
 	"pad_token_id": gpt2_tokenizer.eos_token_id
 }
-
-def collater(data):
-	return dict((key, [d[key] for d in data]) for key in data[0])
-
-dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
 ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, device, **config, accelerator=accelerator)
 
@@ -133,29 +130,48 @@ optimizer, dataloader = accelerator.prepare(ppo_trainer.optimizer, dataloader)
 #gpt2_model = gpt2_model.module
 ppo_trainer.optimizer = optimizer
 
+# Run batches to clear errors
+rank = torch.distributed.get_rank()
+if rank == 0:
+	text_in = "The purpose of life is "
+elif rank == 1:
+	text_in = "Are you human? "
+
+batch = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device)
+
+# had to run this 1 time at the start else was giving device mismatch error.
+# So, before directly using `model.generate` pass a batch with dummy data through the model 
+outputs = gpt2_model(**batch)
+print(batch)
+
+# Use for generation
+unwrapped_model = accelerator.unwrap_model(gpt2_model)
+
 print("NUM EPOCHS: ", total_ppo_epochs) if accelerator.is_main_process else None
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
 	logs, timing = dict(), dict()
-	print('batch', batch)
+	#print('batch', batch)
 	t0 = time.time()
-	#query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
-	model_input = {"input_ids": torch.tensor([t for t in batch["tokens"]]).to(device), "attention_mask": torch.tensor([t for t in batch["attention_mask"]]).to(device)}
+	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
+	#model_input = {"input_ids": torch.tensor([t for t in batch["tokens"]]).to(device), "attention_mask": torch.tensor([t for t in batch["attention_mask"]]).to(device)}
 	#### Get response from gpt2
 	t = time.time()
 	response_tensors = []
-	#for i in range(config['batch_size']):
-	#	gen_len = output_size()
-		
-		#response = gpt2_model.generate(query_tensors[i].unsqueeze(dim=0),
-		#							   max_new_tokens=gen_len, **gen_kwargs)
-		#response_tensors.append(response.squeeze()[-gen_len:])
-	gen_len = output_size
-	response = gpt2_model.generate(**model_input, max_new_tokens=gen_len, **gen_kwargs)
-	batch['response'] = gpt2_tokenizer.batch_decode(response)
+	with torch.no_grad():
+		for i in range(config['batch_size']):
+			#unwrapped_model = accelerator.unwrap_model(gpt2_model)
+			gen_len = output_size()
+			
+			response = gpt2_model.generate(query_tensors[i].unsqueeze(dim=0),
+										max_new_tokens=gen_len, **gen_kwargs)
+			response_tensors.append(response.squeeze()[-gen_len:])
+	#gen_len = output_size
+	#response = gpt2_model.generate(**model_input, max_new_tokens=gen_len, **gen_kwargs)
+	#batch['response'] = gpt2_tokenizer.batch_decode(response)
 	# Form query and response tensors to feed into ppo object
-	response_tensors = response.view((len(batch), -1))
-	query_tensors = model_input["input_ids"].view((len(batch), -1))
-	#batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
+	#response_tensors = response.view((len(batch), -1))
+	#query_tensors = model_input["input_ids"].view((len(batch), -1))
+	batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
 	timing['time/get_response'] = time.time()-t
 
 	#### Compute sentiment score
@@ -200,7 +216,7 @@ response_tensors_ref, response_tensors = [], []
 
 #### get response from gpt2 and gpt2_ref
 for i in range(bs):
-	gen_len = output_size
+	gen_len = output_size()
 	output = gpt2_model_ref.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0),
 									 max_new_tokens=gen_len, **gen_kwargs).squeeze()[-gen_len:]
 	response_tensors_ref.append(output)

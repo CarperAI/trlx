@@ -72,7 +72,7 @@ gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 wandb.watch(gpt2_model, log='all')
 
 gpt2_model.to(device)
-gpt2_model_ref.to(device)
+#gpt2_model_ref.to(device)
 
 class LengthSampler:
 	def __init__(self, min_value, max_value):
@@ -103,7 +103,7 @@ def collater(data):
 
 dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
-ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config)
+ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, device, **config)
 
 total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
 
@@ -129,7 +129,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
 	texts = [q + r for q,r in zip(batch['query'], batch['response'])]
 	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
 	#print(pipe_outputs)
-	rewards = torch.tensor([output["score"] if output['label'] == 'POSITIVE' else -output['score'] for output in pipe_outputs]).to(device)
+	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
 	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step

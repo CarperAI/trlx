@@ -148,9 +148,10 @@ class PPOTrainer:
         t = time.time()
         logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
         timing['time/ppo/forward_pass'] = time.time()-t
-        #print('logprobs size', len(logprobs))
+        #print('logprobs size', len(logprobs), logprobs[0].size())
         #print('ref_logprobs size', len(ref_logprobs))
         #print('values size', len(values))
+        #exit()
 
         t = time.time()
         rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
