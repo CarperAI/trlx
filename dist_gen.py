@@ -56,56 +56,57 @@ def main():
     # Now compute ppo loss
     ## First compute logprobs and ref_logprobs
     collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-    input_ids = collator([torch.cat([q, r]) for q, r in zip(query_tensors, response_tensors)])["input_ids"]
+    for i in range(10):
+        input_ids = collator([torch.cat([q, r]) for q, r in zip(query_tensors, response_tensors)])["input_ids"]
 
-    with torch.no_grad():
-        logits, _, v = model(input_ids)
-        #print('values', v)
-        ref_logits, _, _ = ref_model(input_ids.cpu())
-        ref_logits = ref_logits.to(accelerator.device)
+        with torch.no_grad():
+            logits, _, v = model(input_ids)
+            #print('values', v)
+            ref_logits, _, _ = ref_model(input_ids.cpu())
+            ref_logits = ref_logits.to(accelerator.device)
 
-    logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
-    ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
+        logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
+        ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
 
-    # Only care about logprobs for generated text
-    start = query_tensors.size()[-1] - 1
-    end = query_tensors.size()[-1] + response_tensors.size()[-1] - 1
-    logprobs = logprobs[:, start:end]
-    ref_logprobs = ref_logprobs[:, start:end]
-    v = v[:, start-1: end-1]
-    print('logprob sizes', logprobs.size(), ref_logprobs.size(), v.size())
+        # Only care about logprobs for generated text
+        start = query_tensors.size()[-1] - 1
+        end = query_tensors.size()[-1] + response_tensors.size()[-1] - 1
+        logprobs = logprobs[:, start:end]
+        ref_logprobs = ref_logprobs[:, start:end]
+        v = v[:, start-1: end-1]
+        print('logprob sizes', logprobs.size(), ref_logprobs.size(), v.size())
 
 
-    ## Compute rewards
-    kl = logprobs - ref_logprobs
-    non_score_reward = .2 * kl
-    reward = non_score_reward.clone()
-    reward[-1] += score
+        ## Compute rewards
+        kl = logprobs - ref_logprobs
+        non_score_reward = .2 * kl
+        reward = non_score_reward.clone()
+        reward[-1] += score
 
-    ## Compute losses
-    lastgaelam = 0
-    advantages_reversed = []
-    gen_len = response_tensors.shape[1]
-    for t in reversed(range(gen_len)):
-        nextvalues = v[:, t+1] if t < gen_len - 1 else 0.0
-        delta = reward[:, t] + 1.00 * nextvalues - v[:, t]
-        lastgaelam = delta + 1.00 * .99 * lastgaelam
-        advantages_reversed.append(lastgaelam)
-    advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
+        ## Compute losses
+        lastgaelam = 0
+        advantages_reversed = []
+        gen_len = response_tensors.shape[1]
+        for t in reversed(range(gen_len)):
+            nextvalues = v[:, t+1] if t < gen_len - 1 else 0.0
+            delta = reward[:, t] + 1.00 * nextvalues - v[:, t]
+            lastgaelam = delta + 1.00 * .99 * lastgaelam
+            advantages_reversed.append(lastgaelam)
+        advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
 
-    returns = advantages + v
-    advantages = advantages.detach()
+        returns = advantages + v
+        advantages = advantages.detach()
 
-    ### With grad this time
-    logits, _, vpred = model(input_ids)
-    logprob = logprobs_from_logits(logits[:, :-1, :], input_ids[:, 1:])
-    logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len-1:-1]
-    vf_loss = torch.mean((vpred - returns)**2)
+        ### With grad this time
+        logits, _, vpred = model(input_ids)
+        logprob = logprobs_from_logits(logits[:, :-1, :], input_ids[:, 1:])
+        logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len-1:-1]
+        vf_loss = torch.mean((vpred - returns)**2)
 
-    # Backpropagate
-    optimizer.zero_grad()
-    accelerator.backward(vf_loss)
-    optimizer.step()
+        # Backpropagate
+        optimizer.zero_grad()
+        accelerator.backward(vf_loss)
+        optimizer.step()
 
 
 def logprobs_from_logits(logits, labels):

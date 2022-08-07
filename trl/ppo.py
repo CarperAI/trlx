@@ -167,6 +167,7 @@ class PPOTrainer:
             #print('batch size', bs)
             for i in range(bs):
                 idx = idxs[i]
+                print(f"Training minibatch {i}")
                 train_stats = self.train_minibatch(logprobs[idx].unsqueeze(0), values[idx].unsqueeze(0),
                                                    rewards[idx].unsqueeze(0), queries[idx].unsqueeze(0),
                                                    responses[idx].unsqueeze(0),
@@ -228,6 +229,7 @@ class PPOTrainer:
         if self.accelerator is None:
             loss.backward()
         else:
+            self.accelerator.wait_for_everyone()
             self.accelerator.backward(loss)
         self.optimizer.step()
         return train_stats

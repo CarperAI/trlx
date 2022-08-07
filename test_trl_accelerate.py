@@ -17,8 +17,8 @@ from trl.gpt2 import GPT2HeadWithValueModel
 from trl.ppo import PPOTrainer
 
 config = {
-	"model_name": "lvwerra/gpt2-imdb",
-	"cls_model_name": "lvwerra/distilbert-imdb",
+	"model_name": "gpt2",
+	"cls_model_name": "gpt2",
 	"steps": 20000,
 	"batch_size": 4,
 	"forward_batch_size": 1,
@@ -123,11 +123,10 @@ total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
 
 # Prepare accelerator
 # fsdp requires model is prepared before optimizer for memory efficiency
-gpt2_model = gpt2_model.to(accelerator.device)
 gpt2_model = accelerator.prepare(gpt2_model)
+gpt2_model = gpt2_model.to(accelerator.device)
 optimizer, dataloader = accelerator.prepare(ppo_trainer.optimizer, dataloader)
 # Fix for running without fsdp or deepspeed
-#gpt2_model = gpt2_model.module
 ppo_trainer.optimizer = optimizer
 
 # Run batches to clear errors
@@ -140,12 +139,8 @@ elif rank == 1:
 batch = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device)
 
 # had to run this 1 time at the start else was giving device mismatch error.
-# So, before directly using `model.generate` pass a batch with dummy data through the model 
+# So, before directly using `model.generate` pass a batch with dummy data through the model
 outputs = gpt2_model(**batch)
-print(batch)
-
-# Use for generation
-unwrapped_model = accelerator.unwrap_model(gpt2_model)
 
 print("NUM EPOCHS: ", total_ppo_epochs) if accelerator.is_main_process else None
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
@@ -153,7 +148,6 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	#print('batch', batch)
 	t0 = time.time()
 	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
-	#model_input = {"input_ids": torch.tensor([t for t in batch["tokens"]]).to(device), "attention_mask": torch.tensor([t for t in batch["attention_mask"]]).to(device)}
 	#### Get response from gpt2
 	t = time.time()
 	response_tensors = []
@@ -161,92 +155,36 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 		for i in range(config['batch_size']):
 			#unwrapped_model = accelerator.unwrap_model(gpt2_model)
 			gen_len = output_size()
-			
+
 			response = gpt2_model.generate(query_tensors[i].unsqueeze(dim=0),
-										max_new_tokens=gen_len, **gen_kwargs)
+										max_new_tokens=gen_len, synced_gpus=True, **gen_kwargs)
 			response_tensors.append(response.squeeze()[-gen_len:])
-	#gen_len = output_size
-	#response = gpt2_model.generate(**model_input, max_new_tokens=gen_len, **gen_kwargs)
-	#batch['response'] = gpt2_tokenizer.batch_decode(response)
-	# Form query and response tensors to feed into ppo object
-	#response_tensors = response.view((len(batch), -1))
-	#query_tensors = model_input["input_ids"].view((len(batch), -1))
+
 	batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
 	timing['time/get_response'] = time.time()-t
 
 	#### Compute sentiment score
-	t = time.time()
 	texts = [q + r for q,r in zip(batch['query'], batch['response'])]
 	# Ouptut is a list of lists of containing two dictionaries corresponding to pos/neg class and score
 	# may be dependent on the hf version
 	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
-	
 	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
-	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step
-	t = time.time()
-	stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
-	timing['time/optimization'] = time.time()-t
-
-	#### Log everything
-	timing['time/epoch'] = time.time()-t0
-	table_rows = [list(r) for r in zip(batch['query'], batch['response'], rewards.cpu().tolist())]
-	if accelerator.is_main_process:
-		logs.update({'game_log': wandb.Table(columns=['query', 'response', 'reward'], rows=table_rows)})
-		logs.update(timing)
-		logs.update(stats)
-		logs['env/reward_mean'] = torch.mean(rewards).cpu().numpy()
-		logs['env/reward_std'] = torch.std(rewards).cpu().numpy()
-		logs['env/reward_dist'] = rewards.cpu().numpy()
-		wandb.log(logs)
-
-	#### get a batch from the dataset
-
-accelerator.wait_for_everyone()
-
-bs = 16
-game_data = dict()
-ds.set_format("pandas")
-df_batch = ds[:].sample(bs)
-game_data['query'] = df_batch['query'].tolist()
-query_tensors = df_batch['tokens'].tolist()
-
-response_tensors_ref, response_tensors = [], []
-
-#### get response from gpt2 and gpt2_ref
-for i in range(bs):
-	gen_len = output_size()
-	output = gpt2_model_ref.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0),
-									 max_new_tokens=gen_len, **gen_kwargs).squeeze()[-gen_len:]
-	response_tensors_ref.append(output)
-	output = gpt2_model.generate(torch.tensor(query_tensors[i]).unsqueeze(dim=0),
-								 max_new_tokens=gen_len, **gen_kwargs).squeeze()[-gen_len:]
-	response_tensors.append(output)
-
-#### decode responses
-game_data['response (before)'] = [gpt2_tokenizer.decode(response_tensors_ref[i]) for i in range(bs)]
-game_data['response (after)'] = [gpt2_tokenizer.decode(response_tensors[i]) for i in range(bs)]
-
-#### sentiment analysis of query/response pairs before/after
-texts = [q + r for q,r in zip(game_data['query'], game_data['response (before)'])]
-game_data['rewards (before)'] = [output[1]["score"] for output in sentiment_pipe(texts, **sent_kwargs)]
-
-texts = [q + r for q,r in zip(game_data['query'], game_data['response (after)'])]
-game_data['rewards (after)'] = [output[1]["score"] for output in sentiment_pipe(texts, **sent_kwargs)]
-
-# store results in a dataframe
-df_results = pd.DataFrame(game_data)
-df_results
-
-print('mean:')
-display(df_results[["rewards (before)", "rewards (after)"]].mean())
-print()
-print('median:')
-display(df_results[["rewards (before)", "rewards (after)"]].median())
-
+	logits, _, vpred = gpt2_model(torch.cat([query_tensors[0], response_tensors[0]]))
+	print(logits.size(), logits)
+	print(vpred.size(), vpred)
+	ref_logits, _, ref_vpred = gpt2_model_ref(torch.cat([query_tensors[0].cpu(), response_tensors[0].cpu()]))
+	ref_logits = ref_logits.to(accelerator.device)
+	loss = torch.sum(logits - ref_logits) - torch.sum(vpred)
+	accelerator.backward(loss)
+	optimizer.step()
+	#stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
+	break
+print("FINISHED TRAINING")
 
 accelerator.wait_for_everyone()
 if accelerator.is_main_process:
 	gpt2_model = accelerator.unwrap_model(gpt2_model)
-	accelerator.save(gpt2_model.state_dict(), 'gpt2-imbd-pos-vs')
+	#accelerator.save(gpt2_model.state_dict(), 'gpt2-imbd-pos-vs')
+	print("FINISHED SAVING MODEL")
