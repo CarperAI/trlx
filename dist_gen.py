@@ -11,6 +11,7 @@ from torch.optim import Adam
 from transformers import DataCollatorForLanguageModeling
 import torch.nn.functional as F
 
+
 def main():
     accelerator = Accelerator()
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
@@ -21,10 +22,10 @@ def main():
     model = accelerator.prepare(model)
     model.to(accelerator.device)
     print(accelerator.state)
-    #accelerator.print(model)
+
 
     optimizer = accelerator.prepare(optimizer)
-    
+
     rank = torch.distributed.get_rank()
     if rank == 0:
         text_in = "The purpose of life is "
@@ -32,11 +33,11 @@ def main():
         text_in = "Are you human? "
 
     query_tensors = tokenizer(text_in, return_tensors="pt").to(accelerator.device)["input_ids"]
-    
+
     # had to run this 1 time at the start else was giving device mismatch error.
-    # So, before directly using `model.generate` pass a batch with dummy data through the model 
+    # So, before directly using `model.generate` pass a batch with dummy data through the model
     outputs = model(query_tensors)
-    
+
     print(query_tensors)
     gen_kwargs = {
         "max_length": 64,
@@ -56,13 +57,13 @@ def main():
     ## First compute logprobs and ref_logprobs
     collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
     input_ids = collator([torch.cat([q, r]) for q, r in zip(query_tensors, response_tensors)])["input_ids"]
-    
+
     with torch.no_grad():
         logits, _, v = model(input_ids)
         #print('values', v)
         ref_logits, _, _ = ref_model(input_ids.cpu())
         ref_logits = ref_logits.to(accelerator.device)
-    
+
     logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
     ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
 
@@ -105,7 +106,7 @@ def main():
     optimizer.zero_grad()
     accelerator.backward(vf_loss)
     optimizer.step()
-    
+
 
 def logprobs_from_logits(logits, labels):
     """
@@ -115,6 +116,6 @@ def logprobs_from_logits(logits, labels):
     logpy = torch.gather(logp, 2, labels.unsqueeze(2)).squeeze(-1)
     return logpy
 
-    
+
 if __name__ == "__main__":
     main()
