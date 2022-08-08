@@ -171,15 +171,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
 
 	#### Run PPO step
-	logits, _, vpred = gpt2_model(torch.cat([query_tensors[0], response_tensors[0]]))
-	print(logits.size(), logits)
-	print(vpred.size(), vpred)
-	ref_logits, _, ref_vpred = gpt2_model_ref(torch.cat([query_tensors[0].cpu(), response_tensors[0].cpu()]))
-	ref_logits = ref_logits.to(accelerator.device)
-	loss = torch.sum(logits - ref_logits) - torch.sum(vpred)
-	accelerator.backward(loss)
-	optimizer.step()
-	#stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
+	stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
 	break
 print("FINISHED TRAINING")
 

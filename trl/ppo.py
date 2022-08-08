@@ -148,10 +148,6 @@ class PPOTrainer:
         t = time.time()
         logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
         timing['time/ppo/forward_pass'] = time.time()-t
-        #print('logprobs size', len(logprobs), logprobs[0].size())
-        #print('ref_logprobs size', len(ref_logprobs))
-        #print('values size', len(values))
-        #exit()
 
         t = time.time()
         rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
@@ -183,10 +179,12 @@ class PPOTrainer:
         train_stats['policy/advantages'] = torch.nan_to_num(train_stats['policy/advantages'], WANDB_PADDING)
         train_stats['policy/ratio'] = torch.flatten(train_stats['policy/ratio']).unsqueeze(0)
 
-        stats = self.record_step_stats(scores=scores, logprobs=logprobs, ref_logprobs=ref_logprobs,
-                                       non_score_reward=non_score_reward, train_stats=train_stats,
-                                       kl_coef=self.kl_ctl.value)
-        stats = stats_to_np(stats)
+        #stats = self.record_step_stats(scores=scores, logprobs=logprobs, ref_logprobs=ref_logprobs,
+        #                               non_score_reward=non_score_reward, train_stats=train_stats,
+        #                               kl_coef=self.kl_ctl.value)
+       #
+        #stats = stats_to_np(stats)
+        stats = {}
         timing['time/ppo/calc_stats'] = time.time()-t
 
         self.kl_ctl.update(stats['objective/kl'], self.ppo_params['batch_size'])
@@ -223,8 +221,11 @@ class PPOTrainer:
 
     def train_minibatch(self, logprobs, values, rewards, query, response, model_input):
         """Train one PPO minibatch"""
-        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
-        loss = loss_p + loss_v
+        #loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
+        logits, _, v = self.model(torch.cat([query[0], response[0]]))
+        loss = torch.sum(logits) + torch.sum(v)
+        train_stats = {}
+        #loss = loss_p + loss_v
         self.optimizer.zero_grad()
         if self.accelerator is None:
             loss.backward()
