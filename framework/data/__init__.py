@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from typing import Any, List, Iterable
+from typing import Any, List, Iterable, Callable
 from torchtyping import TensorType
 
 import random
@@ -17,12 +17,14 @@ class SimElement:
     content : Any = None
     preference : Any = None
     score : float = None
+    cat : Callable = lambda x: x
 
 @dataclass
 class RLElement:
     state : Any = None
     action : Any = None
     reward : float = None
+    cat : Callable = lambda x: x
 
 @dataclass
 class BatchElement:
@@ -31,22 +33,4 @@ class BatchElement:
     """
     tokens : TensorType["BATCH", "SEQ_LEN"]
     masks : TensorType["BATCH", "SEQ_LEN"]
-
-class RolloutStore:
-    def __init__(self, capacity = -1):
-        self.history : Iterable[RLElement] = []
-        self.capacity = capacity
-
-    def get_size(self):
-        return len(self.history)
-    
-    def sample(self, size : int) -> List[RLElement]:
-        return random.sample(self.history, size)
-    
-    def push(self, exps : Iterable[RLElement]):
-        for experience in exps:
-            self.history.append(experience)
-            if len(self.history) > self.capacity:
-                del self.history[0]
-
-    
+    cat : Callable = lambda x: x
