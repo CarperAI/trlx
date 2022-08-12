@@ -1,10 +1,14 @@
 from abc import abstractmethod
 
-from framework.data import RolloutStore, RLElement
+from framework.data import RLElement
+from framework.pipeline import BaseRolloutStore
 
 class BaseRLModel:
     def __init__(self):
-        self.store : RolloutStore = None
+        self.store : BaseRolloutStore = None
+
+    def push_to_store(self, data):
+        self.store.push(data)
     
     @abstractmethod
     def act(data : RLElement) -> RLElement:
