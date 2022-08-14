@@ -1,15 +1,12 @@
 import torch
 from transformers import pipeline
-from functools import reduce
 
-from framework.orchestrator import Orchestrator
+from framework.orchestrator import Orchestrator, register_orchestrator
 from framework.pipeline.sentiment import SentimentPipeline
 from framework.model import BaseRLModel
-from framework.utils import chunk
+from framework.utils import chunk, flatten
 
-def flatten(L):
-    return list(reduce(lambda acc, x: acc + x, L, []))
-
+@register_orchestrator
 class SentimentOrchestrator(Orchestrator):
     def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel):
         self.pipeline = pipeline
