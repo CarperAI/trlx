@@ -14,6 +14,18 @@ def chunk(L : Iterable[Any], chunk_size : int) -> List[Iterable[Any]]:
     """
     return [L[i:i+chunk_size] for i in range(0, len(L), chunk_size)]
 
+# Training utils
+
+from torch.optim.lr_scheduler import LinearLR, ChainedScheduler
+
+def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
+    return ChainedScheduler(
+        [
+            LinearLR(opt, 0, 1, total_iters = ramp_steps),
+            LinearLR(opt, 1, decay_target, total_iters= decay_steps)
+        ]
+    )
+
 # For loading things
 
 from framework.pipeline import _DATAPIPELINE
@@ -46,3 +58,13 @@ def get_orchestrator(name : str) -> Callable:
         return _ORCH[name]
     else:
         raise Exception("Error: Trying to access an orchestrator that has not been registered")
+
+import os
+
+def safe_mkdir(path : str):
+    """
+    Make directory if it doesn't exist, otherwise do nothing
+    """
+    if os.path.isdir(path):
+        return
+    os.mkdir(path)
