@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from mmap import MAP_POPULATE
 from typing import Dict
 import sys
 import os
