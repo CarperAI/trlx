@@ -11,6 +11,7 @@ from transformers import AutoTokenizer
 import os
 
 import torch
+from torch.utils.data import DataLoader
 
 @register_model
 class SentimentILQLModel(BaseRLModel):
@@ -47,5 +48,7 @@ class SentimentILQLModel(BaseRLModel):
         return components
     
     def learn(self):
-        pass
+        loader = DataLoader(self.store, batch_size = self.config.train.batch_size, shuffle = True)
+
+        return 1
 

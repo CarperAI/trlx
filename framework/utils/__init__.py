@@ -25,40 +25,7 @@ def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
             LinearLR(opt, 1, decay_target, total_iters= decay_steps)
         ]
     )
-
-# For loading things
-
-from framework.pipeline import _DATAPIPELINE
-from framework.orchestrator import _ORCH
-from framework.model import _MODELS
-
-def get_model(name : str) -> Callable:
-    """
-    Return constructor for specified model
-    """
-    if name in _MODELS:
-        return _MODELS[name]
-    else:
-        raise Exception("Error: Trying to access a model that has not been registered")
-
-def get_pipeline(name : str) -> Callable:
-    """
-    Return constructor for specified pipeline
-    """
-    if name in _DATAPIPELINE:
-        return _DATAPIPELINE[name]
-    else:
-        raise Exception("Error: Trying to access a pipeline that has not been registered")
-
-def get_orchestrator(name : str) -> Callable:
-    """
-    Return constructor for specified orchestrator
-    """
-    if name in _ORCH:
-        return _ORCH[name]
-    else:
-        raise Exception("Error: Trying to access an orchestrator that has not been registered")
-
+    
 import os
 
 def safe_mkdir(path : str):

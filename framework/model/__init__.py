@@ -13,7 +13,6 @@ from framework.utils import safe_mkdir
 # specifies a dictionary of architectures
 _MODELS: Dict[str, any] = {}  # registry
 
-
 def register_model(name):
     """Decorator used register a CARP architecture
     Args:

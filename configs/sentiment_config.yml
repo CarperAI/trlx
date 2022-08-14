@@ -6,6 +6,7 @@ train:
   n_ctx : 512
   epochs : 10
   batch_size : 32
+  grad_clip : 1.0
 
   lr_ramp_steps : 100
   lr_decay_steps : 3366

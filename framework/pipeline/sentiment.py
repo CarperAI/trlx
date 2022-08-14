@@ -22,7 +22,7 @@ class SentimentPipeline(BasePipeline):
     def __init__(self, path = None):
         ds_train = load_dataset('imdb', split='train+test')
         ds_train = process_data(ds_train)
-        self.text = ds_train["text"]
+        self.text = ds_train["review"]
 
     def __get__item(self, index : int) -> SentimentGeneralElement:
         return SentimentGeneralElement(self.text[index])
@@ -39,7 +39,7 @@ class SentimentRolloutStorage(BaseRolloutStore):
     def push(self, exps : Tuple[Iterable[str], TensorType["N"]]):
         txt, r = exps
         self.history[0] += txt
-        self.history[1] = torch.cat((self.history[1], r))
+        self.history[1] = torch.cat([self.history[1], r])
 
     def __getitem__(self, index : int) -> SentimentRLElement:
         return SentimentRLElement(

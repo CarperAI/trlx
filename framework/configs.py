@@ -16,9 +16,11 @@ class TrainConfig:
     n_ctx : int
     epochs : int
     batch_size : int
+    grad_clip : float # Clip grad norms to this value
 
     lr_ramp_steps: int
     lr_decay_steps: int
+    weight_decay : float
     learning_rate_init: float
     learning_rate_target: float
 
