@@ -1,0 +1,23 @@
+model:
+  model_path : "gpt2"
+  model_arch : "SentimentILQLModel"
+
+train:
+  n_ctx : 512
+  epochs : 10
+  batch_size : 32
+
+  lr_ramp_steps : 100
+  lr_decay_steps : 3366
+  weight_decay : 1.0e-6
+  learning_rate_init : 1.0e-4
+  learning_rate_target : 3.0e-6
+
+  do_log : false
+  log_interval : 5
+  checkpoint_interval : 100
+
+  pipeline : "SentimentPipeline"
+  orchestrator : "SentimentOrchestrator"
+
+  accelerate : False
