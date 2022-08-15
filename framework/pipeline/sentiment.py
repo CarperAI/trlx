@@ -33,14 +33,14 @@ class SentimentPipeline(BasePipeline):
     def __len__(self) -> int:
         return len(self.text)
 
-    def create_loader(self, batch_size : int, shuffle : bool) -> DataLoader:
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
         def collate_fn(elems : Iterable[SentimentGeneralElement]) -> SentimentGeneralElement:
             # We assume actions are unset as elems are being read from rollout storage
             return SentimentGeneralElement(
                 sum([elem.text for elem in elems])
             )
         
-        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn)
+        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
 
 
 class SentimentRolloutStorage(BaseRolloutStore):
@@ -61,9 +61,9 @@ class SentimentRolloutStorage(BaseRolloutStore):
         )
 
     def __len__(self) -> int:
-        return len(self.history)
+        return len(self.history[0])
     
-    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None) -> DataLoader:
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
         """
         Create dataloader for the sentiment task.
 
@@ -71,16 +71,14 @@ class SentimentRolloutStorage(BaseRolloutStore):
         :type prep_fn: Callable[Iterable[str], Dict[str, torch.tensor]]
         """
         def collate_fn(elems : Iterable[SentimentRLElement]):
-            return SentimentRLElement(
-                [elem.text for elem in elems],
-                torch.tensor([elem.score for elem in elems])
+            res = SentimentRLElement(
+                    [elem.text for elem in elems],
+                    torch.tensor([elem.score for elem in elems])
             )
-            # We assume actions are unset as elems are being read from rollout storage
-            txt = sum([elem.txt for elem in elems])
-            tok_out = prep_fn(txt)
-            r = torch.tensor([elem.score for elem in elems])
-            
-            return tok_out["input_ids"], tok_out["attention_mask"], r
+            if prep_fn is not None:
+                return prep_fn(res)
+            else:
+                return res
         
-        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn)
+        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
 

@@ -1,6 +1,6 @@
 from typing import Dict
 
-from framework.data import RLElement
+from framework.data import RLElement, BatchElement
 from framework.data.sentiment import SentimentRLElement
 
 from framework.model import BaseRLModel, register_model
@@ -16,18 +16,24 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from accelerate import Accelerator
+
 import einops as eo
 
 @register_model
 class SentimentILQLModel(BaseRLModel):
-    def __init__(self, config, train_mode = False):
+    def __init__(self, config, train_mode = True):
         super().__init__(config, train_mode)
 
         self.store = SentimentRolloutStorage()
 
         self.model = QVModel(self.config.model.model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.model_path)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model_config = AutoConfig.from_pretrained(self.config.model.model_path)
+        self.device = self.config.model.device
+
+        self.model.to(self.device)
 
         # All parameters specific to ILQL, move to config later? Not sure how
         self.tau = 0.7
@@ -45,12 +51,13 @@ class SentimentILQLModel(BaseRLModel):
             )
     
     def tokenize(self, text):
+        text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
             truncation = True,
-            padding = True,
+            padding = 'max_length',
             max_length = self.max_len,
-            return_tensors = "pt"
+            return_tensors = "pt",
         )
 
     def act(self, data : SentimentRLElement) -> SentimentRLElement:
@@ -69,13 +76,22 @@ class SentimentILQLModel(BaseRLModel):
         return components
     
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
-        loader = self.store.create_loader(self.config.train.batch_size, shuffle = True)
+        device = self.device
+
+        # Make a prep function for loader that processes RLElement
+        # Tokenizes text and converts to BatchElement
+        def prep(elem : RLElement):
+            tok_out = self.tokenize(elem.text)
+            be = BatchElement(tok_out["input_ids"], tok_out["attention_mask"])
+            return be, elem.score
+
+        loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, prep_fn = prep, num_workers = 1)
 
         def get_loss(input_tokens, attn, rewards):
             # Rewards are [batch], wheras states are [batch, seq_len]
             # Need rewards to be [batch, seq_len - 1] to match value outputs
             # Rewards for non terminal token will be 0
-            _rewards = torch.zeros(len(rewards), self.max_len - 1)
+            _rewards = torch.zeros(len(rewards), self.max_len - 1, device = rewards.device)
             _rewards[:,-1] = rewards
             rewards = _rewards
 
@@ -84,10 +100,10 @@ class SentimentILQLModel(BaseRLModel):
             logits = model_out["lm_out"]
 
             q_out = model_out["q_out"]
-            Q = q_out[:,:-1,:].gather(-1, input[:,1:,None]).squeeze(-1)
+            Q = q_out[:,:-1,:].gather(-1, input_tokens[:,1:,None]).squeeze(-1)
 
             target_q_out = model_out["target_q_out"]
-            targ_Q = target_q_out[:,:-1,:].gather(-1, input[:,1:,None]).squeeze(-1).detach()
+            targ_Q = target_q_out[:,:-1,:].gather(-1, input_tokens[:,1:,None]).squeeze(-1).detach()
 
             v_out = model_out["v_out"]
             V = v_out[:,1:].squeeze() * attn[:,1:]
@@ -113,12 +129,12 @@ class SentimentILQLModel(BaseRLModel):
             return loss 
         
         for epoch in range(self.config.train.epochs):
-            for iter, batch in enumerate(loader):
-                tok_out = self.tokenize(batch.text)
+            for iter, (batch, reward) in enumerate(loader):
+                tokens = batch.tokens.to(device)
+                masks = batch.masks.to(device)
+                reward = reward.to(device)
+                loss = get_loss(tokens, masks, reward)
 
-                loss = get_loss(tok_out["input_ids"], tok_out["attention_mask"], batch.score)
-
-                # Likely where stuff has to change
                 self.opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.train.grad_clip)
@@ -129,10 +145,19 @@ class SentimentILQLModel(BaseRLModel):
                     self.model.sync_target(1)
                 
                 intervals = self.intervals(iter)
+
                 if intervals["do_log"]:
                     print(f"Epoch [{epoch}/{self.config.train.epochs}]: Batch [{iter}/{len(loader)}]: Loss {loss.item()}")
+                    if log_fn is not None:
+                        pass
                 if intervals["do_save"]:
                     self.save("./")
+                    if save_fn is not None:
+                        save_fn(self.model)
+                if intervals["do_eval"]:
+                    if eval_fn is not None:
+                        eval_fn(self)
+
 
 
 

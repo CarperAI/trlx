@@ -47,9 +47,11 @@ class BasePipeline(Dataset):
         pass
 
     @abstractmethod
-    def create_loader(self, batch_size : int, shuffle : bool) -> DataLoader:
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
         """
         Create a dataloader for the pipeline
+
+        :param prep_fn: Typically a tokenizer. Applied to GeneralElement after collation.
         """
         pass
 
@@ -74,11 +76,11 @@ class BaseRolloutStore(Dataset):
         return len(self.history)
 
     @abstractmethod
-    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None) -> DataLoader:
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
         """
         Create a dataloader for the rollout store
 
-        :param prep_fn: Generic placeholder for some preprocessing function that might need to get passed in (typically a tokenizer)
+        :param prep_fn: Applied to RLElement after collation (typically tokenizer)
         :type prep_fn: Callable
         """
         pass    

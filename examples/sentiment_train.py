@@ -48,5 +48,6 @@ if __name__ == "__main__":
 
     orch.make_experience()
     model.learn()
+    print("DONE!")
 
 

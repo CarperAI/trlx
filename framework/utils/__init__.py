@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import LinearLR, ChainedScheduler
 def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
     return ChainedScheduler(
         [
-            LinearLR(opt, 0, 1, total_iters = ramp_steps),
+            LinearLR(opt, decay_target, 1, total_iters = ramp_steps),
             LinearLR(opt, 1, decay_target, total_iters= decay_steps)
         ]
     )
