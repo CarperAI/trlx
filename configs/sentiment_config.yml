@@ -1,11 +1,12 @@
 model:
   model_path : "gpt2"
   model_arch : "SentimentILQLModel"
+  device : "cuda"
 
 train:
   n_ctx : 512
   epochs : 10
-  batch_size : 32
+  batch_size : 4
   grad_clip : 1.0
 
   lr_ramp_steps : 100
