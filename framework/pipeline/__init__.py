@@ -1,9 +1,9 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from datasets import load_from_disk
 import random
 
-from typing import Iterable, Any, Dict
-from abc import abstractmethod
+from typing import Iterable, Any, Dict, Callable
+from abc import abstractmethod, abstractstaticmethod
 import sys
 
 from framework.data import GeneralElement, RLElement
@@ -36,13 +36,24 @@ def register_datapipeline(name):
 @register_datapipeline
 class BasePipeline(Dataset):
     def __init__(self, path : str = "dataset"):
-        pass
+        super().__init__()
 
+    @abstractmethod
     def __getitem__(self, index : int) -> GeneralElement:
         pass
 
+    @abstractmethod
     def __len__(self) -> int:
         pass
+
+    @abstractmethod
+    def create_loader(self, batch_size : int, shuffle : bool) -> DataLoader:
+        """
+        Create a dataloader for the pipeline
+        """
+        pass
+
+
 
 class BaseRolloutStore(Dataset):
     def __init__(self, capacity = -1):
@@ -62,5 +73,12 @@ class BaseRolloutStore(Dataset):
     def __len__(self) -> int:
         return len(self.history)
 
+    @abstractmethod
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None) -> DataLoader:
+        """
+        Create a dataloader for the rollout store
 
-    
+        :param prep_fn: Generic placeholder for some preprocessing function that might need to get passed in (typically a tokenizer)
+        :type prep_fn: Callable
+        """
+        pass    
