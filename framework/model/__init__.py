@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict
+from typing import Dict, Callable
 import sys
 import os
 
@@ -53,9 +53,18 @@ class BaseRLModel:
         pass
     
     @abstractmethod
-    def learn(self):
+    def learn(self, log_fn : Callable = None, save_fn : Callable = None, eval_fn : Callable = None):
         """
         Use experiences in RolloutStore to learn
+
+        :param log_fn: Optional function that is called when logging and passed a dict of logging relevant values
+        :type log_fn: Callable[Dict[str, any]]
+        
+        :param save_fn: Optional function to call after saving. Is passed the components.
+        :type save_fn: Callable[Dict[str, any]]
+
+        :param eval_fn: Optional function to call during evaluation. Eval doesn't do anything without this.
+        :type eval_fn: Callable[BaseRLModel]
         """
         pass
 
@@ -93,3 +102,14 @@ class BaseRLModel:
                 components[name] = torch.load(os.path.join(path, name) + ".pt", map_location = "cpu")
             except:
                 print(f"Failed to load component: {name}, continuing.")
+
+    def intervals(self, steps : int) -> Dict[str, bool]:
+        """
+        Using config and current step number, returns a dict of whether certain things should be done
+        """
+
+        return {
+            "do_log" : (steps + 1) % self.config.train.checkpoint_interval == 0,
+            "do_eval" : (steps + 1) % self.config.train.eval_interval == 0,
+            "do_save" : (steps + 1) % self.config.train.checkpoint_interval == 0
+        }
