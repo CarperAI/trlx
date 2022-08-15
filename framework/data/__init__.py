@@ -17,14 +17,12 @@ class SimElement:
     content : Any = None
     preference : Any = None
     score : float = None
-    cat : Callable = lambda x: x
 
 @dataclass
 class RLElement:
     state : Any = None
     action : Any = None
     reward : float = None
-    cat : Callable = lambda x: x
 
 @dataclass
 class BatchElement:
@@ -33,4 +31,3 @@ class BatchElement:
     """
     tokens : TensorType["BATCH", "SEQ_LEN"]
     masks : TensorType["BATCH", "SEQ_LEN"]
-    cat : Callable = lambda x: x
