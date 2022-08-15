@@ -17,6 +17,7 @@ train:
   do_log : false
   log_interval : 5
   checkpoint_interval : 100
+  eval_interval : 100
 
   pipeline : "SentimentPipeline"
   orchestrator : "SentimentOrchestrator"

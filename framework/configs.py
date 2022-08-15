@@ -27,6 +27,7 @@ class TrainConfig:
     do_log: bool  # Log to WANDB?
     log_interval: int
     checkpoint_interval: int
+    eval_interval : int
 
     pipeline : str # One of the pipelines in framework.pipeline
     orchestrator : str # One of the orchestrators
