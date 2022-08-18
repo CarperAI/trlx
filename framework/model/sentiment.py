@@ -158,7 +158,7 @@ class SentimentILQLModel(BaseRLModel):
                     print(f"Epoch [{epoch}/{total_epochs}]: Batch [{iter}/{total_iters}]: " + \
                         f"Loss {loss:.5f} (Time Per 1k: {sec_per_1k:.2f}s)")
                     if log_fn is not None:
-                        pass
+                        log_fn({"Train Loss":loss, "Seconds Per 1k Samples":sec_per_1k})
                 if intervals["do_save"]:
                     self.save("./")
                     if save_fn is not None:
