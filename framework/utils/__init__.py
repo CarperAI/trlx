@@ -35,3 +35,44 @@ def safe_mkdir(path : str):
     if os.path.isdir(path):
         return
     os.mkdir(path)
+
+import time
+
+class Clock:
+    """
+    Helper object for keeping track of time for computations.
+    """
+    def __init__(self):
+        self.start = time.time()
+        self.total_time = 0
+        self.total_samples = 0
+
+    def tick(self, samples : int = 0) -> float:
+        """
+        Returns time (s) since last call to tick(). Also records samples processed since last call.
+
+        :param samples: number of samples that have been processed since last call
+        """
+        end = time.time()
+        delta = end - self.start
+        self.start = end
+
+        if samples != 0:
+            self.total_time += delta
+            self.total_samples += samples
+
+        return delta
+
+    def get_stat(self, n_samp : int = 1000, reset : bool = False):
+        """
+        Returns average time (s) per n_samp samples processed
+
+        :param reset: Reset counts?
+        """
+        sec_per_samp = self.total_time / self.total_samples
+
+        if reset:
+            self.total_samples = 0
+            self.total_time = 0
+            
+        return sec_per_samp * n_samp

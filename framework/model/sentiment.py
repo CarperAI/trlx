@@ -7,7 +7,7 @@ from framework.model import BaseRLModel, register_model
 from framework.pipeline.sentiment import SentimentRolloutStorage
 
 from framework.model.nn import QVModel
-from framework.utils import rampup_decay, safe_mkdir
+from framework.utils import rampup_decay, safe_mkdir, Clock
 
 from transformers import AutoTokenizer, AutoConfig
 import os
@@ -77,6 +77,7 @@ class SentimentILQLModel(BaseRLModel):
     
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
         device = self.device
+        timer = Clock()
 
         # Make a prep function for loader that processes RLElement
         # Tokenizes text and converts to BatchElement
@@ -130,6 +131,8 @@ class SentimentILQLModel(BaseRLModel):
         
         for epoch in range(self.config.train.epochs):
             for iter, (batch, reward) in enumerate(loader):
+                timer.tick()
+
                 tokens = batch.tokens.to(device)
                 masks = batch.masks.to(device)
                 reward = reward.to(device)
@@ -145,9 +148,15 @@ class SentimentILQLModel(BaseRLModel):
                     self.model.sync_target(1)
                 
                 intervals = self.intervals(iter)
+                timer.tick(self.config.train.batch_size)
 
                 if intervals["do_log"]:
-                    print(f"Epoch [{epoch}/{self.config.train.epochs}]: Batch [{iter}/{len(loader)}]: Loss {loss.item()}")
+                    total_epochs = self.config.train.epochs
+                    total_iters = len(loader)
+                    loss = loss.item()
+                    sec_per_1k = timer.get_stat(n_samp = 1000, reset = True)
+                    print(f"Epoch [{epoch}/{total_epochs}]: Batch [{iter}/{total_iters}]: " + \
+                        f"Loss {loss:.5f} (Time Per 1k: {sec_per_1k:.2f}s)")
                     if log_fn is not None:
                         pass
                 if intervals["do_save"]:
