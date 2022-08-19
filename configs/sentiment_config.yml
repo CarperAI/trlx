@@ -6,7 +6,7 @@ model:
 train:
   n_ctx : 512
   epochs : 10
-  batch_size : 4
+  batch_size : 8
   grad_clip : 1.0
 
   lr_ramp_steps : 100
@@ -15,12 +15,11 @@ train:
   learning_rate_init : 1.0e-4
   learning_rate_target : 3.0e-6
 
-  do_log : false
-  log_interval : 5
+  log_interval : 25
   checkpoint_interval : 100
   eval_interval : 100
 
   pipeline : "SentimentPipeline"
-  orchestrator : "SentimentOrchestrator"
+  orchestrator : "OfflineSentimentOrchestrator"
 
   accelerate : False

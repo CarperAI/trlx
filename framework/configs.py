@@ -25,7 +25,6 @@ class TrainConfig:
     learning_rate_init: float
     learning_rate_target: float
 
-    do_log: bool  # Log to WANDB?
     log_interval: int
     checkpoint_interval: int
     eval_interval : int
