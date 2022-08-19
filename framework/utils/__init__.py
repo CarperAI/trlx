@@ -1,6 +1,13 @@
 from functools import reduce
+import os
+import time
 
 from typing import Iterable, List, Any, Callable
+from torchtyping import TensorType 
+
+import torch
+from torch.optim.lr_scheduler import LinearLR, ChainedScheduler
+import numpy as np
 
 def flatten(L : Iterable[Iterable[Any]]) -> Iterable[Any]:
     """
@@ -16,8 +23,6 @@ def chunk(L : Iterable[Any], chunk_size : int) -> List[Iterable[Any]]:
 
 # Training utils
 
-from torch.optim.lr_scheduler import LinearLR, ChainedScheduler
-
 def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
     return ChainedScheduler(
         [
@@ -26,8 +31,6 @@ def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
         ]
     )
     
-import os
-
 def safe_mkdir(path : str):
     """
     Make directory if it doesn't exist, otherwise do nothing
@@ -36,7 +39,7 @@ def safe_mkdir(path : str):
         return
     os.mkdir(path)
 
-import time
+# Stats
 
 class Clock:
     """
@@ -76,3 +79,24 @@ class Clock:
             self.total_time = 0
             
         return sec_per_samp * n_samp
+
+# Sampling
+
+def topk_mask(xs : TensorType["Batch", "Vocab"], k : int):
+    """
+    Takes batched distribution over tokens and masks out scores for tokens
+    that are not in the top k for that distribution.
+    """
+
+    # Get topk per distribution
+    # For each dist, getting last value gives k-th largest
+    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
+    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
+
+# Sentiment/scores
+
+def sentiment_score(sentiments : Iterable[float]):
+    """
+    Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
+    """
+    sentiments = torch.tensor([-s['score'] if s['label'] == "NEGATIVE" else s['score'] for s in sentiments])
