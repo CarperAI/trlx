@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict, Callable
+from typing import Dict, Callable, Iterable
 import sys
 import os
 
@@ -49,6 +49,20 @@ class BaseRLModel:
         """
         Given RLElement with state, produce an action and add it to the RLElement.
         Orchestrator should call this, get reward and push subsequent RLElement to RolloutStore
+        """
+        pass
+
+    @abstractmethod
+    def sample(self, prompts : Iterable[str], length : int, n_samples : int) -> Iterable[str]:
+        """
+        Sample from the language. Takes prompts and maximum length to generate.
+
+        :param prompts: List of prompts to tokenize and use as context
+        
+        :param length: How many new tokens to genrate for each prompt
+        :type length: int
+
+        :param n_samples: Default behavior is to take number of prompts as this
         """
         pass
     

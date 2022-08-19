@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Iterable
 
 from framework.data import RLElement, BatchElement
 from framework.data.sentiment import SentimentRLElement
@@ -7,7 +7,7 @@ from framework.model import BaseRLModel, register_model
 from framework.pipeline.sentiment import SentimentRolloutStorage
 
 from framework.model.nn import QVModel
-from framework.utils import rampup_decay, safe_mkdir, Clock
+from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
 
 from transformers import AutoTokenizer, AutoConfig
 import os
@@ -29,7 +29,10 @@ class SentimentILQLModel(BaseRLModel):
 
         self.model = QVModel(self.config.model.model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.model_path)
+
         self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = 'left'
+
         self.model_config = AutoConfig.from_pretrained(self.config.model.model_path)
         self.device = self.config.model.device
 
@@ -37,6 +40,7 @@ class SentimentILQLModel(BaseRLModel):
 
         # All parameters specific to ILQL, move to config later? Not sure how
         self.tau = 0.7
+        self.beta = 1
         self.cql_scale = 1.0e-4
         self.sync_every = 50
         self.max_len = 512
@@ -67,6 +71,30 @@ class SentimentILQLModel(BaseRLModel):
         data.action = action
         return data
 
+    @torch.inference_mode()
+    def sample(self, prompts : Iterable[str] = None, length : int = 32, n_samples = 32) -> Iterable[str]:
+        if prompts is None:
+            prompts = [self.tokenizer.bos_token] * n_samples
+        
+        query = self.tokenize(prompts)["input_ids"].to(self.device) # [B, N]
+        gen_tokens = torch.zeros(len(query), 0, dtype = torch.long, device = self.device) # generated tokens [B,0] at start
+
+        for _ in range(length):
+            # Get outputs for last token in sequence
+            model_out = self.model(input_ids = query)
+            logits, qs, vs = [model_out[k][:, -1, :] for k in ["lm_out", "q_out", "v_out"]]
+
+            adv = qs - vs
+            pi = F.log_softmax(logits, -1)
+            modpi = topk_mask(pi + self.beta * adv, 10)
+            ps = F.softmax(modpi, -1)
+
+            tokens = torch.multinomial(ps, 1)
+            query = torch.cat([query[:,1:], tokens], dim = -1) # [B, N]
+            gen_tokens = torch.cat([gen_tokens, tokens], dim = -1)
+        
+        res = [prompt + self.tokenizer.decode(gen) for (prompt, gen) in zip(prompts, gen_tokens)]
+        return res
 
     def get_components(self) -> Dict[str, any]:
         components = {
