@@ -4,7 +4,7 @@ from transformers import pipeline as PIPE
 from framework.orchestrator import Orchestrator, register_orchestrator
 from framework.pipeline.sentiment import SentimentPipeline
 from framework.model import BaseRLModel
-from framework.utils import chunk, flatten
+from framework.utils import chunk, flatten, sentiment_score
 
 from tqdm import tqdm
 
@@ -18,9 +18,9 @@ class OfflineSentimentOrchestrator(Orchestrator):
         self.sentiment_pipe = PIPE('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
 
     def make_experience(self, chunk_size = 512):
-        text = self.pipeline.text[:chunk_size * 2]
+        text = self.pipeline.text[:chunk_size]
         sentiments = [self.sentiment_pipe(batch, truncation = True, max_length = 512) for batch in tqdm(chunk(text, chunk_size))]
         sentiments = flatten(sentiments)
-        sentiments = torch.tensor([-s['score'] if s['label'] == "NEGATIVE" else s['score'] for s in sentiments])
+        sentiments = sentiment_score(sentiments)
 
         self.rl_model.push_to_store((text, sentiments))
