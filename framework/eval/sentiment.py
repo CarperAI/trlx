@@ -14,9 +14,9 @@ def sentiment_eval(model : BaseRLModel) -> float:
     :returns: Average sentiment score (< 0 => negative > 0 => positive)
     :rtype: float
     """
-    total_samples = 1024
-    sample_chunk_size = 32
-    sentiment_chunk_size = 512
+    total_samples = 32
+    sample_chunk_size = 8
+    sentiment_chunk_size = min(512, total_samples)
 
     with torch.no_grad():
         samples = [model.sample(length = 32, n_samples = sample_chunk_size) for _ in range(total_samples//sample_chunk_size)]

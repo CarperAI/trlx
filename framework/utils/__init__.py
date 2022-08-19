@@ -100,3 +100,4 @@ def sentiment_score(sentiments : Iterable[float]):
     Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
     """
     sentiments = torch.tensor([-s['score'] if s['label'] == "NEGATIVE" else s['score'] for s in sentiments])
+    return sentiments

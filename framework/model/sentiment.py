@@ -155,7 +155,7 @@ class SentimentILQLModel(BaseRLModel):
             )
 
             loss = loss_q + loss_v + loss_awac + self.cql_scale * loss_cql
-            return loss 
+            return loss, loss_awac # overall less and loss for the AR task
         
         for epoch in range(self.config.train.epochs):
             for iter, (batch, reward) in enumerate(loader):
@@ -164,7 +164,7 @@ class SentimentILQLModel(BaseRLModel):
                 tokens = batch.tokens.to(device)
                 masks = batch.masks.to(device)
                 reward = reward.to(device)
-                loss = get_loss(tokens, masks, reward)
+                loss, ar_loss = get_loss(tokens, masks, reward)
 
                 self.opt.zero_grad()
                 loss.backward()
@@ -181,12 +181,15 @@ class SentimentILQLModel(BaseRLModel):
                 if intervals["do_log"]:
                     total_epochs = self.config.train.epochs
                     total_iters = len(loader)
+
                     loss = loss.item()
+                    ar_loss = ar_loss.item()
+
                     sec_per_1k = timer.get_stat(n_samp = 1000, reset = True)
                     print(f"Epoch [{epoch}/{total_epochs}]: Batch [{iter}/{total_iters}]: " + \
                         f"Loss {loss:.5f} (Time Per 1k: {sec_per_1k:.2f}s)")
                     if log_fn is not None:
-                        log_fn({"Train Loss":loss, "Seconds Per 1k Samples":sec_per_1k})
+                        log_fn({"Train Loss":loss, "Autoregressive CE Loss":ar_loss, "Seconds Per 1k Samples":sec_per_1k})
                 if intervals["do_save"]:
                     self.save("./")
                     if save_fn is not None:
