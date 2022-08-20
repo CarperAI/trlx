@@ -43,7 +43,4 @@ class QVModel(nn.Module):
     def sync_target(self, alpha):
         for target, src in zip(self.target_q.parameters(), self.q.parameters()):
             target.data.copy_((alpha * src.data) + (1.0 - alpha) * target.data)
-    
-
-
-
+            

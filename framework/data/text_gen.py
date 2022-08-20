@@ -18,3 +18,4 @@ class TextRLElement(RLElement):
     state : str = None
     action : int = None
     reward : float = None
+    

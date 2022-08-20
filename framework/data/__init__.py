@@ -37,3 +37,4 @@ class BatchElement:
     """
     tokens : TensorType["BATCH", "SEQ_LEN"]
     masks : TensorType["BATCH", "SEQ_LEN"]
+    

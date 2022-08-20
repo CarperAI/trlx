@@ -83,4 +83,5 @@ class BaseRolloutStore(Dataset):
         :param prep_fn: Applied to RLElement after collation (typically tokenizer)
         :type prep_fn: Callable
         """
-        pass    
+        pass
+    

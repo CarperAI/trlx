@@ -55,4 +55,5 @@ class TRLConfig:
     def to_dict(self):
         data = self.model.__dict__.copy()
         data.update(self.train_job.__dict__)
-        return 
+        return
+        
