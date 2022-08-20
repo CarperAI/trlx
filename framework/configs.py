@@ -5,7 +5,7 @@ import yaml
 @dataclass
 class ModelConfig:
     model_path : str
-    model_arch : str # One of the architectures present in framework.model
+    model_type : str # One of the architectures present in framework.model
     device : str
     
     @classmethod

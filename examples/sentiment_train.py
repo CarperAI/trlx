@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     cfg = TRLConfig.load_yaml("configs/sentiment_config.yml")
 
-    model : SentimentILQLModel = get_model(cfg.model.model_arch)(cfg)
+    model : SentimentILQLModel = get_model(cfg.model.model_type)(cfg)
     wandb.watch(model.model)
 
     pipeline : SentimentPipeline = get_pipeline(cfg.train.pipeline)()

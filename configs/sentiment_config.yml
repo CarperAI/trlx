@@ -1,6 +1,6 @@
 model:
   model_path : "gpt2"
-  model_arch : "SentimentILQLModel"
+  model_type : "SentimentILQLModel"
   device : "cuda"
 
 train:
