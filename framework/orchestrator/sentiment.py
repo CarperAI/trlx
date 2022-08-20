@@ -1,5 +1,5 @@
 import torch
-from transformers import pipeline as PIPE
+from transformers import pipeline as tfpipeline
 
 from framework.orchestrator import Orchestrator, register_orchestrator
 from framework.pipeline.sentiment import SentimentPipeline
@@ -15,7 +15,7 @@ class OfflineSentimentOrchestrator(Orchestrator):
         self.rl_model = rl_model
 
         pipe_device = 0 if torch.cuda.is_available() else -1
-        self.sentiment_pipe = PIPE('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
+        self.sentiment_pipe = tfpipeline('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
 
     def make_experience(self, chunk_size = 512):
         text = self.pipeline.text[:chunk_size]

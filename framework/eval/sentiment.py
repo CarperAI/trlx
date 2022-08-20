@@ -1,4 +1,4 @@
-from transformers import pipeline as PIPE
+from transformers import pipeline as tfpipeline
 import torch
 
 from framework.model import BaseRLModel
@@ -24,7 +24,7 @@ def sentiment_eval(model : BaseRLModel) -> float:
         samples_chunks = chunk(samples, sentiment_chunk_size)
 
         pipe_device = 0 if torch.cuda.is_available() else -1
-        pipe = PIPE('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
+        pipe = tfpipeline('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
         sentiments = [pipe(chunk) for chunk in samples_chunks]
         sentiments = flatten(sentiments)
         sentiments = sentiment_score(sentiments)
