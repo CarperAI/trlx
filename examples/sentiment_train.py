@@ -31,4 +31,3 @@ if __name__ == "__main__":
 
     model.save("./")
     print("DONE!")
-    

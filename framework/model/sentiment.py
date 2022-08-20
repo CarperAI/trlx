@@ -197,4 +197,3 @@ class SentimentILQLModel(BaseRLModel):
                 if intervals["do_eval"]:
                     if eval_fn is not None:
                         eval_fn(self)
-                        

@@ -11,4 +11,3 @@ if __name__ == "__main__":
     samples = model.sample(["This movie was so"] * 20)
     for sample in samples:
         print(sample)
-        

@@ -81,4 +81,3 @@ class SentimentRolloutStorage(BaseRolloutStore):
                 return res
         
         return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
-        

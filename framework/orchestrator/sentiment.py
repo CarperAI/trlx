@@ -27,4 +27,3 @@ class OfflineSentimentOrchestrator(Orchestrator):
 
         # Push text and sentiment (i.e. reward) to models rollout storage
         self.rl_model.push_to_store((text, sentiments))
-        

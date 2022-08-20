@@ -35,7 +35,6 @@ def sentiment_eval(model : BaseRLModel) -> float:
         
         # return average sentiment across all samples
         return sentiments.mean().item()
-        
 
 
 
