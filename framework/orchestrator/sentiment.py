@@ -18,9 +18,12 @@ class OfflineSentimentOrchestrator(Orchestrator):
         self.sentiment_pipe = tfpipeline('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
 
     def make_experience(self, chunk_size = 512):
-        text = self.pipeline.text[:chunk_size]
+        text = self.pipeline.text
+
+        # Run all text in pipeline through sentiment analysis model to get sentiment scores for entire dataset
         sentiments = [self.sentiment_pipe(batch, truncation = True, max_length = 512) for batch in tqdm(chunk(text, chunk_size))]
         sentiments = flatten(sentiments)
         sentiments = sentiment_score(sentiments)
 
+        # Push text and sentiment (i.e. reward) to models rollout storage
         self.rl_model.push_to_store((text, sentiments))

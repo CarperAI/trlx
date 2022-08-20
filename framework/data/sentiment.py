@@ -12,5 +12,5 @@ class SentimentGeneralElement:
 @dataclass
 class SentimentRLElement:
     text : Iterable[str]
-    score : TensorType["N"]
+    score : TensorType["N"] # Corresponds to sentiment
     action : TensorType["N"] = None
