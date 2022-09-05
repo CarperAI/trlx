@@ -1,5 +1,25 @@
 from transformers import Trainer
 import torch
+import torch.nn.functional as F
+import wandb
+
+
+def clip_by_value(x, tensor_min, tensor_max):
+    """
+    Tensor extenstion to torch.clamp
+    https://github.com/pytorch/pytorch/issues/2793#issuecomment-428784713
+    """
+    clipped = torch.max(torch.min(x, tensor_max), tensor_min)
+    return clipped
+
+def whiten(values, shift_mean=True):
+    """Whiten values."""
+    mean, var = torch.mean(values), torch.var(values)
+    whitened = (values - mean) * torch.rsqrt(var + 1e-8)
+    if not shift_mean:
+        whitened += mean
+    return whitened
+
 
 class AdaptiveKLController:
 	"""
@@ -19,11 +39,13 @@ class AdaptiveKLController:
 
 
 class PPOTrainer(Trainer):
-	def init_ppo_params(self, ppo_params, sent_kwargs, gen_kwargs, ref_model):
+	def init_ppo_params(self, ppo_params, sent_kwargs, gen_kwargs, ref_model, tokenizer, sentiment_pipe):
 		self.ppo_params = ppo_params
 		self.ref_model = ref_model
 		self.sent_kwargs = sent_kwargs
 		self.gen_kwargs = gen_kwargs
+		self.tokenizer = tokenizer
+		self.sentiment_pipe = sentiment_pipe
 
 		# Set kl controller
 		if self.ppo_params['adap_kl_ctrl']:
@@ -33,30 +55,6 @@ class PPOTrainer(Trainer):
 		else:
 			self.kl_ctl = FixedKLController(self.ppo_params['init_kl_coef'])
 
-	def batched_forward_pass(self, queries, responses):
-		input_ids = self.data_collator([torch.cat([q, r]) for q, r in zip(queries, responses)])["input_ids"]
-		with torch.no_grad():
-			logits, _, v = self.model(input_ids)
-			ref_logits, _, _ = self.ref_model(input_ids.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
-			ref_logits = ref_logits.to(self.device)
-		logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
-		ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
-
-		start = len(queries[0])-1  # TODO(dahoas): Do different queries have different lengths
-		end = len(queries[0]) + len(responses[0]) - 1
-		all_values = v[:, start-1:end-1]
-		all_logprobs = logprobs[:, start:end]
-		all_ref_logprobs = all_ref_logprobs[:, start:end]
-		return all_logprobs, all_ref_logprobs, all_values
-
-	def compute_rewards(self, scores, logprobs, ref_logprobs):
-		"""Compute per token rewards from scores and KL-penalty."""
-		kl = logprob - ref_logprob
-		non_score_reward = -self.kl_ctl.value * kl
-		reward = non_score_reward.clone()
-		reward[:, -1] += score
-		return rewards, non_score_rewards
-
 	def logprobs_from_logits(self, logits, labels):
 		"""
 		See: https://github.com/pytorch/pytorch/issues/563#issuecomment-330103591
@@ -65,26 +63,65 @@ class PPOTrainer(Trainer):
 		logpy = torch.gather(logp, 2, labels.unsqueeze(2)).squeeze(-1)
 		return logpy
 
-	def ppo_loss(self, query_tensors, response_tensors, rewards):
-		logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
-		rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
+	def batched_forward_pass(self, queries, responses, input_ids):
+		with torch.no_grad():
+			logits, _, v = self.model(input_ids)
+			ref_logits, _, _ = self.ref_model(input_ids.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
+			ref_logits = ref_logits.to(self.model.device)
+		logprobs = self.logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
+		ref_logprobs = self.logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
 
-		logits, _, vpred = self.model(model_input)
-		logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
+		start = len(queries[0])-1  # TODO(dahoas): Do different queries have different lengths
+		end = len(queries[0]) + len(responses[0]) - 1
+		all_values = v[:, start-1:end-1]
+		all_logprobs = logprobs[:, start:end]
+		all_ref_logprobs = ref_logprobs[:, start:end]
+		return all_logprobs, all_ref_logprobs, all_values
+
+	def compute_rewards(self, scores, logprobs, ref_logprobs):
+		"""Compute per token rewards from scores and KL-penalty."""
+		kl = logprobs - ref_logprobs
+		non_score_rewards = -self.kl_ctl.value * kl
+		rewards = non_score_rewards.clone()
+		rewards[:, -1] += scores
+		return rewards, non_score_rewards
+
+	def ppo_loss(self, queries, responses, scores):
+		input_ids = torch.stack([torch.cat([q, r]) for q, r in zip(queries, responses)])  # TODO(dahoas): may be inefficient
+		old_logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses, input_ids)
+		rewards, non_score_reward = self.compute_rewards(scores, old_logprobs, ref_logprobs)
+
+		lastgaelam = 0
+		advantages_reversed = []
+		gen_len = self.gen_kwargs['max_length']
+
+		for t in reversed(range(gen_len)):
+			nextvalues = values[:, t + 1] if t < gen_len - 1 else 0.0
+			delta = rewards[:, t] + self.ppo_params['gamma'] * nextvalues - values[:, t]
+			lastgaelam = delta + self.ppo_params['gamma'] * self.ppo_params['lam'] * lastgaelam
+			advantages_reversed.append(lastgaelam)
+		advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
+
+		returns = advantages + values
+		advantages = whiten(advantages)
+		advantages = advantages.detach()
+
+		logits, _, vpreds = self.model(input_ids)
+		logprobs = self.logprobs_from_logits(logits[:,:-1,:], input_ids[:, 1:])
 		# Only the generation part of the values/logprobs is needed
-		logprob, vpred = logprob[:, -gen_len:], vpred[:,-gen_len-1:-1]
+		logprobs, vpreds = logprobs[:, -gen_len:], vpreds[:,-gen_len-1:-1]
 
 		# PPO loss computation
-		vpredclipped = clip_by_value(vpred,
+		vpredsclipped = clip_by_value(vpreds,
 									 values - self.ppo_params["cliprange_value"],
 									 values + self.ppo_params["cliprange_value"])
 
-		vf_losses1 = (vpred - returns)**2
-		vf_losses2 = (vpredclipped - returns)**2
+		vf_losses1 = (vpreds - returns)**2
+		vf_losses2 = (vpredsclipped - returns)**2
 		vf_loss = .5 * torch.mean(torch.max(vf_losses1, vf_losses2))
 		vf_clipfrac =  torch.mean(torch.gt(vf_losses2, vf_losses1).double())
 
-		ratio = torch.exp(logprob - old_logprobs)
+		ratio = torch.exp(logprobs - old_logprobs)
 
 		pg_losses = -advantages * ratio
 		pg_losses2 = -advantages * torch.clamp(ratio,
@@ -95,17 +132,21 @@ class PPOTrainer(Trainer):
 		pg_clipfrac = torch.mean(torch.gt(pg_losses2, pg_losses).double())
 
 		loss = pg_loss + self.ppo_params['vf_coef'] * vf_loss
+
+		#TODO(dahoas): update kl_ctrl
+		kl = old_logprobs - ref_logprobs
+		mean_kl = torch.mean(torch.sum(kl, dim=1)).item()
+		self.kl_ctl.update(mean_kl, self.batch_size)
 		return loss
 
 	def compute_loss(self, model, inputs):
 		batch_input_tokens = inputs.get('input_ids')
-		print(batch_input_tokens)
-		response_tensors = model.generate(batch_input_tokens, **self.gen_kwargs)  # I can batch generate
-		print(response_tensors)
-		responses = [self.tokenizer.decode(r.squeeze()) for r in response_tensors]
-		texts = [q + r for q,r in zip(input_queries, responses)]
-		pipe_outputs = sentiment_pipe(texts, **self.sent_kwargs)  # TODO(dahoas): set up sentiment pipe
-		rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(self.device)  # TODO(dahoas): Correct device?
-
-		loss = self.ppo_loss(query_tensors, response_tensors, rewards)
+		with torch.no_grad():
+			response_tensors = model.generate(batch_input_tokens, **self.gen_kwargs)  # I can batch generate
+		responses = [self.tokenizer.decode(r.squeeze()) for r in response_tensors]  # Only scoring responses, not prefix
+		pipe_outputs = self.sentiment_pipe(responses, **self.sent_kwargs)  # TODO(dahoas): set up sentiment pipe
+		rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(self.model.device)  # TODO(dahoas): Correct device?
+		# Log rewards
+		wandb.log({'mean_rewards': torch.mean(rewards).item()})
+		loss = self.ppo_loss(batch_input_tokens, response_tensors, rewards)
 		return loss

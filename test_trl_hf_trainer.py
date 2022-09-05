@@ -17,7 +17,7 @@ from transformers import AutoTokenizer, pipeline, TrainingArguments, IntervalStr
 from trl.gpt2 import GPT2HeadWithValueModel
 from ppo_hf_trainer import PPOTrainer
 import time
-os.environ["WANDB_DISABLED"] = "true"  # TODO(dahoas): remove
+#os.environ["WANDB_DISABLED"] = "true"  # TODO(dahoas): remove
 
 # Training config
 config = {
@@ -55,7 +55,7 @@ output_size = LengthSampler(config["txt_out_min_len"], config["txt_out_max_len"]
 # Model setup
 gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
-gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
+gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name']).cuda()  # Need to place model on gpu b/c not handled by HF Trainer
 gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
 gpt2_model.model_parallel = True  # Set true for trainer
 
@@ -63,17 +63,19 @@ gpt2_model.model_parallel = True  # Set true for trainer
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 gpt2_tokenizer.padding_side = "left"  # Note: This is important otherwise generating continuation from endoftext token
 def tokenize(sample):
-	encoding = gpt2_tokenizer(sample["review"], padding='max_length', max_length=input_size(), truncation=True, return_tensors='pt')
-	return encoding
+	encoding = gpt2_tokenizer(sample["text"], padding='max_length', max_length=input_size(), truncation=True)
+	sample['input_ids'] = encoding['input_ids']
+	sample['attention_mask'] = encoding['attention_mask']
+	#print(sample)
+	return sample
 
 # load imdb with datasets
 ds = load_dataset('imdb', split='train')
-ds = ds.rename_columns({'text': 'review', 'label': 'sentiment'})
-ds = ds.filter(lambda x: len(x["review"])>200, batched=False)
+ds = ds.filter(lambda x: len(x["text"])>200, batched=False)
 ds = ds.map(tokenize, batched=False)
 
 def collator(data):
-	return {(key, torch.stack([d[key] for d in data])) for key in data[0]}
+	return {key: torch.stack([torch.tensor(d[key]) for d in data]) for key in ['input_ids', 'attention_mask']}
 
 train_size = int(0.95 * len(ds))
 train_dataset, eval_dataset = random_split(ds, [train_size, len(ds) - train_size])
@@ -103,14 +105,14 @@ gen_kwargs = {
 	"pad_token_id": gpt2_tokenizer.eos_token_id
 }
 
-training_args = TrainingArguments(output_dir='./results', num_train_epochs=4.3, logging_steps=100, save_strategy=IntervalStrategy.NO,
+training_args = TrainingArguments(output_dir='./results', num_train_epochs=4.3, logging_steps=10, save_strategy=IntervalStrategy.NO,
                                   per_device_train_batch_size=16, per_device_eval_batch_size=16, warmup_steps=100,
                                   weight_decay=0.01, logging_dir='./logs', fp16=True)
 
 # Set up trainer
 trainer = PPOTrainer(model=gpt2_model, args=training_args, train_dataset=train_dataset,
 		eval_dataset=eval_dataset, data_collator=collator)
-trainer.init_ppo_params(ppo_config, sent_kwargs, gen_kwargs, gpt2_model_ref)
+trainer.init_ppo_params(ppo_config, sent_kwargs, gen_kwargs, gpt2_model_ref, gpt2_tokenizer, sentiment_pipe)
 trainer.train()
 
 
