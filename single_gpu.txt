@@ -1,0 +1,43 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-683ceae8ce70e679.arrow
+wandb: Currently logged in as: dahoas. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.13.2
+wandb: Run data is saved locally in /fsx/alex/repos/trl/wandb/run-20220905_001351-31ekw3qr
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run noble-brook-13
+wandb: ⭐️ View project at https://wandb.ai/dahoas/trl_accelerate
+wandb: 🚀 View run at https://wandb.ai/dahoas/trl_accelerate/runs/31ekw3qr
+DEVICE:  cuda:0
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.7.attn.masked_bias', 'h.2.attn.masked_bias', 'h.6.attn.masked_bias', 'v_head.summary.weight', 'h.3.attn.masked_bias', 'v_head.summary.bias', 'h.5.attn.masked_bias', 'h.0.attn.masked_bias', 'h.9.attn.masked_bias', 'h.1.attn.masked_bias', 'h.4.attn.masked_bias', 'h.10.attn.masked_bias', 'h.11.attn.masked_bias', 'h.8.attn.masked_bias', 'lm_head.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.7.attn.masked_bias', 'h.2.attn.masked_bias', 'h.6.attn.masked_bias', 'v_head.summary.weight', 'h.3.attn.masked_bias', 'v_head.summary.bias', 'h.5.attn.masked_bias', 'h.0.attn.masked_bias', 'h.9.attn.masked_bias', 'h.1.attn.masked_bias', 'h.4.attn.masked_bias', 'h.10.attn.masked_bias', 'h.11.attn.masked_bias', 'h.8.attn.masked_bias', 'lm_head.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+NUM EPOCHS:  1250
+0it [00:00, ?it/s]1it [00:17, 17.35s/it]2it [00:35, 17.54s/it]3it [00:52, 17.48s/it]4it [01:10, 17.56s/it]5it [01:28, 17.85s/it]6it [01:46, 17.76s/it]7it [02:03, 17.62s/it]8it [02:21, 17.66s/it]9it [02:38, 17.54s/it]10it [02:56, 17.57s/it]11it [03:13, 17.49s/it]12it [03:31, 17.58s/it]13it [03:48, 17.51s/it]14it [04:05, 17.37s/it]15it [04:22, 17.37s/it]16it [04:40, 17.35s/it]17it [04:57, 17.45s/it]18it [05:15, 17.48s/it]19it [05:33, 17.51s/it]20it [05:50, 17.45s/it]21it [06:07, 17.42s/it]22it [06:25, 17.47s/it]23it [06:42, 17.38s/it]24it [06:59, 17.43s/it]25it [07:17, 17.52s/it]26it [07:35, 17.53s/it]27it [07:52, 17.59s/it]28it [08:10, 17.56s/it]29it [08:28, 17.66s/it]30it [08:53, 19.78s/it]31it [09:21, 22.38s/it]32it [09:47, 23.59s/it]33it [10:14, 24.55s/it]34it [10:39, 24.55s/it]35it [11:04, 24.60s/it]36it [11:28, 24.61s/it]37it [11:52, 24.43s/it]38it [12:18, 24.93s/it]39it [12:46, 25.91s/it]40it [13:15, 26.69s/it]41it [13:44, 27.50s/it]42it [14:14, 28.26s/it]43it [14:46, 29.20s/it]44it [15:17, 29.70s/it]45it [15:47, 29.94s/it]46it [16:18, 30.30s/it]47it [16:50, 30.81s/it]48it [17:22, 31.08s/it]49it [17:55, 31.56s/it]50it [18:27, 31.84s/it]51it [18:59, 31.89s/it]52it [19:30, 31.56s/it]53it [19:58, 30.59s/it]54it [20:26, 29.76s/it]55it [20:51, 28.30s/it]56it [21:15, 26.96s/it]57it [21:39, 26.17s/it]58it [22:04, 25.87s/it]59it [22:32, 26.33s/it]60it [23:02, 27.59s/it]61it [23:34, 28.78s/it]62it [24:05, 29.51s/it]63it [24:38, 30.44s/it]64it [25:08, 30.49s/it]65it [25:39, 30.57s/it]66it [26:10, 30.67s/it]67it [26:41, 30.70s/it]68it [27:10, 30.16s/it]69it [27:38, 29.63s/it]70it [28:06, 29.25s/it]71it [28:33, 28.57s/it]72it [28:58, 27.31s/it]73it [29:22, 26.44s/it]74it [29:46, 25.78s/it]75it [30:14, 26.48s/it]76it [30:43, 27.16s/it]77it [31:12, 27.72s/it]78it [31:42, 28.39s/it]79it [32:12, 28.85s/it]80it [32:42, 29.02s/it]81it [33:12, 29.43s/it]82it [33:43, 29.80s/it]83it [34:13, 29.92s/it]84it [34:43, 30.16s/it]85it [35:15, 30.68s/it]86it [35:47, 31.03s/it]87it [36:19, 31.19s/it]88it [36:54, 32.42s/it]89it [37:27, 32.47s/it]90it [37:57, 31.92s/it]91it [38:24, 30.47s/it]92it [38:49, 28.77s/it]93it [39:14, 27.48s/it]94it [39:39, 26.70s/it]95it [40:06, 26.81s/it]96it [40:34, 27.30s/it]97it [41:04, 27.95s/it]98it [41:36, 29.23s/it]99it [42:07, 29.87s/it]100it [42:39, 30.50s/it]101it [43:12, 31.30s/it]102it [43:41, 30.63s/it]103it [44:13, 30.98s/it]104it [44:46, 31.54s/it]105it [45:20, 32.17s/it]106it [45:52, 32.30s/it]107it [46:24, 32.09s/it]108it [46:55, 31.94s/it]109it [47:26, 31.46s/it]110it [47:56, 31.16s/it]111it [48:27, 31.17s/it]112it [48:56, 30.41s/it]113it [49:21, 28.66s/it]114it [49:46, 27.62s/it]115it [50:10, 26.67s/it]116it [50:36, 26.36s/it]117it [51:02, 26.31s/it]118it [51:30, 26.86s/it]119it [51:59, 27.49s/it]120it [52:28, 27.79s/it]121it [52:58, 28.56s/it]122it [53:31, 29.82s/it]123it [54:02, 30.36s/it]124it [54:35, 31.03s/it]125it [55:07, 31.35s/it]126it [55:37, 31.04s/it]127it [56:08, 30.96s/it]WARNING:torch.distributed.elastic.agent.server.api:Received 15 death signal, shutting down workers
+WARNING:torch.distributed.elastic.multiprocessing.api:Sending process 40954 closing signal SIGTERM
+Traceback (most recent call last):
+  File "/fsx/alex/.envs/accelerate/bin/torchrun", line 8, in <module>
+    sys.exit(main())
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 345, in wrapper
+    return f(*args, **kwargs)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/run.py", line 761, in main
+    run(args)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/run.py", line 752, in run
+    elastic_launch(
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/launcher/api.py", line 131, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/launcher/api.py", line 236, in launch_agent
+    result = agent.run()
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/elastic/metrics/api.py", line 125, in wrapper
+    result = f(*args, **kwargs)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/elastic/agent/server/api.py", line 709, in run
+    result = self._invoke_run(role)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/elastic/agent/server/api.py", line 850, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 60, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 40897 got signal: 15

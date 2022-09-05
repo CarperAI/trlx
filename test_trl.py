@@ -42,7 +42,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("DEVICE: ", device)
 pipe_device = 0 if torch.cuda.is_available() else -1
 
-wandb.init(name='trl-test', project='trl-test', config=config,)
+wandb.init(project='trl_accelerate', config=config,)
 
 # load imdb with datasets
 ds = load_dataset('imdb', split='train')
@@ -68,8 +68,6 @@ gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
 
 gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
-
-wandb.watch(gpt2_model, log='all')
 
 gpt2_model.to(device)
 #gpt2_model_ref.to(device)
@@ -130,6 +128,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
 	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
 	#print(pipe_outputs)
 	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
+	wandb.log({'mean_reward': torch.mean(rewards).item()})
 	timing['time/get_sentiment_preds'] = time.time()-t
 
 	#### Run PPO step
@@ -140,13 +139,11 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
 	#### Log everything
 	timing['time/epoch'] = time.time()-t0
 	table_rows = [list(r) for r in zip(batch['query'], batch['response'], rewards.cpu().tolist())]
-	logs.update({'game_log': wandb.Table(columns=['query', 'response', 'reward'], rows=table_rows)})
 	logs.update(timing)
 	logs.update(stats)
 	logs['env/reward_mean'] = torch.mean(rewards).cpu().numpy()
 	logs['env/reward_std'] = torch.std(rewards).cpu().numpy()
 	logs['env/reward_dist'] = rewards.cpu().numpy()
-	wandb.log(logs)
 
 	#### get a batch from the dataset
 bs = 16

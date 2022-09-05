@@ -47,7 +47,6 @@ torchaudio==0.12.0+cu113
 torchvision==0.13.0+cu113
 tqdm==4.64.0
 transformers==4.20.1
--e git+https://github.com/CarperAI/trl@b5ea067d0416e40cd8b80db797ff03319c97d41c#egg=trl
 typing-extensions==4.3.0
 urllib3==1.26.10
 wandb==0.12.21

@@ -1,5 +1,5 @@
+import warnings
 import torch
-import wandb
 import time
 import os
 from tqdm import tqdm
@@ -15,14 +15,18 @@ from transformers import AutoTokenizer, pipeline
 
 from trl.gpt2 import GPT2HeadWithValueModel
 from trl.ppo import PPOTrainer
+import time
+
+# Ignore warnings
+warnings.filterwarnings("ignore") # TODO(dahoas): remove
 
 config = {
 	"model_name": "gpt2",
 	"cls_model_name": "gpt2",
 	"steps": 20000,
-	"batch_size": 4,
-	"forward_batch_size": 1,
-	"ppo_epochs": 1,
+	"batch_size": 16,
+	"forward_batch_size": 4,
+	"ppo_epochs": 4,
 	"txt_in_min_len": 2,
 	"txt_in_max_len": 8,
 	"txt_out_min_len": 4,
@@ -37,8 +41,6 @@ config = {
 	"cliprange_value":.2,
 	"vf_coef":.1,
 }
-
-
 
 pipe_device = 0 if torch.cuda.is_available() else -1
 
@@ -59,18 +61,19 @@ class LengthSampler:
 	def __init__(self, min_value, max_value):
 		self.values = list(range(min_value, max_value))
 	def __call__(self):
-		return np.random.choice(self.values)
+		return 5
+		#return np.random.choice(self.values)
 
 input_size = LengthSampler(config["txt_in_min_len"], config["txt_in_max_len"])
 output_size = LengthSampler(config["txt_out_min_len"], config["txt_out_max_len"])
 #input_size = config["txt_in_max_len"]
-#output_size = config["txt_out_max_len"
+#output_size = config["txt_out_max_len"]
 
 gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 
 gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
-gpt2_tokenizer.padding_size = "left"
+gpt2_tokenizer.padding_side = "left"
 def tokenize(sample):
 	encoding = gpt2_tokenizer(sample["review"], padding='max_length', max_length=input_size(), truncation=True)
 	sample["tokens"] = encoding['input_ids']
@@ -86,12 +89,10 @@ def collater(data):
 dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
 # Adding accelerator
-accelerator = Accelerator()
+accelerator = Accelerator(log_with='wandb')
+accelerator.init_trackers('trl_accelerate', config=config)
 device = accelerator.device
 print("DEVICE: ", device)
-
-if accelerator.is_main_process:
-	wandb.init(name='trl-test', project='trl-test', config=config,)
 
 gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
 gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
@@ -101,19 +102,9 @@ gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
 #	for p in m.parameters():
 #		p.requires_grad = False
 
-if accelerator.is_main_process:
-	wandb.watch(gpt2_model, log='all')
-
-#gpt2_model.to(device)
-#gpt2_model_ref.to(device)
-
-
-
 gen_kwargs = {
-	"min_length":-1,
-	"top_k": 0.0,
-	"top_p": 1.0,
-	"do_sample": True,
+	"max_length": 64,
+    "min_length": 20,
 	"pad_token_id": gpt2_tokenizer.eos_token_id
 }
 
@@ -136,11 +127,12 @@ if rank == 0:
 elif rank == 1:
 	text_in = "Are you human? "
 
-batch = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device)
+dummy_input = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device)
 
 # had to run this 1 time at the start else was giving device mismatch error.
 # So, before directly using `model.generate` pass a batch with dummy data through the model
-outputs = gpt2_model(**batch)
+# outputs = gpt2_model(**dummy_input)
+unwrapped_model = accelerator.unwrap_model(gpt2_model)
 
 print("NUM EPOCHS: ", total_ppo_epochs) if accelerator.is_main_process else None
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
@@ -151,14 +143,12 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	#### Get response from gpt2
 	t = time.time()
 	response_tensors = []
-	with torch.no_grad():
-		for i in range(config['batch_size']):
-			#unwrapped_model = accelerator.unwrap_model(gpt2_model)
-			gen_len = output_size()
-
-			response = gpt2_model.generate(query_tensors[i].unsqueeze(dim=0),
-										max_new_tokens=gen_len, synced_gpus=True, **gen_kwargs)
-			response_tensors.append(response.squeeze()[-gen_len:])
+	for i in range(config['batch_size']):
+		gen_len = output_size()
+		with torch.no_grad():
+			dummy_outputs = gpt2_model(**dummy_input)
+			response = unwrapped_model.generate(query_tensors[i].unsqueeze(dim=0), synced_gpus=True, **gen_kwargs)
+		response_tensors.append(response.squeeze()[-gen_len:])
 
 	batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
 	timing['time/get_response'] = time.time()-t
@@ -169,10 +159,13 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 	# may be dependent on the hf version
 	pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
 	rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
+	mean_reward = torch.mean(rewards).item()
+	accelerator.log({"mean_reward": mean_reward}, step=epoch)
 
 	#### Run PPO step
+	#### Get logprobs
 	stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
-	break
+
 print("FINISHED TRAINING")
 
 accelerator.wait_for_everyone()

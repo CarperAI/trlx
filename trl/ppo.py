@@ -146,10 +146,12 @@ class PPOTrainer:
         response_lengths = [len(r) for r in responses]
 
         t = time.time()
+        # TODO(alexdahoas): verified
         logprobs, ref_logprobs, values = self.batched_forward_pass(queries, responses)
         timing['time/ppo/forward_pass'] = time.time()-t
 
         t = time.time()
+        # TODO(dahoas): verified
         rewards, non_score_reward = self.compute_rewards(scores, logprobs, ref_logprobs)
         timing['time/ppo/compute_rewards'] = time.time()-t
 
@@ -158,12 +160,8 @@ class PPOTrainer:
         idxs = list(range(bs))
         for _ in range(self.ppo_params['ppo_epochs']):
             random.shuffle(idxs)
-            #print('len rewards', len(rewards))
-            #print('len queries', len(queries))
-            #print('batch size', bs)
             for i in range(bs):
                 idx = idxs[i]
-                print(f"Training minibatch {i}")
                 train_stats = self.train_minibatch(logprobs[idx].unsqueeze(0), values[idx].unsqueeze(0),
                                                    rewards[idx].unsqueeze(0), queries[idx].unsqueeze(0),
                                                    responses[idx].unsqueeze(0),
@@ -175,16 +173,15 @@ class PPOTrainer:
         train_stats = stack_dicts(all_stats)
 
         # reshape advantages/ratios such that they are not averaged.
-        train_stats['policy/advantages'] = torch.flatten(train_stats['policy/advantages']).unsqueeze(0)
-        train_stats['policy/advantages'] = torch.nan_to_num(train_stats['policy/advantages'], WANDB_PADDING)
-        train_stats['policy/ratio'] = torch.flatten(train_stats['policy/ratio']).unsqueeze(0)
+        #train_stats['policy/advantages'] = torch.flatten(train_stats['policy/advantages']).unsqueeze(0)
+        #train_stats['policy/advantages'] = torch.nan_to_num(train_stats['policy/advantages'], WANDB_PADDING)
+        #train_stats['policy/ratio'] = torch.flatten(train_stats['policy/ratio']).unsqueeze(0)
 
-        #stats = self.record_step_stats(scores=scores, logprobs=logprobs, ref_logprobs=ref_logprobs,
-        #                               non_score_reward=non_score_reward, train_stats=train_stats,
-        #                               kl_coef=self.kl_ctl.value)
-       #
-        #stats = stats_to_np(stats)
-        stats = {}
+        stats = self.record_step_stats(scores=scores, logprobs=logprobs, ref_logprobs=ref_logprobs,
+                                       non_score_reward=non_score_reward, train_stats=train_stats,
+                                       kl_coef=self.kl_ctl.value)
+       
+        stats = stats_to_np(stats)
         timing['time/ppo/calc_stats'] = time.time()-t
 
         self.kl_ctl.update(stats['objective/kl'], self.ppo_params['batch_size'])
@@ -221,16 +218,13 @@ class PPOTrainer:
 
     def train_minibatch(self, logprobs, values, rewards, query, response, model_input):
         """Train one PPO minibatch"""
-        #loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
-        logits, _, v = self.model(torch.cat([query[0], response[0]]))
-        loss = torch.sum(logits) + torch.sum(v)
+        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
         train_stats = {}
-        #loss = loss_p + loss_v
+        loss = loss_p + loss_v
         self.optimizer.zero_grad()
         if self.accelerator is None:
             loss.backward()
         else:
-            self.accelerator.wait_for_everyone()
             self.accelerator.backward(loss)
         self.optimizer.step()
         return train_stats
@@ -264,6 +258,7 @@ class PPOTrainer:
         advantages = whiten(advantages)
         advantages = advantages.detach()
 
+        # Q: How is this logprob different from old_logprobs
         logits, _, vpred = self.model(model_input)
         logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
 
@@ -326,5 +321,5 @@ class PPOTrainer:
 
         for k, v in data['train_stats'].items():
             stats[f'ppo/{k}'] = torch.mean(v, axis=0)
-        stats['ppo/val/var_explained'] = 1 - stats['ppo/val/error'] / stats['ppo/returns/var']
+        #stats['ppo/val/var_explained'] = 1 - stats['ppo/val/error'] / stats['ppo/returns/var']
         return stats

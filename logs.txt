@@ -1,0 +1,44 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-683ceae8ce70e679.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-683ceae8ce70e679.arrow
+DEVICE: DEVICE:   cuda:1cuda:0
+
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.2.attn.masked_bias', 'h.5.attn.masked_bias', 'v_head.summary.bias', 'h.3.attn.masked_bias', 'v_head.summary.weight', 'h.8.attn.masked_bias', 'lm_head.weight', 'h.7.attn.masked_bias', 'h.1.attn.masked_bias', 'h.4.attn.masked_bias', 'h.0.attn.masked_bias', 'h.11.attn.masked_bias', 'h.6.attn.masked_bias', 'h.10.attn.masked_bias', 'h.9.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.5.attn.masked_bias', 'v_head.summary.bias', 'h.10.attn.masked_bias', 'h.11.attn.masked_bias', 'h.8.attn.masked_bias', 'h.6.attn.masked_bias', 'h.1.attn.masked_bias', 'h.0.attn.masked_bias', 'lm_head.weight', 'h.4.attn.masked_bias', 'h.3.attn.masked_bias', 'h.2.attn.masked_bias', 'h.7.attn.masked_bias', 'h.9.attn.masked_bias', 'v_head.summary.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.5.attn.masked_bias', 'v_head.summary.bias', 'h.10.attn.masked_bias', 'h.11.attn.masked_bias', 'h.8.attn.masked_bias', 'h.6.attn.masked_bias', 'h.1.attn.masked_bias', 'h.0.attn.masked_bias', 'lm_head.weight', 'h.4.attn.masked_bias', 'h.3.attn.masked_bias', 'h.2.attn.masked_bias', 'h.7.attn.masked_bias', 'h.9.attn.masked_bias', 'v_head.summary.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.2.attn.masked_bias', 'h.5.attn.masked_bias', 'v_head.summary.bias', 'h.3.attn.masked_bias', 'v_head.summary.weight', 'h.8.attn.masked_bias', 'lm_head.weight', 'h.7.attn.masked_bias', 'h.1.attn.masked_bias', 'h.4.attn.masked_bias', 'h.0.attn.masked_bias', 'h.11.attn.masked_bias', 'h.6.attn.masked_bias', 'h.10.attn.masked_bias', 'h.9.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+NUM EPOCHS:  10
+0it [00:00, ?it/s]epoch 0
+epoch 0
+1it [00:02,  2.74s/it]epoch 1
+epoch 1
+epoch 2
+2it [00:06,  3.45s/it]epoch 2
+3it [00:07,  2.40s/it]epoch 3
+epoch 3
+4it [00:08,  1.90s/it]epoch 4
+epoch 4
+5it [00:10,  1.63s/it]epoch 5
+epoch 5
+6it [00:11,  1.47s/it]epoch 6
+epoch 6
+7it [00:12,  1.36s/it]epoch 7
+epoch 7
+8it [00:13,  1.29s/it]epoch 8
+epoch 8
+epoch9it [00:14,  1.25s/it] 9
+epoch 9
+FINISHED TRAINING
+10it [00:15,  1.24s/it]10it [00:15,  1.60s/it]
+FINISHED TRAINING
+FINISHED SAVING MODEL

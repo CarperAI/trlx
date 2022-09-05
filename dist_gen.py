@@ -23,7 +23,6 @@ def main():
     model.to(accelerator.device)
     print(accelerator.state)
 
-
     optimizer = accelerator.prepare(optimizer)
 
     rank = torch.distributed.get_rank()
@@ -56,7 +55,7 @@ def main():
     # Now compute ppo loss
     ## First compute logprobs and ref_logprobs
     collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-    for i in range(10):
+    for i in range(4):
         input_ids = collator([torch.cat([q, r]) for q, r in zip(query_tensors, response_tensors)])["input_ids"]
 
         with torch.no_grad():
@@ -102,10 +101,12 @@ def main():
         logprob = logprobs_from_logits(logits[:, :-1, :], input_ids[:, 1:])
         logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len-1:-1]
         vf_loss = torch.mean((vpred - returns)**2)
+        logprob_loss = torch.mean(logprob)
+        loss = logprob_loss + vf_loss
 
         # Backpropagate
         optimizer.zero_grad()
-        accelerator.backward(vf_loss)
+        accelerator.backward(loss)
         optimizer.step()
 
 
