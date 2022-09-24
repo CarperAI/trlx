@@ -9,6 +9,7 @@ from accelerate import Accelerator
 from torch.optim import Adam
 import random
 import pdb
+from transformers import AutoModelForCausalLM
 
 tqdm.pandas()
 
@@ -34,7 +35,7 @@ from trl.core import (logprobs_from_logits,
 
 
 # Ignore warnings
-warnings.filterwarnings("ignore") # TODO(dahoas): remove
+#warnings.filterwarnings("ignore") # TODO(dahoas): remove
 
 ppo_config = {
 	"model_name": "lvwerra/gpt2-imdb",
@@ -90,10 +91,13 @@ def collater(data):
 
 dataloader = torch.utils.data.DataLoader(ds, batch_size=ppo_config['batch_size'], collate_fn=collater)
 
-gpt2_model = GPT2HeadWithValueModel.from_pretrained(ppo_config['model_name'])
+#gpt2_model = GPT2HeadWithValueModel.from_pretrained(ppo_config['model_name'])
+gpt2_model = AutoModelForCausalLM.from_pretrained('gpt2')
 gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(ppo_config['model_name'])
 
 optimizer = Adam(gpt2_model.parameters(), lr=ppo_config['lr'])
+total_ppo_epochs = int(np.ceil(ppo_config["steps"]/ppo_config['batch_size']))
+#scheduler = torch.optim.lr_scheduler.CosieAnnealingLR(optimizer, total_ppo_epochs) this should not be needed
 
 data_collator = DataCollatorForLanguageModeling(gpt2_tokenizer, mlm=False)
 
@@ -110,7 +114,7 @@ gen_kwargs = {
 	"do_sample": True,
 	"pad_token_id": gpt2_tokenizer.eos_token_id
 }
-total_ppo_epochs = int(np.ceil(ppo_config["steps"]/ppo_config['batch_size']))
+
 # Possibly two trainer objects? Multiple optimizers
 
 # Adding accelerator
@@ -136,8 +140,18 @@ dummy_input = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device
 unwrapped_model = accelerator.unwrap_model(gpt2_model)
 
 print("NUM EPOCHS: ", total_ppo_epochs) if accelerator.is_main_process else None
+'''with torch.profiler.profile(
+	schedule=torch.profiler.schedule(
+			wait=2,
+			warmup=2,
+			active=6,
+			repeat=1),
+	on_trace_ready=torch.profiler.tensorboard_trace_handler,
+	with_stack=True
+) as profiler:'''
 for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable=not accelerator.is_local_main_process):
 	logs, timing = dict(), dict()
+	gpt2_model.train()
 	#print('batch', batch)
 	t0 = time.time()
 	query_tensors = [torch.tensor(t).long().to(device) for t in batch["tokens"]]
@@ -148,9 +162,10 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 		gen_len = ppo_config['gen_size']
 		with torch.no_grad():
 			# This seems to be required even for deepspeed
-			dummy_outputs = gpt2_model(**dummy_input)
+			#dummy_outputs = gpt2_model(**dummy_input)
 			query_tensor = query_tensors[i]
-			response = unwrapped_model.generate(query_tensor.unsqueeze(dim=0), synced_gpus=True, **gen_kwargs)
+			#response = unwrapped_model.generate(query_tensor.unsqueeze(dim=0), synced_gpus=True, **gen_kwargs)
+			response = torch.arange(query_tensor.size()[0] + gen_len).unsqueeze(dim=0).to(device) # TODO: Removing continuations does not help
 			response = response[:, query_tensor.size()[0] : query_tensor.size()[0] + gen_len]
 		response_tensors.append(response.squeeze())
 
@@ -167,7 +182,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 
 	# Run PPO step
 	bs = ppo_config['batch_size']
-	assert bs == len(query_tensors), f"Batch size ({bs}) does not match number of examples ({len(query_tensors)})"
+	'''assert bs == len(query_tensors), f"Batch size ({bs}) does not match number of examples ({len(query_tensors)})"
 	response_lengths = [r.size()[0] for r in response_tensors]
 
 	# batched forward pass
@@ -198,7 +213,7 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 		non_score_rewards.append(non_score_reward)
 		reward = non_score_reward.clone()
 		reward[-1] += score
-		all_rewards.append(reward)
+		all_rewards.append(reward)'''
 
 	# Train minibatches
 	idxs = list(range(bs))
@@ -206,15 +221,15 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 		random.shuffle(idxs)
 		for i in range(bs):
 			idx = idxs[i]
-			old_logprob = all_logprobs[idx].unsqueeze(0)
-			values = all_values[idx].unsqueeze(0)
-			rewards = all_rewards[idx].unsqueeze(0)
+			#old_logprob = all_logprobs[idx].unsqueeze(0)
+			#values = all_values[idx].unsqueeze(0)
+			#rewards = all_rewards[idx].unsqueeze(0)
 			query = query_tensors[idx].unsqueeze(0)
 			response = response_tensors[idx].unsqueeze(0)
 			model_input = torch.cat([query.squeeze(), response.squeeze()]).unsqueeze(0)
 
 			# Compute loss
-			print("Computing loss")
+			'''print("Computing loss")
 			lastgaelam = 0
 			advantages_reversed = []
 			gen_len = response.shape[1]
@@ -256,24 +271,27 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader)), disable
 			pg_loss = torch.mean(torch.max(pg_losses, pg_losses2))
 			pg_clipfrac = torch.mean(torch.gt(pg_losses2, pg_losses).double())
 
-			loss = pg_loss + ppo_config['vf_coef'] * vf_loss
+			loss = pg_loss + ppo_config['vf_coef'] * vf_loss'''
+
+			output = gpt2_model(model_input) # TODO: Dummy loss doesn't help
+			logits = output.logits
+			logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
+			loss = torch.sum(logprob)# + torch.sum(vpred)
+
+			accelerator.wait_for_everyone() #syncing doesn't help with hang
 
 			## Backprop loss
-			print("Backproping loss")
-			breakpoint()
+			accelerator.print("Backproping loss")
+			#breakpoint()
 			accelerator.backward(loss)
-			print("Stepping optimizer")
+			accelerator.wait_for_everyone()
+			accelerator.print("Stepping optimizer")
 			optimizer.step()
-			print("Optimizer zero grad")
+			accelerator.print("Optimizer zero grad")
 			optimizer.zero_grad()
 
 	# TODO(dahoas): Update kl_ctl term
 	#self.kl_ctl.update(stats['objective/kl'], ppo_config['batch_size'])
 
+accelerator.end_training()
 print("FINISHED TRAINING")
-
-accelerator.wait_for_everyone()
-if accelerator.is_main_process:
-	gpt2_model = accelerator.unwrap_model(gpt2_model)
-	#accelerator.save(gpt2_model.state_dict(), 'gpt2-imbd-pos-vs')
-	print("FINISHED SAVING MODEL")
