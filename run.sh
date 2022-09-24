@@ -1,0 +1,1 @@
+accelerate launch test_trl_deepspeed_accelerate.py &> test_trl_deepspeed_accelerate.txt &

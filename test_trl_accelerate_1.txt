@@ -1,0 +1,55 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+[2022-09-16 02:02:13,236] [WARNING] [runner.py:178:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+Detected CUDA_VISIBLE_DEVICES=1 but ignoring it because one or several of --include/--exclude/--num_gpus/--num_nodes cl args were used. If you want to use CUDA_VISIBLE_DEVICES don't pass any of these arguments to deepspeed.
+[2022-09-16 02:02:13,349] [INFO] [runner.py:504:main] cmd = /fsx/alex/.envs/accelerate/bin/python3.8 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMCwgMV19 --master_addr=127.0.0.1 --master_port=29500 --no_local_rank test_trl_deepspeed.py --config_file configs/deepspeed_config.yaml
+[2022-09-16 02:02:15,120] [INFO] [launch.py:129:main] 0 NCCL_PROTO=simple
+[2022-09-16 02:02:15,120] [INFO] [launch.py:136:main] WORLD INFO DICT: {'localhost': [0, 1]}
+[2022-09-16 02:02:15,120] [INFO] [launch.py:142:main] nnodes=1, num_local_procs=2, node_rank=0
+[2022-09-16 02:02:15,120] [INFO] [launch.py:155:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0, 1]})
+[2022-09-16 02:02:15,120] [INFO] [launch.py:156:main] dist_world_size=2
+[2022-09-16 02:02:15,120] [INFO] [launch.py:158:main] Setting CUDA_VISIBLE_DEVICES=0,1
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-883a8f7b5d72ad0d.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-883a8f7b5d72ad0d.arrow
+[2022-09-16 02:02:23,921] [INFO] [comm.py:633:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+[W socket.cpp:401] [c10d] The server socket has failed to bind to [::]:29500 (errno: 98 - Address already in use).
+[W socket.cpp:401] [c10d] The server socket has failed to bind to 0.0.0.0:29500 (errno: 98 - Address already in use).
+[E socket.cpp:435] [c10d] The server socket has failed to listen on any local network address.
+Traceback (most recent call last):
+  File "test_trl_deepspeed.py", line 92, in <module>
+    accelerator = Accelerator(log_with='wandb')
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/accelerator.py", line 245, in __init__
+    self.state = AcceleratorState(
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/state.py", line 137, in __init__
+    dist.init_distributed(dist_backend=self.backend)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/comm/comm.py", line 637, in init_distributed
+    cdb = TorchBackend(dist_backend, timeout, init_method)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/comm/torch.py", line 30, in __init__
+    self.init_process_group(backend, timeout, init_method)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/comm/torch.py", line 34, in init_process_group
+    torch.distributed.init_process_group(backend,
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/distributed_c10d.py", line 595, in init_process_group
+    store, rank, world_size = next(rendezvous_iterator)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/rendezvous.py", line 257, in _env_rendezvous_handler
+    store = _create_c10d_store(master_addr, master_port, rank, world_size, timeout)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/distributed/rendezvous.py", line 188, in _create_c10d_store
+    return TCPStore(
+RuntimeError: The server socket has failed to listen on any local network address. The server socket has failed to bind to [::]:29500 (errno: 98 - Address already in use). The server socket has failed to bind to 0.0.0.0:29500 (errno: 98 - Address already in use).
+[2022-09-16 02:02:25,138] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 5789
+[2022-09-16 02:02:25,139] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 5791
+[2022-09-16 02:02:25,368] [ERROR] [launch.py:292:sigkill_handler] ['/fsx/alex/.envs/accelerate/bin/python3.8', '-u', 'test_trl_deepspeed.py', '--config_file', 'configs/deepspeed_config.yaml'] exits with return code = 1
+Traceback (most recent call last):
+  File "/fsx/alex/.envs/accelerate/bin/accelerate", line 8, in <module>
+    sys.exit(main())
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/accelerate_cli.py", line 43, in main
+    args.func(args)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/launch.py", line 827, in launch_command
+    deepspeed_launcher(args)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/launch.py", line 540, in deepspeed_launcher
+    raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+subprocess.CalledProcessError: Command '['deepspeed', '--no_local_rank', '--num_gpus', '2', 'test_trl_deepspeed.py', '--config_file', 'configs/deepspeed_config.yaml']' returned non-zero exit status 1.

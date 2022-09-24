@@ -121,12 +121,9 @@ optimizer, dataloader = accelerator.prepare(ppo_trainer.optimizer, dataloader)
 ppo_trainer.optimizer = optimizer
 
 # Run batches to clear errors
-rank = torch.distributed.get_rank()
-if rank == 0:
-	text_in = "The purpose of life is "
-elif rank == 1:
-	text_in = "Are you human? "
+#rank = torch.distributed.get_rank()
 
+text_in = "temp"
 dummy_input = gpt2_tokenizer(text_in, return_tensors="pt").to(accelerator.device)
 
 # had to run this 1 time at the start else was giving device mismatch error.

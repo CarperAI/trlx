@@ -1,0 +1,35 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+[2022-09-23 17:33:57,745] [WARNING] [runner.py:178:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+Detected CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 but ignoring it because one or several of --include/--exclude/--num_gpus/--num_nodes cl args were used. If you want to use CUDA_VISIBLE_DEVICES don't pass any of these arguments to deepspeed.
+[2022-09-23 17:33:58,491] [INFO] [runner.py:504:main] cmd = /fsx/alex/.envs/accelerate/bin/python3.8 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMF19 --master_addr=127.0.0.1 --master_port=29500 --no_local_rank test_trl_deepspeed_accelerate.py
+[2022-09-23 17:34:00,209] [INFO] [launch.py:129:main] 0 NCCL_PROTO=simple
+[2022-09-23 17:34:00,209] [INFO] [launch.py:136:main] WORLD INFO DICT: {'localhost': [0]}
+[2022-09-23 17:34:00,209] [INFO] [launch.py:142:main] nnodes=1, num_local_procs=1, node_rank=0
+[2022-09-23 17:34:00,209] [INFO] [launch.py:155:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0]})
+[2022-09-23 17:34:00,209] [INFO] [launch.py:156:main] dist_world_size=1
+[2022-09-23 17:34:00,209] [INFO] [launch.py:158:main] Setting CUDA_VISIBLE_DEVICES=0
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-07c04ae03d5516ed.arrow
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at lvwerra/gpt2-imdb and are newly initialized: ['transformer.h.4.attn.masked_bias', 'transformer.h.2.attn.masked_bias', 'transformer.h.1.attn.masked_bias', 'v_head.summary.weight', 'transformer.h.5.attn.masked_bias', 'transformer.h.7.attn.masked_bias', 'transformer.h.0.attn.masked_bias', 'transformer.h.11.attn.masked_bias', 'transformer.h.3.attn.masked_bias', 'v_head.summary.bias', 'transformer.h.6.attn.masked_bias', 'transformer.h.8.attn.masked_bias', 'transformer.h.10.attn.masked_bias', 'transformer.h.9.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at lvwerra/gpt2-imdb and are newly initialized: ['transformer.h.4.attn.masked_bias', 'transformer.h.2.attn.masked_bias', 'transformer.h.1.attn.masked_bias', 'v_head.summary.weight', 'transformer.h.5.attn.masked_bias', 'transformer.h.7.attn.masked_bias', 'transformer.h.0.attn.masked_bias', 'transformer.h.11.attn.masked_bias', 'transformer.h.3.attn.masked_bias', 'v_head.summary.bias', 'transformer.h.6.attn.masked_bias', 'transformer.h.8.attn.masked_bias', 'transformer.h.10.attn.masked_bias', 'transformer.h.9.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Traceback (most recent call last):
+  File "test_trl_deepspeed_accelerate.py", line 106, in <module>
+    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+NameError: name 'DataCollatorForLanguageModeling' is not defined
+[2022-09-23 17:34:15,230] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 7843
+[2022-09-23 17:34:15,230] [ERROR] [launch.py:292:sigkill_handler] ['/fsx/alex/.envs/accelerate/bin/python3.8', '-u', 'test_trl_deepspeed_accelerate.py'] exits with return code = 1
+Traceback (most recent call last):
+  File "/fsx/alex/.envs/accelerate/bin/accelerate", line 8, in <module>
+    sys.exit(main())
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/accelerate_cli.py", line 43, in main
+    args.func(args)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/launch.py", line 827, in launch_command
+    deepspeed_launcher(args)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/launch.py", line 540, in deepspeed_launcher
+    raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
+subprocess.CalledProcessError: Command '['deepspeed', '--no_local_rank', '--num_gpus', '1', 'test_trl_deepspeed_accelerate.py']' returned non-zero exit status 1.

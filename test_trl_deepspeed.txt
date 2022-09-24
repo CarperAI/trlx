@@ -1,0 +1,220 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+[2022-09-16 02:49:42,816] [WARNING] [runner.py:178:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+Detected CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 but ignoring it because one or several of --include/--exclude/--num_gpus/--num_nodes cl args were used. If you want to use CUDA_VISIBLE_DEVICES don't pass any of these arguments to deepspeed.
+[2022-09-16 02:49:43,568] [INFO] [runner.py:504:main] cmd = /fsx/alex/.envs/accelerate/bin/python3.8 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMCwgMV19 --master_addr=127.0.0.1 --master_port=29500 --no_local_rank test_trl_deepspeed.py
+[2022-09-16 02:49:45,383] [INFO] [launch.py:129:main] 0 NCCL_PROTO=simple
+[2022-09-16 02:49:45,383] [INFO] [launch.py:136:main] WORLD INFO DICT: {'localhost': [0, 1]}
+[2022-09-16 02:49:45,383] [INFO] [launch.py:142:main] nnodes=1, num_local_procs=2, node_rank=0
+[2022-09-16 02:49:45,383] [INFO] [launch.py:155:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0, 1]})
+[2022-09-16 02:49:45,383] [INFO] [launch.py:156:main] dist_world_size=2
+[2022-09-16 02:49:45,383] [INFO] [launch.py:158:main] Setting CUDA_VISIBLE_DEVICES=0,1
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Reusing dataset imdb (/home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-e68378636d846987.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-883a8f7b5d72ad0d.arrow
+Loading cached processed dataset at /home/alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1/cache-883a8f7b5d72ad0d.arrow
+[2022-09-16 02:49:59,191] [INFO] [comm.py:633:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+wandb: Currently logged in as: dahoas. Use `wandb login --relogin` to force relogin
+wandb: Currently logged in as: dahoas. Use `wandb login --relogin` to force relogin
+wandb: wandb version 0.13.3 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.13.2
+wandb: Run data is saved locally in /fsx/alex/repos/trl/wandb/run-20220916_025000-3fhh2geu
+wandb: Run `wandb offline` to turn off syncing.
+wandb: wandb version 0.13.3 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.13.2
+wandb: Run data is saved locally in /fsx/alex/repos/trl/wandb/run-20220916_025000-69xxcu08
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run polar-wildflower-33
+wandb: ⭐️ View project at https://wandb.ai/dahoas/trl_accelerate
+wandb: 🚀 View run at https://wandb.ai/dahoas/trl_accelerate/runs/3fhh2geu
+wandb: Syncing run dashing-frost-33
+wandb: ⭐️ View project at https://wandb.ai/dahoas/trl_accelerate
+wandb: 🚀 View run at https://wandb.ai/dahoas/trl_accelerate/runs/69xxcu08
+DEVICE:  cuda:1
+DEVICE:  cuda:0
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.5.attn.masked_bias', 'h.1.attn.masked_bias', 'h.6.attn.masked_bias', 'lm_head.weight', 'h.8.attn.masked_bias', 'h.3.attn.masked_bias', 'h.2.attn.masked_bias', 'h.7.attn.masked_bias', 'h.11.attn.masked_bias', 'h.9.attn.masked_bias', 'h.10.attn.masked_bias', 'h.4.attn.masked_bias', 'v_head.summary.bias', 'v_head.summary.weight', 'h.0.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.4.attn.masked_bias', 'v_head.summary.weight', 'h.11.attn.masked_bias', 'h.10.attn.masked_bias', 'h.0.attn.masked_bias', 'h.8.attn.masked_bias', 'h.9.attn.masked_bias', 'h.5.attn.masked_bias', 'v_head.summary.bias', 'h.2.attn.masked_bias', 'lm_head.weight', 'h.6.attn.masked_bias', 'h.1.attn.masked_bias', 'h.7.attn.masked_bias', 'h.3.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.4.attn.masked_bias', 'v_head.summary.weight', 'h.11.attn.masked_bias', 'h.10.attn.masked_bias', 'h.0.attn.masked_bias', 'h.8.attn.masked_bias', 'h.9.attn.masked_bias', 'h.5.attn.masked_bias', 'v_head.summary.bias', 'h.2.attn.masked_bias', 'lm_head.weight', 'h.6.attn.masked_bias', 'h.1.attn.masked_bias', 'h.7.attn.masked_bias', 'h.3.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of GPT2HeadWithValueModel were not initialized from the model checkpoint at gpt2 and are newly initialized: ['h.5.attn.masked_bias', 'h.1.attn.masked_bias', 'h.6.attn.masked_bias', 'lm_head.weight', 'h.8.attn.masked_bias', 'h.3.attn.masked_bias', 'h.2.attn.masked_bias', 'h.7.attn.masked_bias', 'h.11.attn.masked_bias', 'h.9.attn.masked_bias', 'h.10.attn.masked_bias', 'h.4.attn.masked_bias', 'v_head.summary.bias', 'v_head.summary.weight', 'h.0.attn.masked_bias']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+[2022-09-16 02:50:07,488] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed info: version=0.7.2, git-hash=unknown, git-branch=unknown
+[2022-09-16 02:50:09,444] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Flops Profiler Enabled: False
+[2022-09-16 02:50:09,445] [INFO] [logging.py:68:log_dist] [Rank 0] Removing param_group that has no 'params' in the client Optimizer
+[2022-09-16 02:50:09,445] [INFO] [logging.py:68:log_dist] [Rank 0] Using client Optimizer as basic optimizer
+[2022-09-16 02:50:09,450] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Basic Optimizer = {basic_optimizer.__class__.__name__}
+[2022-09-16 02:50:09,450] [INFO] [utils.py:52:is_zero_supported_optimizer] Checking ZeRO support for optimizer=Adam type=<class 'torch.optim.adam.Adam'>
+[2022-09-16 02:50:09,450] [INFO] [logging.py:68:log_dist] [Rank 0] Creating fp16 ZeRO stage 2 optimizer
+[2022-09-16 02:50:09,450] [INFO] [stage_1_and_2.py:134:__init__] Reduce bucket size 500000000
+[2022-09-16 02:50:09,450] [INFO] [stage_1_and_2.py:135:__init__] Allgather bucket size 500000000
+[2022-09-16 02:50:09,451] [INFO] [stage_1_and_2.py:136:__init__] CPU Offload: False
+[2022-09-16 02:50:09,451] [INFO] [stage_1_and_2.py:137:__init__] Round robin gradient partitioning: False
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+Emitting ninja build file /fsx/alex/.cache/torch_extensions/py38_cu113/utils/build.ninja...
+Building extension module utils...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+ninja: no work to do.
+Loading extension module utils...
+Time to load utils op: 0.5358457565307617 seconds
+Loading extension module utils...
+Time to load utils op: 0.5051255226135254 seconds
+Rank: 1 partition count [2] and sizes[(62220290, False)] 
+Rank: 0 partition count [2] and sizes[(62220290, False)] 
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+No modifications detected for re-loaded extension module utils, skipping build step...
+Loading extension module utils...
+Time to load utils op: 0.002487659454345703 seconds
+[2022-09-16 02:50:11,923] [INFO] [utils.py:827:see_memory_usage] Before initializing optimizer states
+[2022-09-16 02:50:11,924] [INFO] [utils.py:828:see_memory_usage] MA 0.96 GB         Max_MA 0.96 GB         CA 1.49 GB         Max_CA 1 GB 
+[2022-09-16 02:50:11,925] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 26.42 GB, percent = 2.4%
+[2022-09-16 02:50:11,991] [INFO] [utils.py:827:see_memory_usage] After initializing optimizer states
+[2022-09-16 02:50:11,992] [INFO] [utils.py:828:see_memory_usage] MA 1.42 GB         Max_MA 2.12 GB         CA 2.65 GB         Max_CA 3 GB 
+[2022-09-16 02:50:11,992] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 26.42 GB, percent = 2.4%
+[2022-09-16 02:50:11,992] [INFO] [stage_1_and_2.py:516:__init__] optimizer state initialized
+[2022-09-16 02:50:12,046] [INFO] [utils.py:827:see_memory_usage] After initializing ZeRO optimizer
+[2022-09-16 02:50:12,047] [INFO] [utils.py:828:see_memory_usage] MA 1.42 GB         Max_MA 1.42 GB         CA 2.65 GB         Max_CA 3 GB 
+[2022-09-16 02:50:12,047] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 26.43 GB, percent = 2.4%
+[2022-09-16 02:50:12,047] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Final Optimizer = Adam
+[2022-09-16 02:50:12,047] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed using client LR scheduler
+[2022-09-16 02:50:12,048] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed LR Scheduler = None
+[2022-09-16 02:50:12,048] [INFO] [logging.py:68:log_dist] [Rank 0] step=0, skipped=0, lr=[1.41e-05], mom=[(0.9, 0.999)]
+[2022-09-16 02:50:12,048] [INFO] [config.py:987:print] DeepSpeedEngine configuration:
+[2022-09-16 02:50:12,049] [INFO] [config.py:991:print]   activation_checkpointing_config  {
+    "partition_activations": false, 
+    "contiguous_memory_optimization": false, 
+    "cpu_checkpointing": false, 
+    "number_checkpoints": null, 
+    "synchronize_checkpoint_boundary": false, 
+    "profile": false
+}
+[2022-09-16 02:50:12,049] [INFO] [config.py:991:print]   aio_config ................... {'block_size': 1048576, 'queue_depth': 8, 'thread_count': 1, 'single_submit': False, 'overlap_events': True}
+[2022-09-16 02:50:12,049] [INFO] [config.py:991:print]   amp_enabled .................. False
+[2022-09-16 02:50:12,049] [INFO] [config.py:991:print]   amp_params ................... False
+[2022-09-16 02:50:12,049] [INFO] [config.py:991:print]   autotuning_config ............ {
+    "enabled": false, 
+    "start_step": null, 
+    "end_step": null, 
+    "metric_path": null, 
+    "arg_mappings": null, 
+    "metric": "throughput", 
+    "model_info": null, 
+    "results_dir": null, 
+    "exps_dir": null, 
+    "overwrite": true, 
+    "fast": true, 
+    "start_profile_step": 3, 
+    "end_profile_step": 5, 
+    "tuner_type": "gridsearch", 
+    "tuner_early_stopping": 5, 
+    "tuner_num_trials": 50, 
+    "model_info_path": null, 
+    "mp_size": 1, 
+    "max_train_batch_size": null, 
+    "min_train_batch_size": 1, 
+    "max_train_micro_batch_size_per_gpu": 1.024000e+03, 
+    "min_train_micro_batch_size_per_gpu": 1, 
+    "num_tuning_micro_batch_sizes": 3
+}
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   bfloat16_enabled ............. False
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   checkpoint_tag_validation_enabled  True
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   checkpoint_tag_validation_fail  False
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   comms_config ................. <deepspeed.comm.config.DeepSpeedCommsConfig object at 0x7f3c98f4d8b0>
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   communication_data_type ...... None
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   compression_config ........... {'weight_quantization': {'shared_parameters': {'enabled': False, 'quantizer_kernel': False, 'schedule_offset': 0, 'quantize_groups': 1, 'quantize_verbose': False, 'quantization_type': 'symmetric', 'quantize_weight_in_forward': False, 'rounding': 'nearest', 'fp16_mixed_quantize': False, 'quantize_change_ratio': 0.001}, 'different_groups': {}}, 'activation_quantization': {'shared_parameters': {'enabled': False, 'quantization_type': 'symmetric', 'range_calibration': 'dynamic', 'schedule_offset': 1000}, 'different_groups': {}}, 'sparse_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'row_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'head_pruning': {'shared_parameters': {'enabled': False, 'method': 'topk', 'schedule_offset': 1000}, 'different_groups': {}}, 'channel_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'layer_reduction': {'enabled': False}}
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   curriculum_enabled ........... False
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   curriculum_params ............ False
+[2022-09-16 02:50:12,050] [INFO] [config.py:991:print]   dataloader_drop_last ......... False
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   disable_allgather ............ False
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   dump_state ................... False
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   dynamic_loss_scale_args ...... None
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_enabled ........... False
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_gas_boundary_resolution  1
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_layer_name ........ bert.encoder.layer
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_layer_num ......... 0
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_max_iter .......... 100
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_stability ......... 1e-06
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_tol ............... 0.01
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   eigenvalue_verbose ........... False
+[2022-09-16 02:50:12,051] [INFO] [config.py:991:print]   elasticity_enabled ........... False
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   flops_profiler_config ........ {
+    "enabled": false, 
+    "profile_step": 1, 
+    "module_depth": -1, 
+    "top_modules": 1, 
+    "detailed": true, 
+    "output_file": null
+}
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   fp16_auto_cast ............... None
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   fp16_enabled ................. False
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   fp16_master_weights_and_gradients  False
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   global_rank .................. 0
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   gradient_accumulation_steps .. 1
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   gradient_clipping ............ 1.0
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   gradient_predivide_factor .... 1.0
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   initial_dynamic_scale ........ 4294967296
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   load_universal_checkpoint .... False
+[2022-09-16 02:50:12,052] [INFO] [config.py:991:print]   loss_scale ................... 0
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   memory_breakdown ............. False
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   monitor_config ............... <deepspeed.monitor.config.DeepSpeedMonitorConfig object at 0x7f3c98f4d9d0>
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   nebula_config ................ {
+    "enabled": false, 
+    "persistent_storage_path": null, 
+    "persistent_time_interval": 100, 
+    "num_of_version_in_retention": 2, 
+    "enable_nebula_load": true, 
+    "load_path": null
+}
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   optimizer_legacy_fusion ...... False
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   optimizer_name ............... None
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   optimizer_params ............. None
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   pipeline ..................... {'stages': 'auto', 'partition': 'best', 'seed_layers': False, 'activation_checkpoint_interval': 0}
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   pld_enabled .................. False
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   pld_params ................... False
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   prescale_gradients ........... False
+[2022-09-16 02:50:12,053] [INFO] [config.py:991:print]   scheduler_name ............... None
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   scheduler_params ............. None
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   sparse_attention ............. None
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   sparse_gradients_enabled ..... False
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   steps_per_print .............. inf
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   train_batch_size ............. 32
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   train_micro_batch_size_per_gpu  16
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   wall_clock_breakdown ......... False
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   world_size ................... 2
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   zero_allow_untested_optimizer  True
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   zero_config .................. stage=2 contiguous_gradients=True reduce_scatter=True reduce_bucket_size=500000000 allgather_partitions=True allgather_bucket_size=500000000 overlap_comm=False load_from_fp32_weights=True elastic_checkpoint=False offload_param=DeepSpeedZeroOffloadParamConfig(device='none', nvme_path=None, buffer_count=5, buffer_size=100000000, max_in_cpu=1000000000, pin_memory=False) offload_optimizer=DeepSpeedZeroOffloadOptimizerConfig(device='none', nvme_path=None, buffer_count=4, pin_memory=False, pipeline=False, pipeline_read=False, pipeline_write=False, fast_init=False) sub_group_size=1000000000 cpu_offload_param=None cpu_offload_use_pin_memory=None cpu_offload=None prefetch_bucket_size=50000000 param_persistence_threshold=100000 model_persistence_threshold=9223372036854775807 max_live_parameters=1000000000 max_reuse_distance=1000000000 gather_16bit_weights_on_model_save=False stage3_gather_fp16_weights_on_model_save=False ignore_unused_parameters=True legacy_stage1=False round_robin_gradients=False
+[2022-09-16 02:50:12,054] [INFO] [config.py:991:print]   zero_enabled ................. True
+[2022-09-16 02:50:12,055] [INFO] [config.py:991:print]   zero_optimization_stage ...... 2
+[2022-09-16 02:50:12,055] [INFO] [config.py:976:print_user_config]   json = {
+    "train_batch_size": 32, 
+    "train_micro_batch_size_per_gpu": 16, 
+    "gradient_accumulation_steps": 1, 
+    "zero_optimization": {
+        "stage": 2, 
+        "offload_optimizer": {
+            "device": "none"
+        }, 
+        "offload_param": {
+            "device": "none"
+        }, 
+        "stage3_gather_16bit_weights_on_model_save": false
+    }, 
+    "gradient_clipping": 1.0, 
+    "steps_per_print": inf, 
+    "zero_allow_untested_optimizer": true
+}
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+No modifications detected for re-loaded extension module utils, skipping build step...
+Loading extension module utils...
+Time to load utils op: 0.0016493797302246094 seconds
+NUM EPOCHS:  1250
+0it [00:00, ?it/s][2022-09-16 02:58:53,136] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 18969
+[2022-09-16 02:58:53,526] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 18970
+[2022-09-16 02:58:53,873] [INFO] [launch.py:295:sigkill_handler] Main process received SIGTERM, exiting

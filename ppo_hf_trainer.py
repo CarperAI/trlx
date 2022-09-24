@@ -2,6 +2,7 @@ from transformers import Trainer
 import torch
 import torch.nn.functional as F
 import wandb
+import numpy as np
 
 
 def clip_by_value(x, tensor_min, tensor_max):
@@ -13,12 +14,13 @@ def clip_by_value(x, tensor_min, tensor_max):
     return clipped
 
 def whiten(values, shift_mean=True):
-    """Whiten values."""
-    mean, var = torch.mean(values), torch.var(values)
-    whitened = (values - mean) * torch.rsqrt(var + 1e-8)
-    if not shift_mean:
-        whitened += mean
-    return whitened
+	"""Whiten values."""
+	gen_size = values.size()[-1]
+	mean, var = torch.mean(values, dim=1), torch.var(values, dim=1)
+	whitened = (values - mean.repeat_interleave(gen_size).view(-1, gen_size)) * torch.rsqrt(var.repeat_interleave(gen_size).view(-1, gen_size) + 1e-8)
+	if not shift_mean:
+		whitened += mean
+	return whitened
 
 
 class AdaptiveKLController:
@@ -133,10 +135,9 @@ class PPOTrainer(Trainer):
 
 		loss = pg_loss + self.ppo_params['vf_coef'] * vf_loss
 
-		#TODO(dahoas): update kl_ctrl
 		kl = old_logprobs - ref_logprobs
 		mean_kl = torch.mean(torch.sum(kl, dim=1)).item()
-		self.kl_ctl.update(mean_kl, self.batch_size)
+		self.kl_ctl.update(mean_kl, input_ids.size()[0])
 		return loss
 
 	def compute_loss(self, model, inputs):
@@ -145,8 +146,12 @@ class PPOTrainer(Trainer):
 			response_tensors = model.generate(batch_input_tokens, **self.gen_kwargs)  # I can batch generate
 		responses = [self.tokenizer.decode(r.squeeze()) for r in response_tensors]  # Only scoring responses, not prefix
 		pipe_outputs = self.sentiment_pipe(responses, **self.sent_kwargs)  # TODO(dahoas): set up sentiment pipe
-		rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(self.model.device)  # TODO(dahoas): Correct device?
+		try:
+			rewards = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(self.model.device)  # TODO(dahoas): Correct device?
+		except:
+			print(pipe_outputs)
+			exit()
 		# Log rewards
 		wandb.log({'mean_rewards': torch.mean(rewards).item()})
 		loss = self.ppo_loss(batch_input_tokens, response_tensors, rewards)
-		return loss
+		return loss  # Negate loss to try maximizing reward

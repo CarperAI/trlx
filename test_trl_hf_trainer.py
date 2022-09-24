@@ -21,11 +21,11 @@ import time
 
 # Training config
 config = {
-	"model_name": "gpt2",
-	"cls_model_name": "gpt2",
-	"steps": 20000,
+	"model_name": "lvwerra/gpt2-imdb",
+	"cls_model_name": "lvwerra/distilbert-imdb",
+	"max_steps": 1000,
 	"batch_size": 16,
-	"forward_batch_size": 16,
+	"learning_rate": 5e-6,
 	"txt_in_min_len": 2,
 	"txt_in_max_len": 8,
 	"txt_out_min_len": 4,
@@ -38,7 +38,7 @@ sentiment_pipe = pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device
 sent_kwargs = {
 	"return_all_scores": True,
 	"function_to_apply": "none",
-	"batch_size": config["forward_batch_size"]
+	"batch_size": config["batch_size"]
 }
 
 # Setup length sampler
@@ -106,8 +106,8 @@ gen_kwargs = {
 }
 
 training_args = TrainingArguments(output_dir='./results', num_train_epochs=4.3, logging_steps=10, save_strategy=IntervalStrategy.NO,
-                                  per_device_train_batch_size=16, per_device_eval_batch_size=16, warmup_steps=100,
-                                  weight_decay=0.01, logging_dir='./logs', fp16=True)
+                                  per_device_train_batch_size=config['batch_size'], per_device_eval_batch_size=16, warmup_steps=100,
+                                  weight_decay=0.01, logging_dir='./logs', fp16=False, max_steps=config['max_steps'])
 
 # Set up trainer
 trainer = PPOTrainer(model=gpt2_model, args=training_args, train_dataset=train_dataset,
