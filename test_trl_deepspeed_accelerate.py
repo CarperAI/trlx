@@ -57,7 +57,14 @@ ppo_config = {
 	"vf_coef":.2,
 }
 
+
 pipe_device = 0 if torch.cuda.is_available() else -1
+
+# Adding accelerator
+accelerator = Accelerator(log_with='wandb')
+accelerator.init_trackers('trl_accelerate', config=ppo_config)
+device = accelerator.device
+print("DEVICE: ", device)
 
 # load imdb with datasets
 ds = load_dataset('imdb', split='train')
@@ -117,11 +124,7 @@ gen_kwargs = {
 
 # Possibly two trainer objects? Multiple optimizers
 
-# Adding accelerator
-accelerator = Accelerator(log_with='wandb')
-accelerator.init_trackers('trl_accelerate', config=ppo_config)
-device = accelerator.device
-print("DEVICE: ", device)
+
 
 # Prepare accelerator
 # fsdp requires model is prepared before optimizer for memory efficiency
