@@ -130,34 +130,26 @@ def run(ppo_config):
 		response_lengths = [r.size()[0] for r in response_tensors]
 
 		# batched forward pass
-		fbs = ppo_config['forward_batch_size']
-		all_logprobs, all_ref_logprobs, all_values = [], [], []
-		for i in range(int(bs/fbs)):
-			query_batch = query_tensors[i*fbs:(i+1)*fbs]
-			response_batch = response_tensors[i*fbs:(i+1)*fbs]
-			input_ids = data_collator([torch.cat([q, r]) for q, r in zip(query_batch, response_batch)])["input_ids"]
-			with torch.no_grad():
-				logits, _, v = gpt2_model(input_ids)
-				ref_logits, _, _ = gpt2_model_ref(input_ids.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
-				ref_logits = ref_logits.to(device)
-			logprobs = logprobs_from_logits(logits[:,:-1,:], input_ids[:,1:])
-			ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], input_ids[:,1:])
-			for j in range(fbs):
-				start = len(query_batch[j])-1
-				end = len(query_batch[j]) + len(response_batch[j])-1
-				all_values.append(v[j, start-1:end-1])
-				all_logprobs.append(logprobs[j, start:end])
-				all_ref_logprobs.append(ref_logprobs[j, start:end])
+		all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
+		assert input_tokens.size()[1] == query_tensors.size()[1] + response_tensors.size()[1]
+		with torch.no_grad():
+			logits, _, v = gpt2_model(all_tokens)
+			ref_logits, _, _ = gpt2_model_ref(all_tokens.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
+			ref_logits = ref_logits.to(device)
+		logprobs = logprobs_from_logits(logits[:,:-1,:], all_tokens[:,1:])
+		ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], all_tokens[:,1:])
+		start = query_tensors.size()[0]-1
+		end = query_tensors.size()[0] + response_tensors.size()[0] - 1
+		all_values = v[:, start-1 : end-1]
+		all_logprobs = logprobs[:, start : end]
+		all_ref_logprobs = ref_logprobs[:, start : end]
 
 		# Compute rewards
 		all_rewards, non_score_rewards = [], []
-		for score, logprob, ref_logprob in zip(scores, all_logprobs, all_ref_logprobs):
-			kl = logprob - ref_logprob
-			non_score_reward = -ppo_config['init_kl_coef'] * kl
-			non_score_rewards.append(non_score_reward)
-			reward = non_score_reward.clone()
-			reward[-1] += score
-			all_rewards.append(reward)
+		kls = all_logprobs - all_ref_logprobs
+		non_score_rewards = -ppo_config['init_kl_coef'] * kls
+		all_rewards = non_score_rewards.clone()
+		all_rewards[:, -1] += scores 
 
 		# Train minibatches
 		idxs = list(range(bs))
