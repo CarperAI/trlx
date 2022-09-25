@@ -131,25 +131,24 @@ def run(ppo_config):
 
 		# batched forward pass
 		all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
-		assert input_tokens.size()[1] == query_tensors.size()[1] + response_tensors.size()[1]
+		assert all_tokens.size()[1] == query_tensors.size()[1] + response_tensors.size()[1]
 		with torch.no_grad():
 			logits, _, v = gpt2_model(all_tokens)
 			ref_logits, _, _ = gpt2_model_ref(all_tokens.cpu()) # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
 			ref_logits = ref_logits.to(device)
 		logprobs = logprobs_from_logits(logits[:,:-1,:], all_tokens[:,1:])
 		ref_logprobs = logprobs_from_logits(ref_logits[:,:-1,:], all_tokens[:,1:])
-		start = query_tensors.size()[0]-1
-		end = query_tensors.size()[0] + response_tensors.size()[0] - 1
+		start = query_tensors.size()[1]-1
+		end = query_tensors.size()[1] + response_tensors.size()[1] - 1
 		all_values = v[:, start-1 : end-1]
 		all_logprobs = logprobs[:, start : end]
 		all_ref_logprobs = ref_logprobs[:, start : end]
 
 		# Compute rewards
-		all_rewards, non_score_rewards = [], []
 		kls = all_logprobs - all_ref_logprobs
 		non_score_rewards = -ppo_config['init_kl_coef'] * kls
 		all_rewards = non_score_rewards.clone()
-		all_rewards[:, -1] += scores 
+		all_rewards[:, -1] += scores
 
 		# Train minibatches
 		idxs = list(range(bs))
@@ -230,6 +229,6 @@ if __name__ == "__main__":
 	parser.add_argument("--config_path", type=str)
 	args = parser.parse_args()
 	ppo_config = load_yaml(args.config_path)
-	ppo_config['sent_kwargs']['batch_size'] = ppo_config['forward_batch_size']
+	ppo_config['sent_kwargs']['batch_size'] = ppo_config['batch_size']
 	ppo_config['accelerate_config'] = load_yaml(ppo_config['accelerate_config_path'])
 	run(ppo_config)

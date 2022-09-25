@@ -1,8 +1,7 @@
-"model_name": "gpt2-xl"
-"cls_model_name": "gpt2-xl"
+"model_name": "lvwerra/gpt2-imdb"
+"cls_model_name": "lvwerra/gpt2-imdb"
 "steps": 20000
 "batch_size": 16
-"forward_batch_size": 16
 "ppo_epochs": 4
 "input_size": 8
 "gen_size": 24
@@ -21,7 +20,7 @@
   "function_to_apply": "none"
 "gen_kwargs": 
   "max_length": 64
-  "min_length": 20
+  "min_length": 24
   "top_k": 0.0
   "top_p": 1.0
   "do_sample": True
