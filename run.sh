@@ -1,1 +1,1 @@
-accelerate launch test_trl_deepspeed_accelerate.py &> test_trl_deepspeed_accelerate.txt &
+accelerate launch test_trl_deepspeed_accelerate.py --hf_accelerate_cache_path /fsx/alex/.cache/huggingface/accelerate/default_config.yaml

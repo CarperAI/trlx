@@ -1,0 +1,28 @@
+"model_name": "gpt2-xl"
+"cls_model_name": "gpt2-xl"
+"steps": 20000
+"batch_size": 16
+"forward_batch_size": 16
+"ppo_epochs": 4
+"input_size": 8
+"gen_size": 24
+"lr": 5.0e-6
+"init_kl_coef": 0.2
+"target": 6
+"horizon": 10000
+"gamma": 1
+"lam": 0.95
+"cliprange": .2
+"cliprange_value": .2
+"vf_coef": .2
+"num_layers_unfrozen": 2
+"sent_kwargs": 
+  "return_all_scores": True
+  "function_to_apply": "none"
+"gen_kwargs": 
+  "max_length": 64
+  "min_length": 20
+  "top_k": 0.0
+  "top_p": 1.0
+  "do_sample": True
+"accelerate_config_path": /fsx/alex/.cache/huggingface/accelerate/default_config.yaml
