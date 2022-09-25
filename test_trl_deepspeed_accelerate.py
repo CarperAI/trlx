@@ -83,10 +83,11 @@ def run(ppo_config):
 
 	data_collator = DataCollatorForLanguageModeling(gpt2_tokenizer, mlm=False)
 
-	gpt_blocks = list(gpt2_model.transformer.h)[:-ppo_config['num_layers_unfrozen']]
-	for m in gpt_blocks:
-		for p in m.parameters():
-			p.requires_grad = False
+	if ppo_config['num_layers_unfrozen'] > 0:
+		gpt_blocks = list(gpt2_model.transformer.h)[:-ppo_config['num_layers_unfrozen']]
+		for m in gpt_blocks:
+			for p in m.parameters():
+				p.requires_grad = False
 
 
 
@@ -151,67 +152,56 @@ def run(ppo_config):
 		all_rewards[:, -1] += scores
 
 		# Train minibatches
-		idxs = list(range(bs))
 		for _ in range(ppo_config['ppo_epochs']):
-			random.shuffle(idxs)
-			for i in range(bs):
-				idx = idxs[i]
-				old_logprob = all_logprobs[idx].unsqueeze(0)
-				values = all_values[idx].unsqueeze(0)
-				rewards = all_rewards[idx].unsqueeze(0)
-				query = query_tensors[idx].unsqueeze(0)
-				response = response_tensors[idx].unsqueeze(0)
-				model_input = torch.cat([query.squeeze(), response.squeeze()]).unsqueeze(0)
+			# Compute loss
+			lastgaelam = 0
+			advantages_reversed = []
+			gen_len = response_tensors.shape[1]
 
-				# Compute loss
-				lastgaelam = 0
-				advantages_reversed = []
-				gen_len = response.shape[1]
+			for t in reversed(range(gen_len)):
+				nextvalues = all_values[:, t + 1] if t < gen_len - 1 else 0.0
+				delta = all_rewards[:, t] + ppo_config['gamma'] * nextvalues - all_values[:, t]
+				lastgaelam = delta + ppo_config['gamma'] * ppo_config['lam'] * lastgaelam
+				advantages_reversed.append(lastgaelam)
+			advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
 
-				for t in reversed(range(gen_len)):
-					nextvalues = values[:, t + 1] if t < gen_len - 1 else 0.0
-					delta = rewards[:, t] + ppo_config['gamma'] * nextvalues - values[:, t]
-					lastgaelam = delta + ppo_config['gamma'] * ppo_config['lam'] * lastgaelam
-					advantages_reversed.append(lastgaelam)
-				advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
+			returns = advantages + all_values
+			advantages = whiten(advantages)
+			advantages = advantages.detach()
 
-				returns = advantages + values
-				advantages = whiten(advantages)
-				advantages = advantages.detach()
+			# Q: How is this logprob different from old_logprobs
+			logits, _, vpred = gpt2_model(all_tokens)
+			logprob = logprobs_from_logits(logits[:,:-1,:], all_tokens[:, 1:])
 
-				# Q: How is this logprob different from old_logprobs
-				logits, _, vpred = gpt2_model(model_input)
-				logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
+			#only the generation part of the values/logprobs is needed
+			logprob, vpred = logprob[:, -gen_len:], vpred[:,-gen_len-1:-1]
 
-				#only the generation part of the values/logprobs is needed
-				logprob, vpred = logprob[:, -gen_len:], vpred[:,-gen_len-1:-1]
+			vpredclipped = clip_by_value(vpred,
+										all_values - ppo_config["cliprange_value"],
+										all_values + ppo_config["cliprange_value"])
 
-				vpredclipped = clip_by_value(vpred,
-											values - ppo_config["cliprange_value"],
-											values + ppo_config["cliprange_value"])
+			vf_losses1 = (vpred - returns)**2
+			vf_losses2 = (vpredclipped - returns)**2
+			vf_loss = .5 * torch.mean(torch.max(vf_losses1, vf_losses2))
+			vf_clipfrac =  torch.mean(torch.gt(vf_losses2, vf_losses1).double())
 
-				vf_losses1 = (vpred - returns)**2
-				vf_losses2 = (vpredclipped - returns)**2
-				vf_loss = .5 * torch.mean(torch.max(vf_losses1, vf_losses2))
-				vf_clipfrac =  torch.mean(torch.gt(vf_losses2, vf_losses1).double())
+			ratio = torch.exp(logprob - all_logprobs)
 
-				ratio = torch.exp(logprob - old_logprob)
+			pg_losses = -advantages * ratio
+			pg_losses2 = -advantages * torch.clamp(ratio,
+												1.0 - ppo_config['cliprange'],
+												1.0 + ppo_config['cliprange'])
 
-				pg_losses = -advantages * ratio
-				pg_losses2 = -advantages * torch.clamp(ratio,
-													1.0 - ppo_config['cliprange'],
-													1.0 + ppo_config['cliprange'])
+			pg_loss = torch.mean(torch.max(pg_losses, pg_losses2))
+			pg_clipfrac = torch.mean(torch.gt(pg_losses2, pg_losses).double())
 
-				pg_loss = torch.mean(torch.max(pg_losses, pg_losses2))
-				pg_clipfrac = torch.mean(torch.gt(pg_losses2, pg_losses).double())
+			loss = pg_loss + ppo_config['vf_coef'] * vf_loss
 
-				loss = pg_loss + ppo_config['vf_coef'] * vf_loss
-
-				## Backprop loss
-				accelerator.backward(loss)
-				accelerator.wait_for_everyone()
-				optimizer.step()
-				optimizer.zero_grad()
+			## Backprop loss
+			accelerator.backward(loss)
+			accelerator.wait_for_everyone()
+			optimizer.step()
+			optimizer.zero_grad()
 
 		# TODO(dahoas): Update kl_ctl term
 		#self.kl_ctl.update(stats['objective/kl'], ppo_config['batch_size'])

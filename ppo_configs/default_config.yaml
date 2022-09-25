@@ -4,8 +4,8 @@
 "batch_size": 16
 "ppo_epochs": 4
 "input_size": 8
-"gen_size": 24
-"lr": 5.0e-6
+"gen_size": 16
+"lr": 1.412e-5
 "init_kl_coef": 0.2
 "target": 6
 "horizon": 10000
@@ -14,7 +14,7 @@
 "cliprange": .2
 "cliprange_value": .2
 "vf_coef": .2
-"num_layers_unfrozen": 2
+"num_layers_unfrozen": -1
 "sent_kwargs": 
   "return_all_scores": True
   "function_to_apply": "none"
