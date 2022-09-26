@@ -108,11 +108,14 @@ def run(ppo_config):
 		query_tensors = torch.stack([torch.tensor(t).long().to(device) for t in batch["tokens"]])
 		#### Get response from gpt2
 		gen_len = ppo_config['gen_size']
+		gen_start_time = time.time()
 		with torch.no_grad():
 			# This seems to be required even for deepspeed
 			dummy_outputs = gpt2_model(**dummy_input)
 			response = unwrapped_model.generate(query_tensors, synced_gpus=True, **ppo_config['gen_kwargs'])
 			response_tensors = response[:, query_tensors.size()[1] : query_tensors.size()[1] + gen_len]
+		gen_time = time.time() - gen_start_time
+		accelerator.log({"gen_time": gen_time}, step=epoch)
 
 		batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
 
@@ -121,7 +124,10 @@ def run(ppo_config):
 		# Ouptut is a list of lists of containing two dictionaries corresponding to pos/neg class and score
 		# may be dependent on the hf version
 		pipe_outputs = sentiment_pipe(texts, **ppo_config['sent_kwargs'])
+		score_start_time = time.time()
 		scores = torch.tensor([output[1]["score"] for output in pipe_outputs]).to(device)
+		score_time = time.time() - score_start_time
+		accelerator.log({"score_time": score_time}, step=epoch)
 		mean_score = torch.mean(scores).item()
 		accelerator.log({"mean_score": mean_score}, step=epoch)
 
@@ -131,6 +137,7 @@ def run(ppo_config):
 		response_lengths = [r.size()[0] for r in response_tensors]
 
 		# batched forward pass
+		prelim_loss_start_time = time.time()
 		all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
 		assert all_tokens.size()[1] == query_tensors.size()[1] + response_tensors.size()[1]
 		with torch.no_grad():
@@ -151,8 +158,15 @@ def run(ppo_config):
 		all_rewards = non_score_rewards.clone()
 		all_rewards[:, -1] += scores
 
+		prelim_loss_time = time.time() - prelim_loss_start_time
+		accelerator.log({'prelim_loss_time': prelim_loss_time}, step=epoch)
+
 		# Train minibatches
+		loss_time = 0
+		backward_time = 0
+		optimizer_time = 0
 		for _ in range(ppo_config['ppo_epochs']):
+			loss_time_start = time.time()
 			# Compute loss
 			lastgaelam = 0
 			advantages_reversed = []
@@ -196,12 +210,21 @@ def run(ppo_config):
 			pg_clipfrac = torch.mean(torch.gt(pg_losses2, pg_losses).double())
 
 			loss = pg_loss + ppo_config['vf_coef'] * vf_loss
+			loss_time += time.time() - loss_time_start
 
 			## Backprop loss
+			backward_time_start = time.time()
 			accelerator.backward(loss)
-			accelerator.wait_for_everyone()
+			backward_time += time.time() - backward_time_start
+			# Optimizer time is negligible
 			optimizer.step()
 			optimizer.zero_grad()
+
+		loss_time /= ppo_config['ppo_epochs']
+		backward_time /= ppo_config['ppo_epochs']
+		optimizer_time /= ppo_config['ppo_epochs']
+		accelerator.log({'loss_time': loss_time, 'backward_time': backward_time, 'optimizer_time': optimizer_time})
+		
 
 		# TODO(dahoas): Update kl_ctl term
 		#self.kl_ctl.update(stats['objective/kl'], ppo_config['batch_size'])

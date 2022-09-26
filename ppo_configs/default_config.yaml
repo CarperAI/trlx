@@ -1,5 +1,4 @@
-"model_name": "lvwerra/gpt2-imdb"
-"cls_model_name": "lvwerra/gpt2-imdb"
+"model_name": "gpt2-xl" #"lvwerra/gpt2-imdb" #"gpt2-xl"
 "steps": 20000
 "batch_size": 16
 "ppo_epochs": 4
