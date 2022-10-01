@@ -18,7 +18,6 @@ from torch.utils.data import DataLoader
 
 from accelerate import Accelerator
 
-import einops as eo
 
 @register_model
 class SentimentILQLModel(BaseRLModel):

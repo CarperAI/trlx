@@ -1,0 +1,130 @@
+from abc import abstractmethod
+from typing import Dict, Iterable, Tuple
+
+from framework.data import RLElement, BatchElement
+from framework.data.accelerate_base_datatypes import PromptBatch
+from framework.data.configs import TRLConfig
+from framework.data.accelerate_base_datatypes import AccelerateRLBatchElement
+
+from framework.model import BaseRLModel, register_model
+from framework.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
+from framework.pipeline.sentiment import SentimentRolloutStorage
+
+from framework.model.nn import QVModel
+from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
+
+from transformers import AutoTokenizer, AutoConfig
+import os
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import yaml
+
+from accelerate import Accelerator
+
+from torchtyping import TensorType
+
+
+@register_model
+class AccelerateRLModel(BaseRLModel):
+    def __init__(self, config, train_mode = True):
+        super().__init__(config, train_mode)
+
+        self.store = AccelerateRolloutStorage()
+
+        self.model = self.get_arch(self.config) # Retrieves model equipped for ppo, ilql, etc
+
+        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.tokenizer_path)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = 'left'
+
+        if self.train_mode:
+            with open(self.config.train.accelerate_config_path, mode="r") as file:
+                accelerate_config = yaml.safe_load(file)
+            config_dict = self.config.to_dict()
+            config_dict.update(accelerate_config)
+            # TODO(dahoas): might need to move this
+            self.accelerator = Accelerator(log_with='wandb')
+            self.accelerator.init_trackers('trl_accelerate', config=config_dict)
+            self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
+
+            self.model, self.opt = self.accelerator.prepare(self.model, self.opt)
+
+            self.dummy_input = self.tokenize("dummy input")['input_ids']  # Hack to make acclerate distributed work with model generation
+
+    def tokenize(self, text: Iterable[str]):
+        text = [self.tokenizer.bos_token + txt for txt in text]   
+        return self.tokenizer(
+            text,
+            truncation = True,
+            padding = 'max_length',
+            max_length = self.config.train.input_size,
+            return_tensors = "pt",
+        )
+
+    def act(self, data : PromptBatch) -> Tuple[TensorType["chunk_size", "input_length"], TensorType["chunk_size", "gen_size"], Iterable[str]]:
+        query_tensors = data.tokens.to(self.accelerator.device) # [B, N] #TODO(dahoas): This may need to be changed
+        with torch.no_grad():
+            #TODO(dahoas): swap this out for custom generate to if this fixes issue
+            _ = self.model(self.dummy_input.to(self.accelerator.device))  # Dummy pass to make things play nice with accelerate
+            # Removed synced gpus
+            response = self.model.generate(query_tensors, **self.config.method.gen_kwargs)
+            response_tensors = response[:, query_tensors.size()[1] : query_tensors.size()[1] + self.config.train.gen_size]
+        response_text = self.tokenizer.batch_decode(response_tensors)
+        return query_tensors, response_tensors, response_text
+
+    @torch.inference_mode()
+    def sample(self, prompts : PromptBatch, gen_kwargs : dict) -> Iterable[str]:
+        _, _, response_text = self.act(prompts)
+        return response_text
+
+    def get_components(self) -> Dict[str, any]:
+        components = {
+            "model" : self.model,
+            "opt" : self.opt,
+            "scheduler" : self.scheduler} if self.train_mode else {"model" : self.model}
+        return components
+
+    @abstractmethod
+    def get_arch(config: TRLConfig):
+        pass
+
+    @abstractmethod
+    def loss(input_tokens, attn, rewards):
+        pass
+
+    @abstractmethod
+    def post_backward_callback(iter, batch, rewards):
+        pass
+
+    @abstractmethod
+    def post_epoch_callback(iter, batch, rewards):
+        '''
+        Additional exploration can happen here
+        '''
+        pass
+    
+    def learn(self, log_fn = None, save_fn = None, eval_fn = None):
+        
+        rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 1)
+        
+        for epoch in range(self.config.train.epochs):
+            for iter, (batch, rewards) in enumerate(rollout_loader):
+
+                tokens = batch.tokens.to(self.accelerator.device)
+                masks = batch.masks.to(self.accelerator.device)
+                rewards = rewards.to(self.accelerator.device)
+                loss = self.loss(tokens, masks, rewards)
+
+                self.opt.zero_grad()
+                self.accelerator.backward(loss)
+                self.opt.step()
+                self.scheduler.step()
+
+                self.post_backward_callback(iter, batch, rewards)
+
+                self.accelerator.wait_for_everyone()
+                
+            self.post_epoch_callback(epoch)
+                

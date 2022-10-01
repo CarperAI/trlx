@@ -1,7 +1,7 @@
 from framework.model.sentiment import SentimentILQLModel
 from framework.orchestrator.sentiment import OfflineSentimentOrchestrator
 from framework.pipeline.sentiment import SentimentPipeline
-from framework.configs import TRLConfig
+from framework.data.configs import TRLConfig
 
 from framework.utils.loading import get_model, get_pipeline, get_orchestrator
 from framework.eval.sentiment import sentiment_eval

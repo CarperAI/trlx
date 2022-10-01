@@ -7,7 +7,7 @@ import torch
 
 from framework.data import RLElement
 from framework.pipeline import BaseRolloutStore
-from framework.configs import TRLConfig
+from framework.data.configs import TRLConfig
 from framework.utils import safe_mkdir
 
 # specifies a dictionary of architectures

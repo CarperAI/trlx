@@ -3,7 +3,7 @@ from typing import Dict
 import sys
 
 from framework.pipeline import BasePipeline
-from framework.model import *
+from framework.model import BaseRLModel
 
 # specifies a dictionary of architectures
 _ORCH: Dict[str, any] = {}  # registry

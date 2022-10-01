@@ -1,5 +1,5 @@
 from framework.model.sentiment import SentimentILQLModel
-from framework.configs import TRLConfig
+from framework.data.configs import TRLConfig
 from framework.utils.loading import get_model
 
 if __name__ == "__main__":
