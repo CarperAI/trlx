@@ -6,24 +6,17 @@ from framework.pipeline.sentiment import SentimentPipeline
 from framework.model import BaseRLModel
 from framework.utils import chunk, flatten, sentiment_score
 
-from tqdm import tqdm
-
 @register_orchestrator
 class OfflineSentimentOrchestrator(Orchestrator):
-    def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel):
-        self.pipeline = pipeline
-        self.rl_model = rl_model
+    def __init__(self, model: BaseRLModel, train_pipeline, eval_pipeline, reward_fn):
+        self.model = model
 
-        pipe_device = 0 if torch.cuda.is_available() else -1
-        self.sentiment_pipe = tfpipeline('sentiment-analysis', 'lvwerra/distilbert-imdb', device=pipe_device)
+        rewards = torch.as_tensor(reward_fn(train_pipeline.texts)).float()
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-30)
+        self.model.train_store.push((train_pipeline.texts, rewards))
 
-    def make_experience(self, chunk_size = 512):
-        text = self.pipeline.text
+        self.model.eval_pipeline = eval_pipeline
+        self.model.reward_fn = reward_fn
 
-        # Run all text in pipeline through sentiment analysis model to get sentiment scores for entire dataset
-        sentiments = [self.sentiment_pipe(batch, truncation = True, max_length = 512) for batch in tqdm(chunk(text, chunk_size))]
-        sentiments = flatten(sentiments)
-        sentiments = sentiment_score(sentiments)
-
-        # Push text and sentiment (i.e. reward) to models rollout storage
-        self.rl_model.push_to_store((text, sentiments))
+    def score(samples):
+        return self.model.reward_fn(samples)
