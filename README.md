@@ -11,49 +11,100 @@ Currently the library supports `gpt2` and `gptj` with plans to include `GPT-NeoX
 
 The training pipeline is broken into four pieces:
 
-- Prompt pipeline: Handles loading of prompts/text used for exploration in online methods
+- Prompt pipeline: Handles loading of prompts/text used to prompt model for exploration in online methods
 - Rollout pipeline: Handles loading and storage of reward labeled data used
 - Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
 - Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
+Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labele data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new orchestrator simply implementing the scoring function and inheriting from the `PPOOrchestrator` class. 
 
-## How to add a task
-Fine-tuning a language model via PPO consists of roughly three steps:
+## Example: How to add a task
 
-1. **Rollout**: The language model generates a response or continuation based on query which could be the start of a sentence.
-2. **Evaluation**: The query and response are evaluated with a function, model, human feedback or some combination of them. The important thing is that this process should yield a scalar value for each query/response pair.
-3. **Optimization**: This is the most complex part. In the optimisation step the query/response pairs are used to calculate the log-probabilities of the tokens in the sequences. This is done with the model that is trained and and a reference model, which is usually the pre-trained model before fine-tuning. The KL-divergence between the two outputs is used as an additional reward signal to make sure the generated responses don't deviate to far from the reference language model. The active language model is then trained with PPO.
+In the below we implement a sentiment learning task.
 
-We use sentiment learning as an example.
+### Installation
 
-## Installation
-
-### Python package
-Install the library with pip:
+Install the repo:
 ```bash
-pip install trl
+python setup.py develop
 ```
 
-### From source
-If you want to run the examples in the repository a few additional libraries are required. Clone the repository and install it with pip:
-```bash
-git clone https://github.com/lvwerra/trl.git
-cd tlr/
-pip install -r requirements.txt
+### Implement a prompt pipeline
+
 ```
-### Jupyter notebooks
+@register_datapipeline
+class PPOPipeline(BasePipeline):
+    def __init__(self, tokenizer, config, prompt_dataset_path = None):
+        super().__init__()
 
-If you run Jupyter notebooks you might need to run the following:
-```bash
-jupyter nbextension enable --py --sys-prefix widgetsnbextension
+        ds = load_dataset('imdb', split='test')
+        ds = ds.rename_columns({'text': 'review', 'label': 'sentiment'})
+        ds = ds.filter(lambda x: len(x["review"])<500, batched=False)
+
+        self.tokens = [tokenizer(text,
+                                    truncation = True,
+                                    padding = 'max_length',
+                                    max_length = config.train.input_size,
+                                    return_tensors = "pt"
+                                 )['input_ids'].long().flatten() for text in ds['review']]
+        self.text = [tokenizer.decode(tokens.tolist()) for tokens in self.tokens]
+
+    def __getitem__(self, index : int) -> PromptElement:
+        return PromptElement(self.text[index], self.tokens[index])
+
+    def __len__(self) -> int:
+        return len(self.text)
+
+    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
+        #TODO(dahoas): Decide how to support varying sizes of prompts without having to tokenize on fly
+        def collate_fn(elems : Iterable[PromptElement]) -> PromptElement:
+            return PromptBatch(
+                [elem.text for elem in elems], torch.stack([elem.tokens for elem in elems])  # Assumes token tensors all same size
+            )
+
+        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
+ ```
+
+### Implement an orchestrator 
+
+```
+@register_orchestrator
+class PPOSentimentOrchestrator(PPOOrchestrator):
+	def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel, chunk_size = 512):
+		super().__init__(pipeline, rl_model, chunk_size)
+		self.sentiment_pipe = sentiment_pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device=-1)
+
+	def score(self, texts):
+		"""
+		Batched scoring function taking text and generating scalar
+		"""
+		sent_kwargs = {
+				"return_all_scores": True,
+				"function_to_apply": None,
+				"batch_size": self.chunk_size,
+			}
+		pipe_outputs = self.sentiment_pipe(texts, **sent_kwargs)
+		scores = torch.tensor([output[1]["score"] for output in pipe_outputs])
+		return scores
 ```
 
-For Jupyterlab additionally this command:
+### Launch training
 
-```bash
-jupyter labextension install @jupyter-widgets/jupyterlab-manager
 ```
+if __name__ == "__main__":
+    cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
+
+    model : AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
+    wandb.watch(model.model)
+
+    pipeline : PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
+    orch : PPOSentimentOrchestrator = get_orchestrator(cfg.train.orchestrator)(pipeline, model, cfg.method.chunk_size)
+    orch.make_experience(cfg.method.num_rollouts)
+    model.learn()
+
+    print("DONE!")
+```
 
 ## References
 
