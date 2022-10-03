@@ -29,11 +29,8 @@ from tqdm import tqdm
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config, train_mode = True):
-        super().__init__(config, train_mode)
         self.store = PPORolloutStorage()
-        if train_mode:
-            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.method.ppo_epochs * self.config.train.epochs * self.config.method.num_rollouts)
-            self.scheduler = self.accelerator.prepare(self.scheduler)
+        super().__init__(config, self.store)
 
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt2 based
@@ -84,9 +81,9 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def post_epoch_callback(self, epoch : int, iter_count : int):
         #TODO(dahoas): are experiences being made for dataloaders on each process or same dataloader
-        if self.accelerator.is_main_process:
-            print("Executing")
-            self.orch.make_experience(self.config.method.num_rollouts, iter_count)  # Collect more rollouts for training
+        print("Executing")
+        self.store.clear_history()
+        self.orch.make_experience(self.config.method.num_rollouts, iter_count)  # Collect more rollouts for training
 
     def post_backward_callback(self, epoch, iter_count, batch, rewards):
         pass

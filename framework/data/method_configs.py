@@ -52,6 +52,7 @@ class MethodConfig:
 class PPOConfig(MethodConfig):
     ppo_epochs : int
     num_rollouts : int
+    chunk_size : int
     init_kl_coef : float
     target : float
     horizon : int

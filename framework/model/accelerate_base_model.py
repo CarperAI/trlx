@@ -28,10 +28,10 @@ from torchtyping import TensorType
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
-    def __init__(self, config, train_mode = True):
+    def __init__(self, config, rollout_storage, train_mode = True):
         super().__init__(config, train_mode)
 
-        self.store = AccelerateRolloutStorage()
+        self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
 
         self.model = self.get_arch(self.config) # Retrieves model equipped for ppo, ilql, etc
 
@@ -39,19 +39,21 @@ class AccelerateRLModel(BaseRLModel):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = 'left'
 
-        if self.train_mode:
-            with open(self.config.train.accelerate_config_path, mode="r") as file:
-                accelerate_config = yaml.safe_load(file)
-            config_dict = self.config.to_dict()
-            config_dict.update(accelerate_config)
-            # TODO(dahoas): might need to move this
-            self.accelerator = Accelerator(log_with='wandb')
-            self.accelerator.init_trackers('trl_accelerate', config=config_dict)
-            self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
+        with open(self.config.train.accelerate_config_path, mode="r") as file:
+            accelerate_config = yaml.safe_load(file)
+        config_dict = self.config.to_dict()
+        config_dict.update(accelerate_config)
+        # TODO(dahoas): might need to move this
+        self.accelerator = Accelerator(log_with='wandb')
+        self.accelerator.init_trackers('trl_accelerate', config=config_dict)
+        self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps)
+        self.rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 2)
 
-            self.model, self.opt = self.accelerator.prepare(self.model, self.opt)
+        self.model, self.opt, self.rollout_loader, self.scheduler = self.accelerator.prepare(self.model, self.opt, self.rollout_loader, self.scheduler)
+        self.store.clear_history()
 
-            self.dummy_input = self.tokenize("dummy input")['input_ids']  # Hack to make acclerate distributed work with model generation
+        self.dummy_input = self.tokenize("dummy input")['input_ids']  # Hack to make acclerate distributed work with model generation
 
     def tokenize(self, text: Iterable[str]):
         text = [self.tokenizer.bos_token + txt for txt in text]   
@@ -107,10 +109,8 @@ class AccelerateRLModel(BaseRLModel):
     
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
         
-        rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 1)
-        
         for epoch in range(self.config.train.epochs):
-            for iter, (batch, rewards) in enumerate(rollout_loader):
+            for iter, (batch, rewards) in enumerate(self.rollout_loader):
 
                 tokens = batch.tokens.to(self.accelerator.device)
                 masks = batch.masks.to(self.accelerator.device)

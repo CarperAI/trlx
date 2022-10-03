@@ -12,13 +12,13 @@ import wandb
 if __name__ == "__main__":
     cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
+    
     model : AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
     wandb.watch(model.model)
 
     pipeline : PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenize, cfg)
-    orch : PPOSentimentOrchestrator = get_orchestrator(cfg.train.orchestrator)(pipeline, model)
-
-    orch.make_experience()
+    orch : PPOSentimentOrchestrator = get_orchestrator(cfg.train.orchestrator)(pipeline, model, cfg.method.chunk_size)
+    orch.make_experience(cfg.method.num_rollouts)
     model.learn()
 
     print("DONE!")

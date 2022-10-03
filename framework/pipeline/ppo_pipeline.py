@@ -20,16 +20,8 @@ class PPOPipeline(BasePipeline):
         ds = ds.rename_columns({'text': 'review', 'label': 'sentiment'})
         ds = ds.filter(lambda x: len(x["review"])<500, batched=False)
 
-        # Tokenization procedure via models tokenizer function
-        def tokenize(sample):
-            encoding = tokenizer([sample['review']])
-            sample["tokens"] = encoding["input_ids"]
-            return sample
-
-        ds = ds.map(tokenize, batched=False)
-
         self.text = ds['review']
-        self.tokens = ds['tokens']
+        self.tokens = [tokenizer([text])['input_ids'][0] for text in self.text]
 
     def __getitem__(self, index : int) -> PromptElement:
         return PromptElement(self.text[index], self.tokens[index])
@@ -51,10 +43,13 @@ class PPORolloutStorage(BaseRolloutStore):
     def __init__(self):
         super().__init__()
 
-        self.history : Iterable[PPORLElement] = []
+        self.history : Iterable[PPORLElement] = [None]  # Initialize dummy entry to be loaded by accelerate
     
     def push(self, exps : Iterable[PPORLElement]):
         self.history += exps
+
+    def clear_history(self):
+        self.history = []
 
     def __getitem__(self, index : int) -> PPORLElement:
         return self.history[index]

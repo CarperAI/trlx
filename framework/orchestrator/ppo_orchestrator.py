@@ -11,6 +11,8 @@ from framework.utils import chunk, flatten, sentiment_score
 
 from tqdm import tqdm
 
+from framework.utils import Clock
+
 from framework.utils.modeling import logprobs_from_logits
 import wandb
 
@@ -39,6 +41,8 @@ class PPOOrchestrator(Orchestrator):
 	def make_experience(self, num_rollouts : int = 1024, iter_count : int = 0):
 
 		ppo_rl_elements = []
+		stats = {}
+		clock = Clock()
 		for i in tqdm(range(num_rollouts // self.chunk_size)):
 			# Get next batch in prompt dataset and refresh if exhausted
 			try :
@@ -78,11 +82,13 @@ class PPOOrchestrator(Orchestrator):
 			all_values = all_values.cpu()
 			all_rewards = all_rewards.cpu()
 
+			exp_time = clock.tick()
+
 			# Evaluate model on first chunk
 			if i == 0:
 				mean_score = torch.mean(scores).item()
 				rows = list(zip(texts, scores.tolist()))
-				stats = {"mean_score": mean_score, 'responses': wandb.Table(columns=['response', 'score'], rows=rows[:16])}
+				stats = {"exp_time": exp_time, "mean_score": mean_score, 'responses': wandb.Table(columns=['response', 'score'], rows=rows[:16])}
 				self.rl_model.accelerator.log(stats, step=iter_count)
 				
 
@@ -97,4 +103,4 @@ class PPOOrchestrator(Orchestrator):
 
 		# Push text and sentiment (i.e. reward) to models rollout storage
 		self.rl_model.push_to_store(ppo_rl_elements)
-		return stats
+		print(len(self.rl_model.store))

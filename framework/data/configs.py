@@ -21,6 +21,7 @@ class ModelConfig:
 class TrainConfig:
     n_ctx : int
     epochs : int
+    total_steps : int
     batch_size : int
     grad_clip : float # Clip grad norms to this value
 
