@@ -1,0 +1,52 @@
+model:
+  model_path : "lvwerra/gpt2-imdb"
+  tokenizer_path : "gpt2"
+  model_type : "AcceleratePPOModel"
+  device : "cuda"
+  num_layers_unfrozen : -1
+
+train:
+  n_ctx : 512
+  epochs : 10
+  total_steps : 80000
+  batch_size : 16
+  grad_clip : 1.0
+
+  lr_ramp_steps : 100
+  lr_decay_steps : 10000000
+  weight_decay : 1.0e-6
+  learning_rate_init : 1.412e-5
+  learning_rate_target : 1.412e-5
+
+  log_interval : 25
+  checkpoint_interval : 1000000
+  eval_interval : 100
+
+  pipeline : "PPOPipeline"
+  orchestrator : "PPOSentimentOrchestrator"
+
+  input_size : 8
+  gen_size : 16
+
+  accelerate : True
+  accelerate_config_path : '/fsx/alex/.cache/huggingface/accelerate/default_config.yaml'
+
+method:
+  name : 'ppoconfig'
+  num_rollouts : 16
+  chunk_size : 16
+  ppo_epochs : 4
+  init_kl_coef : 0.2
+  target : 6
+  horizon : 10000
+  gamma : 1
+  lam : 0.95
+  cliprange : 0.2
+  cliprange_value : 0.2
+  vf_coef : 0.2
+  gen_kwargs :
+    max_length : 24
+    min_length : 24
+    top_k : 0.0
+    top_p : 1.0
+    do_sample : True
