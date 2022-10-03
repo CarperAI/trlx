@@ -90,7 +90,7 @@ class PPOSentimentOrchestrator(PPOOrchestrator):
 
 ### Launch training
 
-```
+```python
 if __name__ == "__main__":
     cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
