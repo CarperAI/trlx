@@ -3,7 +3,7 @@
 
 
 ## Overview
-Inspired by the popular `trl` library, the `trlX` repo allows you to fine-tune Huggingface supported language models up to 20B parameters via either reinforcement learning using a provided scoring function or reward-labeled dataset. We aim to support a range of both online and offline RL algorithms including Proximal Policy Optimization (PPO), Natural Language PPO (NLPPO), Actor Critic (A2C), and Implicit Q Learning (ILQL).
+Inspired by the popular `trl` library, the `trlX` repo allows you to fine-tune Huggingface supported language models up to 20B parameters via either reinforcement learning using a provided scoring function or reward-labeled dataset. We aim to support a range of both online and offline RL algorithms including Proximal Policy Optimization (PPO), Natural Language Policy Optimization (NLPO), Actor Critic (A2C), and Implicit Q Learning (ILQL).
 
 Currently the library supports `gpt2` and `gptj` with plans to include `GPT-NeoX`, `T5` and more. Disibtributed training has been implemented via HF Accelerate and tested up to two nodes, each with 8 gpus.
 
