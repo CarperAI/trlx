@@ -31,7 +31,7 @@ python setup.py develop
 
 ### Implement a prompt pipeline
 
-```
+```python
 @register_datapipeline
 class PPOPipeline(BasePipeline):
     def __init__(self, tokenizer, config, prompt_dataset_path = None):
