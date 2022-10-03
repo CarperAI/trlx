@@ -62,3 +62,16 @@ class PPOConfig(MethodConfig):
     cliprange_value : float
     vf_coef : float
     gen_kwargs : dict
+
+
+@dataclass
+@register_method
+class ILQLConfig(MethodConfig):
+    tau: float
+    gamma: float
+    cql_scale: float
+    awac_scale: float
+    alpha: float
+    steps_for_target_q_sync: int
+    eval_beta: float
+    two_qs: bool

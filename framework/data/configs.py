@@ -10,9 +10,9 @@ class ModelConfig:
     model_path : str
     tokenizer_path : str
     model_type : str # One of the architectures present in framework.model
-    device : str
-    num_layers_unfrozen : int
-    
+    device : str = ''
+    num_layers_unfrozen : int = -1
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
@@ -38,11 +38,11 @@ class TrainConfig:
     pipeline : str # One of the pipelines in framework.pipeline
     orchestrator : str # One of the orchestrators
 
-    input_size : int # max model input size
-    gen_size : int # max size of model generation
+    input_size : int = 0 # max model input size
+    gen_size : int = 1024 # max size of model generation
 
-    accelerate : bool # Use HF accelerate?
-    accelerate_config_path : str
+    accelerate : bool = True # Use HF accelerate?
+    accelerate_config_path : str = ""
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -70,5 +70,3 @@ class TRLConfig:
         data.update(self.train.__dict__)
         data.update(self.method.__dict__)
         return data
-
-
