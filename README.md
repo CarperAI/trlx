@@ -29,6 +29,11 @@ Install the repo:
 python setup.py develop
 ```
 
+Configure accelerate:
+```bash
+accelerate config
+```
+
 ### Implement a prompt pipeline
 
 ```python
@@ -105,6 +110,8 @@ if __name__ == "__main__":
 
     print("DONE!")
 ```
+
+And run `accelerate launch my_script.py`
 
 ## References
 
