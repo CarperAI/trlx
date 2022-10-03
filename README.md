@@ -67,7 +67,7 @@ class PPOPipeline(BasePipeline):
 
 ### Implement an orchestrator 
 
-```
+```python
 @register_orchestrator
 class PPOSentimentOrchestrator(PPOOrchestrator):
 	def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel, chunk_size = 512):
