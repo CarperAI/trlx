@@ -9,7 +9,6 @@ from framework.model.nn.ppo_models import GPT2HeadWithValueModel
 from framework.pipeline.ppo_pipeline import PPORolloutStorage
 from framework.pipeline.sentiment import SentimentRolloutStorage
 
-from framework.model.nn import QVModel
 from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
 
 from transformers import AutoTokenizer, AutoConfig
@@ -51,7 +50,6 @@ class AcceleratePPOModel(AccelerateRLModel):
         advantages = whiten(advantages)
         advantages = advantages.detach()
 
-        # Q: How is this logprob different from old_logprobs
         all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
         logits, _, vpred = self.model(all_tokens)
         logprob = logprobs_from_logits(logits[:,:-1,:], all_tokens[:, 1:])

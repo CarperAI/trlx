@@ -10,7 +10,6 @@ from framework.model import BaseRLModel, register_model
 from framework.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
 from framework.pipeline.sentiment import SentimentRolloutStorage
 
-from framework.model.nn import QVModel
 from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
 
 from transformers import AutoTokenizer, AutoConfig
@@ -45,7 +44,7 @@ class AccelerateRLModel(BaseRLModel):
         config_dict.update(accelerate_config)
         # TODO(dahoas): might need to move this
         self.accelerator = Accelerator(log_with='wandb')
-        self.accelerator.init_trackers('trl_accelerate', config=config_dict)
+        self.accelerator.init_trackers(self.config.train.project_name, config=config_dict)
         self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps, eta_min=self.config.train.learning_rate_target)
         self.rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 2)

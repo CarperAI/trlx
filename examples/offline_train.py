@@ -26,35 +26,35 @@ def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
             return x
 
 # Toy dataset from Decision Transformer (Chen et. al 2021)
-def randomwalks(self, n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002):
-    self.n_nodes = n_nodes
-    self.n_walks = n_walks
-    self.max_length = max_length
+def randomwalks(n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002):
+    n_nodes = n_nodes
+    n_walks = n_walks
+    max_length = max_length
     rng = np.random.RandomState(seed)
 
     walks, rewards = [], []
     while True:
-        self.adj = rng.rand(n_nodes, n_nodes) > (1 - p_edge)
-        np.fill_diagonal(self.adj, 0)
-        if np.all(self.adj.sum(1)): break
+        adj = rng.rand(n_nodes, n_nodes) > (1 - p_edge)
+        np.fill_diagonal(adj, 0)
+        if np.all(adj.sum(1)): break
 
     # terminal state
-    self.adj[0, :] = 0
-    self.adj[0, 0] = 1
+    adj[0, :] = 0
+    adj[0, 0] = 1
 
-    self.goal = 0
+    goal = 0
     for _ in range(n_walks):
-        node = randexclude(rng, n_nodes, self.goal)
+        node = randexclude(rng, n_nodes, goal)
         walk = [node]
 
         for istep in range(max_length-1):
-            node = rng.choice(np.nonzero(self.adj[node])[0])
+            node = rng.choice(np.nonzero(adj[node])[0])
             walk.append(node)
-            if node == self.goal:
+            if node == goal:
                 break
 
         r = th.zeros(max_length-1)
-        r[:len(walk)-1] = -1 if walk[-1] == self.goal else -100
+        r[:len(walk)-1] = -1 if walk[-1] == goal else -100
 
         rewards.append(r)
         walks.append(walk)
@@ -69,22 +69,22 @@ def randomwalks(self, n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=
         attention_masks.append(attention_mask)
         states.append(F.pad(walk, (0, max_length-len(walk))))
 
-    self.worstlen = self.max_length
-    self.avglen = sum(map(len, walks)) / self.n_walks
-    self.bestlen = 0
-    g = nx.from_numpy_array(self.adj, create_using=nx.DiGraph)
-    for start in set(range(self.n_nodes)) - {self.goal}:
+    worstlen = max_length
+    avglen = sum(map(len, walks)) / n_walks
+    bestlen = 0
+    g = nx.from_numpy_array(adj, create_using=nx.DiGraph)
+    for start in set(range(n_nodes)) - {goal}:
         try:
-            shortest_path = nx.shortest_path(g, start, self.goal)[:self.max_length]
-            self.bestlen += len(shortest_path)
+            shortest_path = nx.shortest_path(g, start, goal)[:max_length]
+            bestlen += len(shortest_path)
         except:
-            self.bestlen += self.max_length
+            bestlen += max_length
 
-    self.bestlen /= self.n_nodes - 1
+    bestlen /= n_nodes - 1
 
-    print(f'{self.n_walks} walks of which {(np.array([r[0] for r in rewards])==-1).mean()*100:.0f}% arrived at destination')
+    print(f'{n_walks} walks of which {(np.array([r[0] for r in rewards])==-1).mean()*100:.0f}% arrived at destination')
 
-    return th.stack(states), logit_mask = tensor(~self.adj)
+    return th.stack(states), logit_mask == tensor(~adj)
 
 if __name__ == "__main__":
     config = TRLConfig.load_yaml("configs/sentiment_config.yml")

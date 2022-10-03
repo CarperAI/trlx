@@ -1,13 +1,14 @@
 model:
   model_path : "gpt2"
+  tokenizer_path : "gpt2"
   model_type : "SentimentILQLModel"
   device : "cuda"
-  tokenizer_path: "gpt2"
   num_layers_unfrozen: -1
 
 train:
   n_ctx : 512
   epochs : 200
+  total_steps : 80000
   batch_size : 100
   grad_clip : 1.0
 
@@ -21,12 +22,16 @@ train:
   checkpoint_interval : 100
   eval_interval : 100
 
+  input_size : 8
   gen_size: 10
 
   pipeline : "SentimentPipeline"
   orchestrator : "OfflineSentimentOrchestrator"
 
   accelerate : true
+  accelerate_config_path : '/fsx/alex/.cache/huggingface/accelerate/default_config.yaml'
+
+  project_name : "accelerate_test"
 
 method:
   name: "ilqlconfig"

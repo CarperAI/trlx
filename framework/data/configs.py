@@ -44,6 +44,8 @@ class TrainConfig:
     accelerate : bool = True # Use HF accelerate?
     accelerate_config_path : str = ""
 
+    project_name : str = ""
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
