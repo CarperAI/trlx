@@ -9,14 +9,14 @@ train:
   n_ctx : 512
   epochs : 10
   total_steps : 80000
-  batch_size : 8
+  batch_size : 16
   grad_clip : 1.0
 
   lr_ramp_steps : 100
   lr_decay_steps : 10000000
   weight_decay : 1.0e-6
   learning_rate_init : 1.412e-5
-  learning_rate_target : 3.0e-6
+  learning_rate_target : 1.412e-5
 
   log_interval : 25
   checkpoint_interval : 1000000
@@ -33,8 +33,8 @@ train:
 
 method:
   name : 'ppoconfig'
-  num_rollouts : 1024
-  chunk_size : 1024
+  num_rollouts : 16
+  chunk_size : 16
   ppo_epochs : 4
   init_kl_coef : 0.2
   target : 6

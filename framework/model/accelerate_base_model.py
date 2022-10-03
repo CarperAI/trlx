@@ -47,7 +47,7 @@ class AccelerateRLModel(BaseRLModel):
         self.accelerator = Accelerator(log_with='wandb')
         self.accelerator.init_trackers('trl_accelerate', config=config_dict)
         self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps, eta_min=self.config.train.learning_rate_target)
         self.rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 2)
 
         self.model, self.opt, self.rollout_loader, self.scheduler = self.accelerator.prepare(self.model, self.opt, self.rollout_loader, self.scheduler)
@@ -56,7 +56,7 @@ class AccelerateRLModel(BaseRLModel):
         self.dummy_input = self.tokenize("dummy input")['input_ids']  # Hack to make acclerate distributed work with model generation
 
     def tokenize(self, text: Iterable[str]):
-        text = [self.tokenizer.bos_token + txt for txt in text]   
+        text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
             truncation = True,
@@ -106,9 +106,9 @@ class AccelerateRLModel(BaseRLModel):
         Additional exploration can happen here
         '''
         pass
-    
+
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
-        
+
         for epoch in range(self.config.train.epochs):
             for iter, (batch, rewards) in enumerate(self.rollout_loader):
 
@@ -125,6 +125,5 @@ class AccelerateRLModel(BaseRLModel):
                 self.post_backward_callback(iter, batch, rewards)
 
                 self.accelerator.wait_for_everyone()
-                
+
             self.post_epoch_callback(epoch)
-                

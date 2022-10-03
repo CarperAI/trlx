@@ -27,7 +27,7 @@ from framework.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 from tqdm import tqdm
 
 @register_model
-class AcceleratePPOModel(AccelerateRLModel):
+class TempModel(AccelerateRLModel):
     def __init__(self, config, train_mode = True):
         self.store = PPORolloutStorage()
         super().__init__(config, self.store)
@@ -81,6 +81,7 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def post_epoch_callback(self):
         #TODO(dahoas): are experiences being made for dataloaders on each process or same dataloader
+        print("Executing")
         self.epoch += 1
         self.store.clear_history()
         self.orch.make_experience(self.config.method.num_rollouts, self.iter_count)  # Collect more rollouts for training

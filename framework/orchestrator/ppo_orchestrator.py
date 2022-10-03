@@ -24,6 +24,7 @@ class PPOOrchestrator(Orchestrator):
 		self.chunk_size = chunk_size
 
 		self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle = True, num_workers = 2)
+		self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
 		self.pipeline_iterator = iter(self.pipeline_loader)
 
 		self.ref_model = self.rl_model.get_arch(self.rl_model.config)
@@ -90,7 +91,7 @@ class PPOOrchestrator(Orchestrator):
 				rows = list(zip(texts, scores.tolist()))
 				stats = {"exp_time": exp_time, "mean_score": mean_score, 'responses': wandb.Table(columns=['response', 'score'], rows=rows[:16])}
 				self.rl_model.accelerator.log(stats, step=iter_count)
-				
+
 
 			new_ppo_rl_elements = [PPORLElement(
 										query_tensor=query_tensors[i, :],
