@@ -1,9 +1,20 @@
-# Welcome to Transformer Reinforcement Learning X (trlX)
+# Welcome to Transformer Reinforcement Learning X (`trlX`)
 > A repo for distributed training of language models with Reinforcement Learning via Human Feedback (RLHF)
 
 
 ## Overview
-With `trl` you can train transformer language models with Proximal Policy Optimization (PPO). The library is built on top of the [`transformer`](https://github.com/huggingface/transformers) library by  🤗 Hugging Face. Therefore, pre-trained language models can be directly loaded via `transformers`. At this point only decoder architectures such as GTP2 are implemented.
+The `trlX` repo allows you to fine-tune Huggingface supported language models up to 20B parameters via either reinforcement learning using a provided scoring function or reward-labeled dataset. We aim to support a range of both online and offline RL algorithms including Proximal Policy Optimization (PPO), Natural Language PPO (NLPPO), Actor Critic (A2C), and Implicit Q Learning (ILQL).
+
+Currently the library supports `gpt2` and `gptj` with plans to include `GPT-NeoX`, `T5` and more. Disibtributed training has been implemented via HF Accelerate and tested up to two nodes, each with 8 gpus.
+
+## Structure
+
+The training pipeline is broken into four pieces:
+
+- Prompt pipeline: Handles loading of prompts/text used for exploration in online methods
+- Rollout pipeline: Handles loading and storage of reward labeled data used
+- Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
+- Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
 
 ## How to add a task
