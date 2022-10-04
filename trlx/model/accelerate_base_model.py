@@ -37,10 +37,10 @@ class AccelerateRLModel(BaseRLModel):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = 'left'
 
+        config_dict = self.config.to_dict()
         if self.config.train.accelerate_config_path != "":
             with open(self.config.train.accelerate_config_path, mode="r") as file:
                 accelerate_config = yaml.safe_load(file)
-            config_dict = self.config.to_dict()
             config_dict.update(accelerate_config)
         # TODO(dahoas): might need to move this
         self.accelerator = Accelerator(log_with='wandb')

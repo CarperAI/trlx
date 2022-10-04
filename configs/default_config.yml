@@ -29,7 +29,7 @@ train:
   gen_size : 16
 
   accelerate : True
-  accelerate_config_path : ''
+  accelerate_config_path : ""
 
 method:
   name : 'ppoconfig'
