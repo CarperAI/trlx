@@ -63,7 +63,6 @@ class PPOConfig(MethodConfig):
     vf_coef : float
     gen_kwargs : dict
 
-
 @dataclass
 @register_method
 class ILQLConfig(MethodConfig):
@@ -73,5 +72,5 @@ class ILQLConfig(MethodConfig):
     awac_scale: float
     alpha: float
     steps_for_target_q_sync: int
-    eval_beta: float
+    beta: float
     two_qs: bool
