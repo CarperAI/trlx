@@ -40,7 +40,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         gen_len = response_tensors.shape[1]
         for t in reversed(range(gen_len)):
             nextvalues = all_values[:, t + 1] if t < gen_len - 1 else 0.0
-            delta = all_rewards[:, t] + self.config.method.gamma * nextvalues - all_values[:, t]
+            delta = all_rewards[:, t] + self.config.method.gamma * (nextvalues - all_values[:, t])
             lastgaelam = delta + self.config.method.gamma * self.config.method.lam * lastgaelam
             advantages_reversed.append(lastgaelam)
         advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
