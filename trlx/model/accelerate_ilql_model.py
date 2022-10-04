@@ -123,16 +123,15 @@ class ILQLModel(BaseRLModel):
 
                 loss, stats = self.model.loss(batch)
 
-                self.opt.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.train.grad_clip)
+                if opt_steps % self.config.train.eval_interval == 0:
+                    logs.update(stats)
+                    self.accelerator.log(logs)
+
+                self.accelerator.backward(loss)
                 self.opt.step()
+                self.opt.zero_grad()
                 self.scheduler.step()
                 opt_steps += 1
 
                 if opt_steps % self.config.method.steps_for_target_q_sync == 0:
                     self.model.sync_target_q_heads()
-
-                if opt_steps % self.config.train.eval_interval == 0:
-                    logs.update(stats)
-                    self.accelerator.log(logs)
