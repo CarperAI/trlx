@@ -9,10 +9,11 @@ import math
 import torch
 import numpy as np
 from typing import List, Iterable, Callable
+from tqdm import tqdm
 
 def batch_map(fn: Callable, xs: Iterable, bsize: int, desc=None):
     out = []
-    for ind in range(math.ceil(len(xs) / bsize)):
+    for ind in tqdm(range(math.ceil(len(xs) / bsize)), desc=desc, disable=not desc):
         batch = xs[ind*bsize:min(len(xs), (ind+1)*bsize)]
         out.extend(fn(batch))
 
@@ -30,7 +31,8 @@ if __name__ == '__main__':
         if isinstance(samples[0], torch.Tensor):
             samples = tokenizer.batch_decode(samples, skip_special_tokens=True)
 
-        sentiments = batch_map(lambda batch: sentiment_pipe(batch), samples, bsize=1024)
+        desc = 'sentiment pipeline' if len(samples) > 1024 else None
+        sentiments = batch_map(lambda batch: sentiment_pipe(batch), samples, bsize=1024, desc=desc)
         return [1-s['score'] if s['label'] == 'NEGATIVE' else s['score'] for s in sentiments]
 
     model = ILQLModel(
