@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 import yaml
 import sys
-from framework.data.method_configs import MethodConfig, get_method
+from trlx.data.method_configs import MethodConfig, get_method
 
 
 @dataclass

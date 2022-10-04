@@ -1,16 +1,15 @@
 from abc import abstractmethod
 from typing import Dict, Iterable, Tuple
 
-from framework.data import RLElement, BatchElement
-from framework.data.accelerate_base_datatypes import PromptBatch
-from framework.data.configs import TRLConfig
-from framework.data.accelerate_base_datatypes import AccelerateRLBatchElement
+from trlx.data import RLElement, BatchElement
+from trlx.data.accelerate_base_datatypes import PromptBatch
+from trlx.data.configs import TRLConfig
+from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement
 
-from framework.model import BaseRLModel, register_model
-from framework.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
-from framework.pipeline.sentiment import SentimentRolloutStorage
+from trlx.model import BaseRLModel, register_model
+from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
 
-from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
+from trlx.utils import rampup_decay, safe_mkdir, Clock, topk_mask
 
 from transformers import AutoTokenizer, AutoConfig
 import os

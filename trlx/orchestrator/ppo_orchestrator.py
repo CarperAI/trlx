@@ -1,19 +1,18 @@
 import torch
 from transformers import pipeline as tfpipeline
-from framework.data.accelerate_base_datatypes import PromptBatch
-from framework.data.ppo_types import PPORLElement
+from trlx.data.accelerate_base_datatypes import PromptBatch
+from trlx.data.ppo_types import PPORLElement
 
-from framework.orchestrator import Orchestrator, register_orchestrator
-from framework.pipeline.ppo_pipeline import PPOPipeline
-from framework.pipeline.sentiment import SentimentPipeline
-from framework.model import BaseRLModel
-from framework.utils import chunk, flatten, sentiment_score
+from trlx.orchestrator import Orchestrator, register_orchestrator
+from trlx.pipeline.ppo_pipeline import PPOPipeline
+from trlx.model import BaseRLModel
+from trlx.utils import chunk, flatten, sentiment_score
 
 from tqdm import tqdm
 
-from framework.utils import Clock
+from trlx.utils import Clock
 
-from framework.utils.modeling import logprobs_from_logits
+from trlx.utils.modeling import logprobs_from_logits
 import wandb
 
 @register_orchestrator

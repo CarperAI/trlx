@@ -2,8 +2,8 @@ from abc import abstractmethod
 from typing import Dict
 import sys
 
-from framework.pipeline import BasePipeline
-from framework.model import BaseRLModel
+from trlx.pipeline import BasePipeline
+from trlx.model import BaseRLModel
 
 # specifies a dictionary of architectures
 _ORCH: Dict[str, any] = {}  # registry

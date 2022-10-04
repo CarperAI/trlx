@@ -6,9 +6,8 @@ from torchtyping import TensorType
 import torch
 from torch.utils.data import DataLoader
 
-from framework.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
-from framework.data.sentiment import SentimentGeneralElement, SentimentRLElement
-from framework.data.accelerate_base_datatypes import AccelerateRLBatchElement, AccelerateRLElement, PromptBatch, PromptElement
+from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
+from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement, AccelerateRLElement, PromptBatch, PromptElement
 
 def filter_outliers(x):
     return len(x['review']) > 200

@@ -1,8 +1,8 @@
 from typing import Callable
 
-from framework.pipeline import _DATAPIPELINE
-from framework.orchestrator import _ORCH
-from framework.model import _MODELS
+from trlx.pipeline import _DATAPIPELINE
+from trlx.orchestrator import _ORCH
+from trlx.model import _MODELS
 
 def get_model(name : str) -> Callable:
     """

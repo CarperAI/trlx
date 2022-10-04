@@ -1,10 +1,8 @@
-from framework.model.accelerate_ppo_model import AcceleratePPOModel
-from framework.orchestrator.sentiment_ppo_orch import PPOSentimentOrchestrator
-from framework.pipeline.ppo_pipeline import PPOPipeline
-from framework.data.configs import TRLConfig
-
-from framework.utils.loading import get_model, get_pipeline, get_orchestrator
-from framework.eval.sentiment import sentiment_eval
+from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+from trlx.orchestrator.sentiment_ppo_orch import PPOSentimentOrchestrator
+from trlx.pipeline.ppo_pipeline import PPOPipeline
+from trlx.data.configs import TRLConfig
+from trlx.utils.loading import get_model, get_pipeline, get_orchestrator
 
 import wandb
 

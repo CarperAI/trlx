@@ -6,7 +6,7 @@ from typing import Iterable, Any, Dict, Callable
 from abc import abstractmethod, abstractstaticmethod
 import sys
 
-from framework.data import GeneralElement, RLElement
+from trlx.data import GeneralElement, RLElement
 
 # specifies a dictionary of architectures
 _DATAPIPELINE: Dict[str, any] = {}  # registry

@@ -1,23 +1,23 @@
 import torch
 from transformers import pipeline as tfpipeline
-from framework.data.accelerate_base_datatypes import PromptBatch
-from framework.data.ppo_types import PPORLElement
+from trlx.data.accelerate_base_datatypes import PromptBatch
+from trlx.data.ppo_types import PPORLElement
 
-from framework.orchestrator import Orchestrator, register_orchestrator
-from framework.orchestrator.ppo_orchestrator import PPOOrchestrator
-from framework.pipeline.sentiment import SentimentPipeline
-from framework.model import BaseRLModel
-from framework.utils import chunk, flatten, sentiment_score
+from trlx.orchestrator import Orchestrator, register_orchestrator
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+from trlx.model import BaseRLModel
+from trlx.utils import chunk, flatten, sentiment_score
+from trlx.pipeline.ppo_pipeline import PPOPipeline
 
 from tqdm import tqdm
 
-from framework.utils.modeling import logprobs_from_logits
+from trlx.utils.modeling import logprobs_from_logits
 from transformers import pipeline as sentiment_pipeline
 
 
 @register_orchestrator
 class PPOSentimentOrchestrator(PPOOrchestrator):
-	def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel, chunk_size = 512):
+	def __init__(self, pipeline : PPOPipeline, rl_model : BaseRLModel, chunk_size = 512):
 		super().__init__(pipeline, rl_model, chunk_size)
 		self.sentiment_pipe = sentiment_pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device=-1)
 

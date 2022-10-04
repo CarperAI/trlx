@@ -5,10 +5,10 @@ import os
 
 import torch
 
-from framework.data import RLElement
-from framework.pipeline import BaseRolloutStore
-from framework.data.configs import TRLConfig
-from framework.utils import safe_mkdir
+from trlx.data import RLElement
+from trlx.pipeline import BaseRolloutStore
+from trlx.data.configs import TRLConfig
+from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
 _MODELS: Dict[str, any] = {}  # registry

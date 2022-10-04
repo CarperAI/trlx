@@ -5,11 +5,10 @@ from torchtyping import TensorType
 
 import torch
 from torch.utils.data import DataLoader
-from framework.data.ppo_types import PPORLBatch, PPORLElement
+from trlx.data.ppo_types import PPORLBatch, PPORLElement
 
-from framework.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
-from framework.data.sentiment import SentimentGeneralElement, SentimentRLElement
-from framework.data.accelerate_base_datatypes import PromptBatch, PromptElement
+from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
+from trlx.data.accelerate_base_datatypes import PromptBatch, PromptElement
 
 @register_datapipeline
 class PPOPipeline(BasePipeline):

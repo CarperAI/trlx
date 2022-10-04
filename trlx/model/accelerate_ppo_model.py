@@ -1,15 +1,14 @@
 from abc import abstractmethod
 from typing import Dict, Iterable, Tuple
-from framework.data.accelerate_base_datatypes import PromptBatch
-from framework.data.configs import TRLConfig
+from trlx.data.accelerate_base_datatypes import PromptBatch
+from trlx.data.configs import TRLConfig
 
-from framework.model import BaseRLModel, register_model
-from framework.model.accelerate_base_model import AccelerateRLModel
-from framework.model.nn.ppo_models import GPT2HeadWithValueModel
-from framework.pipeline.ppo_pipeline import PPORolloutStorage
-from framework.pipeline.sentiment import SentimentRolloutStorage
+from trlx.model import BaseRLModel, register_model
+from trlx.model.accelerate_base_model import AccelerateRLModel
+from trlx.model.nn.ppo_models import GPT2HeadWithValueModel
+from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 
-from framework.utils import rampup_decay, safe_mkdir, Clock, topk_mask
+from trlx.utils import rampup_decay, safe_mkdir, Clock, topk_mask
 
 from transformers import AutoTokenizer, AutoConfig
 import os
@@ -22,7 +21,7 @@ from accelerate import Accelerator
 
 from torchtyping import TensorType
 
-from framework.utils.modeling import clip_by_value, logprobs_from_logits, whiten
+from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 from tqdm import tqdm
 
 @register_model
