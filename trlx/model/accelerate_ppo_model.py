@@ -93,7 +93,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         self.iter_count = 0
         self.epoch = 0
         while self.iter_count < self.config.train.total_steps or self.epoch <= self.config.train.epochs:
-            for batch in tqdm(rollout_loader, disable=not self.accelerator.is_local_main_process):
+            for batch in rollout_loader:
 
                 query_tensors = batch.query_tensors.to(self.accelerator.device)
                 response_tensors = batch.response_tensors.to(self.accelerator.device)

@@ -70,7 +70,7 @@ class AccelerateRLModel(BaseRLModel):
             #TODO(dahoas): swap this out for custom generate to if this fixes issue
             _ = self.model(self.dummy_input.to(self.accelerator.device))  # Dummy pass to make things play nice with accelerate
             # Removed synced gpus
-            response = self.model.generate(query_tensors, **self.config.method.gen_kwargs)
+            response = self.model.generate(query_tensors, pad_token_id=self.tokenizer.eos_token_id, **self.config.method.gen_kwargs)
             response_tensors = response[:, query_tensors.size()[1] : query_tensors.size()[1] + self.config.train.gen_size]
         response_text = self.tokenizer.batch_decode(response_tensors)
         return query_tensors, response_tensors, response_text

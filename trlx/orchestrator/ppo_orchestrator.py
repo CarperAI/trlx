@@ -43,7 +43,7 @@ class PPOOrchestrator(Orchestrator):
 		ppo_rl_elements = []
 		stats = {}
 		clock = Clock()
-		for i in tqdm(range(num_rollouts // self.chunk_size)):
+		for i in range(num_rollouts // self.chunk_size):
 			# Get next batch in prompt dataset and refresh if exhausted
 			try :
 				batch : PromptBatch = next(self.pipeline_iterator)
