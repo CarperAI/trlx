@@ -1,5 +1,5 @@
 model:
-  model_path : "lvwerra/gpt2-imdb"
+  model_path : "gptj"
   tokenizer_path : "gpt2"
   model_type : "AcceleratePPOModel"
   device : "cuda"

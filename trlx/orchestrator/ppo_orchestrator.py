@@ -85,12 +85,9 @@ class PPOOrchestrator(Orchestrator):
 			exp_time = clock.tick()
 
 			# Evaluate model on first chunk
-			if i == 0:
-				mean_score = torch.mean(scores).item()
-				rows = list(zip(texts, scores.tolist()))
-				stats = {"exp_time": exp_time, "mean_score": mean_score, 'responses': wandb.Table(columns=['response', 'score'], rows=rows[:16])}
+			if i == 0 and self.rl_model.accelerator.is_main_process:
+				stats = {"exp_time": exp_time}
 				self.rl_model.accelerator.log(stats, step=iter_count)
-
 
 			new_ppo_rl_elements = [PPORLElement(
 										query_tensor=query_tensors[i, :],

@@ -123,9 +123,10 @@ class ILQLModel(BaseRLModel):
 
                 loss, stats = self.model.loss(batch)
 
-                if opt_steps % self.config.train.eval_interval == 0:
+                if self.accelerator.is_main_process and opt_steps % self.config.train.eval_interval == 0:
                     logs.update(stats)
                     self.accelerator.log(logs)
+                    self.accelerator.print("Step: {}, loss_cql: {}, loss_v: {}, reward: {}".format(opt_steps, logs['loss_cql'], logs['loss_v'], logs['reward']))
 
                 self.accelerator.backward(loss)
                 self.opt.step()

@@ -12,7 +12,8 @@ if __name__ == "__main__":
 
 
     model : AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
-    wandb.watch(model.model)
+    if model.accelerator.is_main_process:
+        wandb.watch(model.model)
 
     pipeline : PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
     orch : PPOSentimentOrchestrator = get_orchestrator(cfg.train.orchestrator)(pipeline, model, cfg.method.chunk_size)

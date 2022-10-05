@@ -1,4 +1,4 @@
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Model, GPT2PreTrainedModel
+from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Model, GPT2PreTrainedModel, GPTJModel
 from transformers import top_k_top_p_filtering
 from transformers.modeling_outputs import ModelOutput
 from torch import nn
@@ -129,3 +129,56 @@ class GPT2HeadWithValueModel(GPT2PreTrainedModel):
             cross_attentions=transformer_outputs.cross_attentions,
             value=value,
         )
+
+
+class GPTJHeadWithValueModel(GPTJModel):
+    """The GPTJHeadWithValueModel class implements a GPTJ language model with a secondary, scalar head."""
+    def __init__(self, config):
+        super().__init__(config)
+        config.num_labels = 1
+        self.transformer = GPTJModel(config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.v_head = ValueHead(config)
+
+        self.init_weights()
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def detach_value_head(self):
+        self.v_head.detach_head = True
+
+    def forward(
+        self,
+        input_ids=None,
+        past_key_values=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        mc_token_ids=None,
+        lm_labels=None,
+        mc_labels=None,
+        return_dict=False,
+        output_attentions=False,
+        output_hidden_states=False,
+    ):
+        loss=None
+        transformer_outputs = self.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+        )
+
+        hidden_states = transformer_outputs[0]
+
+        lm_logits = self.lm_head(hidden_states)
+        value = self.v_head(hidden_states).squeeze(-1)
+
+        outputs = (lm_logits,) + transformer_outputs[1:] + (value,)
+        return outputs
