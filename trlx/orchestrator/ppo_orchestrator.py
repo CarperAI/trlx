@@ -17,9 +17,10 @@ import wandb
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
-	def __init__(self, pipeline : PPOPipeline, rl_model : BaseRLModel, chunk_size : int = 512):
+	def __init__(self, model : BaseRLModel, pipeline : PPOPipeline, 
+	reward_fn, stats_fn : Callable = None, chunk_size : int = 512):
 		self.pipeline = pipeline
-		self.rl_model = rl_model
+		self.rl_model = model
 		self.chunk_size = chunk_size
 
 		self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle = True, num_workers = 2)
@@ -29,13 +30,14 @@ class PPOOrchestrator(Orchestrator):
 		self.ref_model = self.rl_model.get_arch(self.rl_model.config)
 
 		self.rl_model.orch = self
+        self.model.reward_fn = reward_fn
+        self.model.stats_fn = stats_fn
 
-
-	def score(self, texts):
+	def score(self, samples):
 		"""
 		Batched scoring function taking text and generating scalar
 		"""
-		pass
+		return self.model.reward_fn(samples)
 
 
 	def make_experience(self, num_rollouts : int = 1024, iter_count : int = 0):
