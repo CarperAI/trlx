@@ -1,12 +1,12 @@
-from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
-from trlx.model.accelerate_ilql_model import ILQLModel
-from trlx.data.configs import TRLConfig
-
-from transformers import GPT2Config, AutoModel, AutoTokenizer
-
-import torch
-import numpy as np
 import networkx as nx
+import numpy as np
+import torch
+from transformers import AutoModel, AutoTokenizer, GPT2Config
+
+from trlx.data.configs import TRLConfig
+from trlx.model.accelerate_ilql_model import ILQLModel
+from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
+
 
 def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
     while True:
@@ -14,14 +14,18 @@ def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
         if x != exclude:
             return x
 
+
 # Toy dataset from Decision Transformer (Chen et. al 2021)
-def generate_random_walks(n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002):
+def generate_random_walks(
+    n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002
+):
     rng = np.random.RandomState(seed)
 
     while True:
         adj = rng.rand(n_nodes, n_nodes) > (1 - p_edge)
         np.fill_diagonal(adj, 0)
-        if np.all(adj.sum(1)): break
+        if np.all(adj.sum(1)):
+            break
 
     # terminal state
     adj[0, :] = 0
@@ -33,7 +37,7 @@ def generate_random_walks(n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, s
         node = randexclude(rng, n_nodes, goal)
         walk = [node]
 
-        for istep in range(max_length-1):
+        for istep in range(max_length - 1):
             node = rng.choice(np.nonzero(adj[node])[0])
             walk.append(node)
             if node == goal:
@@ -63,13 +67,14 @@ def generate_random_walks(n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, s
                     break
             actlen += (ix + 1) / (n_nodes - 1)
 
-        return {'percentage': 100 * (worstlen - actlen) / (worstlen - bestlen)}
+        return {"percentage": 100 * (worstlen - actlen) / (worstlen - bestlen)}
 
     logit_mask = torch.tensor(~adj)
     return sample_walks, logit_mask, stats_fn
 
-if __name__ == '__main__':
-    config = TRLConfig.load_yaml('configs/ilql_config.yml')
+
+if __name__ == "__main__":
+    config = TRLConfig.load_yaml("configs/ilql_config.yml")
     config.train.gen_size = 10
     config.train.epochs = 100
 
@@ -83,19 +88,19 @@ if __name__ == '__main__':
             if s[-1] == 0:
                 for ix in range(len(s)):
                     if s[ix] == 0:
-                        rewards.append(-ix-1)
+                        rewards.append(-ix - 1)
                         break
             else:
                 rewards.append(-100)
 
         return rewards
 
-    gpt_config_or_path = GPT2Config(n_layer=4, n_embd=144, vocab_size=logit_mask.shape[0])
+    gpt_config_or_path = GPT2Config(
+        n_layer=4, n_embd=144, vocab_size=logit_mask.shape[0]
+    )
 
     model = ILQLModel(
-        config=config,
-        gpt_config_or_path=gpt_config_or_path,
-        logit_mask=logit_mask
+        config=config, gpt_config_or_path=gpt_config_or_path, logit_mask=logit_mask
     )
 
     orch = OfflineOrchestrator(
@@ -103,7 +108,7 @@ if __name__ == '__main__':
         train_samples=train_samples,
         eval_prompts=eval_prompts,
         reward_fn=reward_fn,
-        stats_fn=stats_fn
+        stats_fn=stats_fn,
     )
 
     model.learn()
