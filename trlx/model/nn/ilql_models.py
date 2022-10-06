@@ -7,7 +7,7 @@ from typing import NamedTuple, Tuple, Union
 import accelerate
 import deepspeed
 import numpy as np
-import torch as th
+import torch
 import torch.nn.functional as F
 import transformers
 from accelerate.utils import compute_module_sizes
@@ -15,17 +15,9 @@ from torch import nn, tensor
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
 
 
-def topk_mask(xs: th.FloatTensor, k: int):
-    mintop = th.topk(xs, k)[0][:, -1].unsqueeze(-1)
-    return th.where(xs < mintop, -np.inf * th.ones_like(xs, dtype=xs.dtype), xs)
-
-
-class QVOutput(Tuple):
-    logits: th.FloatTensor
-    qs: th.FloatTensor
-    target_qs: th.FloatTensor
-    vs: th.FloatTensor
-    past_key_values: Tuple[th.FloatTensor]
+def topk_mask(xs: torch.FloatTensor, k: int):
+    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
+    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
 
 def make_head(n_embd: int, out: int):
@@ -34,8 +26,12 @@ def make_head(n_embd: int, out: int):
     )
 
 
-class QVModel(nn.Module):
-    def __init__(self, config: Union[PretrainedConfig, str], params):
+class CausalLMWithValueHeads(nn.Module):
+    """This is a wrapper around huggingface AutoModelForCausalLM with two additional scalar heads"""
+
+    def __init__(
+        self, config: Union[PretrainedConfig, str], params, num_layers_unfrozen=-1
+    ):
         super().__init__()
 
         # enable zero3 init within from_pretrained
@@ -49,15 +45,26 @@ class QVModel(nn.Module):
         else:
             self.gpt = AutoModelForCausalLM.from_pretrained(config)
 
-        for block in self.gpt.transformer.h:
-            block.requires_grad_(False)
-
-        if hasattr(self.gpt.config, "hidden_size"):
+        if hasattr(self.gpt, "gpt_neox"):
+            self.gpt.transformer = self.gpt.gpt_neox
+            self.gpt.lm_head = self.gpt_embed_out
             self.n_embd = self.gpt.config.hidden_size
+            gpt_blocks = self.gpt.gpt_neox.layers
         else:
             self.n_embd = self.gpt.config.n_embd
-        self.vocab_size = self.gpt.config.vocab_size
+            gpt_blocks = self.gpt.transformer.h
 
+        if num_layers_unfrozen == 0:
+            gpt_blocks_to_freeze = list(gpt_blocks)
+        elif num_layers_unfrozen > 0:
+            gpt_blocks_to_freeze = list(gpt_blocks)[:-num_layers_unfrozen]
+        else:
+            gpt_blocks_to_freeze = []
+
+        for m in gpt_blocks_to_freeze:
+            m.requires_grad_(False)
+
+        self.vocab_size = self.gpt.config.vocab_size
         self.v_head = make_head(self.n_embd, 1)
         self.q1_head = make_head(self.n_embd, self.vocab_size)
         self.target_q1_head = deepcopy(self.q1_head)
@@ -77,11 +84,7 @@ class QVModel(nn.Module):
             self.target_q2_head.requires_grad_(False)
 
     def forward(self, **x):
-        if hasattr(self.gpt, "gpt_neox"):
-            out = self.gpt.gpt_neox(**x)
-        else:
-            out = self.gpt.transformer(**x)
-
+        out = self.gpt.transformer(**x)
         hs = out.last_hidden_state
 
         if self.two_qs:
@@ -91,12 +94,10 @@ class QVModel(nn.Module):
             qs = self.q1_head(hs)
             target_qs = self.target_q1_head(hs)
 
-        if hasattr(self.gpt, "gpt_neox"):
-            logits = self.gpt.embed_out(hs)
-        else:
-            logits = self.gpt.lm_head(hs)
+        logits = self.gpt.lm_head(hs)
+        vs = self.v_head(hs)
 
-        return QVOutput((logits, qs, target_qs, self.v_head(hs), out.past_key_values))
+        return logits, qs, target_qs, vs, out.past_key_values
 
     def loss(self, batch):
         tokens = batch.input_ids.to(self.device)
@@ -115,7 +116,7 @@ class QVModel(nn.Module):
 
             targetQ1 = target_qs[0][:, :-1].gather(-1, actions).squeeze(-1).detach()
             targetQ2 = target_qs[1][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ = th.minimum(targetQ1, targetQ2)
+            targetQ = torch.minimum(targetQ1, targetQ2)
         else:
             Q = qs[:, :-1].gather(-1, actions).squeeze(-1)
             targetQ = target_qs[:, :-1].gather(-1, actions).squeeze(-1).detach()
@@ -212,7 +213,7 @@ class QVModel(nn.Module):
         else:
             self._sync_target_q_heads(self.alpha)
 
-    @th.inference_mode()
+    @torch.inference_mode()
     def sample(
         self,
         query,
@@ -228,7 +229,7 @@ class QVModel(nn.Module):
         past_key_values = None
         tensors = defaultdict(list)
 
-        finished = th.zeros(input.shape[0], 1, dtype=th.long, device=query.device)
+        finished = torch.zeros(input.shape[0], 1, dtype=torch.long, device=query.device)
 
         for _ in range(max_length - 1):
             logits, _, target_qs, vs, past_key_values = self.forward(
@@ -236,24 +237,24 @@ class QVModel(nn.Module):
             )
 
             if self.two_qs:
-                qs = th.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
+                qs = torch.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
             else:
                 qs = target_qs[:, -1]
 
             logits = logits[:, -1]
 
             if logit_mask is not None:
-                logits[th.where(logit_mask[input[:, -1]])] = -np.inf
+                logits[torch.where(logit_mask[input[:, -1]])] = -np.inf
 
             adv = qs - vs[:, -1, :]
             pi = F.log_softmax(logits, -1)
             modpi = topk_mask(pi + beta * adv, top_k)
             ps = F.softmax(modpi / temperature, -1)
 
-            tokens = th.multinomial(ps, 1)
+            tokens = torch.multinomial(ps, 1)
             tokens = (1 - finished) * tokens + finished * eos_token_id
 
-            query = th.hstack((query, tokens))
+            query = torch.hstack((query, tokens))
 
             input = tokens
             finished = (tokens == eos_token_id).long()
@@ -265,13 +266,13 @@ class QVModel(nn.Module):
 
         stats = {}
         for name, xs in tensors.items():
-            xs = th.vstack(xs)
+            xs = torch.vstack(xs)
             stats.update(
                 {
                     f"{name}-min": xs.min(),
                     f"{name}-max": xs.max(),
                     f"{name}-std": xs.std(),
-                    f"{name}-avg": xs.mean(),
+                    f"{name}-mean": xs.mean(),
                 }
             )
 
@@ -279,7 +280,7 @@ class QVModel(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {"input_ids": th.ones(1, 1, device=self.gpt.device, dtype=th.long)}
+        return {"input_ids": torch.ones(1, 1, device=self.gpt.device, dtype=torch.long)}
 
     @property
     def device(self):
