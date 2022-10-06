@@ -86,13 +86,6 @@ class AccelerateRLModel(BaseRLModel):
             return_tensors="pt",
         )
 
-<<<<<<< HEAD
-    def act(self, data : PromptBatch) -> Tuple[TensorType["chunk_size", "input_length"], TensorType["chunk_size", "gen_size"], Iterable[str]]:
-        """
-        Perform inference to generate output tokens.
-        """
-        query_tensors = data.tokens.to(self.accelerator.device) # [B, N] #TODO(dahoas): This may need to be changed
-=======
     def act(
         self, data: PromptBatch
     ) -> Tuple[
@@ -103,7 +96,6 @@ class AccelerateRLModel(BaseRLModel):
         query_tensors = data.tokens.to(
             self.accelerator.device
         )  # [B, N] #TODO(dahoas): This may need to be changed
->>>>>>> master
         with torch.no_grad():
             # TODO(dahoas): swap this out for custom generate to if this fixes issue
             _ = self.model(
@@ -155,15 +147,10 @@ class AccelerateRLModel(BaseRLModel):
         """
         pass
 
-<<<<<<< HEAD
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
         """
         Learn from data in the rollout storage.
         """
-=======
-    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
-
->>>>>>> master
         for epoch in range(self.config.train.epochs):
             for iter, (batch, rewards) in enumerate(self.rollout_loader):
 
