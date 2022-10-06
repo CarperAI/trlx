@@ -22,7 +22,9 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
 # Cell
 
 class ValueHead(nn.Module):
-    """The ValueHead class implements a head for GPT2 that returns a scalar for each output token."""
+    """
+    The ValueHead class implements a head for GPT2 that returns a scalar for each output token.
+    """
     def __init__(self, config):
         super().__init__()
         self.detach_head = False
@@ -67,7 +69,9 @@ class ValueHead(nn.Module):
 # Cell
 
 class GPT2HeadWithValueModel(GPT2PreTrainedModel):
-    """The GPT2HeadWithValueModel class implements a GPT2 language model with a secondary, scalar head."""
+    """
+    The GPT2HeadWithValueModel class implements a GPT2 language model with a secondary, scalar head.
+    """
     def __init__(self, config):
         super().__init__(config)
         config.num_labels = 1

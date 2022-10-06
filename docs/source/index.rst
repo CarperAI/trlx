@@ -11,6 +11,9 @@ Welcome to trlX's documentation!
    :caption: Contents:
 
    data
+   models
+   orchestrator
+   configs
 
 
 
