@@ -1,10 +1,12 @@
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
+
 import yaml
-import sys
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, any] = {}  # registry
+
 
 def register_method(name):
     """Decorator used register a method config
@@ -27,7 +29,8 @@ def register_method(name):
 
     return cls
 
-def get_method(name : str) -> Callable:
+
+def get_method(name: str) -> Callable:
     """
     Return constructor for specified method config
     """
@@ -41,27 +44,29 @@ def get_method(name : str) -> Callable:
 @dataclass
 @register_method
 class MethodConfig:
-    name : str
+    name: str
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
 
+
 @dataclass
 @register_method
 class PPOConfig(MethodConfig):
-    ppo_epochs : int
-    num_rollouts : int
-    chunk_size : int
-    init_kl_coef : float
-    target : float
-    horizon : int
-    gamma : float
-    lam : float
-    cliprange : float
-    cliprange_value : float
-    vf_coef : float
-    gen_kwargs : dict
+    ppo_epochs: int
+    num_rollouts: int
+    chunk_size: int
+    init_kl_coef: float
+    target: float
+    horizon: int
+    gamma: float
+    lam: float
+    cliprange: float
+    cliprange_value: float
+    vf_coef: float
+    gen_kwargs: dict
+
 
 @dataclass
 @register_method

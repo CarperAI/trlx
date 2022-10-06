@@ -1,23 +1,24 @@
 import os
-import torch as th
-import numpy as np
-from torch import tensor, nn
-import torch.nn.functional as F
-import transformers
-from transformers import AutoModelForCausalLM, PretrainedConfig, AutoConfig
-
-from typing import NamedTuple, Tuple, Union
-from copy import deepcopy
 from collections import defaultdict
-from accelerate.utils import compute_module_sizes
+from copy import deepcopy
 from itertools import chain
+from typing import NamedTuple, Tuple, Union
 
 import accelerate
 import deepspeed
+import numpy as np
+import torch as th
+import torch.nn.functional as F
+import transformers
+from accelerate.utils import compute_module_sizes
+from torch import nn, tensor
+from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
+
 
 def topk_mask(xs: th.FloatTensor, k: int):
     mintop = th.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return th.where(xs < mintop, -np.inf * th.ones_like(xs, dtype=xs.dtype), xs)
+
 
 class QVOutput(Tuple):
     logits: th.FloatTensor
@@ -26,20 +27,20 @@ class QVOutput(Tuple):
     vs: th.FloatTensor
     past_key_values: Tuple[th.FloatTensor]
 
+
 def make_head(n_embd: int, out: int):
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2),
-        nn.ReLU(),
-        nn.Linear(n_embd * 2, out)
+        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
+
 
 class QVModel(nn.Module):
     def __init__(self, config: Union[PretrainedConfig, str], params):
         super().__init__()
 
         # enable zero3 init within from_pretrained
-        if os.environ.get('DEEPSPEED_ZERO_STAGE', '0') == '3':
-            config_path = os.environ.get('DEEPSPEED_CONFIG_FILE', '')
+        if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
+            config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
             if config_path:
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)
 
@@ -51,7 +52,7 @@ class QVModel(nn.Module):
         for block in self.gpt.transformer.h:
             block.requires_grad_(False)
 
-        if hasattr(self.gpt.config, 'hidden_size'):
+        if hasattr(self.gpt.config, "hidden_size"):
             self.n_embd = self.gpt.config.hidden_size
         else:
             self.n_embd = self.gpt.config.n_embd
@@ -76,7 +77,7 @@ class QVModel(nn.Module):
             self.target_q2_head.requires_grad_(False)
 
     def forward(self, **x):
-        if hasattr(self.gpt, 'gpt_neox'):
+        if hasattr(self.gpt, "gpt_neox"):
             out = self.gpt.gpt_neox(**x)
         else:
             out = self.gpt.transformer(**x)
@@ -90,7 +91,7 @@ class QVModel(nn.Module):
             qs = self.q1_head(hs)
             target_qs = self.target_q1_head(hs)
 
-        if hasattr(self.gpt, 'gpt_neox'):
+        if hasattr(self.gpt, "gpt_neox"):
             logits = self.gpt.embed_out(hs)
         else:
             logits = self.gpt.lm_head(hs)
@@ -130,39 +131,80 @@ class QVModel(nn.Module):
         else:
             loss_q = ((Q - Q_.detach()) * isterminal).pow(2).sum() / n_nonterminal
 
-        loss_v = (((targetQ >= V).int() * self.tau * (targetQ - V).pow(2) + (targetQ < V).int() * (1 - self.tau) * (targetQ - V).pow(2)) * isterminal).sum() / n_nonterminal
+        loss_v = (
+            (
+                (targetQ >= V).int() * self.tau * (targetQ - V).pow(2)
+                + (targetQ < V).int() * (1 - self.tau) * (targetQ - V).pow(2)
+            )
+            * isterminal
+        ).sum() / n_nonterminal
 
         if self.two_qs:
-            loss_cql_q1 = (F.cross_entropy(qs[0][:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction='none').reshape(bsize, ntokens-1) * isterminal).sum() / n_nonterminal
-            loss_cql_q2 = (F.cross_entropy(qs[1][:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction='none').reshape(bsize, ntokens-1) * isterminal).sum() / n_nonterminal
+            loss_cql_q1 = (
+                F.cross_entropy(
+                    qs[0][:, :-1].reshape(-1, dsize),
+                    actions.reshape(-1),
+                    reduction="none",
+                ).reshape(bsize, ntokens - 1)
+                * isterminal
+            ).sum() / n_nonterminal
+            loss_cql_q2 = (
+                F.cross_entropy(
+                    qs[1][:, :-1].reshape(-1, dsize),
+                    actions.reshape(-1),
+                    reduction="none",
+                ).reshape(bsize, ntokens - 1)
+                * isterminal
+            ).sum() / n_nonterminal
             loss_cql = loss_cql_q1 + loss_cql_q2
         else:
-            loss_cql = (F.cross_entropy(qs[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction='none').reshape(bsize, ntokens-1) * isterminal).sum() / n_nonterminal
+            loss_cql = (
+                F.cross_entropy(
+                    qs[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
+                ).reshape(bsize, ntokens - 1)
+                * isterminal
+            ).sum() / n_nonterminal
 
-        loss_awac = (F.cross_entropy(logits[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction='none').reshape(bsize, ntokens-1) * isterminal).sum() / n_nonterminal
+        loss_awac = (
+            F.cross_entropy(
+                logits[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
+            ).reshape(bsize, ntokens - 1)
+            * isterminal
+        ).sum() / n_nonterminal
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
         stats = {
-            k: v for k, v in locals().items() if k in
-            ['loss', 'loss_v', 'loss_q', 'loss_cql', 'loss_awac']
+            k: v
+            for k, v in locals().items()
+            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
         }
 
         return loss, stats
 
     def _sync_target_q_heads(self, alpha):
-        for target_param, copy_param in zip(self.target_q1_head.parameters(), self.q1_head.parameters()):
-            target_param.data.copy_((alpha * copy_param.data) + (1.0 - alpha) * target_param.data)
+        for target_param, copy_param in zip(
+            self.target_q1_head.parameters(), self.q1_head.parameters()
+        ):
+            target_param.data.copy_(
+                (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
+            )
 
         if self.two_qs:
-            for target_param, copy_param in zip(self.target_q2_head.parameters(), self.q2_head.parameters()):
-                target_param.data.copy_((alpha * copy_param.data) + (1.0 - alpha) * target_param.data)
+            for target_param, copy_param in zip(
+                self.target_q2_head.parameters(), self.q2_head.parameters()
+            ):
+                target_param.data.copy_(
+                    (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
+                )
 
     def sync_target_q_heads(self):
-        if os.environ.get('DEEPSPEED_ZERO_STAGE', '0') == '3':
-            params = chain(self.q1_head.parameters(),
-                           self.target_q1_head.parameters(),
-                           self.q2_head.parameters() if self.two_qs else [],
-                           self.target_q2_head.parameters() if self.two_qs else [])
+        if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
+            params = chain(
+                self.q1_head.parameters(),
+                self.target_q1_head.parameters(),
+                self.q2_head.parameters() if self.two_qs else [],
+                self.target_q2_head.parameters() if self.two_qs else [],
+            )
 
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
@@ -171,15 +213,27 @@ class QVModel(nn.Module):
             self._sync_target_q_heads(self.alpha)
 
     @th.inference_mode()
-    def sample(self, query, beta=1, max_length=32, temperature=1, top_k=20, logit_mask=None, logs=True, eos_token_id=50256):
+    def sample(
+        self,
+        query,
+        beta=1,
+        max_length=32,
+        temperature=1,
+        top_k=20,
+        logit_mask=None,
+        logs=True,
+        eos_token_id=50256,
+    ):
         input = query.clone()
         past_key_values = None
         tensors = defaultdict(list)
 
         finished = th.zeros(input.shape[0], 1, dtype=th.long, device=query.device)
 
-        for _ in range(max_length-1):
-            logits, _, target_qs, vs, past_key_values = self.forward(input_ids=input, past_key_values=past_key_values)
+        for _ in range(max_length - 1):
+            logits, _, target_qs, vs, past_key_values = self.forward(
+                input_ids=input, past_key_values=past_key_values
+            )
 
             if self.two_qs:
                 qs = th.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
@@ -205,25 +259,27 @@ class QVModel(nn.Module):
             finished = (tokens == eos_token_id).long()
 
             if logs:
-                tensors['qs'].append(qs)
-                tensors['vs'].append(vs)
-                tensors['adv'].append(adv)
+                tensors["qs"].append(qs)
+                tensors["vs"].append(vs)
+                tensors["adv"].append(adv)
 
         stats = {}
         for name, xs in tensors.items():
             xs = th.vstack(xs)
-            stats.update({
-                f'{name}-min': xs.min(),
-                f'{name}-max': xs.max(),
-                f'{name}-std': xs.std(),
-                f'{name}-avg': xs.mean(),
-            })
+            stats.update(
+                {
+                    f"{name}-min": xs.min(),
+                    f"{name}-max": xs.max(),
+                    f"{name}-std": xs.std(),
+                    f"{name}-avg": xs.mean(),
+                }
+            )
 
         return query, stats
 
     @property
     def dummy_inputs(self):
-        return {'input_ids': th.ones(1, 1, device=self.gpt.device, dtype=th.long)}
+        return {"input_ids": th.ones(1, 1, device=self.gpt.device, dtype=th.long)}
 
     @property
     def device(self):

@@ -1,12 +1,13 @@
+import sys
 from abc import abstractmethod
 from typing import Dict
-import sys
 
-from trlx.pipeline import BasePipeline
 from trlx.model import BaseRLModel
+from trlx.pipeline import BasePipeline
 
 # specifies a dictionary of architectures
 _ORCH: Dict[str, any] = {}  # registry
+
 
 def register_orchestrator(name):
     """Decorator used register a CARP architecture
@@ -29,9 +30,10 @@ def register_orchestrator(name):
 
     return cls
 
+
 @register_orchestrator
 class Orchestrator:
-    def __init__(self, pipeline : BasePipeline, rl_model : BaseRLModel):
+    def __init__(self, pipeline: BasePipeline, rl_model: BaseRLModel):
         self.pipeline = pipeline
         self.rl_model = rl_model
 

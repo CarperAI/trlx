@@ -1,17 +1,18 @@
-from abc import abstractmethod
-from typing import Dict, Callable, Iterable
-import sys
 import os
+import sys
+from abc import abstractmethod
+from typing import Callable, Dict, Iterable
 
 import torch
 
 from trlx.data import RLElement
-from trlx.pipeline import BaseRolloutStore
 from trlx.data.configs import TRLConfig
+from trlx.pipeline import BaseRolloutStore
 from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
 _MODELS: Dict[str, any] = {}  # registry
+
 
 def register_model(name):
     """Decorator used register a CARP architecture
@@ -34,18 +35,19 @@ def register_model(name):
 
     return cls
 
+
 @register_model
 class BaseRLModel:
-    def __init__(self, config : TRLConfig, train_mode = False):
-        self.store : BaseRolloutStore = None
+    def __init__(self, config: TRLConfig, train_mode=False):
+        self.store: BaseRolloutStore = None
         self.config = config
         self.train_mode = train_mode
 
     def push_to_store(self, data):
         self.store.push(data)
-    
+
     @abstractmethod
-    def act(self, data : RLElement) -> RLElement:
+    def act(self, data: RLElement) -> RLElement:
         """
         Given RLElement with state, produce an action and add it to the RLElement.
         Orchestrator should call this, get reward and push subsequent RLElement to RolloutStore
@@ -53,27 +55,34 @@ class BaseRLModel:
         pass
 
     @abstractmethod
-    def sample(self, prompts : Iterable[str], length : int, n_samples : int) -> Iterable[str]:
+    def sample(
+        self, prompts: Iterable[str], length: int, n_samples: int
+    ) -> Iterable[str]:
         """
         Sample from the language. Takes prompts and maximum length to generate.
 
         :param prompts: List of prompts to tokenize and use as context
-        
+
         :param length: How many new tokens to genrate for each prompt
         :type length: int
 
         :param n_samples: Default behavior is to take number of prompts as this
         """
         pass
-    
+
     @abstractmethod
-    def learn(self, log_fn : Callable = None, save_fn : Callable = None, eval_fn : Callable = None):
+    def learn(
+        self,
+        log_fn: Callable = None,
+        save_fn: Callable = None,
+        eval_fn: Callable = None,
+    ):
         """
         Use experiences in RolloutStore to learn
 
         :param log_fn: Optional function that is called when logging and passed a dict of logging relevant values
         :type log_fn: Callable[Dict[str, any]]
-        
+
         :param save_fn: Optional function to call after saving. Is passed the components.
         :type save_fn: Callable[Dict[str, any]]
 
@@ -89,7 +98,7 @@ class BaseRLModel:
         """
         pass
 
-    def save(self, fp : str, title : str = "OUT"):
+    def save(self, fp: str, title: str = "OUT"):
         """
         Try to save all components to specified path under a folder with given title
         """
@@ -103,27 +112,29 @@ class BaseRLModel:
             except:
                 print(f"Failed to save component: {name}, continuing.")
 
-    def load(self, fp : str, title : str = "OUT"):
+    def load(self, fp: str, title: str = "OUT"):
         """
         Try to load all components from specified path under a folder with given title
         """
 
         path = os.path.join(fp, title)
-        
+
         components = self.get_components()
         for name in components:
             try:
-                components[name] = torch.load(os.path.join(path, name) + ".pt", map_location = "cpu")
+                components[name] = torch.load(
+                    os.path.join(path, name) + ".pt", map_location="cpu"
+                )
             except:
                 print(f"Failed to load component: {name}, continuing.")
 
-    def intervals(self, steps : int) -> Dict[str, bool]:
+    def intervals(self, steps: int) -> Dict[str, bool]:
         """
         Using config and current step number, returns a dict of whether certain things should be done
         """
 
         return {
-            "do_log" : (steps + 1) % self.config.train.log_interval == 0,
-            "do_eval" : (steps + 1) % self.config.train.eval_interval == 0,
-            "do_save" : (steps + 1) % self.config.train.checkpoint_interval == 0
+            "do_log": (steps + 1) % self.config.train.log_interval == 0,
+            "do_eval": (steps + 1) % self.config.train.eval_interval == 0,
+            "do_save": (steps + 1) % self.config.train.checkpoint_interval == 0,
         }
