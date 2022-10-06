@@ -32,6 +32,10 @@ class AccelerateRLModel(BaseRLModel):
         self.model = self.get_arch(
             self.config
         )  # Retrieves model equipped for ppo, ilql, etc
+        if self.config.model.num_layers_unfrozen > 0:
+            for block in self.model.gpt.transformer.h[:-self.config.model.num_layers_unfrozen]:
+                for parameter in block.parameters():
+                    parameter.requires_grad = False
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.tokenizer_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
