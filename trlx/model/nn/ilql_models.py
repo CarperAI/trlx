@@ -15,17 +15,17 @@ from torch import nn, tensor
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
 
 
-def topk_mask(xs: th.FloatTensor, k: int):
-    mintop = th.topk(xs, k)[0][:, -1].unsqueeze(-1)
-    return th.where(xs < mintop, -np.inf * th.ones_like(xs, dtype=xs.dtype), xs)
+def topk_mask(xs: torch.FloatTensor, k: int):
+    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
+    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
 
 class QVOutput(Tuple):
-    logits: th.FloatTensor
-    qs: th.FloatTensor
-    target_qs: th.FloatTensor
-    vs: th.FloatTensor
-    past_key_values: Tuple[th.FloatTensor]
+    logits: torch.FloatTensor
+    qs: torch.FloatTensor
+    target_qs: torch.FloatTensor
+    vs: torch.FloatTensor
+    past_key_values: Tuple[torch.FloatTensor]
 
 
 def make_head(n_embd: int, out: int):
@@ -38,11 +38,11 @@ class QVModel(nn.Module):
     def __init__(self, config: Union[PretrainedConfig, str], params):
         super().__init__()
 
-        # enable zero3 init within from_pretrained
+        # enable zero3 init witorchin from_pretrained
         if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
-            config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
-            if config_path:
-                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)
+            config_patorch = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
+            if config_patorch:
+                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_patorch)
 
         if isinstance(config, PretrainedConfig):
             self.gpt = AutoModelForCausalLM.from_config(config)
@@ -110,15 +110,15 @@ class QVModel(nn.Module):
         bsize, ntokens, dsize = logits.shape
 
         if self.two_qs:
-            Q1 = qs[0][:, :-1].gather(-1, actions).squeeze(-1)
-            Q2 = qs[1][:, :-1].gather(-1, actions).squeeze(-1)
+            Q1 = qs[0][:, :-1].gatorcher(-1, actions).squeeze(-1)
+            Q2 = qs[1][:, :-1].gatorcher(-1, actions).squeeze(-1)
 
-            targetQ1 = target_qs[0][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ2 = target_qs[1][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ = th.minimum(targetQ1, targetQ2)
+            targetQ1 = target_qs[0][:, :-1].gatorcher(-1, actions).squeeze(-1).detach()
+            targetQ2 = target_qs[1][:, :-1].gatorcher(-1, actions).squeeze(-1).detach()
+            targetQ = torch.minimum(targetQ1, targetQ2)
         else:
-            Q = qs[:, :-1].gather(-1, actions).squeeze(-1)
-            targetQ = target_qs[:, :-1].gather(-1, actions).squeeze(-1).detach()
+            Q = qs[:, :-1].gatorcher(-1, actions).squeeze(-1)
+            targetQ = target_qs[:, :-1].gatorcher(-1, actions).squeeze(-1).detach()
 
         n_nonterminal = max(1, isterminal.sum())
         V = vs[:, 1:].squeeze() * isterminal
@@ -206,18 +206,18 @@ class QVModel(nn.Module):
                 self.target_q2_head.parameters() if self.two_qs else [],
             )
 
-            with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
+            witorch deepspeed.zero.GatorcheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
                     self._sync_target_q_heads(self.alpha)
         else:
             self._sync_target_q_heads(self.alpha)
 
-    @th.inference_mode()
+    @torch.inference_mode()
     def sample(
         self,
         query,
         beta=1,
-        max_length=32,
+        max_lengtorch=32,
         temperature=1,
         top_k=20,
         logit_mask=None,
@@ -228,32 +228,32 @@ class QVModel(nn.Module):
         past_key_values = None
         tensors = defaultdict(list)
 
-        finished = th.zeros(input.shape[0], 1, dtype=th.long, device=query.device)
+        finished = torch.zeros(input.shape[0], 1, dtype=torch.long, device=query.device)
 
-        for _ in range(max_length - 1):
+        for _ in range(max_lengtorch - 1):
             logits, _, target_qs, vs, past_key_values = self.forward(
                 input_ids=input, past_key_values=past_key_values
             )
 
             if self.two_qs:
-                qs = th.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
+                qs = torch.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
             else:
                 qs = target_qs[:, -1]
 
             logits = logits[:, -1]
 
             if logit_mask is not None:
-                logits[th.where(logit_mask[input[:, -1]])] = -np.inf
+                logits[torch.where(logit_mask[input[:, -1]])] = -np.inf
 
             adv = qs - vs[:, -1, :]
             pi = F.log_softmax(logits, -1)
             modpi = topk_mask(pi + beta * adv, top_k)
             ps = F.softmax(modpi / temperature, -1)
 
-            tokens = th.multinomial(ps, 1)
+            tokens = torch.multinomial(ps, 1)
             tokens = (1 - finished) * tokens + finished * eos_token_id
 
-            query = th.hstack((query, tokens))
+            query = torch.hstack((query, tokens))
 
             input = tokens
             finished = (tokens == eos_token_id).long()
@@ -265,7 +265,7 @@ class QVModel(nn.Module):
 
         stats = {}
         for name, xs in tensors.items():
-            xs = th.vstack(xs)
+            xs = torch.vstack(xs)
             stats.update(
                 {
                     f"{name}-min": xs.min(),
@@ -279,7 +279,7 @@ class QVModel(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {"input_ids": th.ones(1, 1, device=self.gpt.device, dtype=th.long)}
+        return {"input_ids": torch.ones(1, 1, device=self.gpt.device, dtype=torch.long)}
 
     @property
     def device(self):
