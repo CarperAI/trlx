@@ -7,7 +7,7 @@ from typing import NamedTuple, Tuple, Union
 import accelerate
 import deepspeed
 import numpy as np
-import torch as th
+import torch
 import torch.nn.functional as F
 import transformers
 from accelerate.utils import compute_module_sizes
