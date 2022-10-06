@@ -11,10 +11,10 @@ from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
 
 if __name__ == "__main__":
-    cfg = TRLConfig.load_yaml("configs/default_config.yml")
+    cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
     sentiment_pipe = pipeline(
-        "sentiment-analysis", "lvwerra/distilbert-imdb", device=torch.device(0)
+        "sentiment-analysis", "lvwerra/distilbert-imdb", device=-1
     )
 
     def reward_fn(samples: List[str]):
@@ -28,7 +28,8 @@ if __name__ == "__main__":
         return scores
 
     model: AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
-    wandb.watch(model.model)
+    if model.accelerator.is_main_process:
+        wandb.watch(model.model)
 
     pipeline: PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
     orch: PPOOrchestrator = get_orchestrator(cfg.train.orchestrator)(

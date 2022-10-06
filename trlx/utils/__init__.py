@@ -1,7 +1,7 @@
 import os
 import time
 from functools import reduce
-from typing import Any, Callable, Iterable, List
+from typing import Any, Iterable, List
 
 import numpy as np
 import torch

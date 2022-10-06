@@ -65,10 +65,6 @@ class PPOOrchestrator(Orchestrator):
 
             # Precompute logprobs, values
             all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
-            assert (
-                all_tokens.size()[1]
-                == query_tensors.size()[1] + response_tensors.size()[1]
-            )
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
                 # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
@@ -99,16 +95,8 @@ class PPOOrchestrator(Orchestrator):
             exp_time = clock.tick()
 
             # Evaluate model on first chunk
-            if i == 0:
-                mean_score = torch.mean(scores).item()
-                rows = list(zip(texts, scores.tolist()))
-                stats = {
-                    "exp_time": exp_time,
-                    "mean_score": mean_score,
-                    "responses": wandb.Table(
-                        columns=["response", "score"], rows=rows[:16]
-                    ),
-                }
+            if i == 0 and self.rl_model.accelerator.is_main_process:
+                stats = {"exp_time": exp_time}
                 self.rl_model.accelerator.log(stats, step=iter_count)
 
             new_ppo_rl_elements = [

@@ -18,6 +18,9 @@ from trlx.model import BaseRLModel, register_model
 from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
+WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
+LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
+
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
@@ -39,11 +42,17 @@ class AccelerateRLModel(BaseRLModel):
             with open(self.config.train.accelerate_config_path, mode="r") as file:
                 accelerate_config = yaml.safe_load(file)
             config_dict.update(accelerate_config)
-        # TODO(dahoas): might need to move this
         self.accelerator = Accelerator(log_with="wandb")
-        self.accelerator.init_trackers(
-            self.config.train.project_name, config=config_dict
-        )
+
+        if WORLD_SIZE > 1:
+            torch.distributed.barrier(device_ids=[LOCAL_RANK])
+        else:
+            torch.random.manual_seed(1000)
+        if self.accelerator.is_main_process:
+            self.accelerator.init_trackers(
+                project_name=self.config.train.project_name, config=config_dict
+            )
+
         self.opt = torch.optim.AdamW(
             self.model.parameters(), lr=self.config.train.learning_rate_init
         )
