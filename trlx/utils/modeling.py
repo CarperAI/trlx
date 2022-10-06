@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 
+
 def whiten(values, shift_mean=True):
     """Whiten values."""
     mean, var = torch.mean(values), torch.var(values)

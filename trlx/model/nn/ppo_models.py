@@ -8,6 +8,15 @@ import torch
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torch.nn import Identity
+from transformers import (GPT2LMHeadModel, GPT2Model, GPT2PreTrainedModel,
+                          GPT2Tokenizer, top_k_top_p_filtering)
+from transformers.modeling_outputs import ModelOutput
+
+
 # Cell
 @dataclass
 class CausalLMOutputWithCrossAttentions(ModelOutput):
@@ -19,6 +28,7 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
     value: Optional[torch.FloatTensor] = None
 
+
 # Cell
 
 def make_head(n_embd: int, out: int):
@@ -27,6 +37,7 @@ def make_head(n_embd: int, out: int):
         nn.ReLU(),
         nn.Linear(n_embd * 2, out)
     )
+
 
 # Cell
 
