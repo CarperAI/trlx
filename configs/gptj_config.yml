@@ -23,7 +23,7 @@ train:
   eval_interval : 16  # eval interval
 
   pipeline : "PPOPipeline"  # prompt pipeline to load
-  orchestrator : "PPOSentimentOrchestrator"  # orchestrator to load
+  orchestrator : "PPOOrchestrator"  # orchestrator to load
 
   input_size : 4  # max input size
   gen_size : 48  # max gen size

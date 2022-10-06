@@ -18,8 +18,9 @@ from trlx.model import BaseRLModel, register_model
 from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
-WORLD_SIZE = int(os.environ.get('WORLD_SIZE', 1))
-LOCAL_RANK = int(os.environ.get('LOCAL_RANK', 0))
+WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
+LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
+
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
@@ -41,18 +42,28 @@ class AccelerateRLModel(BaseRLModel):
             with open(self.config.train.accelerate_config_path, mode="r") as file:
                 accelerate_config = yaml.safe_load(file)
             config_dict.update(accelerate_config)
-        self.accelerator = Accelerator(log_with='wandb')
+        self.accelerator = Accelerator(log_with="wandb")
 
         if WORLD_SIZE > 1:
             torch.distributed.barrier(device_ids=[LOCAL_RANK])
         else:
             torch.random.manual_seed(1000)
         if self.accelerator.is_main_process:
-            self.accelerator.init_trackers(project_name=self.config.train.project_name, config=config_dict)
-        
-        self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps, eta_min=self.config.train.learning_rate_target)
-        self.rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 2)
+            self.accelerator.init_trackers(
+                project_name=self.config.train.project_name, config=config_dict
+            )
+
+        self.opt = torch.optim.AdamW(
+            self.model.parameters(), lr=self.config.train.learning_rate_init
+        )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.opt,
+            self.config.train.total_steps,
+            eta_min=self.config.train.learning_rate_target,
+        )
+        self.rollout_loader = self.store.create_loader(
+            self.config.train.batch_size, shuffle=True, num_workers=2
+        )
 
         (
             self.model,

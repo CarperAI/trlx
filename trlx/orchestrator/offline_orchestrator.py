@@ -36,5 +36,5 @@ class OfflineOrchestrator(Orchestrator):
         self.model.reward_fn = reward_fn
         self.model.stats_fn = stats_fn
 
-    def score(samples):
+    def score(self, samples):
         return self.model.reward_fn(samples)
