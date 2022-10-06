@@ -1,6 +1,12 @@
+[docs-image]: https://readthedocs.org/projects/trlX/badge/?version=latest
+[docs-url]: https://trlX.readthedocs.io/en/latest/?badge=latest
+
 # Welcome to Transformer Reinforcement Learning X (`trlX`)
 > A repo for distributed training of language models with Reinforcement Learning via Human Feedback (RLHF)
 
+[![Docs Status][docs-image]][docs-url]
+
+**[Documentation](https://trlX.readthedocs.io)**
 
 ## Overview
 Inspired by the popular `trl` library, the `trlX` repo allows you to fine-tune Huggingface supported language models up to 20B parameters via either reinforcement learning using a provided scoring function or reward-labeled dataset. We aim to support a range of both online and offline RL algorithms including Proximal Policy Optimization (PPO), Natural Language Policy Optimization (NLPO), Actor Critic (A2C), and Implicit Q Learning (ILQL).
