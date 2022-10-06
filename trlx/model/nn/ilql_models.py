@@ -40,8 +40,8 @@ class QVModel(nn.Module):
         # enable zero3 init within from_pretrained
         if os.environ.get('DEEPSPEED_ZERO_STAGE', '0') == '3':
             config_path = os.environ.get('DEEPSPEED_CONFIG_FILE', '')
-            if config_path:
-                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)
+            #if config_path:
+            #    _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)
 
         if isinstance(config, PretrainedConfig):
             self.gpt = AutoModelForCausalLM.from_config(config)

@@ -1,5 +1,5 @@
 model:
-  model_path : "lvwerra/gpt2-imdb"  # Name of hf model to load
+  model_path : "EleutherAI/gpt-j-6B"  # Name of hf model to load
   tokenizer_path : "gpt2"  # Name of hf tokenizer to load
   model_type : "AcceleratePPOModel"  # Name of accelerate model type to load
   device : "cuda"  # Train device
@@ -9,7 +9,7 @@ train:
   n_ctx : 512  # Size of LM context
   epochs : 10  # Train for max(epochs, total_steps)
   total_steps : 80000  # Train for max(epochs, total_steps)
-  batch_size : 128  # batch size
+  batch_size : 16  # batch size
   grad_clip : 1.0  # gradient clipping threshold
 
   lr_ramp_steps : 100  # learning rate warm up
@@ -33,8 +33,8 @@ train:
 
 method:
   name : 'ppoconfig'  # Name of RL method config
-  num_rollouts : 128  # Number of rollouts to collect per epoch
-  chunk_size : 128  # Number of rollouts to collect in one loop of orchestrator
+  num_rollouts : 16  # Number of rollouts to collect per epoch
+  chunk_size : 16  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs : 4  # Number of ppo epochs
   init_kl_coef : 0.2  # init kl coefficient
   target : 6  # target kl coefficient

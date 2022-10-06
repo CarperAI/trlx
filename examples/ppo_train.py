@@ -8,7 +8,7 @@ import wandb
 
 
 if __name__ == "__main__":
-    cfg = TRLConfig.load_yaml("configs/default_config.yml")
+    cfg = TRLConfig.load_yaml("configs/gptj_config.yml")
 
 
     model : AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)

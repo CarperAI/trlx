@@ -20,10 +20,10 @@ def batch_map(fn: Callable, xs: Iterable, bsize: int, desc=None):
     return out
 
 if __name__ == '__main__':
-    config = TRLConfig.load_yaml('configs/ilql_config.yml')
+    config = TRLConfig.load_yaml('configs/ilql_gptj.yml')
     sentiment_pipe = pipeline('sentiment-analysis', 'lvwerra/distilbert-imdb', device=torch.device(0))
 
-    gpt_config_or_path = 'gpt2'
+    gpt_config_or_path = 'EleutherAI/gpt-j-6B'
     tokenizer = AutoTokenizer.from_pretrained(gpt_config_or_path)
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -43,7 +43,10 @@ if __name__ == '__main__':
 
     n_prompts = 128
     eval_prompts = torch.tensor([model.tokenizer.bos_token_id] * n_prompts).view(n_prompts, 1)
-    train_samples = load_dataset('imdb', split='train+test')['text']
+    train_samples = load_dataset('imdb', split='train+test')
+
+    #TODO(dahoas)
+    train_samples = train_samples.filter(lambda x: len(x["text"])<500, batched=False)['text']
 
     orch = OfflineOrchestrator(
         model,

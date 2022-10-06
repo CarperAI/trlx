@@ -5,7 +5,7 @@ from trlx.data.configs import TRLConfig
 
 from trlx.model import BaseRLModel, register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import GPT2HeadWithValueModel
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 
 from trlx.utils import rampup_decay, safe_mkdir, Clock, topk_mask
@@ -32,8 +32,8 @@ class AcceleratePPOModel(AccelerateRLModel):
 		super().__init__(config, self.store)
 
 	def get_arch(self, config: TRLConfig):
-		# TODO(dahoas): Assumes model is gpt2 based
-		return GPT2HeadWithValueModel.from_pretrained(self.config.model.model_path)
+		# TODO(dahoas): Assumes model is gpt like
+		return GPTHeadWithValueModel(self.config.model.model_path)
 
 	def loss(self, query_tensors, response_tensors, all_logprobs, all_values, all_rewards):
 		lastgaelam = 0
@@ -86,7 +86,7 @@ class AcceleratePPOModel(AccelerateRLModel):
 	def post_backward_callback(self):
 		batch = self.logs['batch']
 		if self.accelerator.is_main_process:
-			if self.iter_count % self.config.train.eval_interval == 0:
+			if self.iter_count % self.config.train.eval_interval == 0 or self.iter_count <= self.config.method.ppo_epochs:
 				text = self.tokenizer.batch_decode(batch.query_tensors)
 				eval_batch : PromptBatch = PromptBatch(text=text, tokens=batch.query_tensors)
 				query_tensors, response_tensors, response_text = self.act(eval_batch)
@@ -112,7 +112,6 @@ class AcceleratePPOModel(AccelerateRLModel):
 		self.epoch = 0
 		while self.iter_count < self.config.train.total_steps or self.epoch <= self.config.train.epochs:
 			for batch in rollout_loader:
-
 				query_tensors = batch.query_tensors.to(self.accelerator.device)
 				response_tensors = batch.response_tensors.to(self.accelerator.device)
 				logprobs = batch.logprobs.to(self.accelerator.device)
@@ -121,13 +120,16 @@ class AcceleratePPOModel(AccelerateRLModel):
 
 				for _ in range(self.config.method.ppo_epochs):
 					loss, pg_loss, vf_loss = self.loss(query_tensors, response_tensors, logprobs, values, rewards)
+					self.logs = {'loss': loss, 'pg_loss': pg_loss, 'vf_loss': vf_loss, 'batch': batch, 'rewards': rewards}
+					#self.post_backward_callback()
+					#exit()
 					self.opt.zero_grad()
 					self.accelerator.backward(loss)
 					self.opt.step()
 					self.scheduler.step()
 					self.iter_count += 1
 
-					self.logs = {'loss': loss, 'pg_loss': pg_loss, 'vf_loss': vf_loss, 'batch': batch, 'rewards': rewards}
+					
 
 				self.post_backward_callback()
 				self.accelerator.wait_for_everyone()

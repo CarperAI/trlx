@@ -100,3 +100,4 @@ class PPOOrchestrator(Orchestrator):
 
 		# Push text and sentiment (i.e. reward) to models rollout storage
 		self.rl_model.push_to_store(ppo_rl_elements)
+		torch.cuda.empty_cache()
