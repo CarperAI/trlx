@@ -7,6 +7,9 @@ from trlx.data.method_configs import MethodConfig, get_method
 
 @dataclass
 class ModelConfig:
+    """
+    Config for a model.
+    """
     model_path : str
     tokenizer_path : str
     model_type : str # One of the architectures present in framework.model
@@ -19,6 +22,9 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
+    """
+    Config for train job on model.
+    """
     n_ctx : int
     epochs : int
     total_steps : int
