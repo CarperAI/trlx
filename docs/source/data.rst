@@ -36,10 +36,10 @@ each demand different kinds of data during training.
 
 **Data Elements for ILQL**
 
-.. autoclass:: trlx.ilql_types.ILQLElement
+.. autoclass:: trlx.data.ilql_types.ILQLElement
     :members:
     :undoc-members:
 
-.. autoclass:: trlx.ilql_types.ILQLBatch
+.. autoclass:: trlx.data.ilql_types.ILQLBatch
     :members:
     :undoc-members:
