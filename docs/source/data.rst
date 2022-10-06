@@ -38,8 +38,6 @@ each demand different kinds of data during training.
 
 .. autoclass:: trlx.data.ilql_types.ILQLElement
     :members:
-    :undoc-members:
 
 .. autoclass:: trlx.data.ilql_types.ILQLBatch
     :members:
-    :undoc-members:
