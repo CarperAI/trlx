@@ -12,6 +12,9 @@ from trlx.data.accelerate_base_datatypes import PromptBatch, PromptElement
 
 @register_datapipeline
 class PPOPipeline(BasePipeline):
+    """
+    Pipeline for training PPO on the IMDB review dataset. The task is to generate positive reviews.
+    """
     def __init__(self, tokenizer, config, prompt_dataset_path = None):
         super().__init__()
 
@@ -44,6 +47,9 @@ class PPOPipeline(BasePipeline):
 
 
 class PPORolloutStorage(BaseRolloutStore):
+    """
+    Rollout storage for training PPO on IMDB review dataset.
+    """
     def __init__(self):
         super().__init__()
 

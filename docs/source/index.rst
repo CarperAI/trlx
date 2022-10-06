@@ -14,8 +14,7 @@ Welcome to trlX's documentation!
    models
    orchestrator
    configs
-
-
+   pipeline
 
 Indices and tables
 ==================

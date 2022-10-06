@@ -10,6 +10,9 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement, AccelerateRLElement, PromptBatch, PromptElement
 
 def filter_outliers(x):
+    """
+    Filter outliers by removing reviews that are too short.
+    """
     return len(x['review']) > 200
 
 def process_data(dataset):
@@ -21,6 +24,9 @@ def process_data(dataset):
 
 @register_datapipeline
 class AcceleratePipeline(BasePipeline):
+    """
+    Basic pipeline using accelerate.
+    """
     def __init__(self, prompt_dataset_path = None):
         super().__init__()
 
@@ -41,6 +47,9 @@ class AcceleratePipeline(BasePipeline):
 
 
 class AccelerateRolloutStorage(BaseRolloutStore):
+    """
+    Rollout storage using accelerate. 
+    """
     def __init__(self):
         super().__init__()
 
