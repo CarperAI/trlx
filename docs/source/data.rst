@@ -1,12 +1,13 @@
 .. _data:
 
-Data Elements in trlX
+Data Elements
 ************************
 
 All of the major Carper projects: trlX, CHEESE, and magiCARP use 
 dataclasses corresponding to batches of data to communicate data between models and different
 components. trlX is no different, though it has many different dataclasses for
-different components like training or inference. Currently, we support PPO and ILQL.
+different components like training or inference. Currently, we support PPO and ILQL, which
+each demand different kinds of data during training.
   
 
 **Basic Data Elements for Accelerate**  
