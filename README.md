@@ -5,7 +5,7 @@
 ## Overview
 Inspired by the popular `trl` library, the `trlX` repo allows you to fine-tune Huggingface supported language models up to 20B parameters via either reinforcement learning using a provided scoring function or reward-labeled dataset. We aim to support a range of both online and offline RL algorithms including Proximal Policy Optimization (PPO), Natural Language Policy Optimization (NLPO), Actor Critic (A2C), and Implicit Q Learning (ILQL).
 
-Currently the library supports `gpt2` and `gptj` with plans to include `GPT-NeoX`, `T5` and more. Disibtributed training has been implemented via HF Accelerate and tested up to two nodes, each with 8 gpus.
+The library supports `gpt2` and `gptj` with plans to include `GPT-NeoX`, `T5` and more. PPO and ILQL algorithms are implemented. Disibtributed training has been implemented via HF Accelerate and tested up to two nodes, each with 8 gpus.
 
 ## Structure
 
@@ -16,7 +16,7 @@ The training pipeline is broken into four pieces:
 - Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
 - Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
-Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labele data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new orchestrator simply implementing the scoring function and inheriting from the `PPOOrchestrator` class. 
+Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new orchestrator simply implementing the scoring function and inheriting from the `PPOOrchestrator` class. 
 
 ## Example: How to add a task
 

@@ -1,12 +1,14 @@
-from transformers import GPT2LMHeadModel, GPT2Tokenizer, GPT2Model, GPT2PreTrainedModel
-from transformers import top_k_top_p_filtering
-from transformers.modeling_outputs import ModelOutput
-from torch import nn
-from torch.nn import Identity
-import torch.nn.functional as F
-import torch
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torch.nn import Identity
+from transformers import (GPT2LMHeadModel, GPT2Model, GPT2PreTrainedModel,
+                          GPT2Tokenizer, top_k_top_p_filtering)
+from transformers.modeling_outputs import ModelOutput
+
 
 # Cell
 @dataclass
@@ -19,7 +21,9 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
     value: Optional[torch.FloatTensor] = None
 
+
 # Cell
+
 
 class ValueHead(nn.Module):
     """
@@ -28,24 +32,36 @@ class ValueHead(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.detach_head = False
-        self.summary_type = config.summary_type if hasattr(config, "summary_type") else "last"
+        self.summary_type = (
+            config.summary_type if hasattr(config, "summary_type") else "last"
+        )
         if self.summary_type == "attn":
             raise NotImplementedError
 
         self.summary = Identity()
         if hasattr(config, "summary_use_proj") and config.summary_use_proj:
-            if hasattr(config, "summary_proj_to_labels") and config.summary_proj_to_labels and config.num_labels > 0:
+            if (
+                hasattr(config, "summary_proj_to_labels")
+                and config.summary_proj_to_labels
+                and config.num_labels > 0
+            ):
                 num_classes = config.num_labels
             else:
                 num_classes = config.hidden_size
             self.summary = nn.Linear(config.hidden_size, num_classes)
 
         self.activation = Identity()
-        if hasattr(config, "summary_activation") and config.summary_activation == "tanh":
+        if (
+            hasattr(config, "summary_activation")
+            and config.summary_activation == "tanh"
+        ):
             self.activation = nn.Tanh()
 
         self.first_dropout = Identity()
-        if hasattr(config, "summary_first_dropout") and config.summary_first_dropout > 0:
+        if (
+            hasattr(config, "summary_first_dropout")
+            and config.summary_first_dropout > 0
+        ):
             self.first_dropout = nn.Dropout(config.summary_first_dropout)
 
         self.last_dropout = Identity()
@@ -66,7 +82,9 @@ class ValueHead(nn.Module):
 
         return output
 
+
 # Cell
+
 
 class GPT2HeadWithValueModel(GPT2PreTrainedModel):
     """
@@ -103,7 +121,7 @@ class GPT2HeadWithValueModel(GPT2PreTrainedModel):
         output_attentions=False,
         output_hidden_states=False,
     ):
-        loss=None
+        loss = None
         transformer_outputs = self.transformer(
             input_ids,
             past_key_values=past_key_values,
@@ -118,7 +136,6 @@ class GPT2HeadWithValueModel(GPT2PreTrainedModel):
 
         lm_logits = self.lm_head(hidden_states)
         value = self.v_head(hidden_states).squeeze(-1)
-
 
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)

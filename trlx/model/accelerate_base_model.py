@@ -1,27 +1,22 @@
+import os
 from abc import abstractmethod
 from typing import Dict, Iterable, Tuple
 
-from trlx.data import RLElement, BatchElement
-from trlx.data.accelerate_base_datatypes import PromptBatch
-from trlx.data.configs import TRLConfig
-from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement
-
-from trlx.model import BaseRLModel, register_model
-from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
-
-from trlx.utils import rampup_decay, safe_mkdir, Clock, topk_mask
-
-from transformers import AutoTokenizer, AutoConfig
-import os
-
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import yaml
-
 from accelerate import Accelerator
-
+from torch.utils.data import DataLoader
 from torchtyping import TensorType
+from transformers import AutoConfig, AutoTokenizer
+
+from trlx.data import BatchElement, RLElement
+from trlx.data.accelerate_base_datatypes import (AccelerateRLBatchElement,
+                                                 PromptBatch)
+from trlx.data.configs import TRLConfig
+from trlx.model import BaseRLModel, register_model
+from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
+from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
 
 @register_model
@@ -34,11 +29,13 @@ class AccelerateRLModel(BaseRLModel):
 
         self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
 
-        self.model = self.get_arch(self.config) # Retrieves model equipped for ppo, ilql, etc
+        self.model = self.get_arch(
+            self.config
+        )  # Retrieves model equipped for ppo, ilql, etc
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.tokenizer_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.padding_side = 'left'
+        self.tokenizer.padding_side = "left"
 
         config_dict = self.config.to_dict()
         if self.config.train.accelerate_config_path != "":
@@ -46,16 +43,35 @@ class AccelerateRLModel(BaseRLModel):
                 accelerate_config = yaml.safe_load(file)
             config_dict.update(accelerate_config)
         # TODO(dahoas): might need to move this
-        self.accelerator = Accelerator(log_with='wandb')
-        self.accelerator.init_trackers(self.config.train.project_name, config=config_dict)
-        self.opt = torch.optim.AdamW(self.model.parameters(), lr = self.config.train.learning_rate_init)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.config.train.total_steps, eta_min=self.config.train.learning_rate_target)
-        self.rollout_loader = self.store.create_loader(self.config.train.batch_size, shuffle = True, num_workers = 2)
+        self.accelerator = Accelerator(log_with="wandb")
+        self.accelerator.init_trackers(
+            self.config.train.project_name, config=config_dict
+        )
+        self.opt = torch.optim.AdamW(
+            self.model.parameters(), lr=self.config.train.learning_rate_init
+        )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.opt,
+            self.config.train.total_steps,
+            eta_min=self.config.train.learning_rate_target,
+        )
+        self.rollout_loader = self.store.create_loader(
+            self.config.train.batch_size, shuffle=True, num_workers=2
+        )
 
-        self.model, self.opt, self.rollout_loader, self.scheduler = self.accelerator.prepare(self.model, self.opt, self.rollout_loader, self.scheduler)
+        (
+            self.model,
+            self.opt,
+            self.rollout_loader,
+            self.scheduler,
+        ) = self.accelerator.prepare(
+            self.model, self.opt, self.rollout_loader, self.scheduler
+        )
         self.store.clear_history()
 
-        self.dummy_input = self.tokenize("dummy input")['input_ids']  # Hack to make acclerate distributed work with model generation
+        self.dummy_input = self.tokenize("dummy input")[
+            "input_ids"
+        ]  # Hack to make acclerate distributed work with model generation
 
     def tokenize(self, text: Iterable[str]):
         """
@@ -64,36 +80,60 @@ class AccelerateRLModel(BaseRLModel):
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
-            truncation = True,
-            padding = 'max_length',
-            max_length = self.config.train.input_size,
-            return_tensors = "pt",
+            truncation=True,
+            padding="max_length",
+            max_length=self.config.train.input_size,
+            return_tensors="pt",
         )
 
+<<<<<<< HEAD
     def act(self, data : PromptBatch) -> Tuple[TensorType["chunk_size", "input_length"], TensorType["chunk_size", "gen_size"], Iterable[str]]:
         """
         Perform inference to generate output tokens.
         """
         query_tensors = data.tokens.to(self.accelerator.device) # [B, N] #TODO(dahoas): This may need to be changed
+=======
+    def act(
+        self, data: PromptBatch
+    ) -> Tuple[
+        TensorType["chunk_size", "input_length"],
+        TensorType["chunk_size", "gen_size"],
+        Iterable[str],
+    ]:
+        query_tensors = data.tokens.to(
+            self.accelerator.device
+        )  # [B, N] #TODO(dahoas): This may need to be changed
+>>>>>>> master
         with torch.no_grad():
-            #TODO(dahoas): swap this out for custom generate to if this fixes issue
-            _ = self.model(self.dummy_input.to(self.accelerator.device))  # Dummy pass to make things play nice with accelerate
+            # TODO(dahoas): swap this out for custom generate to if this fixes issue
+            _ = self.model(
+                self.dummy_input.to(self.accelerator.device)
+            )  # Dummy pass to make things play nice with accelerate
             # Removed synced gpus
-            response = self.model.generate(query_tensors, **self.config.method.gen_kwargs)
-            response_tensors = response[:, query_tensors.size()[1] : query_tensors.size()[1] + self.config.train.gen_size]
+            response = self.model.generate(
+                query_tensors,
+                pad_token_id=self.tokenizer.eos_token_id,
+                **self.config.method.gen_kwargs
+            )
+            response_tensors = response[
+                :,
+                query_tensors.size()[1] : query_tensors.size()[1]
+                + self.config.train.gen_size,
+            ]
         response_text = self.tokenizer.batch_decode(response_tensors)
         return query_tensors, response_tensors, response_text
 
     @torch.inference_mode()
-    def sample(self, prompts : PromptBatch, gen_kwargs : dict) -> Iterable[str]:
+    def sample(self, prompts: PromptBatch, gen_kwargs: dict) -> Iterable[str]:
         _, _, response_text = self.act(prompts)
         return response_text
 
     def get_components(self) -> Dict[str, any]:
-        components = {
-            "model" : self.model,
-            "opt" : self.opt,
-            "scheduler" : self.scheduler} if self.train_mode else {"model" : self.model}
+        components = (
+            {"model": self.model, "opt": self.opt, "scheduler": self.scheduler}
+            if self.train_mode
+            else {"model": self.model}
+        )
         return components
 
     @abstractmethod
@@ -110,15 +150,20 @@ class AccelerateRLModel(BaseRLModel):
 
     @abstractmethod
     def post_epoch_callback(iter, batch, rewards):
-        '''
+        """
         Additional exploration can happen here
-        '''
+        """
         pass
 
+<<<<<<< HEAD
     def learn(self, log_fn = None, save_fn = None, eval_fn = None):
         """
         Learn from data in the rollout storage.
         """
+=======
+    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
+
+>>>>>>> master
         for epoch in range(self.config.train.epochs):
             for iter, (batch, rewards) in enumerate(self.rollout_loader):
 

@@ -1,10 +1,11 @@
 from typing import Callable
 
-from trlx.pipeline import _DATAPIPELINE
-from trlx.orchestrator import _ORCH
 from trlx.model import _MODELS
+from trlx.orchestrator import _ORCH
+from trlx.pipeline import _DATAPIPELINE
 
-def get_model(name : str) -> Callable:
+
+def get_model(name: str) -> Callable:
     """
     Return constructor for specified model
     """
@@ -14,7 +15,8 @@ def get_model(name : str) -> Callable:
     else:
         raise Exception("Error: Trying to access a model that has not been registered")
 
-def get_pipeline(name : str) -> Callable:
+
+def get_pipeline(name: str) -> Callable:
     """
     Return constructor for specified pipeline
     """
@@ -22,9 +24,12 @@ def get_pipeline(name : str) -> Callable:
     if name in _DATAPIPELINE:
         return _DATAPIPELINE[name]
     else:
-        raise Exception("Error: Trying to access a pipeline that has not been registered")
+        raise Exception(
+            "Error: Trying to access a pipeline that has not been registered"
+        )
 
-def get_orchestrator(name : str) -> Callable:
+
+def get_orchestrator(name: str) -> Callable:
     """
     Return constructor for specified orchestrator
     """
@@ -32,4 +37,6 @@ def get_orchestrator(name : str) -> Callable:
     if name in _ORCH:
         return _ORCH[name]
     else:
-        raise Exception("Error: Trying to access an orchestrator that has not been registered")
+        raise Exception(
+            "Error: Trying to access an orchestrator that has not been registered"
+        )

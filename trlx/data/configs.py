@@ -1,7 +1,9 @@
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
+
 import yaml
-import sys
+
 from trlx.data.method_configs import MethodConfig, get_method
 
 
@@ -31,6 +33,7 @@ class ModelConfig:
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
+
 
 @dataclass
 class TrainConfig:
@@ -96,24 +99,24 @@ class TrainConfig:
 
     lr_ramp_steps: int
     lr_decay_steps: int
-    weight_decay : float
+    weight_decay: float
     learning_rate_init: float
     learning_rate_target: float
 
     log_interval: int
     checkpoint_interval: int
-    eval_interval : int
+    eval_interval: int
 
-    pipeline : str # One of the pipelines in framework.pipeline
-    orchestrator : str # One of the orchestrators
+    pipeline: str  # One of the pipelines in framework.pipeline
+    orchestrator: str  # One of the orchestrators
 
-    input_size : int = 0 # max model input size
-    gen_size : int = 1024 # max size of model generation
+    input_size: int = 0  # max model input size
+    gen_size: int = 1024  # max size of model generation
 
-    accelerate : bool = True # Use HF accelerate?
-    accelerate_config_path : str = ""
+    accelerate: bool = True  # Use HF accelerate?
+    accelerate_config_path: str = ""
 
-    project_name : str = ""
+    project_name: str = ""
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -142,7 +145,7 @@ class TRLConfig:
         return cls(
             ModelConfig.from_dict(config["model"]),
             TrainConfig.from_dict(config["train"]),
-            get_method(config["method"]["name"]).from_dict(config["method"])
+            get_method(config["method"]["name"]).from_dict(config["method"]),
         )
 
     def to_dict(self):
