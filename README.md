@@ -16,7 +16,7 @@ The training pipeline is broken into four pieces:
 - Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
 - Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
-Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new orchestrator simply implementing the scoring function and inheriting from the `PPOOrchestrator` class. 
+Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class. 
 
 ## Example: How to add a task
 
@@ -70,41 +70,46 @@ class PPOPipeline(BasePipeline):
         return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
  ```
 
-### Implement an orchestrator 
-
-```python
-@register_orchestrator
-class PPOSentimentOrchestrator(PPOOrchestrator):
-	def __init__(self, pipeline : SentimentPipeline, rl_model : BaseRLModel, chunk_size = 512):
-		super().__init__(pipeline, rl_model, chunk_size)
-		self.sentiment_pipe = sentiment_pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device=-1)
-
-	def score(self, texts):
-		"""
-		Batched scoring function taking text and generating scalar
-		"""
-		sent_kwargs = {
-				"return_all_scores": True,
-				"function_to_apply": None,
-				"batch_size": self.chunk_size,
-			}
-		pipe_outputs = self.sentiment_pipe(texts, **sent_kwargs)
-		scores = torch.tensor([output[1]["score"] for output in pipe_outputs])
-		return scores
-```
-
 ### Launch training
 
 ```python
+from typing import List
+
+import torch
+from transformers import pipeline
+
+import wandb
+from trlx.data.configs import TRLConfig
+from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+from trlx.pipeline.ppo_pipeline import PPOPipeline
+from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
+
 if __name__ == "__main__":
     cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
+    sentiment_pipe = pipeline(
+        "sentiment-analysis", "lvwerra/distilbert-imdb", device=-1
+    )
 
-    model : AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
-    wandb.watch(model.model)
+    def reward_fn(samples: List[str]):
+        sent_kwargs = {
+            "return_all_scores": True,
+            "function_to_apply": None,
+            "batch_size": cfg.method.chunk_size,
+        }
+        pipe_outputs = sentiment_pipe(samples, **sent_kwargs)
+        scores = torch.tensor([output[1]["score"] for output in pipe_outputs])
+        return scores
 
-    pipeline : PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
-    orch : PPOSentimentOrchestrator = get_orchestrator(cfg.train.orchestrator)(pipeline, model, cfg.method.chunk_size)
+    model: AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
+    if model.accelerator.is_main_process:
+        wandb.watch(model.model)
+
+    pipeline: PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
+    orch: PPOOrchestrator = get_orchestrator(cfg.train.orchestrator)(
+        model, pipeline, reward_fn=reward_fn, chunk_size=cfg.method.chunk_size
+    )
     orch.make_experience(cfg.method.num_rollouts)
     model.learn()
 
