@@ -13,61 +13,47 @@ from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
 
 
 def batch_map(fn: Callable, xs: Iterable, bsize: int, desc=None):
-    out = []
-    for ind in tqdm(range(math.ceil(len(xs) / bsize)), desc=desc, disable=not desc):
-        batch = xs[ind * bsize : min(len(xs), (ind + 1) * bsize)]
-        out.extend(fn(batch))
+	out = []
+	for ind in tqdm(range(math.ceil(len(xs) / bsize)), desc=desc, disable=not desc):
+		batch = xs[ind * bsize : min(len(xs), (ind + 1) * bsize)]
+		out.extend(fn(batch))
 
-    return out
+	return out
 
 
 if __name__ == "__main__":
-    config = TRLConfig.load_yaml("configs/ilql_config.yml")
-    sentiment_pipe = pipeline(
-        "sentiment-analysis", "lvwerra/distilbert-imdb", device=torch.device(0)
-    )
+	config = TRLConfig.load_yaml("configs/ilql_config.yml")
+	sentiment_pipe = pipeline(
+		"sentiment-analysis", "lvwerra/distilbert-imdb", device=torch.device(0)
+	)
 
-    gpt_config_or_path = "gpt2"
-    tokenizer = AutoTokenizer.from_pretrained(gpt_config_or_path)
-    tokenizer.pad_token = tokenizer.eos_token
+	gpt_config_or_path = "gpt2"
+	tokenizer = AutoTokenizer.from_pretrained(gpt_config_or_path)
+	tokenizer.pad_token = tokenizer.eos_token
 
-    def reward_fn(samples: List[str]) -> List[float]:
-        if isinstance(samples[0], torch.Tensor):
-            samples = tokenizer.batch_decode(samples, skip_special_tokens=True)
+	def reward_fn(samples: List[str]) -> List[float]:
+		if isinstance(samples[0], torch.Tensor):
+			samples = tokenizer.batch_decode(samples, skip_special_tokens=True)
 
-        desc = "sentiment pipeline" if len(samples) > 1024 else None
-        sentiments = batch_map(
-            lambda batch: sentiment_pipe(batch), samples, bsize=1024, desc=desc
-        )
-        return [
-            1 - s["score"] if s["label"] == "NEGATIVE" else s["score"]
-            for s in sentiments
-        ]
+		desc = "sentiment pipeline" if len(samples) > 1024 else None
+		sentiments = batch_map(
+			lambda batch: sentiment_pipe(batch), samples, bsize=1024, desc=desc
+		)
+		return [
+			1 - s["score"] if s["label"] == "NEGATIVE" else s["score"]
+			for s in sentiments
+		]
 
-    model = ILQLModel(
-        config=config, gpt_config_or_path=gpt_config_or_path, tokenizer=tokenizer
-    )
+	model = ILQLModel(
+		config=config, gpt_config_or_path=gpt_config_or_path, tokenizer=tokenizer
+	)
 
-    n_prompts = 128
-<<<<<<< HEAD
-    eval_prompts = torch.tensor([model.tokenizer.bos_token_id] * n_prompts).view(n_prompts, 1)
-    train_samples = load_dataset('imdb', split='train+test')
+	n_prompts = 128
+	eval_prompts = torch.tensor([model.tokenizer.bos_token_id] * n_prompts).view(
+		n_prompts, 1
+	)
+	train_samples = load_dataset("imdb", split="train+test")["text"]
 
-    #TODO(dahoas)
-    train_samples = train_samples.filter(lambda x: len(x["text"])<500, batched=False)['text']
+	orch = OfflineOrchestrator(model, train_samples, eval_prompts, reward_fn)
 
-    orch = OfflineOrchestrator(
-        model,
-        train_samples,
-        eval_prompts,
-        reward_fn
-=======
-    eval_prompts = torch.tensor([model.tokenizer.bos_token_id] * n_prompts).view(
-        n_prompts, 1
->>>>>>> update-valuehead
-    )
-    train_samples = load_dataset("imdb", split="train+test")["text"]
-
-    orch = OfflineOrchestrator(model, train_samples, eval_prompts, reward_fn)
-
-    model.learn()
+	model.learn()
