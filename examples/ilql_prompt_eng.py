@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
         def get_sentiment_lm(review):
             full_prompt = base_prompt + review + ":"
-            return generator(full_prompt, max_length=1, num_return_sequences=5)['generated_text'][-1]
+            return int(generator(full_prompt, max_length=1, num_return_sequences=5)['generated_text'][-1])
 
         scores = torch.tensor([get_sentiment_lm(review) for review in samples])
         return scores
