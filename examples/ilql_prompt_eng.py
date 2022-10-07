@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, pipeline, set_seed
+from random import randint
 
 from trlx.data.configs import TRLConfig
 from trlx.model.accelerate_ilql_model import ILQLModel
@@ -28,12 +29,12 @@ if __name__ == "__main__":
         if isinstance(samples[0], torch.Tensor):
             samples = tokenizer.batch_decode(samples, skip_special_tokens=True)
 
-        def get_sentiment_lm(review):
-            full_prompt = construct_full_prompt(review, review)
+        def get_sentiment_lm(review1, review2):
+            full_prompt = construct_full_prompt(review1, review2)
             reward = generator(full_prompt, max_new_tokens=1, pad_token_id=50256)[0]['generated_text'][-1]
-            return 0 if reward == '0' else 1
+            return 0 if reward == 'B' else 1
 
-        scores = torch.tensor([get_sentiment_lm(review) for review in samples])
+        scores = torch.tensor([get_sentiment_lm(review, samples[randint(0, len(samples))]) for review in samples])
         return scores
 
     model = ILQLModel(config=config, tokenizer=tokenizer)
