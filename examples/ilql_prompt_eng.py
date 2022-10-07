@@ -34,8 +34,8 @@ if __name__ == "__main__":
             reward = generator(full_prompt, max_new_tokens=1, pad_token_id=50256)[0]['generated_text'][-1]
             return 0 if reward == 'B' else 1
 
-        scores = torch.tensor([get_sentiment_lm(review, samples[randint(0, len(samples))]) for review in samples])
-        return scores
+        scores = [get_sentiment_lm(review, samples[randint(0, len(samples))]) for review in samples]
+        return torch.tensor(scores)
 
     model = ILQLModel(config=config, tokenizer=tokenizer)
 
