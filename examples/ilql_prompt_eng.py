@@ -11,7 +11,10 @@ from trlx.model.accelerate_ilql_model import ILQLModel
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
 
 set_seed(42)
-base_prompt = "The following is a series of movie reviews, along with a measure of their positive-ness on a scale of 0 to 1, with 1 indicating very positive sentiment:\nThis film is just plain horrible: 0\n This film is great:1\n"
+with open('prompt_eng_template.txt', 'r') as f:
+    base_prompt = f.read()
+def construct_full_prompt(review1, review2):
+    return base_prompt.format(review1, review2)
 
 if __name__ == "__main__":
     generator = pipeline('text-generation', model='gpt2')
@@ -26,7 +29,7 @@ if __name__ == "__main__":
             samples = tokenizer.batch_decode(samples, skip_special_tokens=True)
 
         def get_sentiment_lm(review):
-            full_prompt = base_prompt + review + ":"
+            full_prompt = construct_full_prompt(review, review)
             reward = generator(full_prompt, max_new_tokens=1, pad_token_id=50256)[0]['generated_text'][-1]
             return 0 if reward == '0' else 1
 
