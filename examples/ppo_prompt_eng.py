@@ -34,7 +34,7 @@ if __name__ == "__main__":
             reward = generator(full_prompt, max_new_tokens=1, pad_token_id=50256)[0]['generated_text'][-1]
             return 0 if reward == 'B' else 1
 
-        scores = [get_sentiment_lm(review, samples[randint(0, len(samples))]) for review in samples]
+        scores = [get_sentiment_lm(review, samples[randint(0, (len(samples))-1)]) for review in samples]
         return torch.tensor(scores)
     
     model: AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
