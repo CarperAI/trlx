@@ -12,7 +12,7 @@ from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
 
 set_seed(42)
-with open('./prompt_eng_template.txt', 'r') as f:
+with open('examples/prompt_eng_template.txt', 'r') as f:
     base_prompt = f.read()
 def construct_full_prompt(review1, review2):
     return base_prompt.format(review1, review2)
