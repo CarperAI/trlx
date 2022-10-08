@@ -1,15 +1,15 @@
-import math
 from typing import List
-
 import numpy as np
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, pipeline, set_seed
 from random import randint
-
+import wandb
 from trlx.data.configs import TRLConfig
-from trlx.model.accelerate_ilql_model import ILQLModel
-from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
+from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+from trlx.pipeline.ppo_pipeline import PPOPipeline
+from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
 
 set_seed(42)
 with open('prompt_eng_template.txt', 'r') as f:
@@ -20,9 +20,9 @@ def construct_full_prompt(review1, review2):
 if __name__ == "__main__":
     generator = pipeline('text-generation', model='gpt2')
     
-    config = TRLConfig.load_yaml("configs/ilql_config.yml")
+    cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
 
     def reward_fn(samples: List[str]) -> List[float]:
@@ -36,15 +36,14 @@ if __name__ == "__main__":
 
         scores = [get_sentiment_lm(review, samples[randint(0, len(samples))]) for review in samples]
         return torch.tensor(scores)
+    
+    model: AcceleratePPOModel = get_model(cfg.model.model_type)(cfg)
+    if model.accelerator.is_main_process:
+        wandb.watch(model.model)
 
-    model = ILQLModel(config=config, tokenizer=tokenizer)
-
-    n_prompts = 128
-    eval_prompts = torch.tensor([model.tokenizer.bos_token_id] * n_prompts).view(
-        n_prompts, 1
+    pipeline: PPOPipeline = get_pipeline(cfg.train.pipeline)(model.tokenizer, cfg)
+    orch: PPOOrchestrator = get_orchestrator(cfg.train.orchestrator)(
+        model, pipeline, reward_fn=reward_fn, chunk_size=cfg.method.chunk_size
     )
-    train_samples = load_dataset("imdb", split="train+test")["text"]
-
-    orch = OfflineOrchestrator(model, train_samples, eval_prompts, reward_fn)
-
+    orch.make_experience(cfg.method.num_rollouts)
     model.learn()
