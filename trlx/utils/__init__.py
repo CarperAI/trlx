@@ -1,37 +1,41 @@
-from functools import reduce
 import os
 import time
+from functools import reduce
+from typing import Any, Iterable, List
 
-from typing import Iterable, List, Any, Callable
-from torchtyping import TensorType 
-
-import torch
-from torch.optim.lr_scheduler import LinearLR, ChainedScheduler
 import numpy as np
+import torch
+from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
+from torchtyping import TensorType
 
-def flatten(L : Iterable[Iterable[Any]]) -> Iterable[Any]:
+
+def flatten(L: Iterable[Iterable[Any]]) -> Iterable[Any]:
     """
     Flatten a list of lists into a single list (i.e. [[1, 2], [3, 4]] -> [1,2,3,4])
     """
     return list(reduce(lambda acc, x: acc + x, L, []))
 
-def chunk(L : Iterable[Any], chunk_size : int) -> List[Iterable[Any]]:
+
+def chunk(L: Iterable[Any], chunk_size: int) -> List[Iterable[Any]]:
     """
     Chunk iterable into list of iterables of given chunk size
     """
-    return [L[i:i+chunk_size] for i in range(0, len(L), chunk_size)]
+    return [L[i : i + chunk_size] for i in range(0, len(L), chunk_size)]
+
 
 # Training utils
+
 
 def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
     return ChainedScheduler(
         [
-            LinearLR(opt, decay_target, 1, total_iters = ramp_steps),
-            LinearLR(opt, 1, decay_target, total_iters= decay_steps)
+            LinearLR(opt, decay_target, 1, total_iters=ramp_steps),
+            LinearLR(opt, 1, decay_target, total_iters=decay_steps),
         ]
     )
-    
-def safe_mkdir(path : str):
+
+
+def safe_mkdir(path: str):
     """
     Make directory if it doesn't exist, otherwise do nothing
     """
@@ -39,18 +43,21 @@ def safe_mkdir(path : str):
         return
     os.mkdir(path)
 
+
 # Stats
+
 
 class Clock:
     """
     Helper object for keeping track of time for computations.
     """
+
     def __init__(self):
         self.start = time.time()
         self.total_time = 0
         self.total_samples = 0
 
-    def tick(self, samples : int = 0) -> float:
+    def tick(self, samples: int = 0) -> float:
         """
         Returns time (s) since last call to tick(). Also records samples processed since last call.
 
@@ -66,7 +73,7 @@ class Clock:
 
         return delta
 
-    def get_stat(self, n_samp : int = 1000, reset : bool = False):
+    def get_stat(self, n_samp: int = 1000, reset: bool = False):
         """
         Returns average time (s) per n_samp samples processed
 
@@ -77,12 +84,14 @@ class Clock:
         if reset:
             self.total_samples = 0
             self.total_time = 0
-            
+
         return sec_per_samp * n_samp
+
 
 # Sampling
 
-def topk_mask(xs : TensorType["Batch", "Vocab"], k : int):
+
+def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
     """
     Takes batched distribution over tokens and masks out scores for tokens
     that are not in the top k for that distribution.
@@ -93,11 +102,15 @@ def topk_mask(xs : TensorType["Batch", "Vocab"], k : int):
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
 
+
 # Sentiment/scores
 
-def sentiment_score(sentiments : Iterable[float]):
+
+def sentiment_score(sentiments: Iterable[float]):
     """
     Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
     """
-    sentiments = torch.tensor([-s['score'] if s['label'] == "NEGATIVE" else s['score'] for s in sentiments])
+    sentiments = torch.tensor(
+        [-s["score"] if s["label"] == "NEGATIVE" else s["score"] for s in sentiments]
+    )
     return sentiments
