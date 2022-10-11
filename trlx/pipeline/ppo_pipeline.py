@@ -13,7 +13,10 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 @register_datapipeline
 class PPOPipeline(BasePipeline):
-    def __init__(self, tokenizer, config, prompt_dataset_path=None):
+    """
+    Pipeline for training PPO on the IMDB review dataset. The task is to generate positive reviews.
+    """
+    def __init__(self, tokenizer, config, prompt_dataset_path = None):
         super().__init__()
 
         ds = load_dataset("imdb", split="test")
@@ -62,6 +65,9 @@ class PPOPipeline(BasePipeline):
 
 
 class PPORolloutStorage(BaseRolloutStore):
+    """
+    Rollout storage for training PPO on IMDB review dataset.
+    """
     def __init__(self):
         super().__init__()
 

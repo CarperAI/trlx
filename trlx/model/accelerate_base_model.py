@@ -24,7 +24,10 @@ LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
-    def __init__(self, config, rollout_storage, train_mode=True):
+    """
+    RL Model that uses accelerate for training
+    """
+    def __init__(self, config, rollout_storage, train_mode = True):
         super().__init__(config, train_mode)
 
         self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
@@ -80,6 +83,9 @@ class AccelerateRLModel(BaseRLModel):
         ]  # Hack to make acclerate distributed work with model generation
 
     def tokenize(self, text: Iterable[str]):
+        """
+        Tokenize a batch of text after adding bos token.
+        """
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
@@ -150,8 +156,10 @@ class AccelerateRLModel(BaseRLModel):
         """
         pass
 
-    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
-
+    def learn(self, log_fn = None, save_fn = None, eval_fn = None):
+        """
+        Learn from data in the rollout storage.
+        """
         for epoch in range(self.config.train.epochs):
             for iter, (batch, rewards) in enumerate(self.rollout_loader):
 

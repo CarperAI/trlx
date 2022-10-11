@@ -13,8 +13,10 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
 def filter_outliers(x):
-    return len(x["review"]) > 200
-
+    """
+    Filter outliers by removing reviews that are too short.
+    """
+    return len(x['review']) > 200
 
 def process_data(dataset):
     dataset = dataset.rename_columns({"text": "review", "label": "sentiment"})
@@ -25,7 +27,10 @@ def process_data(dataset):
 
 @register_datapipeline
 class AcceleratePipeline(BasePipeline):
-    def __init__(self, prompt_dataset_path=None):
+    """
+    Basic pipeline using accelerate.
+    """
+    def __init__(self, prompt_dataset_path = None):
         super().__init__()
 
     def __getitem__(self, index: int) -> PromptElement:
@@ -56,6 +61,9 @@ class AcceleratePipeline(BasePipeline):
 
 
 class AccelerateRolloutStorage(BaseRolloutStore):
+    """
+    Rollout storage using accelerate. 
+    """
     def __init__(self):
         super().__init__()
 

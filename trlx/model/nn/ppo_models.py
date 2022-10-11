@@ -37,8 +37,9 @@ def make_head(n_embd: int, out: int):
 
 
 class GPTHeadWithValueModel(nn.Module):
-    """The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head."""
-
+    """
+    The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head.
+    """
     def __init__(self, config: Union[PretrainedConfig, str]):
         super().__init__()
         if isinstance(config, PretrainedConfig):

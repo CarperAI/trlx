@@ -44,7 +44,13 @@ def get_method(name: str) -> Callable:
 @dataclass
 @register_method
 class MethodConfig:
-    name: str
+    """
+    Config for a certain RL method.
+
+    :param name: Name of the method
+    :type name: str
+    """
+    name : str
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
