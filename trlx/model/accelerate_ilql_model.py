@@ -160,7 +160,3 @@ class ILQLModel(BaseRLModel):
 
                 if opt_steps % self.config.method.steps_for_target_q_sync == 0:
                     self.model.sync_target_q_heads()
-                
-                if opt_steps % self.config.train.save_steps == 0:
-                    print(f'Saving on {self.iter_count}-th iteration.')
-                    self.save()
