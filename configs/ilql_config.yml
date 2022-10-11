@@ -9,7 +9,7 @@ train:
   n_ctx : 512
   epochs : 10
   total_steps : 80000
-  batch_size : 80
+  batch_size : 96
   grad_clip : 1.0
 
   lr_ramp_steps : 100
