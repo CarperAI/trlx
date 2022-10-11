@@ -25,7 +25,7 @@ class TrainConfig:
     n_ctx: int
     epochs: int
     total_steps: int
-    save_steps: int
+    save_steps: Optional[int]
     batch_size: int
     grad_clip: float  # Clip grad norms to this value
 

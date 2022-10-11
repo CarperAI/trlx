@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Union
 
 import numpy as np
 import torch
@@ -15,16 +15,12 @@ from trlx.pipeline.offline_pipeline import (OfflinePipeline,
                                             OfflineRolloutStorage)
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
-WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
-LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
-
 
 @register_model
 class ILQLModel(BaseRLModel):
     def __init__(
         self,
         config,
-        tokenizer=None,
         logit_mask=None,
         train_mode=True,
     ):
@@ -37,13 +33,17 @@ class ILQLModel(BaseRLModel):
         )
         self.max_length = config.train.gen_size
 
-        self.logit_mask = logit_mask
-        self.tokenizer = tokenizer
+        if config.model.tokenizer_path:
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        else:
+            self.tokenizer = None
 
+        self.logit_mask = logit_mask
         self.accelerator = Accelerator(log_with="wandb")
 
-        if WORLD_SIZE > 1:
-            torch.distributed.barrier(device_ids=[LOCAL_RANK])
+        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
+            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
         else:
             torch.random.manual_seed(1000)
 
@@ -64,14 +64,18 @@ class ILQLModel(BaseRLModel):
                 self.opt,
             )
 
-    def tokenize(self, texts):
-        return self.tokenizer(
+    def tokenize(self, texts: Union[Iterable[str], Iterable[torch.LongTensor]]):
+        if isinstance(texts[0], torch.LongTensor):
+            return texts
+
+        tokenized = self.tokenizer(
             [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
             max_length=self.max_length,
             truncation=True,
-            padding=True,
-            return_tensors="pt",
         )
+
+        input_ids = list(map(torch.as_tensor, tokenized["input_ids"]))
+        return input_ids
 
     def get_components(self) -> Dict[str, any]:
         components = (
@@ -84,13 +88,9 @@ class ILQLModel(BaseRLModel):
     def learn(self):
         timer = Clock()
 
-        eos_token_id = self.tokenizer.eos_token_id if self.tokenizer else 0
-        train_dataloader = self.train_store.create_loader(
-            self.config.train.batch_size, eos_token_id=eos_token_id
-        )
-        eval_dataloader = self.eval_pipeline.create_loader(
-            self.config.train.batch_size, shuffle=False
-        )
+        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer else 0
+        train_dataloader = self.train_store.create_loader(self.config.train.batch_size)
+        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         (
             self.model,
@@ -112,10 +112,10 @@ class ILQLModel(BaseRLModel):
                     all_samples = []
                     for prompts in eval_dataloader:
                         with torch.no_grad():
-                            samples, _ = self.model.sample(
+                            samples, tensor_stats = self.model.sample(
                                 prompts,
                                 beta=self.model.beta,
-                                max_length=self.config.train.gen_size,
+                                max_length=self.max_length,
                                 logit_mask=self.logit_mask,
                             )
 
@@ -124,35 +124,25 @@ class ILQLModel(BaseRLModel):
                     samples = self.accelerator.gather(torch.vstack(all_samples))
 
                     if self.accelerator.is_main_process:
-                        rewards = torch.as_tensor(self.reward_fn(samples), dtype=float)
-                        reward = rewards.mean()
-
-                        if self.stats_fn:
-                            eval_stats = self.stats_fn(samples)
-                            logs.update(eval_stats)
-
                         if self.tokenizer:
-                            texts = self.tokenizer.batch_decode(
+                            samples = self.tokenizer.batch_decode(
                                 samples, skip_special_tokens=True
                             )
-                            pairs = list(zip(texts, rewards))
-                            logs["samples"] = wandb.Table(
-                                columns=["samples", "reward"], rows=pairs[:128]
-                            )
-                            if os.environ.get("DEBUG"):
-                                print(
-                                    f"\n".join(
-                                        [
-                                            f"[{reward:.2f}] {text}"
-                                            for text, reward in pairs[:10]
-                                        ]
-                                    )
-                                )
-                        else:
-                            if os.environ.get("DEBUG"):
-                                print(samples)
 
-                        logs["reward"] = reward
+                        metrics = self.metric_fn(samples)
+                        mean_metrics = {
+                            f"metrics/{k}": torch.as_tensor(xs).mean(-1)
+                            for k, xs in metrics.items()
+                        }
+                        logs.update(mean_metrics)
+                        logs.update(tensor_stats)
+
+                        rows = list(zip(samples, *metrics.values()))
+                        logs["samples"] = wandb.Table(
+                            columns=["samples", *metrics.keys()], rows=rows
+                        )
+                        for row in rows:
+                            print(row)
 
                     self.model.train()
 
@@ -160,16 +150,7 @@ class ILQLModel(BaseRLModel):
 
                 if opt_steps % self.config.train.eval_interval == 0:
                     logs.update(stats)
-                    if self.accelerator.is_main_process:
-                        self.accelerator.log(logs)
-                        self.accelerator.print(
-                            "Step: {}, loss_cql: {}, loss_v: {}, reward: {}".format(
-                                opt_steps,
-                                logs["loss_cql"],
-                                logs["loss_v"],
-                                logs["reward"],
-                            )
-                        )
+                    self.accelerator.log(logs)
 
                 self.accelerator.backward(loss)
                 self.opt.step()

@@ -161,9 +161,10 @@ class AcceleratePPOModel(AccelerateRLModel):
                     self.opt.step()
                     self.scheduler.step()
                     self.iter_count += 1
-                    if self.iter_count % self.save_steps == 0:
-                        print(f'Saving on {self.iter_count}-th iteration.')
-                        self.save()
+                    if self.save_steps is not None:
+                        if self.iter_count % self.save_steps == 0:
+                            print(f'Saving model on {self.iter_count}-th iteration...')
+                            self.save()
 
                 self.post_backward_callback()
                 self.accelerator.wait_for_everyone()
