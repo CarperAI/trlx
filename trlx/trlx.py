@@ -25,8 +25,8 @@ def train(
     if model.tokenizer:
         eval_prompts = list(map(model.tokenizer, eval_prompts))
 
-    if len(eval_prompts) == 0 or os.environ.get("WORLD_SIZE", 1) > 1:
-        n_eval_prompts = config.train.batch_size * os.environ.get("WORLD_SIZE", 1)
+    if len(eval_prompts) == 0 or int(os.environ.get("WORLD_SIZE", 1)) > 1:
+        n_eval_prompts = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
     else:
         n_eval_prompts = len(eval_prompts)
 

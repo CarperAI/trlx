@@ -20,10 +20,10 @@ train:
 
   log_interval : 25
   checkpoint_interval : 100
-  eval_interval : 50
+  eval_interval : 300
 
   input_size: 8
-  gen_size: 48
+  gen_size: 128
 
   pipeline : "OfflinePipeline"
   orchestrator : "OfflineOrchestrator"
@@ -38,5 +38,5 @@ method:
   awac_scale: 1
   alpha: 0.005
   steps_for_target_q_sync: 1
-  beta: 8
+  betas: [0, 1, 8]
   two_qs: true

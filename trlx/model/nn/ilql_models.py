@@ -13,6 +13,7 @@ import transformers
 from accelerate.utils import compute_module_sizes
 from torch import nn, tensor
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
+from transformers.tokenization_utils_base import BatchEncoding
 
 import wandb
 
@@ -78,7 +79,6 @@ class CausalLMWithValueHeads(nn.Module):
         self.awac_scale = params.awac_scale
         self.cql_scale = params.cql_scale
         self.two_qs = params.two_qs
-        self.beta = params.beta
 
         if self.two_qs:
             self.q2_head = make_head(self.n_embd, self.vocab_size)
@@ -227,7 +227,7 @@ class CausalLMWithValueHeads(nn.Module):
         logs=True,
         eos_token_id=50256,
     ):
-        if isinstance(prompts, dict):
+        if isinstance(prompts, (dict, BatchEncoding)):
             input_ids = prompts.get('input_ids')
             attention_mask = prompts.get('attention_mask', None)
         else:
@@ -291,6 +291,9 @@ class CausalLMWithValueHeads(nn.Module):
                 tensors["pi"].append(pi)
                 tensors["pi_beta"].append(torch.exp(pi_beta))
 
+            if torch.all(finished):
+                break
+
         stats = {}
         for name, xs in tensors.items():
             xs = torch.vstack(xs)
@@ -298,11 +301,11 @@ class CausalLMWithValueHeads(nn.Module):
 
             stats.update(
                 {
-                    f"tensors/{name}/min": xs.min(),
-                    f"tensors/{name}/max": xs.max(),
-                    f"tensors/{name}/std": xs.std(),
-                    f"tensors/{name}/mean": xs.mean(),
-                    f"tensors/{name}/hist": wandb.Histogram(xs.cpu().view(-1)),
+                    f"tensors/{name}/min/{beta}": xs.min(),
+                    f"tensors/{name}/max/{beta}": xs.max(),
+                    f"tensors/{name}/std/{beta}": xs.std(),
+                    f"tensors/{name}/mean/{beta}": xs.mean(),
+                    f"tensors/{name}/hist/{beta}": wandb.Histogram(xs.cpu().float().view(-1)),
                 }
             )
 

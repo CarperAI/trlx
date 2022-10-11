@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, List
 
 import yaml
 
@@ -83,5 +83,5 @@ class ILQLConfig(MethodConfig):
     awac_scale: float
     alpha: float
     steps_for_target_q_sync: int
-    beta: float
+    betas: List[float]
     two_qs: bool

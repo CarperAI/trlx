@@ -1,6 +1,7 @@
 import os
 from typing import Dict, Iterable, Union
 
+from time import time
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -86,9 +87,6 @@ class ILQLModel(BaseRLModel):
         return components
 
     def learn(self):
-        timer = Clock()
-
-        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer else 0
         train_dataloader = self.train_store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
@@ -107,56 +105,73 @@ class ILQLModel(BaseRLModel):
             logs = {}
             for batch in train_dataloader:
                 if opt_steps % self.config.train.eval_interval == 0:
+                    generate_time = time()
                     self.model.eval()
 
-                    all_samples = []
-                    for prompts in eval_dataloader:
-                        with torch.no_grad():
+                    for beta in self.config.method.betas:
+                        all_samples = []
+                        for prompts in eval_dataloader:
                             samples, tensor_stats = self.model.sample(
                                 prompts,
-                                beta=self.model.beta,
+                                beta=beta,
                                 max_length=self.max_length,
                                 logit_mask=self.logit_mask,
                             )
 
-                        all_samples.append(samples)
+                            all_samples.append(samples)
 
-                    samples = self.accelerator.gather(torch.vstack(all_samples))
+                        samples = self.accelerator.gather(torch.vstack(all_samples))
 
-                    if self.accelerator.is_main_process:
-                        if self.tokenizer:
-                            samples = self.tokenizer.batch_decode(
-                                samples, skip_special_tokens=True
+                        if self.accelerator.is_main_process:
+                            if self.tokenizer:
+                                samples = self.tokenizer.batch_decode(
+                                    samples, skip_special_tokens=True
+                                )
+
+                            metric_time = time()
+                            metrics = self.metric_fn(samples)
+                            metric_time = time() - metric_time
+                            logs.update({'metric_time': metric_time})
+
+                            mean_metrics = {
+                                f"metrics/{k}/{beta}": torch.as_tensor(xs).mean(-1)
+                                for k, xs in metrics.items()
+                            }
+                            logs.update(tensor_stats)
+                            logs.update(mean_metrics)
+
+                            rows = list(zip(samples, *metrics.values()))
+                            logs[f"samples/{beta}"] = wandb.Table(
+                                columns=["samples", *metrics.keys()], rows=rows
                             )
-
-                        metrics = self.metric_fn(samples)
-                        mean_metrics = {
-                            f"metrics/{k}": torch.as_tensor(xs).mean(-1)
-                            for k, xs in metrics.items()
-                        }
-                        logs.update(mean_metrics)
-                        logs.update(tensor_stats)
-
-                        rows = list(zip(samples, *metrics.values()))
-                        logs["samples"] = wandb.Table(
-                            columns=["samples", *metrics.keys()], rows=rows
-                        )
-                        for row in rows:
-                            print(row)
+                            for row in rows[:4]:
+                                print(row)
 
                     self.model.train()
+                    generate_time = time() - generate_time
 
+                forward_time = time()
                 loss, stats = self.model.loss(batch)
+                forward_time = time() - forward_time
 
-                if opt_steps % self.config.train.eval_interval == 0:
-                    logs.update(stats)
-                    self.accelerator.log(logs)
-
+                backward_time = time()
                 self.accelerator.backward(loss)
+                backward_time = time() - backward_time
+
                 self.opt.step()
                 self.opt.zero_grad()
                 self.scheduler.step()
-                opt_steps += 1
 
-                if opt_steps % self.config.method.steps_for_target_q_sync == 0:
+                if opt_steps % self.config.train.eval_interval == 0:
+                    logs.update({
+                        'forward_time': forward_time,
+                        'generate_time': generate_time,
+                        'backward_time': backward_time,
+                    })
+                    logs.update(stats)
+                    self.accelerator.log(logs)
+
+                if (opt_steps + 1) % self.config.method.steps_for_target_q_sync == 0:
                     self.model.sync_target_q_heads()
+
+                opt_steps += 1
