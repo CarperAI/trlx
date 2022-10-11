@@ -94,7 +94,6 @@ class TrainConfig:
     n_ctx: int
     epochs: int
     total_steps: int
-    save_steps: Optional[int]
     batch_size: int
     grad_clip: float  # Clip grad norms to this value
 
@@ -117,7 +116,8 @@ class TrainConfig:
     accelerate: bool = True  # Use HF accelerate?
     accelerate_config_path: str = ""
 
-    project_name: str = ""
+    checkpoint_dir: str = "ckpts"
+    project_name: str = "trlx"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

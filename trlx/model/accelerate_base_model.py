@@ -137,6 +137,9 @@ class AccelerateRLModel(BaseRLModel):
         )
         return components
 
+    def save(self, directory=None):
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+
     @abstractmethod
     def get_arch(config: TRLConfig):
         pass

@@ -9,7 +9,6 @@ train:
   n_ctx : 512  # Size of LM context
   epochs : 10  # Train for max(epochs, total_steps)
   total_steps : 80000  # Train for max(epochs, total_steps)
-  save_steps: 10000
   batch_size : 128  # batch size
   grad_clip : 1.0  # gradient clipping threshold
 
