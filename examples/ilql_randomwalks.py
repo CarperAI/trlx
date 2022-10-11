@@ -95,12 +95,12 @@ if __name__ == "__main__":
 
         return rewards
 
-    gpt_config_or_path = GPT2Config(
+    config.model.model_path = GPT2Config(
         n_layer=4, n_embd=144, vocab_size=logit_mask.shape[0]
     )
 
     model = ILQLModel(
-        config=config, gpt_config_or_path=gpt_config_or_path, logit_mask=logit_mask
+        config=config, logit_mask=logit_mask
     )
 
     orch = OfflineOrchestrator(

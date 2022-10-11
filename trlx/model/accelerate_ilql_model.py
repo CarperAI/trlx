@@ -4,13 +4,13 @@ from typing import Dict, Iterable
 import numpy as np
 import torch
 import torch.nn.functional as F
+import wandb
 from accelerate import Accelerator
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoTokenizer
 
-import wandb
 from trlx.model import BaseRLModel, register_model
-from trlx.model.nn.ilql_models import QVModel
+from trlx.model.nn.ilql_models import CausalLMWithValueHeads
 from trlx.pipeline.offline_pipeline import (OfflinePipeline,
                                             OfflineRolloutStorage)
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
@@ -24,20 +24,23 @@ class ILQLModel(BaseRLModel):
     def __init__(
         self,
         config,
-        gpt_config_or_path,
         tokenizer=None,
         logit_mask=None,
         train_mode=True,
     ):
         super().__init__(config, train_mode)
 
-        self.model = QVModel(gpt_config_or_path, config.method)
+        self.model = CausalLMWithValueHeads(
+            config.model.model_path,
+            params=config.method,
+            num_layers_unfrozen=config.model.num_layers_unfrozen,
+        )
         self.max_length = config.train.gen_size
-        self.tokenizer = tokenizer
+
         self.logit_mask = logit_mask
+        self.tokenizer = tokenizer
 
         self.accelerator = Accelerator(log_with="wandb")
-        self.accelerator.print(os.environ)
 
         if WORLD_SIZE > 1:
             torch.distributed.barrier(device_ids=[LOCAL_RANK])
@@ -121,7 +124,7 @@ class ILQLModel(BaseRLModel):
                     samples = self.accelerator.gather(torch.vstack(all_samples))
 
                     if self.accelerator.is_main_process:
-                        rewards = torch.tensor(self.reward_fn(samples), dtype=float)
+                        rewards = torch.as_tensor(self.reward_fn(samples), dtype=float)
                         reward = rewards.mean()
 
                         if self.stats_fn:
@@ -134,7 +137,7 @@ class ILQLModel(BaseRLModel):
                             )
                             pairs = list(zip(texts, rewards))
                             logs["samples"] = wandb.Table(
-                                columns=["samples", "reward"], rows=pairs[:16]
+                                columns=["samples", "reward"], rows=pairs[:128]
                             )
                             if os.environ.get("DEBUG"):
                                 print(
@@ -157,7 +160,16 @@ class ILQLModel(BaseRLModel):
 
                 if opt_steps % self.config.train.eval_interval == 0:
                     logs.update(stats)
-                    self.accelerator.log(logs)
+                    if self.accelerator.is_main_process:
+                        self.accelerator.log(logs)
+                        self.accelerator.print(
+                            "Step: {}, loss_cql: {}, loss_v: {}, reward: {}".format(
+                                opt_steps,
+                                logs["loss_cql"],
+                                logs["loss_v"],
+                                logs["reward"],
+                            )
+                        )
 
                 self.accelerator.backward(loss)
                 self.opt.step()
