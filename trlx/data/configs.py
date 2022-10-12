@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import yaml
 
@@ -102,6 +102,7 @@ class TrainConfig:
     weight_decay: float
     learning_rate_init: float
     learning_rate_target: float
+    opt_betas: Tuple[float]
 
     log_interval: int
     checkpoint_interval: int

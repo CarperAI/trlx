@@ -15,11 +15,7 @@ from trlx.data.accelerate_base_datatypes import (AccelerateRLBatchElement,
                                                  PromptBatch)
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
-from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
-
-WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
-LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
 
 
 @register_model
@@ -27,60 +23,58 @@ class AccelerateRLModel(BaseRLModel):
     """
     RL Model that uses accelerate for training
     """
-    def __init__(self, config, rollout_storage, train_mode = True):
+    def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
+        # Retrieves model equipped for ppo, ilql, etc
+        self.model = self.get_arch(self.config)
 
-        self.model = self.get_arch(
-            self.config
-        )  # Retrieves model equipped for ppo, ilql, etc
+        if config.model.tokenizer_path:
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.padding_side = "left"
+        else:
+            self.tokenizer = None
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.tokenizer_path)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.padding_side = "left"
-
+        self.max_length = config.train.gen_size
         config_dict = self.config.to_dict()
         if self.config.train.accelerate_config_path != "":
             with open(self.config.train.accelerate_config_path, mode="r") as file:
                 accelerate_config = yaml.safe_load(file)
             config_dict.update(accelerate_config)
+
         self.accelerator = Accelerator(log_with="wandb")
 
-        if WORLD_SIZE > 1:
-            torch.distributed.barrier(device_ids=[LOCAL_RANK])
+        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
+            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
         else:
             torch.random.manual_seed(1000)
+
         if self.accelerator.is_main_process:
             self.accelerator.init_trackers(
-                project_name=self.config.train.project_name, config=config_dict
+                project_name=self.config.train.project_name,
+                config=config_dict,
+                init_kwargs={
+                    "wandb": {
+                        "name": f"trlx-{config.model.model_path}",
+                        "mode": "disabled"
+                        if os.environ.get("debug", False)
+                        else "online",
+                    }
+                },
             )
 
         self.opt = torch.optim.AdamW(
-            self.model.parameters(), lr=self.config.train.learning_rate_init
+            self.model.parameters(),
+            lr=self.config.train.learning_rate_init,
+            betas=self.config.train.opt_betas,
         )
+
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.opt,
             self.config.train.total_steps,
             eta_min=self.config.train.learning_rate_target,
         )
-        self.rollout_loader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True, num_workers=2
-        )
-
-        (
-            self.model,
-            self.opt,
-            self.rollout_loader,
-            self.scheduler,
-        ) = self.accelerator.prepare(
-            self.model, self.opt, self.rollout_loader, self.scheduler
-        )
-        self.store.clear_history()
-
-        self.dummy_input = self.tokenize("dummy input")[
-            "input_ids"
-        ]  # Hack to make acclerate distributed work with model generation
 
     def tokenize(self, text: Iterable[str]):
         """
@@ -114,7 +108,7 @@ class AccelerateRLModel(BaseRLModel):
             response = self.model.generate(
                 query_tensors,
                 pad_token_id=self.tokenizer.eos_token_id,
-                **self.config.method.gen_kwargs
+                **self.config.method.gen_kwargs,
             )
             response_tensors = response[
                 :,

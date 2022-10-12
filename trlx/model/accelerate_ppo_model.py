@@ -24,8 +24,21 @@ from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config, train_mode=True):
+        super().__init__(config, train_mode)
+
         self.store = PPORolloutStorage()
-        super().__init__(config, self.store)
+
+        rollout_loader = self.store.create_loader(
+            self.config.train.batch_size, shuffle=True
+        )
+        self.model, self.opt, self.scheduler, rollout_loader = self.accelerator.prepare(
+            self.model, self.opt, self.scheduler, rollout_loader
+        )
+        self.store.clear_history()
+
+        self.dummy_input = self.tokenize("dummy input")[
+            "input_ids"
+        ]  # Hack to make acclerate distributed work with model generation
 
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt like
@@ -122,10 +135,9 @@ class AcceleratePPOModel(AccelerateRLModel):
                     )
                 )
 
-    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
-
+    def learn(self):
         rollout_loader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True, prep_fn=None, num_workers=2
+            self.config.train.batch_size, shuffle=True
         )
         rollout_loader = self.accelerator.prepare(rollout_loader)
 

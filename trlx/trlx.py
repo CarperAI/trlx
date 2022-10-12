@@ -4,7 +4,7 @@ from functools import partial
 from numpy.random import RandomState
 
 from trlx.data.configs import TRLConfig
-from trlx.model.accelerate_ilql_model import ILQLModel
+from trlx.model.accelerate_ilql_model import AccelerateILQLModel
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
 from trlx.pipeline.offline_pipeline import OfflinePipeline
 
@@ -20,7 +20,7 @@ def train(
     if config is None:
         config = TRLConfig.load_yaml("configs/ilql_config.yml")
 
-    model = ILQLModel(config=config, logit_mask=logit_mask)
+    model = AccelerateILQLModel(config=config, logit_mask=logit_mask)
 
     if model.tokenizer:
         eval_prompts = list(map(model.tokenizer, eval_prompts))
@@ -31,7 +31,7 @@ def train(
         n_eval_prompts = len(eval_prompts)
 
     # make ad-hoc validation split in case the number of prompts isn't divisible by num_processes
-    if len(eval_prompts) < n_eval_prompts:
+    if len(eval_prompts) < n_eval_prompts and isinstance(eval_prompts, list):
         RandomState(1000).shuffle(samples)
         RandomState(1000).shuffle(ratings)
         ix = n_eval_prompts - len(eval_prompts)

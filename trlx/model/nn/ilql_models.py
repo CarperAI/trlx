@@ -17,6 +17,7 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 import wandb
 
+
 def topk_mask(xs: torch.FloatTensor, k: int):
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
@@ -55,7 +56,6 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self.n_embd = self.gpt.config.n_embd
             gpt_blocks = self.gpt.transformer.h
-
 
         if num_layers_unfrozen == 0:
             gpt_blocks_to_freeze = list(gpt_blocks)
@@ -228,8 +228,8 @@ class CausalLMWithValueHeads(nn.Module):
         eos_token_id=50256,
     ):
         if isinstance(prompts, (dict, BatchEncoding)):
-            input_ids = prompts.get('input_ids')
-            attention_mask = prompts.get('attention_mask', None)
+            input_ids = prompts.get("input_ids")
+            attention_mask = prompts.get("attention_mask", None)
         else:
             input_ids = prompts
             attention_mask = None
@@ -305,7 +305,9 @@ class CausalLMWithValueHeads(nn.Module):
                     f"tensors/{name}/max/{beta}": xs.max(),
                     f"tensors/{name}/std/{beta}": xs.std(),
                     f"tensors/{name}/mean/{beta}": xs.mean(),
-                    f"tensors/{name}/hist/{beta}": wandb.Histogram(xs.cpu().float().view(-1)),
+                    f"tensors/{name}/hist/{beta}": wandb.Histogram(
+                        xs.cpu().float().view(-1)
+                    ),
                 }
             )
 
