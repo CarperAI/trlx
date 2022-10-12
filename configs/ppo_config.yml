@@ -37,7 +37,7 @@ method:
   chunk_size : 128  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs : 4  # Number of ppo epochs
   init_kl_coef : 0.2  # init kl coefficient
-  target : 6  # target kl coefficient
+  target : 6  # target kl coefficient, set None for fixed kl coef
   horizon : 10000  # PPO horizon
   gamma : 1  # PPO discount
   lam : 0.95  # PPO lambda

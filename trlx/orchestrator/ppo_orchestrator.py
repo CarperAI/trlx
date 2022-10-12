@@ -89,7 +89,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Compute rewards
             kls = all_logprobs - all_ref_logprobs
-            non_score_rewards = -self.rl_model.config.method.init_kl_coef * kls
+            non_score_rewards = -self.rl_model.kl_ctl.value * kls
             all_rewards = non_score_rewards.clone()
             all_rewards[:, -1] += scores.to(self.rl_model.accelerator.device)
 

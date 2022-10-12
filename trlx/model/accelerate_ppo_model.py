@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from torchtyping import TensorType
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
+import numpy as np
 
 import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
@@ -20,12 +21,42 @@ from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 
+class AdaptiveKLController:
+    def __init__(self, init_kl_coef, target, horizon):
+        self.value = init_kl_coef
+        self.target = target
+        self.horizon = horizon
+
+    def update(self, current, n_steps):
+        target = self.target
+        proportional_error = np.clip(current / target - 1, -0.2, 0.2)
+        mult = 1 + proportional_error * n_steps / self.horizon
+        self.value *= mult
+
+# Cell
+
+class FixedKLController:
+    """Fixed KL controller."""
+    def __init__(self, kl_coef):
+        self.value = kl_coef
+
+    def update(self, current, n_steps):
+        pass
 
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config, train_mode=True):
         self.store = PPORolloutStorage()
         super().__init__(config, self.store)
+
+        if config.method.target is not None:
+            self.kl_ctl = AdaptiveKLController(
+                                                config.method.init_kl_coef, 
+                                                config.method.target, 
+                                                config.method.horizon
+                                              )
+        else:
+            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt like
@@ -71,7 +102,10 @@ class AcceleratePPOModel(AccelerateRLModel):
         vf_losses2 = (vpredclipped - returns) ** 2
         vf_loss = 0.5 * torch.mean(torch.max(vf_losses1, vf_losses2))
 
-        ratio = torch.exp(logprob - all_logprobs)
+        kl = logprob - all_logprobs
+        # Record mean_kl for kl coef adjustment
+        self.mean_kl = torch.mean(torch.sum(kl, dim=-1)).item()
+        ratio = torch.exp(kl)
 
         pg_losses = -advantages * ratio
         pg_losses2 = -advantages * torch.clamp(
@@ -95,6 +129,9 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def post_backward_callback(self):
         batch = self.logs["batch"]
+        # Update kl_coefficient
+        self.kl_ctl.update(self.mean_kl ,self.config.train.batch_size)
+        # Run evaluation
         if self.accelerator.is_main_process:
             if (
                 self.iter_count % self.config.train.eval_interval == 0
@@ -114,11 +151,12 @@ class AcceleratePPOModel(AccelerateRLModel):
                     "responses": wandb.Table(columns=["response", "score"], rows=rows),
                     "pg_loss": self.logs["pg_loss"],
                     "vf_loss": self.logs["vf_loss"],
+                    "kl_coef": self.kl_ctl.value,
                 }
                 self.accelerator.log(stats, step=self.iter_count)
                 self.accelerator.print(
-                    "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}".format(
-                        self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"]
+                    "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
+                        self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"], self.kl_ctl.value,
                     )
                 )
 
