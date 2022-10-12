@@ -91,11 +91,12 @@ class TrainConfig:
     :param project_name: Project name for wandb
     :type project_name: str
     """
-    n_ctx : int
-    epochs : int
-    total_steps : int
-    batch_size : int
-    grad_clip : float # Clip grad norms to this value
+    n_ctx: int
+    epochs: int
+    total_steps: int
+    save_steps: Optional[int]
+    batch_size: int
+    grad_clip: float  # Clip grad norms to this value
 
     lr_ramp_steps: int
     lr_decay_steps: int
