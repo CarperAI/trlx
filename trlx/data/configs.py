@@ -29,6 +29,8 @@ class ModelConfig:
     model_type : str # One of the architectures present in framework.model
     device : str = ''
     num_layers_unfrozen : int = -1
+    n_soft_tokens: int = None # soft prompt support
+    initialize_from_vocab: bool = True # soft prompt support
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
