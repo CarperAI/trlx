@@ -82,6 +82,7 @@ class AccelerateRLModel(BaseRLModel):
         self.dummy_input = self.tokenize("dummy input")[
             "input_ids"
         ]  # Hack to make acclerate distributed work with model generation
+        self.accelerator.print("FINISHED INITIALIZING MODEL")
 
     def tokenize(self, text: Iterable[str]):
         text = [self.tokenizer.bos_token + txt for txt in text]

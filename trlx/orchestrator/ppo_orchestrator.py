@@ -12,6 +12,7 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils import Clock, chunk, flatten, sentiment_score
 from trlx.utils.modeling import logprobs_from_logits
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 
 
 @register_orchestrator
@@ -68,7 +69,13 @@ class PPOOrchestrator(Orchestrator):
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
                 # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
-                ref_logits, _, _ = self.ref_model(all_tokens.cpu())
+                # TODO(dahoas): When hydra model works need to also support generation on hydra head
+                if hasattr(self.rl_model.model, 'frozen_head'):
+                    self.rl_model.accelerator.print("HYDRA FORWARD")
+                    ref_logits = self.rl_model.model.forward_hydra(all_tokens, return_dict=False)
+                else:
+                    self.rl_model.accelerator.print("NO HYDRA")
+                    ref_logits, _, _ = self.ref_model(all_tokens.cpu())
                 ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(

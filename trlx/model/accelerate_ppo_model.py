@@ -15,7 +15,7 @@ from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import GPTHeadWithValueModel
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
@@ -29,7 +29,7 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt like
-        return GPTHeadWithValueModel(self.config.model.model_path)
+        return GPTHydraHeadWithValueModel(self.config.model.model_path, self.config.model.num_layers_unfrozen)
 
     def loss(
         self, query_tensors, response_tensors, all_logprobs, all_values, all_rewards
@@ -123,6 +123,8 @@ class AcceleratePPOModel(AccelerateRLModel):
                 )
 
     def learn(self, log_fn=None, save_fn=None, eval_fn=None):
+
+        self.accelerator.print("STARTING LEARNING")
 
         rollout_loader = self.store.create_loader(
             self.config.train.batch_size, shuffle=True, prep_fn=None, num_workers=2
