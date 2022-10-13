@@ -11,6 +11,7 @@ from transformers import (AutoConfig, AutoModelForCausalLM, GPT2LMHeadModel,
                           top_k_top_p_filtering)
 from transformers.modeling_outputs import ModelOutput
 from copy import deepcopy
+import inspect
 
 
 # Cell
@@ -220,16 +221,27 @@ class ModelBranch(PreTrainedModel):
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
             # Assumes we are never training the branch
-            outputs = block(
-                hidden_states,
-                layer_past=layer_past,
-                attention_mask=attention_mask,
-                head_mask=head_mask[i],
-                encoder_hidden_states=encoder_hidden_states,
-                encoder_attention_mask=encoder_attention_mask,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-            )
+            block_params = inspect.getfullargspec(block.forward).args
+            if "encoder_hidden_states" in block_params:
+                outputs = block(
+                    hidden_states,
+                    layer_past=layer_past,
+                    attention_mask=attention_mask,
+                    head_mask=head_mask[i],
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                )
+            else:
+                outputs = block(
+                    hidden_states,
+                    layer_past=layer_past,
+                    attention_mask=attention_mask,
+                    head_mask=head_mask[i],
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                )
 
             hidden_states = outputs[0]
             if use_cache is True:
@@ -304,7 +316,6 @@ class GPTHydraHeadWithValueModel(nn.Module):
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
-            print("NUM GPT BLOCKS: {}".format(len(self.gpt.transformer.h)))
             transformer_blocks = list(self.gpt.transformer.h)[-num_layers_unfrozen:]
             # Retrive hf_config to init
             hf_config = AutoConfig.from_pretrained(config)
@@ -374,6 +385,6 @@ class GPTHydraHeadWithValueModel(nn.Module):
             past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
-            cross_attentions=transformer_outputs.cross_attentions,
+            cross_attentions=None,
             value=value,
         )

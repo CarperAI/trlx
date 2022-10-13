@@ -35,7 +35,8 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        self.ref_model = self.rl_model.get_arch(self.rl_model.config)
+        if not hasattr(self.rl_model.model, "frozen_head"):
+            self.ref_model = self.rl_model.get_arch(self.rl_model.config)
 
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
@@ -68,13 +69,10 @@ class PPOOrchestrator(Orchestrator):
             all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
-                # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                if hasattr(self.rl_model.model, 'frozen_head'):
-                    self.rl_model.accelerator.print("HYDRA FORWARD")
+                if hasattr(self.rl_model.model, "frozen_head"):
                     ref_logits = self.rl_model.model.forward_hydra(all_tokens, return_dict=False)
                 else:
-                    self.rl_model.accelerator.print("NO HYDRA")
                     ref_logits, _, _ = self.ref_model(all_tokens.cpu())
                 ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])

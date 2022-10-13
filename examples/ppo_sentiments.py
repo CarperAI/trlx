@@ -11,7 +11,7 @@ from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
 
 if __name__ == "__main__":
-    cfg = TRLConfig.load_yaml("configs/ppo_config.yml")
+    cfg = TRLConfig.load_yaml("configs/ppo_gptj.yml")
 
     sentiment_pipe = pipeline(
         "sentiment-analysis", "lvwerra/distilbert-imdb", device=-1
