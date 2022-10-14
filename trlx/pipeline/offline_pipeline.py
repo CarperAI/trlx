@@ -15,19 +15,16 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 @register_datapipeline
 class OfflinePipeline(BasePipeline):
-    def __init__(self, tokenizer, tokenized):
+    def __init__(self, prompts, tokenizer=None):
         super().__init__()
-        self.tokenizer = deepcopy(tokenizer)
-        if self.tokenizer:
-            self.tokenizer.padding_side = "left"
-
-        self.tokenized = tokenized
+        self.tokenizer = tokenizer
+        self.prompts = list(map(tokenizer if tokenizer else (lambda x: x), prompts))
 
     def __getitem__(self, ix: int):
-        return self.tokenized[ix]
+        return self.prompts[ix]
 
     def __len__(self) -> int:
-        return len(self.tokenized)
+        return len(self.prompts)
 
     def create_loader(self, batch_size: int) -> DataLoader:
         collate_fn = (
@@ -37,16 +34,19 @@ class OfflinePipeline(BasePipeline):
 
 
 class OfflineRolloutStorage(BaseRolloutStore):
-    def __init__(self, input_ids, attention_mask, rewards):
+    def __init__(self, input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones):
         super().__init__()
 
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.rewards = rewards
+        self.states_ixs = states_ixs
+        self.actions_ixs = actions_ixs
+        self.dones = dones
 
     def __getitem__(self, ix: int) -> ILQLElement:
         return ILQLElement(
-            self.input_ids[ix], self.attention_mask[ix], self.rewards[ix]
+            self.input_ids[ix], self.attention_mask[ix], self.rewards[ix], self.states_ixs[ix], self.actions_ixs[ix], self.dones[ix]
         )
 
     def __len__(self) -> int:
@@ -63,6 +63,15 @@ class OfflineRolloutStorage(BaseRolloutStore):
                 ),
                 pad_sequence(
                     [x.rewards for x in elems], batch_first=True, padding_value=0.0
+                ),
+                pad_sequence(
+                    [x.states_ixs for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.actions_ixs for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.dones for x in elems], batch_first=True, padding_value=0
                 ),
             )
 

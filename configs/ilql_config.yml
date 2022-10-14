@@ -9,7 +9,7 @@ train:
   n_ctx : 512
   epochs : 10
   total_steps : 80000
-  batch_size : 32
+  batch_size : 16
   grad_clip : 1.0
 
   lr_ramp_steps : 100
@@ -39,5 +39,5 @@ method:
   awac_scale: 1
   alpha: 0.005
   steps_for_target_q_sync: 1
-  betas: [0, 1, 8]
+  betas: [0, 8, 16]
   two_qs: true

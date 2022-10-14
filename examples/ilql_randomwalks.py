@@ -86,7 +86,7 @@ if __name__ == "__main__":
     config = TRLConfig.load_yaml("configs/ilql_config.yml")
     config.train.gen_size = 10
     config.train.epochs = 100
-    config.train.initial_learning_rate = 1e-3
+    config.train.learning_rate_init = 1e-3
     config.method.alpha = 0.1
 
     config.model.tokenizer_path = ''

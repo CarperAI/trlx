@@ -17,8 +17,9 @@ from transformers.tokenization_utils_base import BatchEncoding
 
 import wandb
 
-
 def topk_mask(xs: torch.FloatTensor, k: int):
+    if k > xs.shape[-1]:
+        return xs
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
@@ -85,46 +86,57 @@ class CausalLMWithValueHeads(nn.Module):
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
 
-    def forward(self, **x):
-        out = self.gpt.transformer(**x)
+    def forward(self, input_ids, attention_mask, position_ids=None, past_key_values=None, actions_ixs=None, states_ixs=None):
+        out = self.gpt.transformer(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, past_key_values=past_key_values)
         hs = out.last_hidden_state
 
-        if self.two_qs:
-            qs = (self.q1_head(hs), self.q2_head(hs))
-            target_qs = (self.target_q1_head(hs), self.target_q2_head(hs))
+        if states_ixs is not None:
+            states_hs = hs.gather(dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1]))
+            actions_hs = hs.gather(dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1]))
         else:
-            qs = self.q1_head(hs)
-            target_qs = self.target_q1_head(hs)
+            states_hs = actions_hs = hs
+
+        if self.two_qs:
+            qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
+            target_qs = (self.target_q1_head(actions_hs), self.target_q2_head(actions_hs))
+        else:
+            qs = self.q1_head(actions_hs)
+            target_qs = self.target_q1_head(actions_hs)
 
         logits = self.gpt.lm_head(hs)
-        vs = self.v_head(hs)
+        vs = self.v_head(states_hs)
 
         return logits, qs, target_qs, vs, out.past_key_values
 
     def loss(self, batch):
-        tokens = batch.input_ids.to(self.device)
+        input_ids = batch.input_ids.to(self.device)
         attn = batch.attention_mask.to(self.device)
         rewards = batch.rewards.to(self.device)
+        states_ixs = batch.states_ixs.to(self.device)
+        actions_ixs = batch.actions_ixs.to(self.device)
+        dones = batch.dones.to(self.device)
 
-        actions = tokens[:, 1:, None]
-        terminal_mask = attn[:, :-1]
+        logits, qs, target_qs, vs, _ = self(input_ids=input_ids, attention_mask=attn, actions_ixs=actions_ixs, states_ixs=states_ixs)
 
-        logits, qs, target_qs, vs, _ = self(input_ids=tokens, attention_mask=attn)
+        actions = input_ids[:, 1:].gather(dim=1, index=actions_ixs).unsqueeze(-1)
         bsize, ntokens, dsize = logits.shape
 
         if self.two_qs:
-            Q1 = qs[0][:, :-1].gather(-1, actions).squeeze(-1)
-            Q2 = qs[1][:, :-1].gather(-1, actions).squeeze(-1)
+            Q1 = qs[0].gather(-1, actions).squeeze(-1)
+            Q2 = qs[1].gather(-1, actions).squeeze(-1)
 
-            targetQ1 = target_qs[0][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ2 = target_qs[1][:, :-1].gather(-1, actions).squeeze(-1).detach()
+            targetQ1 = target_qs[0].gather(-1, actions).squeeze(-1).detach()
+            targetQ2 = target_qs[1].gather(-1, actions).squeeze(-1).detach()
             targetQ = torch.minimum(targetQ1, targetQ2)
         else:
-            Q = qs[:, :-1].gather(-1, actions).squeeze(-1)
-            targetQ = target_qs[:, :-1].gather(-1, actions).squeeze(-1).detach()
+            Q = qs.gather(-1, actions).squeeze(-1)
+            targetQ = target_qs.gather(-1, actions).squeeze(-1).detach()
 
+        terminal_mask = dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
-        V = vs[:, 1:].squeeze() * terminal_mask
+
+        _V = vs[:, :-1].squeeze()
+        V = vs[:, 1:].squeeze() * dones[:, 1:]
         Q_ = rewards + self.gamma * V
 
         if self.two_qs:
@@ -136,44 +148,46 @@ class CausalLMWithValueHeads(nn.Module):
 
         loss_v = (
             (
-                (targetQ >= V).int() * self.tau * (targetQ - V).pow(2)
-                + (targetQ < V).int() * (1 - self.tau) * (targetQ - V).pow(2)
+                (targetQ >= _V).int() * self.tau * (targetQ - _V).pow(2)
+                + (targetQ < _V).int() * (1 - self.tau) * (targetQ - _V).pow(2)
             )
             * terminal_mask
         ).sum() / n_nonterminal
 
         if self.two_qs:
+            nactions = qs[0].shape[1]
             loss_cql_q1 = (
                 F.cross_entropy(
-                    qs[0][:, :-1].reshape(-1, dsize),
+                    qs[0].reshape(-1, dsize),
                     actions.reshape(-1),
                     reduction="none",
-                ).reshape(bsize, ntokens - 1)
+                ).reshape(bsize, nactions)
                 * terminal_mask
             ).sum() / n_nonterminal
             loss_cql_q2 = (
                 F.cross_entropy(
-                    qs[1][:, :-1].reshape(-1, dsize),
+                    qs[1].reshape(-1, dsize),
                     actions.reshape(-1),
                     reduction="none",
-                ).reshape(bsize, ntokens - 1)
+                ).reshape(bsize, nactions)
                 * terminal_mask
             ).sum() / n_nonterminal
             loss_cql = loss_cql_q1 + loss_cql_q2
         else:
+            nactions = qs.shape[1]
             loss_cql = (
                 F.cross_entropy(
-                    qs[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
-                ).reshape(bsize, ntokens - 1)
+                    qs.reshape(-1, dsize), actions.reshape(-1), reduction="none"
+                ).reshape(bsize, nactions)
                 * terminal_mask
             ).sum() / n_nonterminal
 
         loss_awac = (
             F.cross_entropy(
-                logits[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
+                logits[:, :-1, :].reshape(-1, dsize), input_ids[:, 1:].reshape(-1), reduction="none"
             ).reshape(bsize, ntokens - 1)
-            * terminal_mask
-        ).sum() / n_nonterminal
+            * attn[:, 1:]
+        ).sum() / attn[:, 1:].sum()
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
         stats = {
@@ -289,7 +303,6 @@ class CausalLMWithValueHeads(nn.Module):
                 tensors["vs"].append(vs)
                 tensors["adv"].append(adv)
                 tensors["pi"].append(pi)
-                tensors["pi_beta"].append(torch.exp(pi_beta))
 
             if torch.all(finished):
                 break
@@ -301,11 +314,7 @@ class CausalLMWithValueHeads(nn.Module):
 
             stats.update(
                 {
-                    f"tensors/{name}/min/{beta}": xs.min(),
-                    f"tensors/{name}/max/{beta}": xs.max(),
-                    f"tensors/{name}/std/{beta}": xs.std(),
-                    f"tensors/{name}/mean/{beta}": xs.mean(),
-                    f"tensors/{name}/hist/{beta}": wandb.Histogram(
+                    f"tensors/{name}/{beta}": wandb.Histogram(
                         xs.cpu().float().view(-1)
                     ),
                 }

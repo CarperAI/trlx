@@ -3,9 +3,6 @@ from typing import Callable, Iterable
 
 from torchtyping import TensorType
 
-TensorType
-
-
 @dataclass
 class ILQLElement:
     """
@@ -23,7 +20,9 @@ class ILQLElement:
     input_ids: TensorType["query_size"]
     attention_mask: TensorType["query_size"]
     rewards: TensorType["reward_size"]
-
+    states_ixs: TensorType["states_size"]
+    actions_ixs: TensorType["reward_size"]
+    dones: TensorType["states_size"]
 
 @dataclass
 class ILQLBatch:
@@ -42,3 +41,6 @@ class ILQLBatch:
     input_ids: TensorType["batch_size", "query_size"]
     attention_mask: TensorType["batch_size", "query_size"]
     rewards: TensorType["batch_size", "reward_size"]
+    states_ixs: TensorType["batch_size", "states_size"]
+    actions_ixs: TensorType["batch_size", "reward_size"]
+    dones: TensorType["batch_size", "states_size"]

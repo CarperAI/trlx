@@ -24,10 +24,12 @@ class AccelerateILQLModel(AccelerateRLModel):
         self,
         config,
         logit_mask=None,
+        metric_fn=None,
         train_mode=True,
     ):
         super().__init__(config, train_mode)
         self.logit_mask = logit_mask
+        self.metric_fn = metric_fn
 
     def get_arch(self, config):
         return CausalLMWithValueHeads(
@@ -78,9 +80,11 @@ class AccelerateILQLModel(AccelerateRLModel):
                                 beta=beta,
                                 max_length=self.max_length,
                                 logit_mask=self.logit_mask,
+                                eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else 0
                             )
 
-                            all_samples.append(samples)
+                            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+                            all_samples.append(F.pad(samples, (0, self.max_length-samples.shape[1]), value=pad_token))
 
                         samples = self.accelerator.gather(torch.vstack(all_samples))
 
@@ -106,6 +110,26 @@ class AccelerateILQLModel(AccelerateRLModel):
                             logs[f"samples/{beta}"] = wandb.Table(
                                 columns=["samples", *metrics.keys()], rows=rows
                             )
+
+                            metric_time = time()
+                            metrics = self.metric_fn(samples)
+                            metric_time = time() - metric_time
+                            logs.update({"metric_time": metric_time})
+
+                            mean_metrics = {
+                                f"metrics/{k}/{beta}": torch.as_tensor(xs).mean(-1)
+                                for k, xs in metrics.items()
+                            }
+                            logs.update(tensor_stats)
+                            logs.update(mean_metrics)
+
+                            rows = list(zip(samples, *metrics.values()))
+                            logs[f"samples/{beta}"] = wandb.Table(
+                                columns=["samples", *metrics.keys()], rows=rows
+                            )
+
+                            print(rows[0])
+                            print(mean_metrics)
 
                     self.model.train()
                     generate_time = time() - generate_time

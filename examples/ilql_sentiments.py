@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     trlx.train(
         samples=imdb["text"],
-        ratings=imdb["label"],
+        rewards=imdb["label"],
         eval_prompts=["I don't know much about Hungarian underground"] * 64 + ["<|endoftext|>"] * 64,
         metric_fn=metric_fn
     )
