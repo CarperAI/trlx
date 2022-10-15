@@ -12,6 +12,7 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils import Clock, chunk, flatten, sentiment_score
 from trlx.utils.modeling import logprobs_from_logits
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 
 
 @register_orchestrator
@@ -34,7 +35,8 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        self.ref_model = self.rl_model.get_arch(self.rl_model.config)
+        if not hasattr(self.rl_model.model, "frozen_head"):
+            self.ref_model = self.rl_model.get_arch(self.rl_model.config)
 
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
@@ -67,8 +69,11 @@ class PPOOrchestrator(Orchestrator):
             all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
-                # TODO(dahoas): Need to make decision about what to do with ref model: keep on cpu?
-                ref_logits, _, _ = self.ref_model(all_tokens.cpu())
+                # TODO(dahoas): When hydra model works need to also support generation on hydra head
+                if hasattr(self.rl_model.model, "frozen_head"):
+                    ref_logits = self.rl_model.model.forward_hydra(all_tokens, return_dict=False)
+                else:
+                    ref_logits, _, _ = self.ref_model(all_tokens.cpu())
                 ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(
@@ -82,7 +87,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Compute rewards
             kls = all_logprobs - all_ref_logprobs
-            non_score_rewards = -self.rl_model.config.method.init_kl_coef * kls
+            non_score_rewards = -self.rl_model.kl_ctl.value * kls
             all_rewards = non_score_rewards.clone()
             all_rewards[:, -1] += scores.to(self.rl_model.accelerator.device)
 

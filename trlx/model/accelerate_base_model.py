@@ -26,8 +26,15 @@ class AccelerateRLModel(BaseRLModel):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
+        self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
+
+        self.model = self.get_arch(
+            self.config
+        )  # Retrieves model equipped for ppo, ilql, etc
+        if self.config.model.num_layers_unfrozen > 0:
+            for block in self.model.gpt.transformer.h[:-self.config.model.num_layers_unfrozen]:
+                for parameter in block.parameters():
+                    parameter.requires_grad = False
 
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
