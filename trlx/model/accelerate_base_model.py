@@ -105,7 +105,7 @@ class AccelerateRLModel(BaseRLModel):
         with torch.no_grad():
             input_ids = prompts.input_ids.to(self.accelerator.device)
             attention_mask = prompts.attention_mask.to(self.accelerator.device)
-            samples = self.model.generate(
+            samples = self.accelerator.unwrap_model(self.model).generate(
                 input_ids=input_ids, attention_mask=attention_mask,
                 pad_token_id=self.tokenizer.pad_token_id,
                 **self.config.method.gen_kwargs

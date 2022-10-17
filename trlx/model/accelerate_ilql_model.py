@@ -75,7 +75,7 @@ class AccelerateILQLModel(AccelerateRLModel):
                     for beta in self.config.method.betas:
                         all_samples = []
                         for prompts in eval_dataloader:
-                            samples, tensor_stats = self.model.sample(
+                            samples, tensor_stats = self.accelerator.unwrap_model(self.model).sample(
                                 prompts,
                                 beta=beta,
                                 max_length=self.max_length,
@@ -118,7 +118,7 @@ class AccelerateILQLModel(AccelerateRLModel):
                     generate_time = time() - generate_time
 
                 forward_time = time()
-                loss, stats = self.model.loss(batch)
+                loss, stats = self.accelerator.unwrap_model(self.model).loss(batch)
                 forward_time = time() - forward_time
 
                 backward_time = time()
@@ -141,6 +141,6 @@ class AccelerateILQLModel(AccelerateRLModel):
                     self.accelerator.log(logs)
 
                 if (opt_steps + 1) % self.config.method.steps_for_target_q_sync == 0:
-                    self.model.sync_target_q_heads()
+                    self.accelerator.unwrap_model(self.model).sync_target_q_heads()
 
                 opt_steps += 1
