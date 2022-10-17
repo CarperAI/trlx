@@ -14,7 +14,7 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
 @register_datapipeline
-class OfflinePipeline(BasePipeline):
+class PromptPipeline(BasePipeline):
     def __init__(self, prompts, tokenizer=None):
         super().__init__()
         self.tokenizer = tokenizer
@@ -26,11 +26,11 @@ class OfflinePipeline(BasePipeline):
     def __len__(self) -> int:
         return len(self.prompts)
 
-    def create_loader(self, batch_size: int) -> DataLoader:
+    def create_loader(self, batch_size: int, shuffle = False) -> DataLoader:
         collate_fn = (
             DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
         )
-        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn)
+        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 
 class OfflineRolloutStorage(BaseRolloutStore):

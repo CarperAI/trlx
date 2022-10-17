@@ -137,14 +137,16 @@ class CausalLMWithValueHeads(nn.Module):
 
         _V = vs[:, :-1].squeeze()
         V = vs[:, 1:].squeeze() * dones[:, 1:]
-        Q_ = rewards + self.gamma * V
+        Q_ = rewards + self.gamma * V.detach()
 
         if self.two_qs:
-            loss_q1 = ((Q1 - Q_.detach()) * terminal_mask).pow(2).sum() / n_nonterminal
-            loss_q2 = ((Q2 - Q_.detach()) * terminal_mask).pow(2).sum() / n_nonterminal
+            loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
+            loss_q2 = ((Q2 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
             loss_q = loss_q1 + loss_q2
         else:
-            loss_q = ((Q - Q_.detach()) * terminal_mask).pow(2).sum() / n_nonterminal
+            loss_q = ((Q - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
+
+        targetQ = targetQ.detach()
 
         loss_v = (
             (

@@ -33,8 +33,6 @@ class AdaptiveKLController:
         mult = 1 + proportional_error * n_steps / self.horizon
         self.value *= mult
 
-# Cell
-
 class FixedKLController:
     """Fixed KL controller."""
     def __init__(self, kl_coef):
@@ -48,20 +46,21 @@ class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.store = PPORolloutStorage()
+        self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
         rollout_loader = self.store.create_loader(
             self.config.train.batch_size, shuffle=True
         )
+
         self.model, self.opt, self.scheduler, rollout_loader = self.accelerator.prepare(
             self.model, self.opt, self.scheduler, rollout_loader
         )
-        self.store.clear_history()
 
         self.dummy_input = self.tokenize("dummy input")[
             "input_ids"
         ]  # Hack to make acclerate distributed work with model generation
 
+        self.store.clear_history()
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
                                                 config.method.init_kl_coef,
@@ -87,6 +86,7 @@ class AcceleratePPOModel(AccelerateRLModel):
     def loss(
         self, query_tensors, response_tensors, all_logprobs, all_values, all_rewards
     ):
+
         lastgaelam = 0
         advantages_reversed = []
         gen_len = response_tensors.shape[1]
@@ -108,7 +108,11 @@ class AcceleratePPOModel(AccelerateRLModel):
         advantages = advantages.detach()
 
         all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
-        logits, _, vpred = self.model(all_tokens)
+        attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(all_tokens.device)
+        position_ids = attention_mask.cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask.eq(0), 0)
+
+        logits, _, vpred = self.model(all_tokens, attention_mask, position_ids=position_ids)
         logprob = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
 
         # only the generation part of the values/logprobs is needed
@@ -120,9 +124,12 @@ class AcceleratePPOModel(AccelerateRLModel):
             all_values + self.config.method.cliprange_value,
         )
 
+        vf_mask = attention_mask[:, -gen_len-1:-1]
+        pg_mask = attention_mask[:, -gen_len:]
+
         vf_losses1 = (vpred - returns) ** 2
         vf_losses2 = (vpredclipped - returns) ** 2
-        vf_loss = 0.5 * torch.mean(torch.max(vf_losses1, vf_losses2))
+        vf_loss = 0.5 * torch.sum(torch.max(vf_losses1, vf_losses2) * vf_mask) / vf_mask.sum()
 
         kl = logprob - all_logprobs
         # Record mean_kl for kl coef adjustment
@@ -136,13 +143,12 @@ class AcceleratePPOModel(AccelerateRLModel):
             1.0 + self.config.method.cliprange,
         )
 
-        pg_loss = torch.mean(torch.max(pg_losses, pg_losses2))
+        pg_loss = torch.sum(torch.max(pg_losses, pg_losses2) * pg_mask) / pg_mask.sum()
 
         model_loss = pg_loss + self.config.method.vf_coef * vf_loss
         return model_loss, pg_loss, vf_loss
 
     def post_epoch_callback(self):
-        # TODO(dahoas): are experiences being made for dataloaders on each process or same dataloader
         self.epoch += 1
         self.store.clear_history()
         self.orch.make_experience(
@@ -150,46 +156,45 @@ class AcceleratePPOModel(AccelerateRLModel):
         )  # Collect more rollouts for training
 
     def post_backward_callback(self):
-        batch = self.logs["batch"]
         # Update kl_coefficient
         self.kl_ctl.update(self.mean_kl ,self.config.train.batch_size)
-        # Run evaluation
+
+        all_samples = []
+        for prompts in self.eval_dataloader:
+            query, response, _ = self.act(prompts)
+            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+            samples = torch.hstack((query, response))
+            all_samples.append(F.pad(samples, (0, self.max_length-samples.shape[1]), value=pad_token))
+
+        samples = self.accelerator.gather(torch.vstack(all_samples))
+
         if self.accelerator.is_main_process:
-            if (
-                self.iter_count % self.config.train.eval_interval == 0
-                or self.iter_count <= self.config.method.ppo_epochs
-            ):
-                text = self.tokenizer.batch_decode(batch.query_tensors)
-                eval_batch: PromptBatch = PromptBatch(
-                    text=text, tokens=batch.query_tensors
-                )
-                query_tensors, response_tensors, response_text = self.act(eval_batch)
-                gen_texts = [q + r for q, r in zip(eval_batch.text, response_text)]
-                scores = self.orch.score(gen_texts)
-                mean_score = torch.mean(scores).item()
-                rows = list(zip(gen_texts, scores.tolist()))
-                stats = {
-                    "mean_score": mean_score,
-                    "responses": wandb.Table(columns=["response", "score"], rows=rows),
-                    "pg_loss": self.logs["pg_loss"],
-                    "vf_loss": self.logs["vf_loss"],
-                    "kl_coef": self.kl_ctl.value,
-                }
-                self.accelerator.log(stats, step=self.iter_count)
-                self.accelerator.print(
-                    "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
-                        self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"], self.kl_ctl.value,
-                    )
-                )
+            samples = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
+            scores = self.orch.score(samples)
+            mean_score = torch.mean(torch.as_tensor(scores)).item()
+            rows = list(zip(samples, scores))
+            stats = {
+                "mean_score": mean_score,
+                "responses": wandb.Table(columns=["response", "score"], rows=rows),
+                "pg_loss": self.logs["pg_loss"],
+                "vf_loss": self.logs["vf_loss"],
+                "kl_coef": self.kl_ctl.value,
+            }
 
-    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
+            self.accelerator.log(stats, step=self.iter_count)
+            self.accelerator.print(
+                "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
+                    self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"], self.kl_ctl.value,
+                )
+            )
 
-        self.accelerator.print("STARTING LEARNING")
+    def learn(self):
+        self.eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         rollout_loader = self.store.create_loader(
             self.config.train.batch_size, shuffle=True
         )
-        rollout_loader = self.accelerator.prepare(rollout_loader)
+        rollout_loader, self.eval_dataloader = self.accelerator.prepare(rollout_loader, self.eval_dataloader)
 
         self.iter_count = 0
         self.epoch = 0
@@ -216,8 +221,7 @@ class AcceleratePPOModel(AccelerateRLModel):
                         "batch": batch,
                         "rewards": rewards,
                     }
-                    # self.post_backward_callback()
-                    # exit()
+
                     self.opt.zero_grad()
                     self.accelerator.backward(loss)
                     self.opt.step()

@@ -12,7 +12,7 @@ from transformers import AutoConfig, AutoTokenizer
 import wandb
 from trlx.model import BaseRLModel, register_model
 from trlx.model.nn.ilql_models import CausalLMWithValueHeads
-from trlx.pipeline.offline_pipeline import (OfflinePipeline,
+from trlx.pipeline.offline_pipeline import (PromptPipeline,
                                             OfflineRolloutStorage)
 
 from .accelerate_base_model import AccelerateRLModel
@@ -93,23 +93,6 @@ class AccelerateILQLModel(AccelerateRLModel):
                                 samples = self.tokenizer.batch_decode(
                                     samples, skip_special_tokens=True
                                 )
-
-                            metric_time = time()
-                            metrics = self.metric_fn(samples)
-                            metric_time = time() - metric_time
-                            logs.update({"metric_time": metric_time})
-
-                            mean_metrics = {
-                                f"metrics/{k}/{beta}": torch.as_tensor(xs).mean(-1)
-                                for k, xs in metrics.items()
-                            }
-                            logs.update(tensor_stats)
-                            logs.update(mean_metrics)
-
-                            rows = list(zip(samples, *metrics.values()))
-                            logs[f"samples/{beta}"] = wandb.Table(
-                                columns=["samples", *metrics.keys()], rows=rows
-                            )
 
                             metric_time = time()
                             metrics = self.metric_fn(samples)

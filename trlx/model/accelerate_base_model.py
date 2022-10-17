@@ -26,11 +26,16 @@ class AccelerateRLModel(BaseRLModel):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
+        self.accelerator = Accelerator(log_with="wandb")
 
-        self.model = self.get_arch(
-            self.config
-        )  # Retrieves model equipped for ppo, ilql, etc
+        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
+            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
+        else:
+            torch.random.manual_seed(1000)
+
+        # Retrieves model equipped for ppo, ilql, etc
+        self.model = self.get_arch(self.config)
+
         if self.config.model.num_layers_unfrozen > 0:
             for block in self.model.gpt.transformer.h[:-self.config.model.num_layers_unfrozen]:
                 for parameter in block.parameters():
@@ -43,19 +48,13 @@ class AccelerateRLModel(BaseRLModel):
         else:
             self.tokenizer = None
 
-        self.max_length = config.train.gen_size
         config_dict = self.config.to_dict()
         if self.config.train.accelerate_config_path != "":
             with open(self.config.train.accelerate_config_path, mode="r") as file:
                 accelerate_config = yaml.safe_load(file)
             config_dict.update(accelerate_config)
 
-        self.accelerator = Accelerator(log_with="wandb")
-
-        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
-            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
-        else:
-            torch.random.manual_seed(1000)
+        self.max_length = config.train.gen_size
 
         if self.accelerator.is_main_process:
             self.accelerator.init_trackers(
@@ -83,25 +82,6 @@ class AccelerateRLModel(BaseRLModel):
             eta_min=self.config.train.learning_rate_target,
         )
 
-        self.rollout_loader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True, num_workers=2
-        )
-
-        (
-            self.model,
-            self.opt,
-            self.rollout_loader,
-            self.scheduler,
-        ) = self.accelerator.prepare(
-            self.model, self.opt, self.rollout_loader, self.scheduler
-        )
-        self.store.clear_history()
-
-        self.dummy_input = self.tokenize("dummy input")[
-            "input_ids"
-        ]  # Hack to make acclerate distributed work with model generation
-        self.accelerator.print("FINISHED INITIALIZING MODEL")
-
     def tokenize(self, text: Iterable[str]):
         """
         Tokenize a batch of text after adding bos token.
@@ -116,33 +96,23 @@ class AccelerateRLModel(BaseRLModel):
         )
 
     def act(
-        self, data: PromptBatch
+        self, prompts
     ) -> Tuple[
         TensorType["chunk_size", "input_length"],
         TensorType["chunk_size", "gen_size"],
         Iterable[str],
     ]:
-        query_tensors = data.tokens.to(
-            self.accelerator.device
-        )  # [B, N] #TODO(dahoas): This may need to be changed
         with torch.no_grad():
-            # TODO(dahoas): swap this out for custom generate to if this fixes issue
-            _ = self.model(
-                self.dummy_input.to(self.accelerator.device)
-            )  # Dummy pass to make things play nice with accelerate
-            # Removed synced gpus
-            response = self.model.generate(
-                query_tensors,
-                pad_token_id=self.tokenizer.eos_token_id,
-                **self.config.method.gen_kwargs,
+            input_ids = prompts.input_ids.to(self.accelerator.device)
+            attention_mask = prompts.attention_mask.to(self.accelerator.device)
+            samples = self.model.generate(
+                input_ids=input_ids, attention_mask=attention_mask,
+                pad_token_id=self.tokenizer.pad_token_id,
+                **self.config.method.gen_kwargs
             )
-            response_tensors = response[
-                :,
-                query_tensors.size()[1] : query_tensors.size()[1]
-                + self.config.train.gen_size,
-            ]
-        response_text = self.tokenizer.batch_decode(response_tensors)
-        return query_tensors, response_tensors, response_text
+
+        texts = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
+        return input_ids, samples[:, input_ids.shape[1]:], texts
 
     @torch.inference_mode()
     def sample(self, prompts: PromptBatch, gen_kwargs: dict) -> Iterable[str]:

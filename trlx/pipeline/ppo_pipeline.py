@@ -9,6 +9,7 @@ from torchtyping import TensorType
 from trlx.data.accelerate_base_datatypes import PromptBatch, PromptElement
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
+from torch.nn.utils.rnn import pad_sequence
 
 
 @register_datapipeline
@@ -66,14 +67,13 @@ class PPOPipeline(BasePipeline):
 
 class PPORolloutStorage(BaseRolloutStore):
     """
-    Rollout storage for training PPO on IMDB review dataset.
+    Rollout storage for training PPO
     """
-    def __init__(self):
+    def __init__(self, pad_token_id):
         super().__init__()
 
-        self.history: Iterable[PPORLElement] = [
-            None
-        ]  # Initialize dummy entry to be loaded by accelerate
+        self.pad_token_id = pad_token_id
+        self.history: Iterable[PPORLElement] = [None]
 
     def push(self, exps: Iterable[PPORLElement]):
         self.history += exps
@@ -91,31 +91,16 @@ class PPORolloutStorage(BaseRolloutStore):
         self,
         batch_size: int,
         shuffle: bool,
-        prep_fn: Callable = None,
-        num_workers: int = 0,
     ) -> DataLoader:
-        """
-        Create dataloader for the sentiment task.
-
-        :param prep_fn: Should be tokenizing function
-        :type prep_fn: Callable[Iterable[str], Dict[str, torch.tensor]]
-        """
-        # TODO(dahoas): Decide how to support varying sizes of prompts without having to tokenize on fly
         def collate_fn(elems: Iterable[PPORLElement]):
-            res = PPORLBatch(
-                torch.stack(
-                    [elem.query_tensor for elem in elems]
-                ),  # Assumes token tensors all same size
-                torch.stack([elem.response_tensor for elem in elems]),
-                torch.stack([elem.logprobs for elem in elems]),
-                torch.stack([elem.values for elem in elems]),
-                torch.stack([elem.rewards for elem in elems]),
+            return PPORLBatch(
+                # Left padding of already left-padded queries
+                pad_sequence([elem.query_tensor.flip(0) for elem in elems], padding_value=self.pad_token_id, batch_first=True).flip(1),
+                # Right pad the rest, to have a single horizontal query/response split
+                pad_sequence([elem.response_tensor for elem in elems], padding_value=self.pad_token_id, batch_first=True),
+                pad_sequence([elem.logprobs for elem in elems], padding_value=0.0, batch_first=True),
+                pad_sequence([elem.values for elem in elems], padding_value=0.0, batch_first=True),
+                pad_sequence([elem.rewards for elem in elems], padding_value=0.0, batch_first=True),
             )
-            if prep_fn is not None:
-                return prep_fn(res)
-            else:
-                return res
 
-        return DataLoader(
-            self, batch_size, shuffle, collate_fn=collate_fn, num_workers=num_workers
-        )
+        return DataLoader(self, batch_size, shuffle=shuffle, collate_fn=collate_fn)

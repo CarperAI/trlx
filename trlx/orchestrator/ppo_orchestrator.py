@@ -29,9 +29,7 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model = model
         self.chunk_size = chunk_size
 
-        self.pipeline_loader = self.pipeline.create_loader(
-            self.chunk_size, shuffle=True, num_workers=2
-        )
+        self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle=True)
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
@@ -49,11 +47,10 @@ class PPOOrchestrator(Orchestrator):
         return self.rl_model.reward_fn(samples)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
-
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
-        for i in range(num_rollouts // self.chunk_size):
+        while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -61,9 +58,8 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            query_tensors, response_tensors, response_text = self.rl_model.act(batch)
-            texts = [q + r for q, r in zip(batch.text, response_text)]
-            scores = self.score(texts)
+            query_tensors, response_tensors, texts = self.rl_model.act(batch)
+            scores = torch.as_tensor(self.score(texts))
 
             # Precompute logprobs, values
             all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
@@ -99,11 +95,6 @@ class PPOOrchestrator(Orchestrator):
 
             exp_time = clock.tick()
 
-            # Evaluate model on first chunk
-            if i == 0 and self.rl_model.accelerator.is_main_process:
-                stats = {"exp_time": exp_time}
-                self.rl_model.accelerator.log(stats, step=iter_count)
-
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i, :],
@@ -116,5 +107,8 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
 
-        # Push text and sentiment (i.e. reward) to models rollout storage
+        stats = {"exp_time": exp_time}
+        self.rl_model.accelerator.log(stats, step=iter_count)
+
+        # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)

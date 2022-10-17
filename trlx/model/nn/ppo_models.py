@@ -352,8 +352,8 @@ class GPTHydraHeadWithValueModel(nn.Module):
     def forward(
         self,
         input_ids=None,
-        past_key_values=None,
         attention_mask=None,
+        past_key_values=None,
         token_type_ids=None,
         position_ids=None,
         head_mask=None,
