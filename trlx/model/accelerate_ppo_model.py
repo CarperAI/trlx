@@ -71,6 +71,15 @@ class AcceleratePPOModel(AccelerateRLModel):
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
+        if config.method.target is not None:
+            self.kl_ctl = AdaptiveKLController(
+                                                config.method.init_kl_coef,
+                                                config.method.target,
+                                                config.method.horizon
+                                              )
+        else:
+            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
+
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt like
         return GPTHydraHeadWithValueModel(self.config.model.model_path, self.config.model.num_layers_unfrozen)
@@ -173,7 +182,10 @@ class AcceleratePPOModel(AccelerateRLModel):
                     )
                 )
 
-    def learn(self):
+    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
+
+        self.accelerator.print("STARTING LEARNING")
+
         rollout_loader = self.store.create_loader(
             self.config.train.batch_size, shuffle=True
         )

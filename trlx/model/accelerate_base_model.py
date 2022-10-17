@@ -83,6 +83,25 @@ class AccelerateRLModel(BaseRLModel):
             eta_min=self.config.train.learning_rate_target,
         )
 
+        self.rollout_loader = self.store.create_loader(
+            self.config.train.batch_size, shuffle=True, num_workers=2
+        )
+
+        (
+            self.model,
+            self.opt,
+            self.rollout_loader,
+            self.scheduler,
+        ) = self.accelerator.prepare(
+            self.model, self.opt, self.rollout_loader, self.scheduler
+        )
+        self.store.clear_history()
+
+        self.dummy_input = self.tokenize("dummy input")[
+            "input_ids"
+        ]  # Hack to make acclerate distributed work with model generation
+        self.accelerator.print("FINISHED INITIALIZING MODEL")
+
     def tokenize(self, text: Iterable[str]):
         """
         Tokenize a batch of text after adding bos token.
