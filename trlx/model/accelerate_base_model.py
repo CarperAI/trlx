@@ -11,8 +11,7 @@ from torchtyping import TensorType
 from transformers import AutoConfig, AutoTokenizer
 
 from trlx.data import BatchElement, RLElement
-from trlx.data.accelerate_base_datatypes import (AccelerateRLBatchElement,
-                                                 PromptBatch)
+from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement, PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
 from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
@@ -27,7 +26,8 @@ class AccelerateRLModel(BaseRLModel):
     """
     RL Model that uses accelerate for training
     """
-    def __init__(self, config, rollout_storage, train_mode = True):
+
+    def __init__(self, config, rollout_storage, train_mode=True):
         super().__init__(config, train_mode)
 
         self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
@@ -36,7 +36,9 @@ class AccelerateRLModel(BaseRLModel):
             self.config
         )  # Retrieves model equipped for ppo, ilql, etc
         if self.config.model.num_layers_unfrozen > 0:
-            for block in self.model.gpt.transformer.h[:-self.config.model.num_layers_unfrozen]:
+            for block in self.model.gpt.transformer.h[
+                : -self.config.model.num_layers_unfrozen
+            ]:
                 for parameter in block.parameters():
                     parameter.requires_grad = False
 
@@ -161,7 +163,7 @@ class AccelerateRLModel(BaseRLModel):
         """
         pass
 
-    def learn(self, log_fn = None, save_fn = None, eval_fn = None):
+    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
         """
         Learn from data in the rollout storage.
         """

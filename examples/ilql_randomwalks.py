@@ -99,9 +99,7 @@ if __name__ == "__main__":
         n_layer=4, n_embd=144, vocab_size=logit_mask.shape[0]
     )
 
-    model = ILQLModel(
-        config=config, logit_mask=logit_mask
-    )
+    model = ILQLModel(config=config, logit_mask=logit_mask)
 
     orch = OfflineOrchestrator(
         model=model,

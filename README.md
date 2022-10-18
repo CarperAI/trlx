@@ -22,7 +22,7 @@ The training pipeline is broken into four pieces:
 - Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
 - Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
-Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class. 
+Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class.
 
 ## Example: How to add a task
 

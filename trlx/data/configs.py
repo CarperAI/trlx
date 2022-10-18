@@ -24,11 +24,12 @@ class ModelConfig:
     :param device: Device to use when doing single GPU training. Not needed in most cases.
     :type device: str
     """
-    model_path : str
-    tokenizer_path : str
-    model_type : str # One of the architectures present in framework.model
-    device : str = ''
-    num_layers_unfrozen : int = -1
+
+    model_path: str
+    tokenizer_path: str
+    model_type: str  # One of the architectures present in framework.model
+    device: str = ""
+    num_layers_unfrozen: int = -1
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -91,11 +92,12 @@ class TrainConfig:
     :param project_name: Project name for wandb
     :type project_name: str
     """
-    n_ctx : int
-    epochs : int
-    total_steps : int
-    batch_size : int
-    grad_clip : float # Clip grad norms to this value
+
+    n_ctx: int
+    epochs: int
+    total_steps: int
+    batch_size: int
+    grad_clip: float  # Clip grad norms to this value
 
     lr_ramp_steps: int
     lr_decay_steps: int
@@ -128,9 +130,10 @@ class TRLConfig:
     """
     Top level config for trlX. Loads configs and can be converted to dictionary.
     """
-    model : ModelConfig
-    train : TrainConfig
-    method : MethodConfig
+
+    model: ModelConfig
+    train: TrainConfig
+    method: MethodConfig
 
     @classmethod
     def load_yaml(cls, yml_fp: str):

@@ -16,7 +16,8 @@ class PPOPipeline(BasePipeline):
     """
     Pipeline for training PPO on the IMDB review dataset. The task is to generate positive reviews.
     """
-    def __init__(self, tokenizer, config, prompt_dataset_path = None):
+
+    def __init__(self, tokenizer, config, prompt_dataset_path=None):
         super().__init__()
 
         ds = load_dataset("imdb", split="test")
@@ -68,6 +69,7 @@ class PPORolloutStorage(BaseRolloutStore):
     """
     Rollout storage for training PPO on IMDB review dataset.
     """
+
     def __init__(self):
         super().__init__()
 

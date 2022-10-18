@@ -21,6 +21,7 @@ from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 
+
 class AdaptiveKLController:
     def __init__(self, init_kl_coef, target, horizon):
         self.value = init_kl_coef
@@ -33,15 +34,19 @@ class AdaptiveKLController:
         mult = 1 + proportional_error * n_steps / self.horizon
         self.value *= mult
 
+
 # Cell
+
 
 class FixedKLController:
     """Fixed KL controller."""
+
     def __init__(self, kl_coef):
         self.value = kl_coef
 
     def update(self, current, n_steps):
         pass
+
 
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
@@ -51,16 +56,16 @@ class AcceleratePPOModel(AccelerateRLModel):
 
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
-                                                config.method.init_kl_coef, 
-                                                config.method.target, 
-                                                config.method.horizon
-                                              )
+                config.method.init_kl_coef, config.method.target, config.method.horizon
+            )
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
     def get_arch(self, config: TRLConfig):
         # TODO(dahoas): Assumes model is gpt like
-        return GPTHydraHeadWithValueModel(self.config.model.model_path, self.config.model.num_layers_unfrozen)
+        return GPTHydraHeadWithValueModel(
+            self.config.model.model_path, self.config.model.num_layers_unfrozen
+        )
 
     def loss(
         self, query_tensors, response_tensors, all_logprobs, all_values, all_rewards
@@ -130,7 +135,7 @@ class AcceleratePPOModel(AccelerateRLModel):
     def post_backward_callback(self):
         batch = self.logs["batch"]
         # Update kl_coefficient
-        self.kl_ctl.update(self.mean_kl ,self.config.train.batch_size)
+        self.kl_ctl.update(self.mean_kl, self.config.train.batch_size)
         # Run evaluation
         if self.accelerator.is_main_process:
             if (
@@ -156,7 +161,11 @@ class AcceleratePPOModel(AccelerateRLModel):
                 self.accelerator.log(stats, step=self.iter_count)
                 self.accelerator.print(
                     "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
-                        self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"], self.kl_ctl.value,
+                        self.iter_count,
+                        mean_score,
+                        stats["pg_loss"],
+                        stats["vf_loss"],
+                        self.kl_ctl.value,
                     )
                 )
 
