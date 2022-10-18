@@ -116,7 +116,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         logprob = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
 
         # only the generation part of the values/logprobs is needed
-        logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len - 1 : -1]
+        logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len:]
 
         vpredclipped = clip_by_value(
             vpred,
@@ -124,12 +124,11 @@ class AcceleratePPOModel(AccelerateRLModel):
             all_values + self.config.method.cliprange_value,
         )
 
-        vf_mask = attention_mask[:, -gen_len-1:-1]
-        pg_mask = attention_mask[:, -gen_len:]
+        mask = attention_mask[:, -gen_len:]
 
         vf_losses1 = (vpred - returns) ** 2
         vf_losses2 = (vpredclipped - returns) ** 2
-        vf_loss = 0.5 * torch.sum(torch.max(vf_losses1, vf_losses2) * vf_mask) / vf_mask.sum()
+        vf_loss = 0.5 * torch.sum(torch.max(vf_losses1, vf_losses2) * mask) / mask.sum()
 
         kl = logprob - all_logprobs
         # Record mean_kl for kl coef adjustment
@@ -143,7 +142,7 @@ class AcceleratePPOModel(AccelerateRLModel):
             1.0 + self.config.method.cliprange,
         )
 
-        pg_loss = torch.sum(torch.max(pg_losses, pg_losses2) * pg_mask) / pg_mask.sum()
+        pg_loss = torch.sum(torch.max(pg_losses, pg_losses2) * mask) / mask.sum()
 
         model_loss = pg_loss + self.config.method.vf_coef * vf_loss
         return model_loss, pg_loss, vf_loss
@@ -181,7 +180,7 @@ class AcceleratePPOModel(AccelerateRLModel):
                 "kl_coef": self.kl_ctl.value,
             }
 
-            self.accelerator.log(stats, step=self.iter_count)
+            self.accelerator.log(stats)
             self.accelerator.print(
                 "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
                     self.iter_count, mean_score, stats["pg_loss"], stats["vf_loss"], self.kl_ctl.value,

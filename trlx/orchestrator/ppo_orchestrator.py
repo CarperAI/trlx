@@ -69,14 +69,15 @@ class PPOOrchestrator(Orchestrator):
                     )
                 else:
                     ref_logits, _, _ = self.ref_model(all_tokens.cpu())
-                ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+
+            ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
             )
             start = query_tensors.size()[1] - 1
             end = query_tensors.size()[1] + response_tensors.size()[1] - 1
-            all_values = v[:, start - 1 : end - 1]
+            all_values = v[:, start:end]
             all_logprobs = logprobs[:, start:end]
             all_ref_logprobs = ref_logprobs[:, start:end]
 
