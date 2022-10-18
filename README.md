@@ -24,18 +24,19 @@ The training pipeline is broken into four pieces:
 
 Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class.
 
+## Installation
+```bash
+git clone https://github.com/CarperAI/trlx.git
+cd trlx
+pip install -e ".[dev]"
+```
+
 ## Example: How to add a task
 
 In the below we implement a sentiment learning task.
 
-### Installation
+### Configure `accelerate`
 
-Install the repo:
-```bash
-python setup.py develop
-```
-
-Configure accelerate:
 ```bash
 accelerate config
 ```
