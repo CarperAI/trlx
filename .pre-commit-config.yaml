@@ -15,3 +15,12 @@ repos:
     hooks:
       - id: black
         files: ^(trlx|examples|unittests|setup.py)/
+-   repo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        name: isort (python)
+-   repo: https://github.com/pycqa/flake8
+    rev: 5.0.4
+    hooks:
+      - id: flake8
