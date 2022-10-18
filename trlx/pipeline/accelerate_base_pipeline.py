@@ -6,9 +6,12 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torchtyping import TensorType
 
-from trlx.data.accelerate_base_datatypes import (AccelerateRLBatchElement,
-                                                 AccelerateRLElement,
-                                                 PromptBatch, PromptElement)
+from trlx.data.accelerate_base_datatypes import (
+    AccelerateRLBatchElement,
+    AccelerateRLElement,
+    PromptBatch,
+    PromptElement,
+)
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
@@ -16,7 +19,8 @@ def filter_outliers(x):
     """
     Filter outliers by removing reviews that are too short.
     """
-    return len(x['review']) > 200
+    return len(x["review"]) > 200
+
 
 def process_data(dataset):
     dataset = dataset.rename_columns({"text": "review", "label": "sentiment"})
@@ -30,7 +34,8 @@ class AcceleratePipeline(BasePipeline):
     """
     Basic pipeline using accelerate.
     """
-    def __init__(self, prompt_dataset_path = None):
+
+    def __init__(self, prompt_dataset_path=None):
         super().__init__()
 
     def __getitem__(self, index: int) -> PromptElement:
@@ -62,8 +67,9 @@ class AcceleratePipeline(BasePipeline):
 
 class AccelerateRolloutStorage(BaseRolloutStore):
     """
-    Rollout storage using accelerate. 
+    Rollout storage using accelerate.
     """
+
     def __init__(self):
         super().__init__()
 

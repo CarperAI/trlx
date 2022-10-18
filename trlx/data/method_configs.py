@@ -50,7 +50,8 @@ class MethodConfig:
     :param name: Name of the method
     :type name: str
     """
-    name : str
+
+    name: str
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

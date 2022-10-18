@@ -5,10 +5,18 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.nn import Identity
-from transformers import (AutoConfig, AutoModelForCausalLM, GPT2LMHeadModel,
-                          GPT2Model, GPT2PreTrainedModel, GPT2Tokenizer,
-                          GPTJModel, PretrainedConfig, PreTrainedModel,
-                          top_k_top_p_filtering)
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    GPT2LMHeadModel,
+    GPT2Model,
+    GPT2PreTrainedModel,
+    GPT2Tokenizer,
+    GPTJModel,
+    PretrainedConfig,
+    PreTrainedModel,
+    top_k_top_p_filtering,
+)
 from transformers.modeling_outputs import ModelOutput
 from copy import deepcopy
 import inspect
@@ -42,6 +50,7 @@ class GPTHeadWithValueModel(nn.Module):
     """
     The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head.
     """
+
     def __init__(self, config: Union[PretrainedConfig, str]):
         super().__init__()
         if isinstance(config, PretrainedConfig):
@@ -105,11 +114,13 @@ class GPTHeadWithValueModel(nn.Module):
 
 
 # Cell
-'''
+"""
 ModelBranch implements the frozen upper trunk of the reference model
-used when computing the PPO KL-divergence penalty. Expects a list of 
+used when computing the PPO KL-divergence penalty. Expects a list of
 frozen transformer blocks and an lm_head from the base model.
-'''
+"""
+
+
 class ModelBranch(PreTrainedModel):
     def __init__(self, config, transformer_blocks, ln_f, lm_head):
         super().__init__(config)
@@ -125,7 +136,7 @@ class ModelBranch(PreTrainedModel):
         self.model_parallel = False
         self.device_map = None
         self.gradient_checkpointing = False
-        
+
         # Turning off grad saves memory
         for block in self.h:
             for parameter in block.parameters():
@@ -153,12 +164,20 @@ class ModelBranch(PreTrainedModel):
 
         batch_size = hidden_states.size()[0]
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         device = hidden_states.device
 
@@ -191,7 +210,11 @@ class ModelBranch(PreTrainedModel):
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
         if self.config.add_cross_attention and encoder_hidden_states is not None:
-            encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
+            (
+                encoder_batch_size,
+                encoder_sequence_length,
+                _,
+            ) = encoder_hidden_states.size()
             encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
             if encoder_attention_mask is None:
                 encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
@@ -207,7 +230,9 @@ class ModelBranch(PreTrainedModel):
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
+        all_cross_attentions = (
+            () if output_attentions and self.config.add_cross_attention else None
+        )
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
 
@@ -216,7 +241,9 @@ class ModelBranch(PreTrainedModel):
                 torch.cuda.set_device(hidden_states.device)
                 # Ensure layer_past is on same device as hidden_states (might not be correct)
                 if layer_past is not None:
-                    layer_past = tuple(past_state.to(hidden_states.device) for past_state in layer_past)
+                    layer_past = tuple(
+                        past_state.to(hidden_states.device) for past_state in layer_past
+                    )
                 # Ensure that attention_mask is always on the same device as hidden_states
                 if attention_mask is not None:
                     attention_mask = attention_mask.to(hidden_states.device)
@@ -253,9 +280,13 @@ class ModelBranch(PreTrainedModel):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                all_self_attentions = all_self_attentions + (
+                    outputs[2 if use_cache else 1],
+                )
                 if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
+                    all_cross_attentions = all_cross_attentions + (
+                        outputs[3 if use_cache else 2],
+                    )
 
             # Model Parallel: If it's the last layer for that device, put things on the next device
             if self.model_parallel:
@@ -277,14 +308,14 @@ class ModelBranch(PreTrainedModel):
         # cross_attentions = all_cross_attentions
 
         ### START OF CAUSAL HEAD ###
-        #hidden_states = hidden_states.to(torch.float32) Present for gptj
+        # hidden_states = hidden_states.to(torch.float32) Present for gptj
 
         if self.model_parallel:
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
-        
+
         lm_logits = self.lm_head(hidden_states)
-        
+
         if not return_dict:
             outputs = (lm_logits,) + (None,) + (None,)
             return outputs
@@ -300,11 +331,12 @@ class ModelBranch(PreTrainedModel):
         )
 
 
-
 class GPTHydraHeadWithValueModel(nn.Module):
     """The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head."""
 
-    def __init__(self, config: Union[PretrainedConfig, str], num_layers_unfrozen: int = -1):
+    def __init__(
+        self, config: Union[PretrainedConfig, str], num_layers_unfrozen: int = -1
+    ):
         super().__init__()
         if isinstance(config, PretrainedConfig):
             self.gpt = AutoModelForCausalLM.from_config(config)
@@ -325,23 +357,28 @@ class GPTHydraHeadWithValueModel(nn.Module):
             # Retrive hf_config to init
             hf_config = AutoConfig.from_pretrained(config)
             hf_config.n_embd = self.n_embd
-            self.frozen_head = ModelBranch(hf_config, transformer_blocks, self.gpt.transformer.ln_f, self.gpt.lm_head)
+            self.frozen_head = ModelBranch(
+                hf_config,
+                transformer_blocks,
+                self.gpt.transformer.ln_f,
+                self.gpt.lm_head,
+            )
 
     def generate(self, input_ids, **x):
         return self.gpt.generate(input_ids, **x)
 
     def forward_hydra(self, input_ids, **x):
-        if x.get('return_dict') is not None:
-            return_dict = x['return_dict']
+        if x.get("return_dict") is not None:
+            return_dict = x["return_dict"]
         else:
             return_dict = True
-        x['return_dict'] = True
-        x['output_hidden_states'] = True
+        x["return_dict"] = True
+        x["output_hidden_states"] = True
         output = self.forward(input_ids, **x)
         all_hidden_states = output.hidden_states
         # Get output of last frozen hidden layer
-        # Select hidden state before first layer of branch. 
-        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen+1)]
+        # Select hidden state before first layer of branch.
+        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
         # Get size of last hidden state
         output_shape = all_hidden_states[-1].size()
         outputs = self.frozen_head(input_hidden_state, output_shape, **x)

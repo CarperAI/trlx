@@ -71,7 +71,9 @@ class PPOOrchestrator(Orchestrator):
                 logits, _, v = self.rl_model.model(all_tokens)
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
-                    ref_logits = self.rl_model.model.forward_hydra(all_tokens, return_dict=False)
+                    ref_logits = self.rl_model.model.forward_hydra(
+                        all_tokens, return_dict=False
+                    )
                 else:
                     ref_logits, _, _ = self.ref_model(all_tokens.cpu())
                 ref_logits = ref_logits.to(self.rl_model.accelerator.device)
