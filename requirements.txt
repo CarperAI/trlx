@@ -3,6 +3,7 @@ datasets==2.4.0
 deepspeed==0.7.3
 einops==0.4.1
 numpy==1.23.2
+pre-commit==2.20.0
 tqdm==4.64.0
 transformers==4.21.2
 wandb==0.13.2
