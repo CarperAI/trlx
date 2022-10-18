@@ -3,19 +3,13 @@ from abc import abstractmethod
 from typing import Dict, Iterable, Tuple
 
 import torch
-import torch.nn.functional as F
 import yaml
 from accelerate import Accelerator
-from torch.utils.data import DataLoader
 from torchtyping import TensorType
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 
-from trlx.data import BatchElement, RLElement
-from trlx.data.accelerate_base_datatypes import (AccelerateRLBatchElement,
-                                                 PromptBatch)
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
-from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
 
 @register_model
@@ -23,6 +17,7 @@ class AccelerateRLModel(BaseRLModel):
     """
     RL Model that uses accelerate for training
     """
+
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
@@ -37,7 +32,9 @@ class AccelerateRLModel(BaseRLModel):
         self.model = self.get_arch(self.config)
 
         if self.config.model.num_layers_unfrozen > 0:
-            for block in self.model.gpt.transformer.h[:-self.config.model.num_layers_unfrozen]:
+            for block in self.model.gpt.transformer.h[
+                : -self.config.model.num_layers_unfrozen
+            ]:
                 for parameter in block.parameters():
                     parameter.requires_grad = False
 
@@ -106,13 +103,14 @@ class AccelerateRLModel(BaseRLModel):
             input_ids = prompts.input_ids.to(self.accelerator.device)
             attention_mask = prompts.attention_mask.to(self.accelerator.device)
             samples = self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
                 pad_token_id=self.tokenizer.pad_token_id,
-                **self.config.method.gen_kwargs
+                **self.config.method.gen_kwargs,
             )
 
         texts = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
-        return input_ids, samples[:, input_ids.shape[1]:], texts
+        return input_ids, samples[:, input_ids.shape[1] :], texts
 
     @torch.inference_mode()
     def sample(self, prompts: PromptBatch, gen_kwargs: dict) -> Iterable[str]:
@@ -129,6 +127,9 @@ class AccelerateRLModel(BaseRLModel):
 
     def save(self, directory=None):
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+
+    def add_eval_pipeline(self, eval_pipeline):
+        self.eval_pipeline = eval_pipeline
 
     @abstractmethod
     def get_arch(config: TRLConfig):
@@ -149,7 +150,7 @@ class AccelerateRLModel(BaseRLModel):
         """
         pass
 
-    def learn(self, log_fn = None, save_fn = None, eval_fn = None):
+    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
         """
         Learn from data in the rollout storage.
         """

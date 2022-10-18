@@ -1,12 +1,8 @@
-from copy import deepcopy
-from functools import partial
-from typing import Callable, Iterable, Tuple
+from typing import Iterable
 
 import torch
-from datasets import load_dataset
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from torchtyping import TensorType
 from transformers import DataCollatorWithPadding
 
 from trlx.data.ilql_types import ILQLBatch, ILQLElement
@@ -26,15 +22,23 @@ class PromptPipeline(BasePipeline):
     def __len__(self) -> int:
         return len(self.prompts)
 
-    def create_loader(self, batch_size: int, shuffle = False) -> DataLoader:
+    def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
         collate_fn = (
             DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
         )
-        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
+        return DataLoader(
+            self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle
+        )
 
 
-class OfflineRolloutStorage(BaseRolloutStore):
-    def __init__(self, input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones):
+class ILQLRolloutStorage(BaseRolloutStore):
+    """
+    Rollout storage for training ILQL
+    """
+
+    def __init__(
+        self, input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
+    ):
         super().__init__()
 
         self.input_ids = input_ids
@@ -46,7 +50,12 @@ class OfflineRolloutStorage(BaseRolloutStore):
 
     def __getitem__(self, ix: int) -> ILQLElement:
         return ILQLElement(
-            self.input_ids[ix], self.attention_mask[ix], self.rewards[ix], self.states_ixs[ix], self.actions_ixs[ix], self.dones[ix]
+            self.input_ids[ix],
+            self.attention_mask[ix],
+            self.rewards[ix],
+            self.states_ixs[ix],
+            self.actions_ixs[ix],
+            self.dones[ix],
         )
 
     def __len__(self) -> int:

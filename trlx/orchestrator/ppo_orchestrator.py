@@ -1,18 +1,13 @@
 from typing import Callable
 
 import torch
-from tqdm import tqdm
-from transformers import pipeline as tfpipeline
 
-import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.model import BaseRLModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
-from trlx.pipeline.ppo_pipeline import PPOPipeline
-from trlx.utils import Clock, chunk, flatten, sentiment_score
+from trlx.pipeline import BasePipeline
 from trlx.utils.modeling import logprobs_from_logits
-from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 
 
 @register_orchestrator
@@ -20,7 +15,7 @@ class PPOOrchestrator(Orchestrator):
     def __init__(
         self,
         model: BaseRLModel,
-        pipeline: PPOPipeline,
+        pipeline: BasePipeline,
         reward_fn,
         stats_fn: Callable = None,
         chunk_size: int = 512,
@@ -29,7 +24,9 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model = model
         self.chunk_size = chunk_size
 
-        self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle=True)
+        self.pipeline_loader = self.pipeline.create_loader(
+            self.chunk_size, shuffle=True
+        )
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
@@ -67,7 +64,9 @@ class PPOOrchestrator(Orchestrator):
                 logits, _, v = self.rl_model.model(all_tokens)
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
-                    ref_logits = self.rl_model.model.forward_hydra(all_tokens, return_dict=False)
+                    ref_logits = self.rl_model.model.forward_hydra(
+                        all_tokens, return_dict=False
+                    )
                 else:
                     ref_logits, _, _ = self.ref_model(all_tokens.cpu())
                 ref_logits = ref_logits.to(self.rl_model.accelerator.device)

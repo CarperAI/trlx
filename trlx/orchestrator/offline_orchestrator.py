@@ -1,7 +1,8 @@
 import torch
 
 from trlx.orchestrator import Orchestrator, register_orchestrator
-from trlx.pipeline.offline_pipeline import OfflineRolloutStorage
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
+
 
 @register_orchestrator
 class OfflineOrchestrator(Orchestrator):
@@ -26,8 +27,8 @@ class OfflineOrchestrator(Orchestrator):
             else:
                 prompt_tok_len = 1
 
-            a_ixs = torch.arange(prompt_tok_len-1, len(s_tok)-1)
-            s_ixs = torch.arange(prompt_tok_len-1, len(s_tok))
+            a_ixs = torch.arange(prompt_tok_len - 1, len(s_tok) - 1)
+            s_ixs = torch.arange(prompt_tok_len - 1, len(s_tok))
             terminals = torch.ones_like(s_ixs)
             terminals[-1] = 0
             actions_ixs.append(a_ixs)
@@ -35,14 +36,16 @@ class OfflineOrchestrator(Orchestrator):
             dones.append(terminals)
 
         if self.model.tokenizer:
-            prompt = self.model.tokenizer.decode(input_ids[0][:states_ixs[0][1]])
-            response = self.model.tokenizer.decode(input_ids[0][states_ixs[0][1]:])
-            print('[Sample example]')
-            print('Prompt: ', prompt)
-            print('Response: ', response)
+            prompt = self.model.tokenizer.decode(input_ids[0][: states_ixs[0][1]])
+            response = self.model.tokenizer.decode(input_ids[0][states_ixs[0][1] :])
+            print("[Sample example]")
+            print("Prompt: ", prompt)
+            print("Response: ", response)
 
-        print(f'[Mean reward] {torch.Tensor(rewards).mean():.2f}')
-        print(f'[Mean sample length] {torch.mean(torch.Tensor(list(map(len, input_ids)))):.2f}')
+        print(f"[Mean reward] {torch.Tensor(rewards).mean():.2f}")
+        print(
+            f"[Mean sample length] {torch.mean(torch.Tensor(list(map(len, input_ids)))):.2f}"
+        )
 
         returns = torch.as_tensor(rewards, dtype=torch.float)
         returns = (returns - returns.mean()) / (returns.std() + 1e-30)
@@ -53,6 +56,6 @@ class OfflineOrchestrator(Orchestrator):
 
         attention_mask = [torch.ones(x.shape[0], dtype=int) for x in input_ids]
 
-        return OfflineRolloutStorage(
+        self.model.store = ILQLRolloutStorage(
             input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
         )

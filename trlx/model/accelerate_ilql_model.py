@@ -1,19 +1,12 @@
-import os
 from time import time
-from typing import Dict, Iterable, Union
+from typing import Iterable, Union
 
-import numpy as np
 import torch
 import torch.nn.functional as F
-from accelerate import Accelerator
-from torch.utils.data import DataLoader
-from transformers import AutoConfig, AutoTokenizer
 
 import wandb
-from trlx.model import BaseRLModel, register_model
+from trlx.model import register_model
 from trlx.model.nn.ilql_models import CausalLMWithValueHeads
-from trlx.pipeline.offline_pipeline import (PromptPipeline,
-                                            OfflineRolloutStorage)
 
 from .accelerate_base_model import AccelerateRLModel
 
@@ -51,7 +44,7 @@ class AccelerateILQLModel(AccelerateRLModel):
         return input_ids
 
     def learn(self):
-        train_dataloader = self.train_store.create_loader(self.config.train.batch_size)
+        train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         (
@@ -65,7 +58,6 @@ class AccelerateILQLModel(AccelerateRLModel):
 
         opt_steps = 0
         for epoch in range(self.config.train.epochs):
-            evals_stats = {}
             logs = {}
             for batch in train_dataloader:
                 if opt_steps % self.config.train.eval_interval == 0:
@@ -75,16 +67,28 @@ class AccelerateILQLModel(AccelerateRLModel):
                     for beta in self.config.method.betas:
                         all_samples = []
                         for prompts in eval_dataloader:
-                            samples, tensor_stats = self.accelerator.unwrap_model(self.model).sample(
+                            samples, tensor_stats = self.accelerator.unwrap_model(
+                                self.model
+                            ).sample(
                                 prompts,
                                 beta=beta,
                                 max_length=self.max_length,
                                 logit_mask=self.logit_mask,
-                                eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else 0
+                                eos_token_id=self.tokenizer.eos_token_id
+                                if self.tokenizer
+                                else 0,
                             )
 
-                            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-                            all_samples.append(F.pad(samples, (0, self.max_length-samples.shape[1]), value=pad_token))
+                            pad_token = (
+                                self.tokenizer.eos_token_id if self.tokenizer else 0
+                            )
+                            all_samples.append(
+                                F.pad(
+                                    samples,
+                                    (0, self.max_length - samples.shape[1]),
+                                    value=pad_token,
+                                )
+                            )
 
                         samples = self.accelerator.gather(torch.vstack(all_samples))
 
@@ -94,25 +98,31 @@ class AccelerateILQLModel(AccelerateRLModel):
                                     samples, skip_special_tokens=True
                                 )
 
-                            metric_time = time()
-                            metrics = self.metric_fn(samples)
-                            metric_time = time() - metric_time
-                            logs.update({"metric_time": metric_time})
+                            if self.metric_fn:
+                                metric_time = time()
+                                metrics = self.metric_fn(samples)
+                                metric_time = time() - metric_time
+                                logs.update({"metric_time": metric_time})
 
-                            mean_metrics = {
-                                f"metrics/{k}/{beta}": torch.as_tensor(xs).mean(-1)
-                                for k, xs in metrics.items()
-                            }
+                                mean_metrics = {
+                                    f"metrics/{k}/{beta}": torch.as_tensor(xs).mean(-1)
+                                    for k, xs in metrics.items()
+                                }
+                                logs.update(mean_metrics)
+                                print(mean_metrics)
+
+                                columns = ["samples", *metrics.keys()]
+                                rows = list(zip(samples, *metrics.values()))
+                            else:
+                                columns = ["samples"]
+                                rows = list(zip(samples))
+
                             logs.update(tensor_stats)
-                            logs.update(mean_metrics)
-
-                            rows = list(zip(samples, *metrics.values()))
                             logs[f"samples/{beta}"] = wandb.Table(
-                                columns=["samples", *metrics.keys()], rows=rows
+                                columns=columns, rows=rows
                             )
 
                             print(rows[0])
-                            print(mean_metrics)
 
                     self.model.train()
                     generate_time = time() - generate_time
