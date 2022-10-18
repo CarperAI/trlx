@@ -24,3 +24,6 @@ repos:
     rev: 5.0.4
     hooks:
       - id: flake8
+        args:
+          - '--ignore=E203,E221,E241,E272,E501,F811'
+          - '--max-line-length=88'
