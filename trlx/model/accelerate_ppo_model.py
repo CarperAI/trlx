@@ -64,7 +64,8 @@ class AcceleratePPOModel(AccelerateRLModel):
 
         self.generate_kwargs = dict(
             config.method.gen_kwargs,
-            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=0,
         )
 
     def get_arch(self, config: TRLConfig):
