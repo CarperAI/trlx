@@ -2,21 +2,24 @@ import os
 from abc import abstractmethod
 from typing import Dict, Iterable, Tuple
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+import wandb
 from accelerate import Accelerator
 from torch.utils.data import DataLoader
 from torchtyping import TensorType
 from tqdm import tqdm
 from transformers import AutoConfig, AutoTokenizer
-import numpy as np
 
-import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
+from trlx.model.nn.ppo_models import (
+    GPTHeadWithValueModel,
+    GPTHydraHeadWithValueModel
+)
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten

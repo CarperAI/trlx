@@ -6,9 +6,9 @@ check_dirs := trlx/
 
 style:
 	black $(check_dirs)
-	isort $(check_dirs)
+	isort $(check_dirs) # see pyproject.toml for isort config
 	flake8 $(check_dirs) --ignore=$(IGNORE_PEP)
 
 quality:
-	isort --check-only $(check_dirs)
+	isort --check-only $(check_dirs) # see pyproject.toml for isort config
 	flake8 $(check_dirs)
