@@ -22,20 +22,22 @@ The training pipeline is broken into four pieces:
 - Orchestrator: Handles exploration/rollout collection of online methods. Pushes collected rollouts to the rollout pipeline.
 - Model: Wraps the supplied base model (ex: `gpt2`) and implements the desired training method loss (ex: PPO).
 
-Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class. 
+Adding a task for RLHF training depends on the desired training method and pre-existing data. If we are online and have no reward labeled data this is as simple as writing a new prompt pipeline, which supplies prompts for exploration, and a new reward function to be passed into the `PPOOrchestrator` class.
+
+## Installation
+```bash
+git clone https://github.com/CarperAI/trlx.git
+cd trlx
+pip install -e ".[dev]"
+pre-commit install # see .pre-commit-config.yaml
+```
 
 ## Example: How to add a task
 
 In the below we implement a sentiment learning task.
 
-### Installation
+### Configure `accelerate`
 
-Install the repo:
-```bash
-python setup.py develop
-```
-
-Configure accelerate:
 ```bash
 accelerate config
 ```
@@ -45,35 +47,52 @@ accelerate config
 ```python
 @register_datapipeline
 class PPOPipeline(BasePipeline):
-    def __init__(self, tokenizer, config, prompt_dataset_path = None):
+    def __init__(self, tokenizer, config, prompt_dataset_path=None):
         super().__init__()
 
-        ds = load_dataset('imdb', split='test')
-        ds = ds.rename_columns({'text': 'review', 'label': 'sentiment'})
-        ds = ds.filter(lambda x: len(x["review"])<500, batched=False)
+        ds = load_dataset("imdb", split="test")
+        ds = ds.rename_columns({"text": "review", "label": "sentiment"})
+        ds = ds.filter(lambda x: len(x["review"]) < 500, batched=False)
 
-        self.tokens = [tokenizer(text,
-                                    truncation = True,
-                                    padding = 'max_length',
-                                    max_length = config.train.input_size,
-                                    return_tensors = "pt"
-                                 )['input_ids'].long().flatten() for text in ds['review']]
+        self.tokens = [
+            tokenizer(
+                text,
+                truncation=True,
+                padding="max_length",
+                max_length=config.train.input_size,
+                return_tensors="pt",
+            )["input_ids"]
+            .long()
+            .flatten()
+            for text in ds["review"]
+        ]
         self.text = [tokenizer.decode(tokens.tolist()) for tokens in self.tokens]
 
-    def __getitem__(self, index : int) -> PromptElement:
+    def __getitem__(self, index: int) -> PromptElement:
         return PromptElement(self.text[index], self.tokens[index])
 
     def __len__(self) -> int:
         return len(self.text)
 
-    def create_loader(self, batch_size : int, shuffle : bool, prep_fn : Callable = None, num_workers : int = 0) -> DataLoader:
-        #TODO(dahoas): Decide how to support varying sizes of prompts without having to tokenize on fly
-        def collate_fn(elems : Iterable[PromptElement]) -> PromptElement:
+    def create_loader(
+        self,
+        batch_size: int,
+        shuffle: bool,
+        prep_fn: Callable = None,
+        num_workers: int = 0,
+    ) -> DataLoader:
+        # TODO(dahoas): Decide how to support varying sizes of prompts without having to tokenize on fly
+        def collate_fn(elems: Iterable[PromptElement]) -> PromptElement:
             return PromptBatch(
-                [elem.text for elem in elems], torch.stack([elem.tokens for elem in elems])  # Assumes token tensors all same size
+                [elem.text for elem in elems],
+                torch.stack(
+                    [elem.tokens for elem in elems]
+                ),  # Assumes token tensors all same size
             )
 
-        return DataLoader(self, batch_size, shuffle, collate_fn = collate_fn, num_workers = num_workers)
+        return DataLoader(
+            self, batch_size, shuffle, collate_fn=collate_fn, num_workers=num_workers
+        )
  ```
 
 ### Launch training

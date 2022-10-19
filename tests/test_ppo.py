@@ -14,8 +14,10 @@ class TestHydraHead(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         print("Testing Hydra model...")
-        config = TRLConfig.load_yaml("../configs/test_config.yml")
-        cls.hydra_model = GPTHydraHeadWithValueModel(config.model.model_path, config.model.num_layers_unfrozen)
+        config = TRLConfig.load_yaml("configs/test_config.yml")
+        cls.hydra_model = GPTHydraHeadWithValueModel(
+            config.model.model_path, config.model.num_layers_unfrozen
+        )
 
         tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
         tokenizer.pad_token = tokenizer.eos_token
@@ -31,7 +33,7 @@ class TestHydraHead(unittest.TestCase):
             frozen_logits = TestHydraHead.hydra_model.frozen_head.lm_head(last_hidden_states)
             diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(diff, 0)
-    
+
     def test_forward(self):
         with torch.no_grad():
             unfrozen_outputs = TestHydraHead.hydra_model(**TestHydraHead.dummy_inputs, return_dict=True, output_hidden_states=True)
@@ -46,7 +48,3 @@ class TestHydraHead(unittest.TestCase):
             logits_diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(hs_diff, 0)
             self.assertEqual(logits_diff, 0)
-
-
-# Run unittests: python -m unittest discover -s . -p "test_*"
-# Or python -m unittest test_ppo.py
