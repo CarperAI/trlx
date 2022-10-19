@@ -11,10 +11,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 from trlx.model import BaseRLModel, register_model
 from trlx.model.nn.ilql_models import CausalLMWithValueHeads
-from trlx.pipeline.offline_pipeline import (
-    OfflinePipeline,
-    OfflineRolloutStorage
-)
+from trlx.pipeline.offline_pipeline import OfflinePipeline, OfflineRolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
 WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))

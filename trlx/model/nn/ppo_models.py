@@ -17,7 +17,7 @@ from transformers import (
     GPTJModel,
     PretrainedConfig,
     PreTrainedModel,
-    top_k_top_p_filtering
+    top_k_top_p_filtering,
 )
 from transformers.modeling_outputs import ModelOutput
 

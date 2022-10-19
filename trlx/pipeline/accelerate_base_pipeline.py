@@ -10,7 +10,7 @@ from trlx.data.accelerate_base_datatypes import (
     AccelerateRLBatchElement,
     AccelerateRLElement,
     PromptBatch,
-    PromptElement
+    PromptElement,
 )
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 

@@ -1,6 +1,6 @@
 ---
 name: 🐛 Bug Report
-description: Report a bug or unexpected behavior to help us improve trlX 
+description: Report a bug or unexpected behavior to help us improve trlX
 labels:
 - bug
 
@@ -8,10 +8,10 @@ body:
 - type: markdown
   attributes:
     value: >
-      #### Before submitting your bug report, please check to see that the 
+      #### Before submitting your bug report, please check to see that the
       issue hasn't already been reported and/or fixed in a latest version.
       [Search Issues][Issue Search].
-    
+
       If you're asking a question or seeking support, please consider creating a
       new [GitHub discussion][Discussions] or heading over to CarperAI's
       [Discord server][CarperAI Discord].
@@ -62,4 +62,4 @@ body:
 - type: markdown
   attributes:
     value: >
-      Thanks for contributing 🐠! 
+      Thanks for contributing 🐠!

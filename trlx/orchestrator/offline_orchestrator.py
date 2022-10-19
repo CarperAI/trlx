@@ -2,10 +2,7 @@ import torch
 
 from trlx.model import BaseRLModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
-from trlx.pipeline.offline_pipeline import (
-    OfflinePipeline,
-    OfflineRolloutStorage
-)
+from trlx.pipeline.offline_pipeline import OfflinePipeline, OfflineRolloutStorage
 
 
 @register_orchestrator
