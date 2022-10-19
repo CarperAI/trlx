@@ -6,6 +6,7 @@ from transformers import GPT2Config
 import trlx
 from trlx.data.configs import TRLConfig
 
+
 def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
     while True:
         x = rng.randint(n)
@@ -51,7 +52,7 @@ def generate_random_walks(
         try:
             shortest_path = nx.shortest_path(g, start, goal)[:max_length]
             best_lengths.append(len(shortest_path))
-        except:
+        except Exception:
             best_lengths.append(max_length)
 
     best_lengths = torch.tensor(best_lengths)
@@ -71,8 +72,11 @@ def generate_random_walks(
 
         lengths = torch.tensor(lengths, dtype=torch.float)
         bound_lengths = torch.where(lengths.eq(infty), worstlen, lengths).abs()
-        return {"lengths": lengths,
-                "optimality": (worstlen - bound_lengths) / (worstlen - best_lengths if lengths.shape == best_lengths.shape else 0)}
+        return {
+            "lengths": lengths,
+            "optimality": (worstlen - bound_lengths)
+            / (worstlen - best_lengths if lengths.shape == best_lengths.shape else 0),
+        }
 
     logit_mask = torch.tensor(~adj)
     return sample_walks, logit_mask, metric_fn
@@ -89,9 +93,15 @@ if __name__ == "__main__":
     config.train.learning_rate_init = 1e-3
     config.method.alpha = 0.1
 
-    config.model.tokenizer_path = ''
+    config.model.tokenizer_path = ""
     config.model.model_path = GPT2Config(
-        n_layer=4, n_embd=144, vocab_size=logit_mask.shape[0]
+        n_layer=2, n_embd=144, vocab_size=logit_mask.shape[0]
     )
 
-    trlx.train(walks, lengths, eval_prompts=eval_prompts, metric_fn=metric_fn, config=config, logit_mask=logit_mask)
+    trlx.train(
+        dataset=(walks, lengths),
+        eval_prompts=eval_prompts,
+        metric_fn=metric_fn,
+        config=config,
+        logit_mask=logit_mask,
+    )

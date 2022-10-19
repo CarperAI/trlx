@@ -1,7 +1,7 @@
-import trlx
-
 from datasets import load_dataset
 from transformers import pipeline
+
+import trlx
 
 if __name__ == "__main__":
     sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb")
@@ -14,9 +14,9 @@ if __name__ == "__main__":
     imdb = load_dataset("imdb", split="train+test")
 
     trlx.train(
-        samples=imdb["text"],
-        rewards=imdb["label"],
-        eval_prompts=["I don't know much about Hungarian underground"] * 64 + ["<|endoftext|>"] * 64,
-        metric_fn=metric_fn
+        "EleutherAI/gpt-j-6B",
+        dataset=(imdb["text"], imdb["label"]),
+        eval_prompts=["I don't know much about Hungarian underground"] * 16
+        + ["<|endoftext|>"] * 16,
+        metric_fn=metric_fn,
     )
-

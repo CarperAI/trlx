@@ -1,7 +1,7 @@
-import trlx
-
 from datasets import load_dataset
 from transformers import pipeline
+
+import trlx
 
 if __name__ == "__main__":
     sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb")
@@ -16,10 +16,9 @@ if __name__ == "__main__":
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
     model = trlx.train(
-        model_path="lvwerra/gpt2-imdb",
+        "lvwerra/gpt2-imdb",
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["I don't know much about Hungarian underground"] * 64 + ["<|endoftext|>"] * 64
+        eval_prompts=["I don't know much about Hungarian underground"] * 64
+        + ["<|endoftext|>"] * 64,
     )
-
-
