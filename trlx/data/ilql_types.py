@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 from torchtyping import TensorType
+
 
 @dataclass
 class ILQLElement:
@@ -17,12 +17,14 @@ class ILQLElement:
     :param rewards: Rewards for each token. Should be a float tensor of same size as tokens.
     :type rewards: torch.Tensor
     """
+
     input_ids: TensorType["query_size"]
     attention_mask: TensorType["query_size"]
     rewards: TensorType["reward_size"]
     states_ixs: TensorType["states_size"]
     actions_ixs: TensorType["reward_size"]
     dones: TensorType["states_size"]
+
 
 @dataclass
 class ILQLBatch:
@@ -38,6 +40,7 @@ class ILQLBatch:
     :param rewards: Batch of rewards for each token in each token batch.
     :type rewards: torch.Tensor
     """
+
     input_ids: TensorType["batch_size", "query_size"]
     attention_mask: TensorType["batch_size", "query_size"]
     rewards: TensorType["batch_size", "reward_size"]

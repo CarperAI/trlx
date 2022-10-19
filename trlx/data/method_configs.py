@@ -1,8 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
-
-import yaml
+from typing import Any, Callable, Dict, List
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, any] = {}  # registry
@@ -50,7 +48,8 @@ class MethodConfig:
     :param name: Name of the method
     :type name: str
     """
-    name : str
+
+    name: str
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
