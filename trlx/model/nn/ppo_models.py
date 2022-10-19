@@ -122,15 +122,17 @@ frozen transformer blocks and an lm_head from the base model.
 
 
 class ModelBranch(PreTrainedModel):
-    def __init__(self, config, transformer_blocks, ln_f, lm_head):
+    def __init__(self, config, model_trunk, num_layers_unfrozen):
         super().__init__(config)
 
         # Defined by the main trunk
         self.n_embd = config.n_embd
+        self.num_layers_unfrozen = num_layers_unfrozen
+        self.model_trunk = model_trunk
 
-        self.h = deepcopy(nn.ModuleList(transformer_blocks))
-        self.ln_f = deepcopy(ln_f)
-        self.lm_head = deepcopy(lm_head)
+        self.ln_f = deepcopy(self.model_trunk.transformer.ln_f)
+        self.lm_head = deepcopy(self.model_trunk.lm_head)
+        self.h = deepcopy(nn.ModuleList(list(self.model_trunk.transformer.h))[-num_layers_unfrozen:])
 
         # Model parallel
         self.model_parallel = False
@@ -141,10 +143,11 @@ class ModelBranch(PreTrainedModel):
         for block in self.h:
             for parameter in block.parameters():
                 parameter.requires_grad = False
-        for parameter in lm_head.parameters():
+
+        for parameter in self.lm_head.parameters():
             parameter.requires_grad = False
 
-    def forward(
+    def branch_forward(
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -330,6 +333,25 @@ class ModelBranch(PreTrainedModel):
             value=None,
         )
 
+    def forward(self, input_ids, **x):
+        if x.get("return_dict") is not None:
+            return_dict = x["return_dict"]
+        else:
+            return_dict = True
+        x["return_dict"] = True
+        x["output_hidden_states"] = True
+        output = self.model_trunk.forward(input_ids, **x)
+        all_hidden_states = output.hidden_states
+        # Get output of last frozen hidden layer
+        # Select hidden state before first layer of branch.
+        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
+        # Get size of last hidden state
+        output_shape = all_hidden_states[-1].size()
+        outputs = self.branch_forward(input_hidden_state, output_shape, **x)
+        if not return_dict:
+            return outputs.logits
+        return outputs
+
 
 class GPTHydraHeadWithValueModel(nn.Module):
     """The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head."""
@@ -353,38 +375,16 @@ class GPTHydraHeadWithValueModel(nn.Module):
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
-            transformer_blocks = list(self.gpt.transformer.h)[-num_layers_unfrozen:]
-            # Retrive hf_config to init
             hf_config = AutoConfig.from_pretrained(config)
             hf_config.n_embd = self.n_embd
-            self.frozen_head = ModelBranch(
+            self.ref_model = ModelBranch(
                 hf_config,
-                transformer_blocks,
-                self.gpt.transformer.ln_f,
-                self.gpt.lm_head,
+                self.gpt,
+                self.num_layers_unfrozen,
             )
 
     def generate(self, input_ids, **x):
         return self.gpt.generate(input_ids, **x)
-
-    def forward_hydra(self, input_ids, **x):
-        if x.get("return_dict") is not None:
-            return_dict = x["return_dict"]
-        else:
-            return_dict = True
-        x["return_dict"] = True
-        x["output_hidden_states"] = True
-        output = self.forward(input_ids, **x)
-        all_hidden_states = output.hidden_states
-        # Get output of last frozen hidden layer
-        # Select hidden state before first layer of branch.
-        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
-        # Get size of last hidden state
-        output_shape = all_hidden_states[-1].size()
-        outputs = self.frozen_head(input_hidden_state, output_shape, **x)
-        if not return_dict:
-            return outputs.logits
-        return outputs
 
     def forward(
         self,

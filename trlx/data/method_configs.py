@@ -73,6 +73,8 @@ class PPOConfig(MethodConfig):
     cliprange_value: float
     vf_coef: float
     gen_kwargs: dict
+    ref_mean: Optional[float] = None
+    ref_std: Optional[float] = None
 
 
 @dataclass

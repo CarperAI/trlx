@@ -25,7 +25,7 @@ train:
   pipeline : "PPOPipeline"  # prompt pipeline to load
   orchestrator : "PPOOrchestrator"  # orchestrator to load
 
-  input_size : 4  # max input size
+  input_size : 12  # max input size
   gen_size : 48  # max gen size
 
   accelerate : True  # Use accelerate
@@ -47,6 +47,4 @@ method:
   gen_kwargs :
     max_length : 48  # LM max sample gen length
     min_length : 48  # LM min sample gen length
-    top_k : 0.0  # top k
-    top_p : 1.0  # top p
-    do_sample : True  # sample
+    do_sample : False # sample

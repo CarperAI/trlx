@@ -70,6 +70,30 @@ class AcceleratePPOModel(AccelerateRLModel):
             self.config.model.model_path, self.config.model.num_layers_unfrozen
         )
 
+    def ref_act(
+        self, data: PromptBatch
+    ) -> Tuple[
+        TensorType["chunk_size", "input_length"],
+        TensorType["chunk_size", "gen_size"],
+        Iterable[str],
+    ]:
+        query_tensors = data.tokens.to(
+            self.accelerator.device
+        )  # [B, N] #TODO(dahoas): This may need to be changed
+        with torch.no_grad():
+            response = self.model.ref_model.generate(
+                query_tensors,
+                pad_token_id=self.tokenizer.eos_token_id,
+                **self.config.method.gen_kwargs
+            )
+            response_tensors = response[
+                :,
+                query_tensors.size()[1] : query_tensors.size()[1]
+                + self.config.train.gen_size,
+            ]
+        response_text = self.tokenizer.batch_decode(response_tensors)
+        return query_tensors, response_tensors, response_text
+
     def loss(
         self, query_tensors, response_tensors, all_logprobs, all_values, all_rewards
     ):
@@ -152,6 +176,7 @@ class AcceleratePPOModel(AccelerateRLModel):
                 query_tensors, response_tensors, response_text = self.act(eval_batch)
                 gen_texts = [q + r for q, r in zip(eval_batch.text, response_text)]
                 scores = self.orch.score(gen_texts)
+
                 mean_score = torch.mean(scores).item()
                 rows = list(zip(gen_texts, scores.tolist()))
                 stats = {
@@ -161,11 +186,22 @@ class AcceleratePPOModel(AccelerateRLModel):
                     "vf_loss": self.logs["vf_loss"],
                     "kl_coef": self.kl_ctl.value,
                 }
+
+                # If mean, std of score available, report
+                ref_mean = self.config.method.ref_mean
+                ref_std = self.config.method.ref_std
+                mean_normalized_score = None
+                if ref_mean is not None and ref_std is not None:
+                    normalized_scores = (scores - ref_mean) / ref_std
+                    mean_normalized_score = torch.mean(normalized_scores).item()
+                    stats['normalized_score'] = mean_normalized_score
+
                 self.accelerator.log(stats, step=self.iter_count)
                 self.accelerator.print(
-                    "Step: {}, Mean score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
+                    "Step: {}, Mean score: {}, Mean normalized score: {}, pg_loss: {}, vf_loss: {}, kl_coef: {}".format(
                         self.iter_count,
                         mean_score,
+                        mean_normalized_score,
                         stats["pg_loss"],
                         stats["vf_loss"],
                         self.kl_ctl.value,

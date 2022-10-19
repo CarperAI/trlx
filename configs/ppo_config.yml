@@ -43,7 +43,9 @@ method:
   lam : 0.95  # PPO lambda
   cliprange : 0.2  # clip range
   cliprange_value : 0.2  # clip range
-  vf_coef : 2.3  # value term weight
+  vf_coef : .5  # value term weight
+  ref_mean : .54  # mean reward of ref model
+  ref_std : .42  # standard deviation of reward of ref model
   gen_kwargs :
     max_length : 48  # LM max sample gen length
     min_length : 48  # LM min sample gen length

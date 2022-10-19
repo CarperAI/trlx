@@ -65,8 +65,22 @@ class PPOOrchestrator(Orchestrator):
                 batch = next(self.pipeline_iterator)
 
             query_tensors, response_tensors, response_text = self.rl_model.act(batch)
+
             texts = [q + r for q, r in zip(batch.text, response_text)]
             scores = self.score(texts)
+
+            # Score ref_texts to compute ref reward mean, var
+            ## This is very slow, so pre-computation of mean, std is desirable
+            ref_mean = self.rl_model.config.method.ref_mean
+            ref_std = self.rl_model.config.method.ref_std
+            if ref_mean is None or ref_std is None:
+                _, _, ref_response_text = self.rl_model.ref_act(batch)
+                ref_texts = [q + r for q, r in zip(batch.text, ref_response_text)]
+                ref_scores = self.score(ref_texts)
+                ref_mean = torch.mean(ref_scores).item()
+                ref_std = torch.std(ref_scores).item()
+            # Normalize scores
+            scores = (scores - ref_mean) / ref_std
 
             # Precompute logprobs, values
             all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
@@ -106,7 +120,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Evaluate model on first chunk
             if i == 0 and self.rl_model.accelerator.is_main_process:
-                stats = {"exp_time": exp_time}
+                stats = {"exp_time": exp_time, "ref_mean": ref_mean, "ref_std": ref_std}
                 self.rl_model.accelerator.log(stats, step=iter_count)
 
             new_ppo_rl_elements = [
