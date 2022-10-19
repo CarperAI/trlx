@@ -11,10 +11,7 @@ from torchtyping import TensorType
 from transformers import AutoConfig, AutoTokenizer
 
 from trlx.data import BatchElement, RLElement
-from trlx.data.accelerate_base_datatypes import (
-    AccelerateRLBatchElement,
-    PromptBatch
-)
+from trlx.data.accelerate_base_datatypes import AccelerateRLBatchElement, PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
 from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage

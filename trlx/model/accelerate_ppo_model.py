@@ -16,10 +16,7 @@ from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import (
-    GPTHeadWithValueModel,
-    GPTHydraHeadWithValueModel
-)
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
