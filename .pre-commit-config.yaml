@@ -13,5 +13,5 @@ repos:
 -   repo: https://github.com/psf/black
     rev: 22.10.0
     hooks:
-      - id: black
+    -   id: black
         files: ^(trlx|examples|unittests|setup.py)/
