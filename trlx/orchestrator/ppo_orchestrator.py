@@ -1,18 +1,21 @@
 from typing import Callable
 
 import torch
+import wandb
 from tqdm import tqdm
 from transformers import pipeline as tfpipeline
 
-import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.model import BaseRLModel
+from trlx.model.nn.ppo_models import (
+    GPTHeadWithValueModel,
+    GPTHydraHeadWithValueModel
+)
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.ppo_pipeline import PPOPipeline
 from trlx.utils import Clock, chunk, flatten, sentiment_score
 from trlx.utils.modeling import logprobs_from_logits
-from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 
 
 @register_orchestrator

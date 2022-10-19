@@ -1,3 +1,5 @@
+import inspect
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
@@ -15,11 +17,9 @@ from transformers import (
     GPTJModel,
     PretrainedConfig,
     PreTrainedModel,
-    top_k_top_p_filtering,
+    top_k_top_p_filtering
 )
 from transformers.modeling_outputs import ModelOutput
-from copy import deepcopy
-import inspect
 
 
 # Cell
