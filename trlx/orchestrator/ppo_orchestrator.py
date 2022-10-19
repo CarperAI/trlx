@@ -7,6 +7,7 @@ from trlx.data.ppo_types import PPORLElement
 from trlx.model import BaseRLModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
+from trlx.utils import Clock
 from trlx.utils.modeling import logprobs_from_logits
 
 
@@ -16,8 +17,8 @@ class PPOOrchestrator(Orchestrator):
         self,
         model: BaseRLModel,
         pipeline: BasePipeline,
-        reward_fn,
-        stats_fn: Callable = None,
+        reward_fn: Callable,
+        metric_fn: Callable = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
@@ -35,7 +36,7 @@ class PPOOrchestrator(Orchestrator):
 
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
-        self.rl_model.stats_fn = stats_fn
+        self.rl_model.metric_fn = metric_fn
 
     def score(self, samples):
         """
@@ -55,11 +56,19 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            query_tensors, response_tensors, texts = self.rl_model.act(batch)
+            samples = self.rl_model.generate(**batch)
+
+            query_tensors = batch.input_ids
+            response_tensors = samples[:, query_tensors.shape[1] :]
+            texts = self.rl_model.tokenizer.batch_decode(
+                samples, skip_special_tokens=True
+            )
             scores = torch.as_tensor(self.score(texts))
 
             # Precompute logprobs, values
-            all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
+            all_tokens = torch.cat(
+                (query_tensors.to(samples.device), response_tensors), dim=1
+            )
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
