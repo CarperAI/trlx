@@ -6,10 +6,10 @@ Configs
 Training a model in TRL will require you to set several configs:
 ModelConfig, which contains general info on the model being trained. TrainConfig, which contains things like
 training hyperparameters. And finally, MethodConfig, which contains hyperparameters or settings for
-the specific method being used (i.e. ILQL or PPO)  
+the specific method being used (i.e. ILQL or PPO)
 
 
-**General**  
+**General**
 
 .. autoclass:: trlx.data.configs.TRLConfig
     :members:
@@ -21,9 +21,9 @@ the specific method being used (i.e. ILQL or PPO)
     :members:
 
 .. autoclass:: trlx.data.method_configs.MethodConfig
-    :members:  
+    :members:
 
-**PPO**  
+**PPO**
 
 .. autoclass:: trlx.data.method_configs.PPOConfig
     :undoc-members:

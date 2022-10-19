@@ -7,17 +7,17 @@ Orchestrators manage reading data from a pipeline and creating RL data elements 
 to push to a models rollout storage. Use the ``trlx.orchestrator.register_orchestrator`` decorator when creating
 new orchestrators.
 
-**General**  
+**General**
 
 .. autoclass:: trlx.orchestrator.Orchestrator
    :members:
 
-**PPO**  
+**PPO**
 
 .. autoclass:: trlx.orchestrator.ppo_orchestrator.PPOOrchestrator
     :members:
 
-**ILQL**  
+**ILQL**
 
 .. autoclass:: trlx.orchestrator.offline_orchestrator.OfflineOrchestrator
     :members:
