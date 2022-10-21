@@ -13,7 +13,7 @@ To submit a bug report or a feature request, please open an [issue](https://gith
 
 ## Submitting code
 
-> **Note**: Make sure to first search through the [issue tracker](https://github.com/CarperAI/trlx/issues) and [PR list](https://github.com/CarperAI/trlx/pulls) to avoid duplicating work. If you want to work on a non-trivial feature, we highly recommended that you first open an issue in the [issue tracker](https://github.com/CarperAI/trlx/issues) to get feedback from core developers.
+> **Note**: Make sure to first search through the [issue tracker](https://github.com/CarperAI/trlx/issues) and [PR list](https://github.com/CarperAI/trlx/pulls) to avoid duplicating work. If you want to work on a non-trivial feature, we highly recommend that you first open an issue in the [issue tracker](https://github.com/CarperAI/trlx/issues) to get feedback from core developers.
 
 Follow these steps to start contributing code:
 
