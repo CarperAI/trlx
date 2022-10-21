@@ -1,34 +1,28 @@
 model:
   model_path : "gpt2"
-  model_type : "ILQLModel"
-  device : "cuda"
   tokenizer_path: "gpt2"
+  model_type : "ILQLModel"
   num_layers_unfrozen: -1
 
 train:
-  n_ctx : 512
-  epochs : 1
-  total_steps : 80000
-  batch_size : 80
-  grad_clip : 1.0
+  seq_length: 64
+  batch_size: 128
+  epochs: 10
+  total_steps: 10000
 
-  lr_ramp_steps : 100
-  lr_decay_steps : 3366
-  weight_decay : 1.0e-6
-  learning_rate_init : 1.0e-3
-  learning_rate_target : 1.0e-3
+  lr_ramp_steps: 100
+  lr_decay_steps: 3366
+  weight_decay: 1e-6
+  learning_rate_init: 1e-4
+  learning_rate_target: 1e-4
+  opt_betas: [0.9, 0.95]
 
-  log_interval : 25
-  checkpoint_interval : 100
-  eval_interval : 50
-
-  input_size: 1
-  gen_size: 32
+  checkpoint_interval: 1000
+  eval_interval: 16
 
   pipeline : "OfflinePipeline"
   orchestrator : "OfflineOrchestrator"
-
-  accelerate : true
+  seed: 1000
 
 method:
   name: "ilqlconfig"
@@ -36,7 +30,7 @@ method:
   gamma: 0.99
   cql_scale: 0.1
   awac_scale: 1
-  alpha: 1
-  steps_for_target_q_sync: 10
-  beta: 4
+  alpha: 0.005
+  steps_for_target_q_sync: 1
+  betas: [16]
   two_qs: true

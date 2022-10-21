@@ -4,25 +4,17 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import torch
-import torch.nn.functional as F
 from torch import nn
-from torch.nn import Identity
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    GPT2LMHeadModel,
-    GPT2Model,
-    GPT2PreTrainedModel,
-    GPT2Tokenizer,
-    GPTJModel,
-    PretrainedConfig,
-    PreTrainedModel,
-    top_k_top_p_filtering,
-)
 from transformers.modeling_outputs import ModelOutput
 
+from transformers import (  # isort:skip
+    AutoConfig,
+    AutoModelForCausalLM,
+    PretrainedConfig,
+    PreTrainedModel,
+)
 
-# Cell
+
 @dataclass
 class CausalLMOutputWithCrossAttentions(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -34,16 +26,10 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-# Cell
-
-
 def make_head(n_embd: int, out: int):
     return nn.Sequential(
         nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
-
-
-# Cell
 
 
 class GPTHeadWithValueModel(nn.Module):
@@ -113,7 +99,6 @@ class GPTHeadWithValueModel(nn.Module):
         )
 
 
-# Cell
 """
 ModelBranch implements the frozen upper trunk of the reference model
 used when computing the PPO KL-divergence penalty. Expects a list of
@@ -182,10 +167,7 @@ class ModelBranch(PreTrainedModel):
         device = hidden_states.device
 
         if past_key_values is None:
-            past_length = 0
             past_key_values = tuple([None] * len(self.h))
-        else:
-            past_length = past_key_values[0][0].size(-2)
 
         # GPT2Attention mask.
         if attention_mask is not None:
@@ -307,7 +289,7 @@ class ModelBranch(PreTrainedModel):
         # attentions = all_self_attentions
         # cross_attentions = all_cross_attentions
 
-        ### START OF CAUSAL HEAD ###
+        # START OF CAUSAL HEAD #
         # hidden_states = hidden_states.to(torch.float32) Present for gptj
 
         if self.model_parallel:
@@ -389,8 +371,8 @@ class GPTHydraHeadWithValueModel(nn.Module):
     def forward(
         self,
         input_ids=None,
-        past_key_values=None,
         attention_mask=None,
+        past_key_values=None,
         token_type_ids=None,
         position_ids=None,
         head_mask=None,
