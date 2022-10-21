@@ -1,9 +1,11 @@
+# Optimize prompts by training on prompts-ratings pairings dataset
+# taken from https://github.com/JD-P/simulacra-aesthetic-captions
+
 import sqlite3
 
 import trlx
 
 if __name__ == "__main__":
-    # get this dataset from https://github.com/JD-P/simulacra-aesthetic-captions
     conn = sqlite3.connect("data/sac_public_2022_06_29.sqlite")
     c = conn.cursor()
     c.execute(

@@ -1,3 +1,5 @@
+# Generates positive movie reviews by learning from sentiment-labeled IMDB dataset
+
 from datasets import load_dataset
 from transformers import pipeline
 

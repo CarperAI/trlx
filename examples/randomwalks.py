@@ -1,3 +1,6 @@
+# Toy dataset from Decision Transformer (Chen et al. 2021)
+# finds graph shortest paths by learning from a dataset of sampled random walks
+
 import networkx as nx
 import numpy as np
 import torch
@@ -14,7 +17,6 @@ def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
             return x
 
 
-# Toy dataset from Decision Transformer (Chen et. al 2021)
 def generate_random_walks(
     n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002
 ):
