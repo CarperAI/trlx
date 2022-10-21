@@ -132,7 +132,9 @@ class ModelBranch(PreTrainedModel):
 
         self.ln_f = deepcopy(self.model_trunk.transformer.ln_f)
         self.lm_head = deepcopy(self.model_trunk.lm_head)
-        self.h = deepcopy(nn.ModuleList(list(self.model_trunk.transformer.h))[-num_layers_unfrozen:])
+        self.h = deepcopy(
+                            nn.ModuleList(list(self.model_trunk.transformer.h))[-num_layers_unfrozen:]
+                         )
 
         # Model parallel
         self.model_parallel = False

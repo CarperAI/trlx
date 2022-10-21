@@ -194,7 +194,7 @@ class AcceleratePPOModel(AccelerateRLModel):
                 if ref_mean is not None and ref_std is not None:
                     normalized_scores = (scores - ref_mean) / ref_std
                     mean_normalized_score = torch.mean(normalized_scores).item()
-                    stats['normalized_score'] = mean_normalized_score
+                    stats["normalized_score"] = mean_normalized_score
 
                 self.accelerator.log(stats, step=self.iter_count)
                 self.accelerator.print(
