@@ -14,4 +14,8 @@ if __name__ == "__main__":
     )
 
     prompts, ratings = tuple(map(list, zip(*c.fetchall())))
-    model = trlx.train("gpt2-xl", dataset=(prompts, ratings))
+    model = trlx.train(
+        "gpt2",
+        dataset=(prompts, ratings),
+        eval_prompts=["Hatsune Miku, Red Dress"] * 64,
+    )

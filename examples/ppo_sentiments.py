@@ -19,6 +19,5 @@ if __name__ == "__main__":
         "lvwerra/gpt2-imdb",
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["I don't know much about Hungarian underground"] * 64
-        + ["<|endoftext|>"] * 64,
+        eval_prompts=["I don't know much about Hungarian underground"] * 64,
     )
