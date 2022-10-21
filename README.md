@@ -3,7 +3,7 @@
 
 # Transformer Reinforcement Learning X
 
-`trlx` allows you to fine-tune 🤗 Huggingface supported language models (`gpt2`, `gpt-j`, `gpt-neo` and `gpt-neox` based) up to 20B parameters using reinforcement learning via either a provided reward function or reward-labeled dataset. Proximal Policy Optimization ([PPO](https://arxiv.org/pdf/1909.08593.pdf)) and Implicit Language Q-Learning ([ILQL](https://sea-snell.github.io/ILQL_site/)) are implemented.
+`trlx` allows you to fine-tune 🤗 Hugging Face supported language models (`gpt2`, `gpt-j`, `gpt-neo` and `gpt-neox` based) up to 20B parameters using reinforcement learning via either a provided reward function or reward-labelled dataset. Proximal Policy Optimization ([PPO](https://arxiv.org/pdf/1909.08593.pdf)) and Implicit Language Q-Learning ([ILQL](https://sea-snell.github.io/ILQL_site/)) are implemented.
 
 ## Train
 
@@ -14,17 +14,17 @@ import trlx
 model = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for sample in samples])
 
 # or steer a model with a collection of rated samples
-model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dogs', 'geese'), (1.0, 100.0)])
+model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 
 # model is a wrapper with some logit preprocessing
 model.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
-Launch distributed training with 🤗 Accelerate
+Launch distributed training with 🤗 Accelerate (only DeepSpeed integration is tested)
 
 ```bash
 accelerate config
-accelerate launch examples/ilql_simulacra.py
+accelerate launch examples/simulacra.py
 ```
 
 For more usage see [examples](./examples)
@@ -37,14 +37,9 @@ pip install torch --extra-index-url https://download.pytorch.org/whl/cu113 # for
 pip install -e .
 ```
 
-For development also do:
-```
-pip install -e ".[dev]"
-pre-commit install # see .pre-commit-config.yaml
-```
-
-and check our [docs](https://trlX.readthedocs.io)
+For development check out these [guidelines](./CONTRIBUTING.md)
+and also read our [docs](https://trlX.readthedocs.io)
 
 ## Acknowledgements
 
-Thanks Leandro for building the original [trl](https://github.com/lvwerra/trl/)
+Thanks Leandro for starting the original [trl](https://github.com/lvwerra/trl/)
