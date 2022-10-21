@@ -5,10 +5,10 @@ model:
   num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
 
 train:
-  seq_length: 64  # Size of LM context
-  epochs: 100  # Train for max(epochs, total_steps)
-  total_steps: 1000  # Train for max(epochs, total_steps)
-  batch_size: 16  # batch size
+  seq_length: 48  # Size of LM context
+  epochs: 1000  # Train for max(epochs, total_steps)
+  total_steps: 10000  # Train for max(epochs, total_steps)
+  batch_size: 128  # batch size
 
   lr_ramp_steps: 100  # learning rate warm up
   lr_decay_steps: 79000  # learning rate decay
@@ -18,7 +18,7 @@ train:
   opt_betas: [0.9, 0.95] # adam betas
 
   checkpoint_interval: 10000  # checkpoint interval
-  eval_interval: 128  # eval interval
+  eval_interval: 16  # eval interval
 
   pipeline: "PPOPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
@@ -31,11 +31,11 @@ method:
   init_kl_coef: 0.2  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef
   horizon: 10000  # PPO horizon
-  gamma: 0.99  # PPO discount
+  gamma: 1  # PPO discount
   lam: 0.95  # PPO lambda
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
-  vf_coef: 1.0  # value term weight
+  vf_coef: 2.3  # value term weight
   gen_kwargs:
     max_length: 48  # LM max sample gen length
     min_length: 48  # LM min sample gen length

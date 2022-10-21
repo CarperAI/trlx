@@ -5,8 +5,8 @@ model:
   num_layers_unfrozen: -1
 
 train:
-  seq_length: 80
-  batch_size: 8
+  seq_length: 64
+  batch_size: 128
   epochs: 10
   total_steps: 10000
 
@@ -18,7 +18,7 @@ train:
   opt_betas: [0.9, 0.95]
 
   checkpoint_interval: 1000
-  eval_interval: 100
+  eval_interval: 16
 
   pipeline : "OfflinePipeline"
   orchestrator : "OfflineOrchestrator"
@@ -32,5 +32,5 @@ method:
   awac_scale: 1
   alpha: 0.005
   steps_for_target_q_sync: 1
-  betas: [8]
+  betas: [16]
   two_qs: true
