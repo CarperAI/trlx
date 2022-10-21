@@ -22,6 +22,7 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None
+        self.params = config.method
 
     def get_arch(self, config):
         return CausalLMWithValueHeads(
@@ -64,7 +65,8 @@ class AccelerateILQLModel(AccelerateRLModel):
         actions = input_ids[:, 1:].gather(dim=1, index=actions_ixs).unsqueeze(-1)
         bsize, ntokens, dsize = logits.shape
 
-        if self.model.two_qs:
+        # compute two separate q-value estimates, to then select minimum values from both
+        if self.params.two_qs:
             Q1 = qs[0].gather(-1, actions).squeeze(-1)
             Q2 = qs[1].gather(-1, actions).squeeze(-1)
 
@@ -83,9 +85,9 @@ class AccelerateILQLModel(AccelerateRLModel):
         # values of next states
         Vnext = vs[:, 1:].squeeze() * dones[:, 1:]
         # target to fit Q
-        Q_ = rewards + self.model.gamma * Vnext.detach()
+        Q_ = rewards + self.params.gamma * Vnext.detach()
 
-        if self.model.two_qs:
+        if self.params.two_qs:
             loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
             loss_q2 = ((Q2 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
             loss_q = loss_q1 + loss_q2
@@ -96,13 +98,13 @@ class AccelerateILQLModel(AccelerateRLModel):
 
         loss_v = (
             (
-                (targetQ >= V).int() * self.model.tau * (targetQ - V).pow(2)
-                + (targetQ < V).int() * (1 - self.model.tau) * (targetQ - V).pow(2)
+                (targetQ >= V).int() * self.params.tau * (targetQ - V).pow(2)
+                + (targetQ < V).int() * (1 - self.params.tau) * (targetQ - V).pow(2)
             )
             * terminal_mask
         ).sum() / n_nonterminal
 
-        if self.model.two_qs:
+        if self.params.two_qs:
             nactions = qs[0].shape[1]
             loss_cql_q1 = (
                 F.cross_entropy(
@@ -142,8 +144,8 @@ class AccelerateILQLModel(AccelerateRLModel):
         loss = (
             loss_q
             + loss_v
-            + self.model.cql_scale * loss_cql
-            + self.model.awac_scale * loss_awac
+            + self.params.cql_scale * loss_cql
+            + self.params.awac_scale * loss_awac
         )
         stats = {
             f"losses/{k}": v

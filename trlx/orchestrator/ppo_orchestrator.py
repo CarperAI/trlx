@@ -13,6 +13,10 @@ from trlx.utils.modeling import logprobs_from_logits
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
+    """
+    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into model's `store`
+    """
+
     def __init__(
         self,
         model: BaseRLModel,
@@ -45,6 +49,9 @@ class PPOOrchestrator(Orchestrator):
         return self.rl_model.reward_fn(samples)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
+        """
+        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
+        """
         ppo_rl_elements = []
         stats = {}
         clock = Clock()

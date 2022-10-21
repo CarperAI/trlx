@@ -174,6 +174,9 @@ class CausalLMWithValueHeads(nn.Module):
         pad_token_id=50256,
         eos_token_id=50256,
     ):
+        """
+        Generates samples akin to hf's `.generate` but with custom logp prepossessing: changing token probabilities as to how advantageous they would be according to value functions estimations.
+        """
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)
 

@@ -2,7 +2,7 @@ import importlib
 import os
 from abc import abstractmethod
 from time import time
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -46,12 +46,13 @@ class AccelerateRLModel(BaseRLModel):
         else:
             self.tokenizer = None
 
-        num_layers_unfrozen = self.config.model.num_layers_unfrozen
         if hasattr(self.model.gpt, "gpt_neox"):
             gpt_blocks = self.model.gpt.gpt_neox.layers
         else:
             gpt_blocks = self.model.gpt.transformer.h
 
+        # freeze transformer's bottom layers if num_layers_unfrozen >= 0
+        num_layers_unfrozen = self.config.model.num_layers_unfrozen
         if num_layers_unfrozen == 0:
             gpt_blocks_to_freeze = list(gpt_blocks)
         elif num_layers_unfrozen > 0:
@@ -90,7 +91,7 @@ class AccelerateRLModel(BaseRLModel):
 
     def tokenize(self, text: Iterable[str]):
         """
-        Tokenize a batch of text after adding bos token.
+        Tokenize a batch of text after adding bos token to each of the samples
         """
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
@@ -101,6 +102,7 @@ class AccelerateRLModel(BaseRLModel):
         )
 
     def generate(self, input_ids, attention_mask=None, **kwargs):
+        """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
@@ -121,12 +123,15 @@ class AccelerateRLModel(BaseRLModel):
         return components
 
     def save(self, directory=None):
+        """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
     def add_eval_pipeline(self, eval_pipeline):
+        """Adds pipeline from with validation prompts"""
         self.eval_pipeline = eval_pipeline
 
     def evaluate(self):
+        """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         self.model.eval()
 
@@ -163,13 +168,16 @@ class AccelerateRLModel(BaseRLModel):
                 columns_data = [samples.tolist()]
             columns = ["samples"]
 
+            # in online setting, compute the reward for validation
             if self.reward_fn:
                 rewards = torch.as_tensor(self.reward_fn(samples), dtype=torch.float)
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
                 stats["mean_reward"] = mean_reward
+                print(f"{mean_reward=}")
 
+            # additionally log any other metrics
             if self.metric_fn:
                 metric_time = time()
                 metrics = self.metric_fn(samples)
@@ -195,6 +203,10 @@ class AccelerateRLModel(BaseRLModel):
         return stats
 
     def learn(self):
+        """
+        Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
+        """
+
         self.prepare_learning()
 
         tbar = tqdm(
@@ -231,7 +243,6 @@ class AccelerateRLModel(BaseRLModel):
                                 "backward_time": backward_time,
                             }
                         )
-
                         self.accelerator.log(results)
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
@@ -248,16 +259,20 @@ class AccelerateRLModel(BaseRLModel):
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):
+        """Returns a specific wrapper of the decoder architecture"""
         pass
 
     @abstractmethod
-    def loss(self, batch):
+    def loss(self, batch) -> Tuple[float, Dict]:
+        """Compute loss on a batch from `store` and return some statistics"""
         pass
 
     @abstractmethod
     def post_backward_callback(self):
+        """Do something after model update"""
         pass
 
     @abstractmethod
     def post_epoch_callback(self):
+        """Do something after exhausting/single pass over `self.store`"""
         pass

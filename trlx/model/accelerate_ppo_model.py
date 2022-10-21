@@ -65,7 +65,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         self.generate_kwargs = dict(
             config.method.gen_kwargs,
             eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=0,
+            pad_token_id=self.tokenizer.eos_token_id,
         )
 
     def get_arch(self, config: TRLConfig):
@@ -106,6 +106,8 @@ class AcceleratePPOModel(AccelerateRLModel):
             .long()
             .to(all_tokens.device)
         )
+
+        # for a proper positional encoding in case of left padding
         position_ids = attention_mask.cumsum(-1) - 1
         position_ids.masked_fill_(attention_mask.eq(0), 0)
 

@@ -11,6 +11,10 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 @register_datapipeline
 class PromptPipeline(BasePipeline):
+    """
+    Tokenizes texts, and then pads them into batches
+    """
+
     def __init__(self, prompts, tokenizer=None):
         super().__init__()
         self.tokenizer = tokenizer
