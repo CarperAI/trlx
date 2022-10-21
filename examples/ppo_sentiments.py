@@ -7,7 +7,7 @@ from transformers import pipeline
 import trlx
 
 if __name__ == "__main__":
-    sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb")
+    sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb", device=-1)
 
     def reward_fn(samples):
         outputs = sentiment_fn(samples, return_all_scores=True)
