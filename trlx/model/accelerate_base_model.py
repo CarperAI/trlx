@@ -133,8 +133,6 @@ class AccelerateRLModel(BaseRLModel):
     def evaluate(self):
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
-        self.model.eval()
-
         all_samples = []
         generate_time = time()
         for prompts in self.eval_dataloader:
@@ -199,7 +197,6 @@ class AccelerateRLModel(BaseRLModel):
 
             print(rows[0])
 
-        self.model.train()
         return stats
 
     def learn(self):
