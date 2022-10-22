@@ -3,10 +3,20 @@
 
 import sqlite3
 
+from urllib.request import urlretrieve
+import os
+
 import trlx
 
+url = "https://raw.githubusercontent.com/JD-P/simulacra-aesthetic-captions/main/sac_public_2022_06_29.sqlite"
+dbpath = "sac_public_2022_06_29.sqlite"
+
 if __name__ == "__main__":
-    conn = sqlite3.connect("data/sac_public_2022_06_29.sqlite")
+    if not os.path.exists(dbpath):
+        print(f"fetching {dbpath}")
+        urlretrieve(url, dbpath)
+
+    conn = sqlite3.connect(dbpath)
     c = conn.cursor()
     c.execute(
         "SELECT prompt, rating FROM ratings "
