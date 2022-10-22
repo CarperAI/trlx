@@ -1,6 +1,8 @@
 import os
 from typing import Callable, Iterable, List, Optional, Tuple
 
+from accelerate import Accelerator
+
 from trlx.data.configs import TRLConfig
 from trlx.model.accelerate_ilql_model import AccelerateILQLModel
 from trlx.model.accelerate_ppo_model import AcceleratePPOModel
@@ -36,13 +38,45 @@ def train(
     """
 
     if reward_fn is not None:
-        if config is None:
-            config = TRLConfig.load_yaml("configs/ppo_config.yml")
+        config_path = "configs/ppo_config.yml"
+    elif dataset is not None:
+        config_path = "configs/ilql_config.yml"
 
+    if config is None:
+        config = TRLConfig.load_yaml(config_path)
+
+    # Initialize Accelerator
+    accelerator = Accelerator(log_with="wandb")
+
+    # Initialize tracker
+    if accelerator.is_main_process:
+        accelerator.init_trackers(
+            project_name=config.train.project_name,
+            config=config.to_dict(),
+            init_kwargs={
+                "wandb": {
+                    "name": f"{config.model.model_path}",
+                    "mode": "disabled" if os.environ.get("debug", False) else "online",
+                }
+            },
+        )
+
+        run = accelerator.get_tracker("wandb")
+        wandb_config = run.config
+
+        # Update the config with wandb config
+        trlx_config = config.to_dict()
+        trlx_config.update(wandb_config)
+        config = TRLConfig.from_dict(trlx_config)
+        print(config)
+
+    if reward_fn is not None:
         if model_path:
             config.model.model_path = model_path
 
-        model: AcceleratePPOModel = get_model(config.model.model_type)(config)
+        model: AcceleratePPOModel = get_model(config.model.model_type)(
+            config, accelerator
+        )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
@@ -66,14 +100,14 @@ def train(
                 f"Number of samples {len(samples)} should match the number of rewards {len(rewards)}"
             )
 
-        if config is None:
-            config = TRLConfig.load_yaml("configs/ilql_config.yml")
-
         if model_path:
             config.model.model_path = model_path
 
         model = AccelerateILQLModel(
-            config=config, logit_mask=logit_mask, metric_fn=metric_fn
+            config=config,
+            accelerator=accelerator,
+            logit_mask=logit_mask,
+            metric_fn=metric_fn,
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))

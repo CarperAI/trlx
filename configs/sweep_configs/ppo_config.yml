@@ -1,0 +1,32 @@
+program: examples/ppo_sentiments.py
+method: random
+parameters:
+  model:
+    parameters:
+      num_layers_unfrozen:  # Number of bottom layers to freeze during training
+        values: [2, 3]
+
+  train:
+    parameters:
+      seq_length: # Size of LM context
+        values: [36, 48, 52]
+
+  method:
+    parameters:
+      num_rollouts:  # Number of rollouts to collect per epoch
+        values: [96, 128]
+      ppo_epochs: # Number of ppo epochs
+        values: [3, 4, 5]
+      init_kl_coef:  # init kl coefficient
+        values: [0.1, 0.2, 0.3]
+      lam: # PPO lambda
+        distribution: uniform
+        min: 0.93
+        max: 0.98
+
+command:
+  - ${env}
+  - accelerate
+  - launch
+  - ${program}
+  - ${args}
