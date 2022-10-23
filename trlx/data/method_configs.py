@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, any] = {}  # registry

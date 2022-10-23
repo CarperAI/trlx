@@ -73,29 +73,18 @@ class AcceleratePPOModel(AccelerateRLModel):
             self.config.model.model_path, self.config.model.num_layers_unfrozen
         )
 
-    def ref_act(
-        self, data: PromptBatch
-    ) -> Tuple[
-        TensorType["chunk_size", "input_length"],
-        TensorType["chunk_size", "gen_size"],
-        Iterable[str],
-    ]:
-        query_tensors = data.tokens.to(
-            self.accelerator.device
-        )  # [B, N] #TODO(dahoas): This may need to be changed
+    def ref_generate(self, input_ids, attention_mask=None, **kwargs):
+        """Wraps hf's `generate` adding some specific method's defaults"""
+        input_ids = input_ids.to(self.accelerator.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.accelerator.device)
+
+        kwargs = dict(self.generate_kwargs, **kwargs)
+
         with torch.no_grad():
-            response = self.model.ref_model.generate(
-                query_tensors,
-                pad_token_id=self.tokenizer.eos_token_id,
-                **self.config.method.gen_kwargs
+            return self.model.ref_model.generate(
+                input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
-            response_tensors = response[
-                :,
-                query_tensors.size()[1] : query_tensors.size()[1]
-                + self.config.train.gen_size,
-            ]
-        response_text = self.tokenizer.batch_decode(response_tensors)
-        return query_tensors, response_tensors, response_text
 
     def loss(self, batch):
         query_tensors = batch.query_tensors.to(self.accelerator.device)

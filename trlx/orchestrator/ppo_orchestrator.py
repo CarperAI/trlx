@@ -77,9 +77,9 @@ class PPOOrchestrator(Orchestrator):
             ref_mean = self.rl_model.config.method.ref_mean
             ref_std = self.rl_model.config.method.ref_std
             if ref_mean is None or ref_std is None:
-                _, _, ref_response_text = self.rl_model.ref_act(batch)
-                ref_texts = [q + r for q, r in zip(batch.text, ref_response_text)]
-                ref_scores = self.score(ref_texts)
+                ref_samples = self.rl_model.ref_generate(**batch)
+                ref_texts = self.rl_model.tokenizer.batch_decode(ref_samples, skip_special_tokens=True)
+                ref_scores = torch.as_tensor(self.score(ref_texts))
                 ref_mean = torch.mean(ref_scores).item()
                 ref_std = torch.std(ref_scores).item()
             # Normalize scores

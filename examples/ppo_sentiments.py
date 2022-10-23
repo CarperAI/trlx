@@ -3,6 +3,7 @@
 
 from datasets import load_dataset
 from transformers import pipeline
+from trlx.data.configs import TRLConfig
 
 import trlx
 

@@ -1,7 +1,12 @@
 import unittest
 from trlx.data.configs import TRLConfig
-from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
-from transformers import AutoTokenizer
+from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+from trlx.pipeline.ppo_pipeline import PPOPipeline
+from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
+from trlx.data.accelerate_base_datatypes import PromptBatch
+from transformers import AutoConfig, AutoTokenizer
 import torch
 
 
