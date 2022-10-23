@@ -7,10 +7,12 @@ from transformers import pipeline
 import trlx
 
 if __name__ == "__main__":
+    config = TRLConfig.load_yaml("configs/ppo_config.yml")
+
     sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb", device=-1)
 
     def reward_fn(samples):
-        outputs = sentiment_fn(samples, return_all_scores=True)
+        outputs = sentiment_fn(samples, return_all_scores=True, batch_size=config.method.chunk_size)
         sentiments = [output[1]["score"] for output in outputs]
         return sentiments
 
@@ -21,6 +23,7 @@ if __name__ == "__main__":
     model = trlx.train(
         "lvwerra/gpt2-imdb",
         reward_fn=reward_fn,
+        config=config,
         prompts=prompts,
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
     )
