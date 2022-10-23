@@ -1,31 +1,28 @@
 from typing import Callable
 
 import torch
-import wandb
-from tqdm import tqdm
-from transformers import pipeline as tfpipeline
-
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.model import BaseRLModel
-from trlx.model.nn.ppo_models import (
-    GPTHeadWithValueModel,
-    GPTHydraHeadWithValueModel
-)
+from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
-from trlx.pipeline.ppo_pipeline import PPOPipeline
-from trlx.utils import Clock, chunk, flatten, sentiment_score
+from trlx.pipeline import BasePipeline
+from trlx.utils import Clock
 from trlx.utils.modeling import logprobs_from_logits
 
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
+    """
+    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into model's `store`
+    """
+
     def __init__(
         self,
         model: BaseRLModel,
-        pipeline: PPOPipeline,
-        reward_fn,
-        stats_fn: Callable = None,
+        pipeline: BasePipeline,
+        reward_fn: Callable,
+        metric_fn: Callable = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
@@ -33,7 +30,7 @@ class PPOOrchestrator(Orchestrator):
         self.chunk_size = chunk_size
 
         self.pipeline_loader = self.pipeline.create_loader(
-            self.chunk_size, shuffle=True, num_workers=2
+            self.chunk_size, shuffle=True
         )
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
@@ -43,7 +40,7 @@ class PPOOrchestrator(Orchestrator):
 
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
-        self.rl_model.stats_fn = stats_fn
+        self.rl_model.metric_fn = metric_fn
 
     def score(self, samples):
         """
@@ -52,11 +49,13 @@ class PPOOrchestrator(Orchestrator):
         return self.rl_model.reward_fn(samples)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
-
+        """
+        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
+        """
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
-        for i in range(num_rollouts // self.chunk_size):
+        while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -64,10 +63,14 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            query_tensors, response_tensors, response_text = self.rl_model.act(batch)
+            samples = self.rl_model.generate(**batch)
 
-            texts = [q + r for q, r in zip(batch.text, response_text)]
-            scores = self.score(texts)
+            query_tensors = batch.input_ids
+            response_tensors = samples[:, query_tensors.shape[1] :]
+            texts = self.rl_model.tokenizer.batch_decode(
+                samples, skip_special_tokens=True
+            )
+            scores = torch.as_tensor(self.score(texts))
 
             # Score ref_texts to compute ref reward mean, var
             ## This is very slow, so pre-computation of mean, std is desirable
@@ -83,24 +86,26 @@ class PPOOrchestrator(Orchestrator):
             scores = (scores - ref_mean) / ref_std
 
             # Precompute logprobs, values
-            all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
+            all_tokens = torch.cat(
+                (query_tensors.to(samples.device), response_tensors), dim=1
+            )
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
-                # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
                     ref_logits = self.rl_model.model.forward_hydra(
                         all_tokens, return_dict=False
                     )
                 else:
                     ref_logits, _, _ = self.ref_model(all_tokens.cpu())
-                ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+
+            ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
             )
             start = query_tensors.size()[1] - 1
             end = query_tensors.size()[1] + response_tensors.size()[1] - 1
-            all_values = v[:, start - 1 : end - 1]
+            all_values = v[:, start:end]
             all_logprobs = logprobs[:, start:end]
             all_ref_logprobs = ref_logprobs[:, start:end]
 
@@ -118,11 +123,6 @@ class PPOOrchestrator(Orchestrator):
 
             exp_time = clock.tick()
 
-            # Evaluate model on first chunk
-            if i == 0 and self.rl_model.accelerator.is_main_process:
-                stats = {"exp_time": exp_time, "ref_mean": ref_mean, "ref_std": ref_std}
-                self.rl_model.accelerator.log(stats, step=iter_count)
-
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i, :],
@@ -135,5 +135,8 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
 
-        # Push text and sentiment (i.e. reward) to models rollout storage
+        stats = {"exp_time": exp_time}
+        self.rl_model.accelerator.log(stats, step=iter_count)
+
+        # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)

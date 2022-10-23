@@ -1,27 +1,22 @@
+import importlib
 import os
 from abc import abstractmethod
+from time import time
 from typing import Dict, Iterable, Tuple
 
 import torch
 import torch.nn.functional as F
-import yaml
 from accelerate import Accelerator
-from torch.utils.data import DataLoader
-from torchtyping import TensorType
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 
-from trlx.data import BatchElement, RLElement
-from trlx.data.accelerate_base_datatypes import (
-    AccelerateRLBatchElement,
-    PromptBatch
-)
+import wandb
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
-from trlx.pipeline.accelerate_base_pipeline import AccelerateRolloutStorage
-from trlx.utils import Clock, rampup_decay, safe_mkdir, topk_mask
 
-WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
-LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
+if importlib.util.find_spec("rich") is not None:
+    from tqdm.rich import tqdm
+else:
+    from tqdm import tqdm
 
 
 @register_model
@@ -30,114 +25,94 @@ class AccelerateRLModel(BaseRLModel):
     RL Model that uses accelerate for training
     """
 
-    def __init__(self, config, rollout_storage, train_mode=True):
+    def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.store = rollout_storage  # Need to pass in rollout_storage to be loaded into accelerate object
-
-        self.model = self.get_arch(
-            self.config
-        )  # Retrieves model equipped for ppo, ilql, etc
-        if self.config.model.num_layers_unfrozen > 0:
-            for block in self.model.gpt.transformer.h[
-                : -self.config.model.num_layers_unfrozen
-            ]:
-                for parameter in block.parameters():
-                    parameter.requires_grad = False
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.tokenizer_path)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.padding_side = "left"
-
-        config_dict = self.config.to_dict()
-        if self.config.train.accelerate_config_path != "":
-            with open(self.config.train.accelerate_config_path, mode="r") as file:
-                accelerate_config = yaml.safe_load(file)
-            config_dict.update(accelerate_config)
         self.accelerator = Accelerator(log_with="wandb")
 
-        if WORLD_SIZE > 1:
-            torch.distributed.barrier(device_ids=[LOCAL_RANK])
+        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
+            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
         else:
-            torch.random.manual_seed(1000)
+            torch.random.manual_seed(config.train.seed)
+
+        # Retrieves model equipped for ppo, ilql, etc
+        self.model = self.get_arch(self.config)
+        self.max_length = config.train.seq_length
+
+        if config.model.tokenizer_path:
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.padding_side = "left"
+        else:
+            self.tokenizer = None
+
+        if hasattr(self.model.gpt, "gpt_neox"):
+            gpt_blocks = self.model.gpt.gpt_neox.layers
+        else:
+            gpt_blocks = self.model.gpt.transformer.h
+
+        # freeze transformer's bottom layers if num_layers_unfrozen >= 0
+        num_layers_unfrozen = self.config.model.num_layers_unfrozen
+        if num_layers_unfrozen == 0:
+            gpt_blocks_to_freeze = list(gpt_blocks)
+        elif num_layers_unfrozen > 0:
+            gpt_blocks_to_freeze = list(gpt_blocks)[:-num_layers_unfrozen]
+        else:
+            gpt_blocks_to_freeze = []
+
+        for m in gpt_blocks_to_freeze:
+            m.requires_grad_(False)
+
         if self.accelerator.is_main_process:
             self.accelerator.init_trackers(
-                project_name=self.config.train.project_name, config=config_dict
+                project_name=self.config.train.project_name,
+                config=self.config.to_dict(),
+                init_kwargs={
+                    "wandb": {
+                        "name": f"{config.model.model_path}",
+                        "mode": "disabled"
+                        if os.environ.get("debug", False)
+                        else "online",
+                    }
+                },
             )
 
         self.opt = torch.optim.AdamW(
-            self.model.parameters(), lr=self.config.train.learning_rate_init
+            self.model.parameters(),
+            lr=float(self.config.train.learning_rate_init),
+            betas=self.config.train.opt_betas,
         )
+
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.opt,
             self.config.train.total_steps,
-            eta_min=self.config.train.learning_rate_target,
+            eta_min=float(self.config.train.learning_rate_target),
         )
-        self.rollout_loader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True, num_workers=2
-        )
-
-        (
-            self.model,
-            self.opt,
-            self.rollout_loader,
-            self.scheduler,
-        ) = self.accelerator.prepare(
-            self.model, self.opt, self.rollout_loader, self.scheduler
-        )
-        self.store.clear_history()
-
-        self.dummy_input = self.tokenize("dummy input")[
-            "input_ids"
-        ]  # Hack to make acclerate distributed work with model generation
-        self.accelerator.print("FINISHED INITIALIZING MODEL")
 
     def tokenize(self, text: Iterable[str]):
         """
-        Tokenize a batch of text after adding bos token.
+        Tokenize a batch of text after adding bos token to each of the samples
         """
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
             truncation=True,
-            padding="max_length",
-            max_length=self.config.train.input_size,
+            max_length=self.config.seq_length,
             return_tensors="pt",
         )
 
-    def act(
-        self, data: PromptBatch
-    ) -> Tuple[
-        TensorType["chunk_size", "input_length"],
-        TensorType["chunk_size", "gen_size"],
-        Iterable[str],
-    ]:
-        query_tensors = data.tokens.to(
-            self.accelerator.device
-        )  # [B, N] #TODO(dahoas): This may need to be changed
-        with torch.no_grad():
-            # TODO(dahoas): swap this out for custom generate to if this fixes issue
-            _ = self.model(
-                self.dummy_input.to(self.accelerator.device)
-            )  # Dummy pass to make things play nice with accelerate
-            # Removed synced gpus
-            response = self.model.generate(
-                query_tensors,
-                pad_token_id=self.tokenizer.eos_token_id,
-                **self.config.method.gen_kwargs
-            )
-            response_tensors = response[
-                :,
-                query_tensors.size()[1] : query_tensors.size()[1]
-                + self.config.train.gen_size,
-            ]
-        response_text = self.tokenizer.batch_decode(response_tensors)
-        return query_tensors, response_tensors, response_text
+    def generate(self, input_ids, attention_mask=None, **kwargs):
+        """Wraps hf's `generate` adding some specific method's defaults"""
+        input_ids = input_ids.to(self.accelerator.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.accelerator.device)
 
-    @torch.inference_mode()
-    def sample(self, prompts: PromptBatch, gen_kwargs: dict) -> Iterable[str]:
-        _, _, response_text = self.act(prompts)
-        return response_text
+        kwargs = dict(self.generate_kwargs, **kwargs)
+
+        with torch.no_grad():
+            return self.accelerator.unwrap_model(self.model).generate(
+                input_ids=input_ids, attention_mask=attention_mask, **kwargs
+            )
 
     def get_components(self) -> Dict[str, any]:
         components = (
@@ -147,44 +122,154 @@ class AccelerateRLModel(BaseRLModel):
         )
         return components
 
+    def save(self, directory=None):
+        """Creates checkpoint of optimizer, scheduler and a model"""
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+
+    def add_eval_pipeline(self, eval_pipeline):
+        """Adds pipeline from with validation prompts"""
+        self.eval_pipeline = eval_pipeline
+
+    def evaluate(self):
+        """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
+        stats = {}
+        all_samples = []
+        generate_time = time()
+        for prompts in self.eval_dataloader:
+            if isinstance(prompts, torch.Tensor):
+                samples = self.generate(prompts)
+            else:
+                samples = self.generate(**prompts)
+
+            if isinstance(samples, tuple):
+                samples, *_ = samples
+
+            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+            all_samples.append(
+                F.pad(
+                    samples,
+                    (0, self.max_length - samples.shape[1]),
+                    value=pad_token,
+                )
+            )
+        stats["generate_time"] = time() - generate_time
+
+        samples = self.accelerator.gather(torch.vstack(all_samples))
+
+        if self.accelerator.is_main_process:
+            if self.tokenizer:
+                samples = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
+
+            if isinstance(samples[0], str):
+                columns_data = [samples]
+            else:
+                columns_data = [samples.tolist()]
+            columns = ["samples"]
+
+            # in online setting, compute the reward for validation
+            if self.reward_fn:
+                rewards = torch.as_tensor(self.reward_fn(samples), dtype=torch.float)
+                mean_reward = rewards.mean()
+                columns.append("reward")
+                columns_data.append(rewards)
+                stats["mean_reward"] = mean_reward
+                print(f"{mean_reward=}")
+
+            # additionally log any other metrics
+            if self.metric_fn:
+                metric_time = time()
+                metrics = self.metric_fn(samples)
+                stats["metric_time"] = time() - metric_time
+
+                mean_metrics = {
+                    f"metrics/{k}": torch.as_tensor(xs).mean(-1)
+                    for k, xs in metrics.items()
+                }
+
+                stats.update(mean_metrics)
+
+                for metric, values in metrics.items():
+                    columns.append(metric)
+                    columns_data.append(values)
+
+            rows = list(zip(*columns_data))
+            stats["samples"] = wandb.Table(columns=columns, rows=rows)
+
+            print(rows[0])
+
+        return stats
+
+    def learn(self):
+        """
+        Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
+        """
+
+        self.prepare_learning()
+
+        tbar = tqdm(
+            total=self.total_steps, disable=not self.accelerator.is_local_main_process
+        )
+        self.iter_count = 0
+
+        for _ in range(self.config.train.epochs):
+            for batch in self.train_dataloader:
+                for _ in range(self.n_updates_per_batch):
+                    forward_time = time()
+                    loss, stats = self.loss(batch)
+                    forward_time = time() - forward_time
+
+                    backward_time = time()
+                    self.accelerator.backward(loss)
+                    backward_time = time() - backward_time
+
+                    self.opt.step()
+                    self.opt.zero_grad()
+                    self.scheduler.step()
+                    self.iter_count += 1
+
+                    if self.iter_count % self.config.train.checkpoint_interval == 0:
+                        self.save()
+
+                    if self.iter_count % self.config.train.eval_interval == 0:
+                        results = self.evaluate()
+
+                        results.update(stats)
+                        results.update(
+                            {
+                                "forward_time": forward_time,
+                                "backward_time": backward_time,
+                            }
+                        )
+                        self.accelerator.log(results)
+
+                    desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
+                    tbar.set_description(desc)
+                    tbar.update()
+
+                    if self.iter_count >= self.total_steps:
+                        self.save()
+                        return self.evaluate()
+
+                self.post_backward_callback()
+
+            self.post_epoch_callback()
+
     @abstractmethod
-    def get_arch(config: TRLConfig):
+    def get_arch(self, config: TRLConfig):
+        """Returns a specific wrapper of the decoder architecture"""
         pass
 
     @abstractmethod
-    def loss(input_tokens, attn, rewards):
+    def loss(self, batch) -> Tuple[float, Dict]:
+        """Compute loss on a batch from `store` and return some statistics"""
         pass
 
     @abstractmethod
-    def post_backward_callback(iter, batch, rewards):
+    def post_backward_callback(self):
+        """Do something after model update"""
         pass
 
     @abstractmethod
-    def post_epoch_callback(iter, batch, rewards):
-        """
-        Additional exploration can happen here
-        """
+    def post_epoch_callback(self):
+        """Do something after exhausting/single pass over `self.store`"""
         pass
-
-    def learn(self, log_fn=None, save_fn=None, eval_fn=None):
-        """
-        Learn from data in the rollout storage.
-        """
-        for epoch in range(self.config.train.epochs):
-            for iter, (batch, rewards) in enumerate(self.rollout_loader):
-
-                tokens = batch.tokens.to(self.accelerator.device)
-                masks = batch.masks.to(self.accelerator.device)
-                rewards = rewards.to(self.accelerator.device)
-                loss = self.loss(tokens, masks, rewards)
-
-                self.opt.zero_grad()
-                self.accelerator.backward(loss)
-                self.opt.step()
-                self.scheduler.step()
-
-                self.post_backward_callback(iter, batch, rewards)
-
-                self.accelerator.wait_for_everyone()
-
-            self.post_epoch_callback(epoch)

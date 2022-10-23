@@ -27,11 +27,9 @@ Note that new models must be registered with ``trlx.model.register_model``.
 
 **ILQL**
 
-.. autoclass:: trlx.model.accelerate_ilql_model.ILQLModel
+.. autoclass:: trlx.model.accelerate_ilql_model.AccelerateILQLModel
     :members:
 
-.. autoclass:: trlx.model.nn.ilql_models.QVOutput
-    :members:
 
-.. autoclass:: trlx.model.nn.ilql_models.QVModel
+.. autoclass:: trlx.model.nn.ilql_models.CausalLMWithValueHeads
     :members:
