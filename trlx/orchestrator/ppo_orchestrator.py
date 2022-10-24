@@ -35,9 +35,6 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        if not hasattr(self.rl_model.model, "frozen_head"):
-            self.ref_model = self.rl_model.get_arch(self.rl_model.config)
-
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
         self.rl_model.metric_fn = metric_fn
@@ -91,12 +88,9 @@ class PPOOrchestrator(Orchestrator):
             )
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(all_tokens)
-                if hasattr(self.rl_model.model, "frozen_head"):
-                    ref_logits = self.rl_model.model.forward_hydra(
-                        all_tokens, return_dict=False
-                    )
-                else:
-                    ref_logits, _, _ = self.ref_model(all_tokens.cpu())
+                ref_logits = self.rl_model.unwrapped_model.ref_model(
+                    all_tokens, return_dict=False
+                )
 
             ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])

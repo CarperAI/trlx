@@ -47,6 +47,8 @@ class AcceleratePPOModel(AccelerateRLModel):
             self.model, self.opt, self.scheduler, rollout_loader
         )
 
+        self.unwrapped_model = self.accelerator.unwrap_model(self.model)
+
         self.store.clear_history()
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
@@ -82,7 +84,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         kwargs = dict(self.generate_kwargs, **kwargs)
 
         with torch.no_grad():
-            return self.model.ref_model.generate(
+            return self.unwrapped_model.ref_model.generate(
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
