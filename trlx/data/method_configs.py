@@ -1,8 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
-
-import yaml
+from typing import Any, Callable, Dict, List
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, any] = {}  # registry
@@ -83,5 +81,5 @@ class ILQLConfig(MethodConfig):
     awac_scale: float
     alpha: float
     steps_for_target_q_sync: int
-    beta: float
+    betas: List[float]
     two_qs: bool

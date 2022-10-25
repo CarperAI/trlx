@@ -1,15 +1,11 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
-import torch
 from torchtyping import TensorType
 
 
 @dataclass
 class PPORLElement:
     """
-    RLElement for PPO
-
     :param query_tensor: The query tensor i.e. the prompt tokens. Should be a long tensor.
     :type query_tensor: torch.Tensor
 
@@ -51,8 +47,9 @@ class PPORLBatch:
     :param rewards: A batch of rewards
     :type rewards: torch.Tensor
     """
-    query_tensors : TensorType["batch_size", "query_size"]
-    response_tensors : TensorType["batch_size", "response_size"]
-    logprobs : TensorType["batch_size", "response_size", "vocab_size"]
-    values : TensorType["batch_size", "response_size"]
-    rewards : TensorType["batch_size", "response_size"]
+
+    query_tensors: TensorType["batch_size", "query_size"]
+    response_tensors: TensorType["batch_size", "response_size"]
+    logprobs: TensorType["batch_size", "response_size", "vocab_size"]
+    values: TensorType["batch_size", "response_size"]
+    rewards: TensorType["batch_size", "response_size"]

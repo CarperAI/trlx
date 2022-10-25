@@ -24,7 +24,6 @@ each demand different kinds of data during training.
 
 .. autoclass:: trlx.data.accelerate_base_datatypes.AccelerateRLBatchElement
     :members:
-
   
 **Data Elements for PPO**  
   

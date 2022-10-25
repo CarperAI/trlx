@@ -3,10 +3,10 @@
 RL Models
 *******************
 
-RL Models are what you're training with trlX. Currently, we support PPO and ILQL. 
+RL Models are what you're training with trlX. Currently, we support PPO and ILQL.
 Note that new models must be registered with ``trlx.model.register_model``.
-  
-**General**  
+
+**General**
 
 .. autoclass:: trlx.model.BaseRLModel
     :members:
@@ -34,4 +34,10 @@ Note that new models must be registered with ``trlx.model.register_model``.
     :members:
 
 .. autoclass:: trlx.model.nn.ilql_models.QVModel
+    :members:
+
+.. autoclass:: trlx.model.accelerate_ilql_model.AccelerateILQLModel
+    :members:
+
+.. autoclass:: trlx.model.nn.ilql_models.CausalLMWithValueHeads
     :members:

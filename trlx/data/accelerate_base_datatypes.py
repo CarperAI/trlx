@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Iterable
 
-import torch
 from torchtyping import TensorType
 
 

@@ -1,0 +1,65 @@
+---
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior to help us improve trlX
+labels:
+- bug
+
+body:
+- type: markdown
+  attributes:
+    value: >
+      #### Before submitting your bug report, please check to see that the
+      issue hasn't already been reported and/or fixed in a latest version.
+      [Search Issues][Issue Search].
+
+      If you're asking a question or seeking support, please consider creating a
+      new [GitHub discussion][Discussions] or heading over to CarperAI's
+      [Discord server][CarperAI Discord].
+
+
+      [Issue Search]: https://github.com/CarperAI/trlx/search?q=is%3Aissue&type=issues
+
+      [Discussions]: https://github.com/CarperAI/trlx/discussions
+
+      [CarperAI Discord]: https://discord.gg/X2gHZMRP6m
+
+- type: textarea
+  attributes:
+    label: 🐛 Describe the bug
+    description: >-
+      Please provide a clear and concise description of what the problem is,
+      preferably with self-contained code to reproduce the issue. You may want
+      to follow the suggestions outlined in [this guide][Guide]. If you observe
+      an error, please paste the error message including the full traceback.
+
+
+      [Guide]: https://matthewrocklin.com/blog/work/2018/02/28/minimal-bug-reports
+
+    placeholder: |
+      A description of what the bug is.
+
+      ```python
+      # Sample code to reproduce the bug, if applicable.
+      ```
+
+      ```
+      The error message, with the full traceback.
+      ```
+
+  validations:
+    required: true
+
+- type: input
+  attributes:
+    label: Which trlX version are you using?
+    placeholder: For example, `trlx==1.0.0`
+
+- type: input
+  attributes:
+    label: Additional system and package information
+    placeholder: Python version, `transformers` version, OS (Linux/Mac/Windows/WSL), etc.
+
+- type: markdown
+  attributes:
+    value: >
+      Thanks for contributing 🐠!

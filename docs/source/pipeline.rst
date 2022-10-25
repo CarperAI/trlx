@@ -35,3 +35,9 @@ for them by the orchestrator. It is these experiences in their rollout store tha
 
 .. autoclass:: trlx.pipeline.offline_pipeline.OfflineRolloutStorage
     :members:
+    
+.. autoclass:: trlx.pipeline.offline_pipeline.PromptPipeline
+    :members:
+
+.. autoclass:: trlx.pipeline.offline_pipeline.ILQLRolloutStorage
+    :members:

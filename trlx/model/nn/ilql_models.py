@@ -2,20 +2,22 @@ import os
 from collections import defaultdict
 from copy import deepcopy
 from itertools import chain
-from typing import NamedTuple, Tuple, Union
+from typing import Union
 
-import accelerate
 import deepspeed
 import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
-from accelerate.utils import compute_module_sizes
-from torch import nn, tensor
-from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
+from torch import nn
+from transformers import AutoModelForCausalLM, PretrainedConfig
+
+import wandb
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
+    if k > xs.shape[-1]:
+        return xs
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
@@ -38,7 +40,9 @@ class CausalLMWithValueHeads(nn.Module):
         if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
             config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
             if config_path:
-                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)
+                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
+                    config_path
+                )
 
         if isinstance(config, PretrainedConfig):
             self.gpt = AutoModelForCausalLM.from_config(config)
@@ -76,111 +80,53 @@ class CausalLMWithValueHeads(nn.Module):
         self.awac_scale = params.awac_scale
         self.cql_scale = params.cql_scale
         self.two_qs = params.two_qs
-        self.beta = params.beta
 
         if self.two_qs:
             self.q2_head = make_head(self.n_embd, self.vocab_size)
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
 
-    def forward(self, **x):
-        out = self.gpt.transformer(**x)
+    def forward(
+        self,
+        input_ids,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        actions_ixs=None,
+        states_ixs=None,
+    ):
+        out = self.gpt.transformer(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+        )
         hs = out.last_hidden_state
 
-        if self.two_qs:
-            qs = (self.q1_head(hs), self.q2_head(hs))
-            target_qs = (self.target_q1_head(hs), self.target_q2_head(hs))
+        if states_ixs is not None:
+            states_hs = hs.gather(
+                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+            )
+            actions_hs = hs.gather(
+                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+            )
         else:
-            qs = self.q1_head(hs)
-            target_qs = self.target_q1_head(hs)
+            states_hs = actions_hs = hs
+
+        if self.two_qs:
+            qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
+            target_qs = (
+                self.target_q1_head(actions_hs),
+                self.target_q2_head(actions_hs),
+            )
+        else:
+            qs = self.q1_head(actions_hs)
+            target_qs = self.target_q1_head(actions_hs)
 
         logits = self.gpt.lm_head(hs)
-        vs = self.v_head(hs)
+        vs = self.v_head(states_hs)
 
         return logits, qs, target_qs, vs, out.past_key_values
-
-    def loss(self, batch):
-        tokens = batch.input_ids.to(self.device)
-        attn = batch.attention_mask.to(self.device)
-        rewards = batch.rewards.to(self.device)
-
-        actions = tokens[:, 1:, None]
-        isterminal = attn[:, :-1]
-
-        logits, qs, target_qs, vs, _ = self(input_ids=tokens, attention_mask=attn)
-        bsize, ntokens, dsize = logits.shape
-
-        if self.two_qs:
-            Q1 = qs[0][:, :-1].gather(-1, actions).squeeze(-1)
-            Q2 = qs[1][:, :-1].gather(-1, actions).squeeze(-1)
-
-            targetQ1 = target_qs[0][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ2 = target_qs[1][:, :-1].gather(-1, actions).squeeze(-1).detach()
-            targetQ = torch.minimum(targetQ1, targetQ2)
-        else:
-            Q = qs[:, :-1].gather(-1, actions).squeeze(-1)
-            targetQ = target_qs[:, :-1].gather(-1, actions).squeeze(-1).detach()
-
-        n_nonterminal = max(1, isterminal.sum())
-        V = vs[:, 1:].squeeze() * isterminal
-        Q_ = rewards + self.gamma * V
-
-        if self.two_qs:
-            loss_q1 = ((Q1 - Q_.detach()) * isterminal).pow(2).sum() / n_nonterminal
-            loss_q2 = ((Q2 - Q_.detach()) * isterminal).pow(2).sum() / n_nonterminal
-            loss_q = loss_q1 + loss_q2
-        else:
-            loss_q = ((Q - Q_.detach()) * isterminal).pow(2).sum() / n_nonterminal
-
-        loss_v = (
-            (
-                (targetQ >= V).int() * self.tau * (targetQ - V).pow(2)
-                + (targetQ < V).int() * (1 - self.tau) * (targetQ - V).pow(2)
-            )
-            * isterminal
-        ).sum() / n_nonterminal
-
-        if self.two_qs:
-            loss_cql_q1 = (
-                F.cross_entropy(
-                    qs[0][:, :-1].reshape(-1, dsize),
-                    actions.reshape(-1),
-                    reduction="none",
-                ).reshape(bsize, ntokens - 1)
-                * isterminal
-            ).sum() / n_nonterminal
-            loss_cql_q2 = (
-                F.cross_entropy(
-                    qs[1][:, :-1].reshape(-1, dsize),
-                    actions.reshape(-1),
-                    reduction="none",
-                ).reshape(bsize, ntokens - 1)
-                * isterminal
-            ).sum() / n_nonterminal
-            loss_cql = loss_cql_q1 + loss_cql_q2
-        else:
-            loss_cql = (
-                F.cross_entropy(
-                    qs[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
-                ).reshape(bsize, ntokens - 1)
-                * isterminal
-            ).sum() / n_nonterminal
-
-        loss_awac = (
-            F.cross_entropy(
-                logits[:, :-1].reshape(-1, dsize), actions.reshape(-1), reduction="none"
-            ).reshape(bsize, ntokens - 1)
-            * isterminal
-        ).sum() / n_nonterminal
-
-        loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
-        stats = {
-            k: v
-            for k, v in locals().items()
-            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
-        }
-
-        return loss, stats
 
     def _sync_target_q_heads(self, alpha):
         for target_param, copy_param in zip(
@@ -213,70 +159,96 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self._sync_target_q_heads(self.alpha)
 
-    @torch.inference_mode()
-    def sample(
+    def generate(
         self,
-        query,
+        input_ids,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
         beta=1,
         max_length=32,
         temperature=1,
         top_k=20,
         logit_mask=None,
         logs=True,
+        pad_token_id=50256,
         eos_token_id=50256,
     ):
-        input = query.clone()
-        past_key_values = None
+        """
+        Generates samples akin to hf's `.generate` but with custom logp prepossessing: changing token probabilities as to how advantageous they would be according to value functions estimations.
+        """
+        if attention_mask is None:
+            attention_mask = input_ids.not_equal(pad_token_id)
+
+        if position_ids is None:
+            position_ids = attention_mask.cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask.eq(0), 0)
+
+        samples = input_ids.clone()
         tensors = defaultdict(list)
+        n_new_tokens = max_length - input_ids.shape[1]
 
-        finished = torch.zeros(input.shape[0], 1, dtype=torch.long, device=query.device)
-
-        for _ in range(max_length - 1):
-            logits, _, target_qs, vs, past_key_values = self.forward(
-                input_ids=input, past_key_values=past_key_values
+        finished = torch.zeros(
+            input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device
+        )
+        for _ in range(n_new_tokens):
+            out = self.forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
             )
 
+            logits, _, target_qs, vs, past_key_values = out
             if self.two_qs:
-                qs = torch.minimum(target_qs[0][:, -1], target_qs[1][:, -1])
+                qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
-                qs = target_qs[:, -1]
+                qs = target_qs[:, -1, :]
 
-            logits = logits[:, -1]
+            logits = logits[:, -1, :]
+            vs = vs[:, -1, :]
 
             if logit_mask is not None:
-                logits[torch.where(logit_mask[input[:, -1]])] = -np.inf
+                logits[torch.where(logit_mask[input_ids[:, -1].squeeze()])] = -np.inf
 
-            adv = qs - vs[:, -1, :]
-            pi = F.log_softmax(logits, -1)
-            modpi = topk_mask(pi + beta * adv, top_k)
-            ps = F.softmax(modpi / temperature, -1)
+            adv = qs - vs
+            pi_beta = F.log_softmax(logits, -1)
+            pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
+            pi = F.softmax(pi_top_k / temperature, -1)
 
-            tokens = torch.multinomial(ps, 1)
-            tokens = (1 - finished) * tokens + finished * eos_token_id
+            input_ids = torch.multinomial(pi, num_samples=1)
+            input_ids = (1 - finished) * input_ids + finished * eos_token_id
+            finished = (input_ids == eos_token_id).long()
 
-            query = torch.hstack((query, tokens))
-
-            input = tokens
-            finished = (tokens == eos_token_id).long()
+            samples = torch.hstack((samples, input_ids))
+            attention_mask = torch.hstack(
+                (attention_mask, (input_ids != eos_token_id).long())
+            )
+            position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
             if logs:
                 tensors["qs"].append(qs)
                 tensors["vs"].append(vs)
                 tensors["adv"].append(adv)
+                tensors["pi"].append(pi)
+
+            if torch.all(finished):
+                break
 
         stats = {}
         for name, xs in tensors.items():
             xs = torch.vstack(xs)
+            xs = torch.where(torch.isfinite(xs), xs, 0)
+
             stats.update(
                 {
-                    f"{name}-min": xs.min(),
-                    f"{name}-max": xs.max(),
-                    f"{name}-std": xs.std(),
-                    f"{name}-mean": xs.mean(),
+                    f"tensors/{name}/{beta}": wandb.Histogram(
+                        xs.cpu().float().view(-1)
+                    ),
                 }
             )
 
-        return query, stats
+        return samples, stats
 
     @property
     def dummy_inputs(self):
