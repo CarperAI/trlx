@@ -1,7 +1,7 @@
 [docs-image]: https://readthedocs.org/projects/trlX/badge/?version=latest
 [docs-url]: https://trlX.readthedocs.io/en/latest/?badge=latest
 
-# Transformer Reinforcement Learning X (`trlX`)
+# Transformer Reinforcement Learning X
 
 [![Docs Status][docs-image]][docs-url]
 
