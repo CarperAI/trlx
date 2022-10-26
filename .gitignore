@@ -145,3 +145,5 @@ nbs/wandb/
 wandb/
 
 OUT/
+
+ckpts/
