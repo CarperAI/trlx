@@ -107,10 +107,6 @@ class TrainConfig:
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
 
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]):
-        return cls(**config)
-
 
 @dataclass
 class TRLConfig:
