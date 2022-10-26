@@ -80,7 +80,7 @@ class TrainConfig:
     :param project_name: Project name for wandb
     :type project_name: str
     """
-    
+
     total_steps: int
     seq_length: int
     epochs: int
@@ -117,6 +117,7 @@ class TRLConfig:
     """
     Top level config for trlX. Loads configs and can be converted to dictionary.
     """
+    
     model : ModelConfig
     train : TrainConfig
     method : MethodConfig

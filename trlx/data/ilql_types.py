@@ -39,6 +39,7 @@ class ILQLBatch:
     :param rewards: Batch of rewards for each token in each token batch.
     :type rewards: torch.Tensor
     """
+    
     input_ids: TensorType["batch_size", "query_size"]
     attention_mask: TensorType["batch_size", "query_size"]
     rewards: TensorType["batch_size", "reward_size"]

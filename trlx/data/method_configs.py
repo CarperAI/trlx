@@ -94,6 +94,7 @@ class PPOConfig(MethodConfig):
     :param gen_kwargs: Additioanl kwargs for the generation
     :type gen_kwargs: Dict[str, Any]
     """
+    
     ppo_epochs: int
     num_rollouts: int
     chunk_size: int
@@ -132,6 +133,7 @@ class ILQLConfig(MethodConfig):
     :param two_qs: Use minimum of two Q-value estimates
     :type two_qs: bool
     """
+
     tau: float
     gamma: float
     cql_scale: float
