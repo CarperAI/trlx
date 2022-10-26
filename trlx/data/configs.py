@@ -20,10 +20,10 @@ class ModelConfig:
     :param model_type: One of the registered RL models present in trlx.model
     :type model_type: str
     """
-    model_path : str
-    tokenizer_path : str
-    model_type : str 
-    num_layers_unfrozen : int = -1
+    model_path: str
+    tokenizer_path: str
+    model_type: str 
+    num_layers_unfrozen: int = -1
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -114,9 +114,9 @@ class TRLConfig:
     Top level config for trlX. Loads configs and can be converted to dictionary.
     """
     
-    model : ModelConfig
-    train : TrainConfig
-    method : MethodConfig
+    model: ModelConfig
+    train: TrainConfig
+    method: MethodConfig
 
     @classmethod
     def load_yaml(cls, yml_fp: str):

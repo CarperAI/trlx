@@ -16,8 +16,8 @@ class PromptElement:
     :type tokens: torch.Tensor
     """
     
-    text : str
-    tokens : TensorType["num_tokens"]
+    text: str
+    tokens: TensorType["num_tokens"]
 
 @dataclass
 class PromptBatch:
@@ -31,8 +31,8 @@ class PromptBatch:
     :type tokens: torch.Tensor
     """
 
-    text : Iterable[str]
-    tokens : TensorType["batch_size", "num_tokens"]
+    text: Iterable[str]
+    tokens: TensorType["batch_size", "num_tokens"]
 
 @dataclass
 class AccelerateRLElement:
@@ -46,8 +46,8 @@ class AccelerateRLElement:
     :type rewards: torch.Tensor
     """
 
-    output_tokens : TensorType["output_size"]
-    rewards : TensorType["output_size"]
+    output_tokens: TensorType["output_size"]
+    rewards: TensorType["output_size"]
 
 @dataclass
 class AccelerateRLBatchElement:
@@ -61,5 +61,5 @@ class AccelerateRLBatchElement:
     :type rewards: torch.Tensor
     """
 
-    output_tokens : TensorType["batch_size", "output_size"]
-    rewards : TensorType["batch_size", "output_size"]
+    output_tokens: TensorType["batch_size", "output_size"]
+    rewards: TensorType["batch_size", "output_size"]

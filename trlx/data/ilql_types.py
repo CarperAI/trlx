@@ -17,6 +17,7 @@ class ILQLElement:
     :param rewards: Rewards for each token. Should be a float tensor of same size as tokens.
     :type rewards: torch.Tensor
     """
+    
     input_ids: TensorType["query_size"]
     attention_mask: TensorType["query_size"]
     rewards: TensorType["reward_size"]

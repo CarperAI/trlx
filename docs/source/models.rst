@@ -14,7 +14,7 @@ Note that new models must be registered with ``trlx.model.register_model``.
 .. autoclass:: trlx.model.accelerate_base_model.AccelerateRLModel
     :members:
 
-**PPO**  
+**PPO**
 
 .. autoclass:: trlx.model.accelerate_ppo_model.AcceleratePPOModel
     :members:
