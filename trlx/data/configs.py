@@ -20,6 +20,7 @@ class ModelConfig:
     :param model_type: One of the registered RL models present in trlx.model
     :type model_type: str
     """
+
     model_path: str
     tokenizer_path: str
     model_type: str 

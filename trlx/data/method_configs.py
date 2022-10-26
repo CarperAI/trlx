@@ -48,6 +48,7 @@ class MethodConfig:
     :param name: Name of the method
     :type name: str
     """
+    
     name: str
 
     @classmethod

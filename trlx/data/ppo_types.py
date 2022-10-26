@@ -21,6 +21,7 @@ class PPORLElement:
     :param rewards: The rewards for each token outputted in response. Should be a float tensor of same size as tokens.
     :type rewards: torch.Tensor
     """
+    
     query_tensor: TensorType["query_size"]
     response_tensor: TensorType["response_size"]
     logprobs: TensorType["response_size", "vocab_size"]

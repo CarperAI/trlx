@@ -36,6 +36,7 @@ class GPTHeadWithValueModel(nn.Module):
     """
     The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head.
     """
+
     def __init__(self, config: Union[PretrainedConfig, str]):
         super().__init__()
         if isinstance(config, PretrainedConfig):
@@ -107,6 +108,7 @@ class ModelBranch(PreTrainedModel):
     used when computing the PPO KL-divergence penalty. Expects a list of
     frozen transformer blocks and an lm_head from the base model.
     """
+    
     def __init__(self, config, transformer_blocks, ln_f, lm_head):
         super().__init__(config)
 
