@@ -80,10 +80,11 @@ class TrainConfig:
     :param project_name: Project name for wandb
     :type project_name: str
     """
-    n_ctx : int
-    epochs : int
-    total_steps : int
-    batch_size : int
+    
+    total_steps: int
+    seq_length: int
+    epochs: int
+    batch_size: int
 
     lr_ramp_steps: int
     lr_decay_steps: int
@@ -92,7 +93,6 @@ class TrainConfig:
     learning_rate_target: float
     opt_betas: Tuple[float]
 
-    log_interval: int
     checkpoint_interval: int
     eval_interval: int
 
@@ -102,6 +102,10 @@ class TrainConfig:
     checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
     seed: int = 1000
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
