@@ -3,7 +3,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import chain
-from typing import Union, Sequence
+from typing import Union, Sequence, Any, TypeVar
 
 from torchtyping import TensorType  # type: ignore
 from trlx.data.ilql_types import ILQLBatch
@@ -53,6 +53,9 @@ class ILQLConfig(MethodConfig):
 
     def heads(self, hidden_size: int, vocab_size: int):
         return ILQLHeads(hidden_size, vocab_size, self)
+
+    def layer_spec(self, hidden_size: int, vocab_size: int):
+        return LayerSpec(ILQLHeads, hidden_size, vocab_size, self)
 
     def loss(self, x, batch: ILQLBatch):
         logits, qs, target_qs, vs = x
@@ -227,15 +230,32 @@ class ILQLHeads(nn.Module):
             self._sync_target_q_heads(self.config.alpha)
 
 
-class GPTNeoXWithValueHeads(nn.Module):
+from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
+
+
+class HeadsLayerSpec(LayerSpec):
+    def __init__(self, specs: Sequence[LayerSpec]):
+        self.branches = specs
+
+    def build(self):
+        return Heads(heads=[m.build() for m in self.branches])
+
+
+class Heads(nn.Module):
+    def __init__(self, modules: Sequence[nn.Module]):
+        self.branches = modules
+
+    def forward(self, x: torch.Tensor):
+        return [m(x) for m in self.branches]
+
+
+class GPTNeoXWithValueHeads(megatron.gpt2_model.GPT2ModelPipe):
     def __init__(
         self,
         config: megatron.NeoXArgs,
         ilql_config: ILQLConfig,
     ):
-        super().__init__()
-
-        self.model = megatron.model.GPT2ModelPipe(
+        super().__init__(
             neox_args=config,
             num_tokentypes=0,
             parallel_output=True,
@@ -243,13 +263,24 @@ class GPTNeoXWithValueHeads(nn.Module):
             use_cache=False,
         )
 
-        self.model.loss_fn = ilql_config.loss
-
-        self.model.insert_layers(
-            ilql_config.heads(self.model.hidden_size, config.padded_vocab_size), -1
+        self.loss_fn = ilql_config.loss
+        embedding = self.specs[-1]
+        self.specs[-1] = HeadsLayerSpec(
+            specs=[
+                embedding,
+                ilql_config.layer_spec(
+                    self.model.hidden_size, config.padded_vocab_size
+                ),
+            ],
         )
-
-        # TODO: also add back the heads for the logits
+        PipelineModule.__init__(
+            self,
+            layers=self.specs,
+            topology=self.__topology__,
+            activation_checkpoint_interval=self.activation_checkpoint_interval,
+            partition_method=config.pipe_partition_method,
+            checkpointable_layers=["GMLPBlock", "ParallelTransformerLayerPipe"],
+        )
 
 
 class CausalLMWithValueHeads(nn.Module):
