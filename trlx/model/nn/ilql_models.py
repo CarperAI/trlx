@@ -230,7 +230,7 @@ class ILQLHeads(nn.Module):
             self._sync_target_q_heads(self.config.alpha)
 
 
-from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
+from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec  # type: ignore
 
 
 class HeadsLayerSpec(LayerSpec):
