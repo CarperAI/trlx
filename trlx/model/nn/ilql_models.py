@@ -272,6 +272,9 @@ class CausalLMWithValueHeads(nn.Module):
         self.ilql_heads = ilql_config.heads(self.n_embd, self.gpt.config.vocab_size)
         self.ilql_config = ilql_config
 
+    def sync_target_q_heads(self):
+        self.ilql_heads.sync_target_q_heads()
+
     def forward(
         self,
         input_ids,
@@ -290,7 +293,9 @@ class CausalLMWithValueHeads(nn.Module):
         hs = out.last_hidden_state
 
         logits = self.gpt.lm_head(hs)
-        qs, target_qs, vs = self.ilql_heads(hs)
+        qs, target_qs, vs = self.ilql_heads(
+            hs, actions_ixs=actions_ixs, states_ixs=states_ixs
+        )
 
         return logits, qs, target_qs, vs, out.past_key_values
 
