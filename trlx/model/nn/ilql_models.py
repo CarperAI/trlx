@@ -3,7 +3,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import chain
-from typing import Union
+from typing import Union, Sequence
 
 from torchtyping import TensorType
 from trlx.data.ilql_types import ILQLBatch
@@ -283,8 +283,8 @@ class CausalLMWithValueHeads(nn.Module):
             past_key_values=past_key_values,
         )
         hs = out.last_hidden_state
-        logits = self.gpt.lm_head(hs)
 
+        logits = self.gpt.lm_head(hs)
         qs, target_qs, vs = self.ilql_heads(hs)
 
         return logits, qs, target_qs, vs, out.past_key_values
