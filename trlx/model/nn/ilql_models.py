@@ -21,6 +21,7 @@ from transformers import AutoModelForCausalLM, PretrainedConfig
 import wandb
 
 import megatron  # type: ignore
+from megatron import print_rank_0, mpu
 
 from attrs import define
 
@@ -224,6 +225,31 @@ class ILQLHeads(nn.Module):
                     self._sync_target_q_heads(self.config.alpha)
         else:
             self._sync_target_q_heads(self.config.alpha)
+
+
+class GPTNeoXWithValueHeads(nn.Module):
+    def __init__(
+        self,
+        config: megatron.NeoXArgs,
+        ilql_config: ILQLConfig,
+    ):
+        super().__init__()
+
+        self.model = megatron.model.GPT2ModelPipe(
+            neox_args=config,
+            num_tokentypes=0,
+            parallel_output=True,
+            topology=mpu.get_topology(),
+            use_cache=False,
+        )
+
+        self.model.loss_fn = ilql_config.loss
+
+        self.model.insert_layers(
+            ilql_config.heads(self.model.hidden_size, config.padded_vocab_size), -1
+        )
+
+        # TODO: also add back the heads for the logits
 
 
 class CausalLMWithValueHeads(nn.Module):
