@@ -1,11 +1,13 @@
 import os
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import dataclass
 from itertools import chain
 from typing import Union
 
 from torchtyping import TensorType
 from trlx.data.ilql_types import ILQLBatch
+from trlx.data.method_configs import register_method, MethodConfig
 
 
 import deepspeed
@@ -35,76 +37,31 @@ def make_head(n_embd: int, out: int):
         nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
 
-@define
-class ILQL:
-    tau = 0.7
-    gamma = 0.99
-    cql_scale = 0.1
-    awac_scale: float = 1
-    alpha = 0.005
-    steps_for_target_q_sync = 1
-    betas = (16,)
-    two_qs = True
+
+@dataclass
+@register_method
+class ILQLConfig(MethodConfig):
+    tau: float
+    gamma: float
+    cql_scale: float
+    awac_scale: float
+    alpha: float
+    steps_for_target_q_sync: float
+    betas: Sequence[float]
+    two_qs: bool
 
     def heads(self, hidden_size: int, vocab_size: int):
         return ILQLHeads(hidden_size, vocab_size, self)
 
-
-
-class ILQLHeads(nn.Module):
-    def __init__(self, hidden_size: int, vocab_size: int, params: ILQL):
-
-        self.hidden_size = hidden_size
-        self.vocab_size = vocab_size
-        self.v_head = make_head(self.hidden_size, 1)
-        self.q1_head = make_head(self.hidden_sizez, self.vocab_size)
-        self.target_q1_head = deepcopy(self.q1_head)
-        self.target_q1_head.requires_grad_(False)
-
-        self.tau = params.tau
-        self.alpha = params.alpha
-        self.gamma = params.gamma
-        self.awac_scale = params.awac_scale
-        self.cql_scale = params.cql_scale
-        self.two_qs = params.two_qs
-
-        if self.two_qs:
-            self.q2_head = make_head(self.n_embd, self.vocab_size)
-            self.target_q2_head = deepcopy(self.q2_head)
-            self.target_q2_head.requires_grad_(False)
-
-    def forward(self, hs: TensorType["N", "T", "C"], states_ixs = None, actions_ixs = None):
-        if states_ixs is not None:
-            states_hs = hs.gather(
-                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
-            actions_hs = hs.gather(
-                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
-        else:
-            states_hs = actions_hs = hs
-
-        if self.two_qs:
-            qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
-            target_qs = (
-                self.target_q1_head(actions_hs),
-                self.target_q2_head(actions_hs),
-            )
-        else:
-            qs = self.q1_head(actions_hs)
-            target_qs = self.target_q1_head(actions_hs)
-
-        logits = self.gpt.lm_head(hs)
-        vs = self.v_head(states_hs)
-
-        return qs, target_qs, vs
-
-    def loss(self, logits, qs, target_qs, vs, batch: ILQLBatch):
-        actions = batch.input_ids[:, 1:].gather(dim=1, index=batch.actions_ixs).unsqueeze(-1)
+    def loss(self, x, batch: ILQLBatch):
+        logits, qs, target_qs, vs = x
+        actions = (
+            batch.input_ids[:, 1:].gather(dim=1, index=batch.actions_ixs).unsqueeze(-1)
+        )
         bsize, ntokens, dsize = logits.shape
 
         # compute two separate q-value estimates, to then select minimum values from both
-        if self.params.two_qs:
+        if self.two_qs:
             Q1 = qs[0].gather(-1, actions).squeeze(-1)
             Q2 = qs[1].gather(-1, actions).squeeze(-1)
 
@@ -125,7 +82,7 @@ class ILQLHeads(nn.Module):
         # target to fit Q
         Q_ = rewards + self.params.gamma * Vnext.detach()
 
-        if self.params.two_qs:
+        if self.two_qs:
             loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
             loss_q2 = ((Q2 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
             loss_q = loss_q1 + loss_q2
@@ -142,7 +99,7 @@ class ILQLHeads(nn.Module):
             * terminal_mask
         ).sum() / n_nonterminal
 
-        if self.params.two_qs:
+        if self.two_qs:
             nactions = qs[0].shape[1]
             loss_cql_q1 = (
                 F.cross_entropy(
@@ -176,15 +133,10 @@ class ILQLHeads(nn.Module):
                 input_ids[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
-            * attn[:, 1:]
-        ).sum() / attn[:, 1:].sum()
+            * batch.attention_mask[:, 1:]
+        ).sum() / batch.attention_mask[:, 1:].sum()
 
-        loss = (
-            loss_q
-            + loss_v
-            + self.params.cql_scale * loss_cql
-            + self.params.awac_scale * loss_awac
-        )
+        loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
         stats = {
             f"losses/{k}": v
             for k, v in locals().items()
@@ -192,6 +144,55 @@ class ILQLHeads(nn.Module):
         }
 
         return loss, stats
+
+
+class ILQLHeads(nn.Module):
+    def __init__(self, hidden_size: int, vocab_size: int, params: ILQLConfig):
+
+        self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
+        self.v_head = make_head(self.hidden_size, 1)
+        self.q1_head = make_head(self.hidden_sizez, self.vocab_size)
+        self.target_q1_head = deepcopy(self.q1_head)
+        self.target_q1_head.requires_grad_(False)
+
+        self.tau = params.tau
+        self.alpha = params.alpha
+        self.gamma = params.gamma
+        self.awac_scale = params.awac_scale
+        self.cql_scale = params.cql_scale
+        self.two_qs = params.two_qs
+
+        if self.two_qs:
+            self.q2_head = make_head(self.n_embd, self.vocab_size)
+            self.target_q2_head = deepcopy(self.q2_head)
+            self.target_q2_head.requires_grad_(False)
+
+    def forward(self, hs: TensorType["N", "T", "C"], states_ixs=None, actions_ixs=None):
+        if states_ixs is not None:
+            states_hs = hs.gather(
+                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+            )
+            actions_hs = hs.gather(
+                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+            )
+        else:
+            states_hs = actions_hs = hs
+
+        if self.two_qs:
+            qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
+            target_qs = (
+                self.target_q1_head(actions_hs),
+                self.target_q2_head(actions_hs),
+            )
+        else:
+            qs = self.q1_head(actions_hs)
+            target_qs = self.target_q1_head(actions_hs)
+
+        logits = self.gpt.lm_head(hs)
+        vs = self.v_head(states_hs)
+
+        return qs, target_qs, vs
 
     def _sync_target_q_heads(self, alpha):
         for target_param, copy_param in zip(
@@ -225,14 +226,14 @@ class ILQLHeads(nn.Module):
             self._sync_target_q_heads(self.alpha)
 
 
-class GPTNeoXWithValueHeads(nn.)
-
-
 class CausalLMWithValueHeads(nn.Module):
     """This is a wrapper around huggingface AutoModelForCausalLM with two additional scalar heads"""
 
     def __init__(
-        self, config: Union[PretrainedConfig, str], params: ILQL, num_layers_unfrozen=-1
+        self,
+        config: Union[PretrainedConfig, str],
+        params: ILQLConfig,
+        num_layers_unfrozen=-1,
     ):
         super().__init__()
 
