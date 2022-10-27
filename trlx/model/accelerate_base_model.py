@@ -6,7 +6,6 @@ from typing import Dict, Iterable, Tuple
 
 import torch
 import torch.nn.functional as F
-from accelerate import Accelerator
 from transformers import AutoTokenizer
 
 import wandb
@@ -18,6 +17,8 @@ if importlib.util.find_spec("rich") is not None:
 else:
     from tqdm import tqdm
 
+from ray import tune
+
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
@@ -25,10 +26,10 @@ class AccelerateRLModel(BaseRLModel):
     RL Model that uses accelerate for training
     """
 
-    def __init__(self, config, train_mode=True):
+    def __init__(self, config, accelerator, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.accelerator = Accelerator(log_with="wandb")
+        self.accelerator = accelerator
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
@@ -62,20 +63,6 @@ class AccelerateRLModel(BaseRLModel):
 
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
-
-        if self.accelerator.is_main_process:
-            self.accelerator.init_trackers(
-                project_name=self.config.train.project_name,
-                config=self.config.to_dict(),
-                init_kwargs={
-                    "wandb": {
-                        "name": f"{config.model.model_path}",
-                        "mode": "disabled"
-                        if os.environ.get("debug", False)
-                        else "online",
-                    }
-                },
-            )
 
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
@@ -172,7 +159,7 @@ class AccelerateRLModel(BaseRLModel):
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
-                stats["mean_reward"] = mean_reward
+                stats["mean_reward"] = float(mean_reward)
                 print(f"{mean_reward=}")
 
             # additionally log any other metrics
@@ -193,9 +180,9 @@ class AccelerateRLModel(BaseRLModel):
                     columns_data.append(values)
 
             rows = list(zip(*columns_data))
-            stats["samples"] = wandb.Table(columns=columns, rows=rows)
+            # stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
-            print(rows[0])
+            # print(rows[0])
 
         return stats
 
@@ -241,6 +228,7 @@ class AccelerateRLModel(BaseRLModel):
                             }
                         )
                         self.accelerator.log(results)
+                        # tune.report(results)
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
                     tbar.set_description(desc)

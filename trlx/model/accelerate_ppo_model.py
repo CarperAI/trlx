@@ -34,8 +34,8 @@ class FixedKLController:
 
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, accelerator):
+        super().__init__(config, accelerator)
 
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 

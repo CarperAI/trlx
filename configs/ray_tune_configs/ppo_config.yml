@@ -1,6 +1,6 @@
 tune_config:
-  mode: null
-  metric: null
+  mode: "max"
+  metric: "mean_reward"
   search_alg: null
   scheduler: null
   num_samples: 3
@@ -20,8 +20,8 @@ train:
   seq_length:  # Size of LM context
     strategy: "choice"
     choices: [36, 48, 52]
-  epochs: 1000  # Train for max(epochs, total_steps)
-  total_steps: 10000  # Train for max(epochs, total_steps)
+  epochs: 1  # Train for max(epochs, total_steps)
+  total_steps: 1000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
   lr_ramp_steps: 100  # learning rate warm up
@@ -32,10 +32,11 @@ train:
   opt_betas: [0.9, 0.95] # adam betas
 
   checkpoint_interval: 10000  # checkpoint interval
-  eval_interval: 16  # eval interval
+  eval_interval: 2  # eval interval
 
   pipeline: "PPOPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
+  project_name: "trlx-hyperopt"
 
 method:
   name: 'ppoconfig'  # Name of RL method config

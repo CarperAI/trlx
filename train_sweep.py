@@ -100,7 +100,7 @@ def get_param_space(config: dict):
 
 
 
-def ppo_sentiments_train(config, session_report):
+def ppo_sentiments_train(config):
     from transformers import pipeline
 
     sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb", device=-1)
@@ -122,15 +122,16 @@ def ppo_sentiments_train(config, session_report):
         config=config,
     )
 
+    return model
+
 
 
 def train_function(config):
     config = TRLConfig.from_dict(config)
-    print(config)
+    model = ppo_sentiments_train(config)
 
 
 def tune_function(train_function, param_space: dict, tune_config: dict):
-    print(tune_config)
     tuner = tune.Tuner(
         tune.with_resources(train_function, resources={"cpu": 2, "gpu": 1}),
         param_space=param_space,
@@ -138,6 +139,7 @@ def tune_function(train_function, param_space: dict, tune_config: dict):
     )
 
     results = tuner.fit()
+    print("Best hyperparameters found were: ", results.get_best_result().config)
 
 
 if __name__ == "__main__":
