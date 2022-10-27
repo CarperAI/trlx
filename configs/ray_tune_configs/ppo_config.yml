@@ -1,3 +1,13 @@
+tune_config:
+  mode: null
+  metric: null
+  search_alg: null
+  scheduler: null
+  num_samples: 3
+  max_concurrent_trials: null
+  time_budget_s: null
+  reuse_actors: null
+
 model:
   model_path: "lvwerra/gpt2-imdb"  # Name of hf model to load
   tokenizer_path: "gpt2"  # Name of hf tokenizer to load

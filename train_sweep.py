@@ -10,6 +10,13 @@ import wandb
 from ray.air.callbacks.wandb import WandbLoggerCallback
 
 
+def load_yaml(path: str):
+    import yaml
+    with open(path, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    return config
+
+
 def get_strategy(value):
     strategy = value["strategy"]
     if strategy=="uniform":
@@ -60,7 +67,14 @@ def get_strategy(value):
         return tune.grid_search(value["values"])
 
 
-def parse_config(config: dict):
+def get_tune_config(config: dict):
+    tune_config = config["tune_config"]
+    tune_config = {k: v for k, v in tune_config.items() if v is not None}
+
+    return tune_config
+
+
+def get_param_space(config: dict):
     def parse_param_space(param_space: dict):
         for k, v in param_space.items():
             if isinstance(v, dict):
@@ -86,10 +100,12 @@ def train_function(config):
     print(config)
 
 
-def tune_function(train_function, param_space: dict):
+def tune_function(train_function, param_space: dict, tune_config: dict):
+    print(tune_config)
     tuner = tune.Tuner(
         tune.with_resources(train_function, resources={"cpu": 2, "gpu": 1}),
         param_space=param_space,
+        tune_config=tune.TuneConfig(**tune_config),
     )
 
     results = tuner.fit()
@@ -120,9 +136,9 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
 
     # Read config and parse it
-    config = TRLConfig.load_yaml(args.config).to_dict()
-    config = parse_config(config)
-    print(config)
+    config = load_yaml(args.config)
+    tune_config = get_tune_config(config)
+    param_space = get_param_space(config)
 
     # Initialize Ray.
     if args.smoke_test:
@@ -134,7 +150,7 @@ if __name__ == "__main__":
             address=f"ray://{args.server_address}"
         )
 
-    tune_function(train_function, config)
+    tune_function(train_function, param_space, tune_config)
 
     # Shut down Ray.
     ray.shutdown()
