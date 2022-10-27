@@ -23,6 +23,10 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None
+
+        if not isinstance(config.method, ILQLConfig):
+            raise ValueError("config.method must be ILQLConfig")
+
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
 
     def get_arch(self, config):

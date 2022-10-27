@@ -3,6 +3,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
 from trlx.model.accelerate_ilql_model import AccelerateILQLModel
+from trlx.model.neox_ilql_model import NeoXRLModel
 from trlx.model.accelerate_ppo_model import AcceleratePPOModel
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
 from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
@@ -72,9 +73,7 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        model = AccelerateILQLModel(
-            config=config, logit_mask=logit_mask, metric_fn=metric_fn
-        )
+        model = NeoXRLModel(config=config)
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         if eval_prompts is None:

@@ -249,7 +249,10 @@ class Heads(nn.Module):
         return [m(x) for m in self.branches]
 
 
-class GPTNeoXWithValueHeads(megatron.gpt2_model.GPT2ModelPipe):
+print(dir(megatron.model))
+
+
+class GPTNeoXWithValueHeads(megatron.model.GPT2ModelPipe):
     def __init__(
         self,
         config: megatron.NeoXArgs,
@@ -276,6 +279,7 @@ class GPTNeoXWithValueHeads(megatron.gpt2_model.GPT2ModelPipe):
         PipelineModule.__init__(
             self,
             layers=self.specs,
+            loss_fn=self.loss_fn,
             topology=self.__topology__,
             activation_checkpoint_interval=self.activation_checkpoint_interval,
             partition_method=config.pipe_partition_method,
