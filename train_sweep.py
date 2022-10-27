@@ -10,6 +10,10 @@ import wandb
 from ray.air.callbacks.wandb import WandbLoggerCallback
 
 
+from datasets import load_dataset
+import trlx
+
+
 def load_yaml(path: str):
     import yaml
     with open(path, "r") as f:
@@ -93,6 +97,31 @@ def get_param_space(config: dict):
         "train": train_dict,
         "method": method_dict
     }
+
+
+
+def ppo_sentiments_train(config, session_report):
+    from transformers import pipeline
+
+    sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb", device=-1)
+
+    def reward_fn(samples):
+        outputs = sentiment_fn(samples, return_all_scores=True)
+        sentiments = [output[1]["score"] for output in outputs]
+        return sentiments
+
+    # Take few words off of movies reviews as prompts
+    imdb = load_dataset("imdb", split="train+test")
+    prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
+
+    model = trlx.train(
+        "lvwerra/gpt2-imdb",
+        reward_fn=reward_fn,
+        prompts=prompts,
+        eval_prompts=["I don't know much about Hungarian underground"] * 64,
+        config=config,
+    )
+
 
 
 def train_function(config):
