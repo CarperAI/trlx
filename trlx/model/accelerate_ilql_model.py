@@ -28,7 +28,7 @@ class AccelerateILQLModel(AccelerateRLModel):
     def get_arch(self, config):
         return CausalLMWithValueHeads(
             config.model.model_path,
-            params=config.method,
+            ilql_config=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
 
@@ -61,7 +61,7 @@ class AccelerateILQLModel(AccelerateRLModel):
 
         logits, qs, target_qs, vs, _ = self.model(
             input_ids=batch.input_ids,
-            attention_mask=batch.attention_maskn,
+            attention_mask=batch.attention_mask,
             actions_ixs=batch.actions_ixs,
             states_ixs=batch.states_ixs,
         )

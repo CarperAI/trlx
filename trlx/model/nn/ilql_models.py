@@ -148,6 +148,7 @@ class ILQLConfig(MethodConfig):
 
 class ILQLHeads(nn.Module):
     def __init__(self, hidden_size: int, vocab_size: int, config: ILQLConfig):
+        super().__init__()
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
