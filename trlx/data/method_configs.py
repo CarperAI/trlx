@@ -28,17 +28,6 @@ def register_method(name):
     return cls
 
 
-def get_method(name: str) -> MethodConfig:
-    """
-    Return constructor for specified method config
-    """
-    name = name.lower()
-    if name in _METHODS:
-        return _METHODS[name]
-    else:
-        raise Exception("Error: Trying to access a method that has not been registered")
-
-
 @dataclass
 @register_method
 class MethodConfig:
@@ -54,6 +43,17 @@ class MethodConfig:
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
+
+
+def get_method(name: str) -> MethodConfig:
+    """
+    Return constructor for specified method config
+    """
+    name = name.lower()
+    if name in _METHODS:
+        return _METHODS[name]
+    else:
+        raise Exception("Error: Trying to access a method that has not been registered")
 
 
 @dataclass
