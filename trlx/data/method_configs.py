@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
 # specifies a dictionary of method configs
-_METHODS: Dict[str, any] = {}  # registry
+_METHODS: Dict[str, Any] = {}  # registry
 
 
 def register_method(name):
@@ -28,7 +28,7 @@ def register_method(name):
     return cls
 
 
-def get_method(name: str) -> Callable:
+def get_method(name: str) -> MethodConfig:
     """
     Return constructor for specified method config
     """

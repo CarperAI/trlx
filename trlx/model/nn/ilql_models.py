@@ -5,12 +5,12 @@ from dataclasses import dataclass
 from itertools import chain
 from typing import Union, Sequence
 
-from torchtyping import TensorType
+from torchtyping import TensorType  # type: ignore
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
 
 
-import deepspeed
+import deepspeed  # type: ignore
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -20,7 +20,7 @@ from transformers import AutoModelForCausalLM, PretrainedConfig
 
 import wandb
 
-import megatron
+import megatron  # type: ignore
 
 from attrs import define
 
@@ -72,15 +72,15 @@ class ILQLConfig(MethodConfig):
             Q = qs.gather(-1, actions).squeeze(-1)
             targetQ = target_qs.gather(-1, actions).squeeze(-1).detach()
 
-        terminal_mask = dones[:, :-1]
+        terminal_mask = batch.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
 
         # values of current states
         V = vs[:, :-1].squeeze()
         # values of next states
-        Vnext = vs[:, 1:].squeeze() * dones[:, 1:]
+        Vnext = vs[:, 1:].squeeze() * batch.dones[:, 1:]
         # target to fit Q
-        Q_ = rewards + self.gamma * Vnext.detach()
+        Q_ = batch.rewards + self.gamma * Vnext.detach()
 
         if self.two_qs:
             loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
@@ -130,7 +130,7 @@ class ILQLConfig(MethodConfig):
         loss_awac = (
             F.cross_entropy(
                 logits[:, :-1, :].reshape(-1, dsize),
-                input_ids[:, 1:].reshape(-1),
+                batch.input_ids[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
             * batch.attention_mask[:, 1:]
@@ -159,11 +159,16 @@ class ILQLHeads(nn.Module):
         self.config = config
 
         if self.config.two_qs:
-            self.q2_head = make_head(self.n_embd, self.vocab_size)
+            self.q2_head = make_head(self.hidden_size, self.vocab_size)
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
 
-    def forward(self, hs: TensorType["N", "T", "C"], states_ixs=None, actions_ixs=None):
+    def forward(
+        self,
+        hs: TensorType["N", "T", "C"],  # type: ignore
+        states_ixs=None,
+        actions_ixs=None,
+    ):
         if states_ixs is not None:
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
@@ -184,7 +189,6 @@ class ILQLHeads(nn.Module):
             qs = self.q1_head(actions_hs)
             target_qs = self.target_q1_head(actions_hs)
 
-        logits = self.gpt.lm_head(hs)
         vs = self.v_head(states_hs)
 
         return qs, target_qs, vs

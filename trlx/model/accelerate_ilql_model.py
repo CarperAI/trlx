@@ -1,4 +1,4 @@
-from typing import Iterable, Union
+from typing import Iterable, Sequence, Union, cast
 
 import torch
 import torch.nn.functional as F
@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from trlx.model import register_model
 from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
 from trlx.data.ilql_types import ILQLBatch
-
+from trlx.data.configs import TRLConfig
 from .accelerate_base_model import AccelerateRLModel
 
 
@@ -23,7 +23,7 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None
-        self.ilql: ILQLConfig = config.method
+        self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
 
     def get_arch(self, config):
         return CausalLMWithValueHeads(
@@ -32,7 +32,7 @@ class AccelerateILQLModel(AccelerateRLModel):
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
 
-    def tokenize(self, texts: Union[Iterable[str], Iterable[torch.LongTensor]]):
+    def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
             return texts
 

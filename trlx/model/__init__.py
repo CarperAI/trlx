@@ -1,7 +1,7 @@
 import os
 import sys
 from abc import abstractmethod
-from typing import Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable
 
 import torch
 
@@ -11,7 +11,7 @@ from trlx.pipeline import BaseRolloutStore
 from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
-_MODELS: Dict[str, any] = {}  # registry
+_MODELS: Dict[str, Any] = {}  # registry
 
 
 def register_model(name):
@@ -92,7 +92,7 @@ class BaseRLModel:
         pass
 
     @abstractmethod
-    def get_components(self) -> Dict[str, any]:
+    def get_components(self) -> Dict[str, Any]:
         """
         Get pytorch components (mainly for saving/loading)
         """
