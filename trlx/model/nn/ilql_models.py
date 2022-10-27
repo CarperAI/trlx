@@ -80,7 +80,7 @@ class ILQLConfig(MethodConfig):
         # values of next states
         Vnext = vs[:, 1:].squeeze() * dones[:, 1:]
         # target to fit Q
-        Q_ = rewards + self.params.gamma * Vnext.detach()
+        Q_ = rewards + self.gamma * Vnext.detach()
 
         if self.two_qs:
             loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
@@ -93,8 +93,8 @@ class ILQLConfig(MethodConfig):
 
         loss_v = (
             (
-                (targetQ >= V).int() * self.params.tau * (targetQ - V).pow(2)
-                + (targetQ < V).int() * (1 - self.params.tau) * (targetQ - V).pow(2)
+                (targetQ >= V).int() * self.tau * (targetQ - V).pow(2)
+                + (targetQ < V).int() * (1 - self.tau) * (targetQ - V).pow(2)
             )
             * terminal_mask
         ).sum() / n_nonterminal
@@ -147,23 +147,18 @@ class ILQLConfig(MethodConfig):
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, hidden_size: int, vocab_size: int, params: ILQLConfig):
+    def __init__(self, hidden_size: int, vocab_size: int, config: ILQLConfig):
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.v_head = make_head(self.hidden_size, 1)
-        self.q1_head = make_head(self.hidden_sizez, self.vocab_size)
+        self.q1_head = make_head(self.hidden_size, self.vocab_size)
         self.target_q1_head = deepcopy(self.q1_head)
         self.target_q1_head.requires_grad_(False)
 
-        self.tau = params.tau
-        self.alpha = params.alpha
-        self.gamma = params.gamma
-        self.awac_scale = params.awac_scale
-        self.cql_scale = params.cql_scale
-        self.two_qs = params.two_qs
+        self.config = config
 
-        if self.two_qs:
+        if self.config.two_qs:
             self.q2_head = make_head(self.n_embd, self.vocab_size)
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
@@ -179,7 +174,7 @@ class ILQLHeads(nn.Module):
         else:
             states_hs = actions_hs = hs
 
-        if self.two_qs:
+        if self.config.two_qs:
             qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
             target_qs = (
                 self.target_q1_head(actions_hs),
@@ -202,7 +197,7 @@ class ILQLHeads(nn.Module):
                 (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
             )
 
-        if self.two_qs:
+        if self.config.two_qs:
             for target_param, copy_param in zip(
                 self.target_q2_head.parameters(), self.q2_head.parameters()
             ):
@@ -215,15 +210,15 @@ class ILQLHeads(nn.Module):
             params = chain(
                 self.q1_head.parameters(),
                 self.target_q1_head.parameters(),
-                self.q2_head.parameters() if self.two_qs else [],
-                self.target_q2_head.parameters() if self.two_qs else [],
+                self.q2_head.parameters() if self.config.two_qs else [],
+                self.target_q2_head.parameters() if self.config.two_qs else [],
             )
 
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
-                    self._sync_target_q_heads(self.alpha)
+                    self._sync_target_q_heads(self.config.alpha)
         else:
-            self._sync_target_q_heads(self.alpha)
+            self._sync_target_q_heads(self.config.alpha)
 
 
 class CausalLMWithValueHeads(nn.Module):
@@ -232,7 +227,7 @@ class CausalLMWithValueHeads(nn.Module):
     def __init__(
         self,
         config: Union[PretrainedConfig, str],
-        params: ILQLConfig,
+        ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):
         super().__init__()
@@ -269,7 +264,8 @@ class CausalLMWithValueHeads(nn.Module):
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
 
-        self.ilql_heads = params.heads(self.n_embd, self.gpt.config.vocab_size)
+        self.ilql_heads = ilql_config.heads(self.n_embd, self.gpt.config.vocab_size)
+        self.ilql_config = ilql_config
 
     def forward(
         self,
@@ -334,7 +330,7 @@ class CausalLMWithValueHeads(nn.Module):
             )
 
             logits, _, target_qs, vs, past_key_values = out
-            if self.two_qs:
+            if self.ilql_config.two_qs:
                 qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
                 qs = target_qs[:, -1, :]
