@@ -14,12 +14,12 @@ model:
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
   num_layers_unfrozen:  # Number of bottom layers to freeze during training
     strategy: "choice"
-    choices: [2, 3]
+    values: [2, 3]
 
 train:
   seq_length:  # Size of LM context
     strategy: "choice"
-    choices: [36, 48, 52]
+    values: [36, 48, 52]
   epochs: 1  # Train for max(epochs, total_steps)
   total_steps: 1000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
@@ -42,20 +42,20 @@ method:
   name: 'ppoconfig'  # Name of RL method config
   num_rollouts:  # Number of rollouts to collect per epoch
     strategy: "choice"
-    choices: [96, 128]
+    values: [96, 128]
   chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs:  # Number of ppo epochs
     strategy: "randint"
-    bounds: [3, 6] # 3 is inclusive, 6 is exclusive
+    values: [3, 6] # 3 is inclusive, 6 is exclusive
   init_kl_coef: # init kl coefficient
     strategy: "quniform"
-    bounds: [0.1, 0.3, 0.1]
+    values: [0.1, 0.3, 0.1]
   target: 6  # target kl coefficient, set None for fixed kl coef
   horizon: 10000  # PPO horizon
   gamma: 1  # PPO discount
   lam: # PPO lambda
     strategy: "uniform"
-    bounds: [0.93, 0.98]
+    values: [0.93, 0.98]
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
   vf_coef: 2.3  # value term weight
