@@ -72,6 +72,13 @@ def get_strategy(value):
 
 def get_tune_config(config: dict):
     tune_config = config["tune_config"]
+
+    if "search_alg" in tune_config.keys() and tune_config["search_alg"] is not None:
+        tune_config["search_alg"] = get_search_alg(tune_config)
+
+    if "scheduler" in tune_config.keys() and tune_config["scheduler"] is not None:
+        tune_config["scheduler"] = get_scheduler(tune_config)
+
     tune_config = {k: v for k, v in tune_config.items() if v is not None}
 
     return tune_config
@@ -98,7 +105,6 @@ def get_param_space(config: dict):
     }
 
 
-
 def ppo_sentiments_train(config):
     from transformers import pipeline
 
@@ -123,6 +129,30 @@ def ppo_sentiments_train(config):
 
     return model
 
+
+def get_search_alg(tune_config: dict):
+    search_alg = tune_config["search_alg"]
+
+    if search_alg == "bayesopt":
+        try:
+            from ray.tune.search.bayesopt import BayesOptSearch
+        except ImportError:
+            raise ImportError("Please pip install bayesian-optimization to use BayesOptSearch.")
+
+        assert "metric" in tune_config.keys() and "mode" in tune_config.keys(); "Please specify metric and mode for BayesOptSearch."
+
+        return BayesOptSearch(metric=tune_config["metric"], mode=tune_config["mode"])
+
+    return None
+
+
+def get_scheduler(tune_config: dict):
+    scheduler = tune_config["scheduler"]
+
+    if scheduler == "hyperband":
+        return tune.schedulers.HyperBandScheduler()
+
+    return None
 
 
 def train_function(config):
