@@ -1,4 +1,5 @@
 import yaml
+from ray import tune
 
 
 def load_ray_yaml(path: str):
@@ -166,3 +167,12 @@ def get_tune_config(config: dict):
     tune_config = {k: v for k, v in tune_config.items() if v is not None}
 
     return tune_config
+
+
+def get_train_function(example_name: str):
+    if example_name == "ppo_sentiments":
+        from .train_funcs import ppo_sentiments_train
+
+        return ppo_sentiments_train
+    else:
+        NotImplementedError("Example not implemented yet.")
