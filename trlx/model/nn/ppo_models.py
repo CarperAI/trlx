@@ -99,16 +99,13 @@ class GPTHeadWithValueModel(nn.Module):
         )
 
 
-
-
-
 class ModelBranch(PreTrainedModel):
     """
     ModelBranch implements the frozen upper trunk of the reference model
     used when computing the PPO KL-divergence penalty. Expects a list of
     frozen transformer blocks and an lm_head from the base model.
     """
-    
+
     def __init__(self, config, transformer_blocks, ln_f, lm_head):
         super().__init__(config)
 

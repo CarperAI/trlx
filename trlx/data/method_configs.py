@@ -48,7 +48,7 @@ class MethodConfig:
     :param name: Name of the method
     :type name: str
     """
-    
+
     name: str
 
     @classmethod
@@ -95,7 +95,7 @@ class PPOConfig(MethodConfig):
     :param gen_kwargs: Additioanl kwargs for the generation
     :type gen_kwargs: Dict[str, Any]
     """
-    
+
     ppo_epochs: int
     num_rollouts: int
     chunk_size: int

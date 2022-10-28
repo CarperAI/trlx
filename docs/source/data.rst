@@ -8,7 +8,7 @@ dataclasses corresponding to batches of data to communicate data between models 
 components. trlX is no different, though it has many different dataclasses for
 different components like training or inference. Currently, we support PPO and ILQL, which
 each demand different kinds of data during training.
-  
+
 
 **Basic Data Elements for Accelerate**
 
@@ -23,9 +23,9 @@ each demand different kinds of data during training.
 
 .. autoclass:: trlx.data.accelerate_base_datatypes.AccelerateRLBatchElement
     :members:
-  
+
 **Data Elements for PPO**
-  
+
 .. autoclass:: trlx.data.ppo_types.PPORLElement
     :members:
 

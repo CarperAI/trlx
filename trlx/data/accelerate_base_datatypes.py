@@ -15,9 +15,10 @@ class PromptElement:
     :param tokens: The prompt tokens. Should be a long tensor
     :type tokens: torch.Tensor
     """
-    
+
     text: str
     tokens: TensorType["num_tokens"]
+
 
 @dataclass
 class PromptBatch:
@@ -34,6 +35,7 @@ class PromptBatch:
     text: Iterable[str]
     tokens: TensorType["batch_size", "num_tokens"]
 
+
 @dataclass
 class AccelerateRLElement:
     """
@@ -48,6 +50,7 @@ class AccelerateRLElement:
 
     output_tokens: TensorType["output_size"]
     rewards: TensorType["output_size"]
+
 
 @dataclass
 class AccelerateRLBatchElement:
