@@ -1,0 +1,36 @@
+model:
+  model_path : "randomwalks/1M"
+  tokenizer_path: "randomwalks/1M"
+  model_type : "AccelerateILQLModel"
+  num_layers_unfrozen: -1
+
+train:
+  seq_length: 10
+  batch_size: 100
+  epochs: 100
+  total_steps: 1000
+
+  lr_ramp_steps: 100
+  lr_decay_steps: 3366
+  weight_decay: 1e-6
+  learning_rate_init: 1e-3
+  learning_rate_target: 1e-3
+  opt_betas: [0.9, 0.95]
+
+  checkpoint_interval: 100000
+  eval_interval: 10
+
+  pipeline : "OfflinePipeline"
+  orchestrator : "OfflineOrchestrator"
+  seed: 1000
+
+method:
+  name: "ilqlconfig"
+  tau: 0.7
+  gamma: 0.99
+  cql_scale: 0.1
+  awac_scale: 1
+  alpha: 0.1
+  steps_for_target_q_sync: 1
+  betas: [100]
+  two_qs: true

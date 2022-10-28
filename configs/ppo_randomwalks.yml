@@ -1,0 +1,44 @@
+model:
+  model_path: "randomwalks/1M"
+  tokenizer_path: "randomwalks/1M"  # Name of hf tokenizer to load
+  model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
+  num_layers_unfrozen: -1  # Number of bottom layers to freeze during training
+
+train:
+  seq_length: 10
+  epochs: 100
+  total_steps: 1000
+  batch_size: 128
+
+  lr_ramp_steps: 100
+  lr_decay_steps: 79000
+  weight_decay: 1.0e-6
+  learning_rate_init: 1e-3
+  learning_rate_target: 1e-3
+  opt_betas: [0.9, 0.95]
+
+  checkpoint_interval: 10000
+  eval_interval: 16
+
+  pipeline: "PPOPipeline"
+  orchestrator: "PPOOrchestrator"
+
+method:
+  name: 'ppoconfig'
+  num_rollouts: 128
+  chunk_size: 128
+  ppo_epochs: 1
+  init_kl_coef: 0.2
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 2.3
+  gen_kwargs:
+    max_length: 10
+    min_length: 2
+    top_k: 0
+    top_p: 1.0
+    do_sample: True

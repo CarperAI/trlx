@@ -1,13 +1,11 @@
-# Toy dataset from Decision Transformer (Chen et al. 2021)
-# finds graph shortest paths by learning from a dataset of sampled random walks
+# Toy problem similar to the one described in Decision Transformer (Chen et al. 2021):
+# Find graph's shortest paths by learning from a dataset of sampled random walks.
+# A single reward is given at the end of the trajectory.
+# No dynamics, an invalid path and a not found path is penalized the same.
 
 import networkx as nx
 import numpy as np
 import torch
-from transformers import GPT2Config
-
-import trlx
-from trlx.data.configs import TRLConfig
 
 
 def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
@@ -18,7 +16,7 @@ def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
 
 
 def generate_random_walks(
-    n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002
+    n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002, gpt2_tokenizer=False
 ):
     rng = np.random.RandomState(seed)
 
@@ -32,6 +30,9 @@ def generate_random_walks(
     adj[0, :] = 0
     adj[0, 0] = 1
 
+    char_to_node = {chr(ix + ord("a")): ix for ix in range(n_nodes)}
+    node_to_char = {ix: chr(ix + ord("a")) for ix in range(n_nodes)}
+
     goal = 0
     sample_walks = []
     for _ in range(n_walks):
@@ -44,11 +45,18 @@ def generate_random_walks(
             if node == goal:
                 break
 
-        sample_walks.append(torch.tensor(walk))
+        # code each node by a letter
+        # for bpe tokenizer join them over | for a guaranteed split
+        walk = [node_to_char[ix] for ix in walk]
+        if gpt2_tokenizer:
+            walk.insert(1, "|")
+
+        sample_walks.append("".join(walk))
 
     worstlen = max_length
-    best_lengths = []
 
+    # calculate the shortest paths for comparison
+    best_lengths = []
     g = nx.from_numpy_array(adj, create_using=nx.DiGraph)
     for start in set(range(n_nodes)) - {goal}:
         try:
@@ -60,50 +68,43 @@ def generate_random_walks(
     best_lengths = torch.tensor(best_lengths)
 
     def metric_fn(samples):
-        infty = -100
+        # a negative reward for an invalid or a not found path
+        neginfty = -100
         lengths = []
 
         for s in samples:
-            if s[-1] == 0:
-                for ix in range(len(s)):
-                    if s[ix] == 0:
-                        lengths.append(-ix - 1)
-                        break
-            else:
-                lengths.append(infty)
+            if gpt2_tokenizer:
+                s = s.replace("|", "")
+
+            s = [char_to_node.get(c, 1000) for c in s]
+            length = None
+            for ix in range(len(s)):
+                # a nonexisting path is taken
+                if s[ix] >= n_nodes or ix > 0 and not adj[s[ix - 1], s[ix]]:
+                    length = neginfty
+                    break
+                elif s[ix] == 0:
+                    length = -ix - 1
+                    break
+
+            if length is None:
+                length = neginfty
+            lengths.append(length)
 
         lengths = torch.tensor(lengths, dtype=torch.float)
-        bound_lengths = torch.where(lengths.eq(infty), worstlen, lengths).abs()
+        bound_lengths = torch.where(lengths.eq(neginfty), worstlen, lengths).abs()
         return {
+            # negative lengths
             "lengths": lengths,
+            # % optimal when compared to the shortest path
             "optimality": (worstlen - bound_lengths)
             / (worstlen - best_lengths if lengths.shape == best_lengths.shape else 0),
         }
 
-    logit_mask = torch.tensor(~adj)
-    return sample_walks, logit_mask, metric_fn
+    logit_mask = torch.tensor(adj)
 
+    eval_prompts = list(sorted(set(w[0] for w in sample_walks)))
+    if gpt2_tokenizer:
+        eval_prompts = [prompt + "|" for prompt in eval_prompts]
 
-if __name__ == "__main__":
-    walks, logit_mask, metric_fn = generate_random_walks(seed=1000)
-    eval_prompts = torch.arange(1, logit_mask.shape[0]).view(-1, 1)
-    lengths = metric_fn(walks)["lengths"]
-
-    config = TRLConfig.load_yaml("configs/ilql_config.yml")
-    config.train.gen_size = 10
-    config.train.epochs = 100
-    config.train.learning_rate_init = 1e-3
-    config.method.alpha = 0.1
-
-    config.model.tokenizer_path = ""
-    config.model.model_path = GPT2Config(
-        n_layer=2, n_embd=144, vocab_size=logit_mask.shape[0]
-    )
-
-    trlx.train(
-        dataset=(walks, lengths),
-        eval_prompts=eval_prompts,
-        metric_fn=metric_fn,
-        config=config,
-        logit_mask=logit_mask,
-    )
+    return sample_walks, logit_mask, metric_fn, eval_prompts
