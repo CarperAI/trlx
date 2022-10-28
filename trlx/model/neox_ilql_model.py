@@ -40,27 +40,31 @@ class NeoXRLModel(BaseRLModel):
         megatron.initialize.initialize_megatron(neox_args)
         # Retrieves model equipped for ppo, ilql, etc
         self.neox_args = neox_args
-        self.tokenizer = neox_args.tokenizer
+        self.tokenizer = neox_args.tokenizer.tokenizer
         self.model = GPTNeoXWithValueHeads(config=neox_args, ilql_config=config.method)
-        self.optimizer = megatron.training.get_optimizer(self.model, neox_args)
-        self.lr_scheduler = megatron.training.get_learning_rate_scheduler(
+
+        from megatron.training import get_optimizer, get_learning_rate_scheduler
+
+        self.optimizer, self.param_groups = get_optimizer(self.model, neox_args)
+        self.lr_scheduler = get_learning_rate_scheduler(
             optimizer=self.optimizer, neox_args=neox_args
         )
 
-    # def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
-    #     """
-    #     Tokenize a batch of text after adding bos token to each of the samples
-    #     """
-    #     if isinstance(text[0], torch.LongTensor):
-    #         return text
+    def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
+        """
+        Tokenize a batch of text after adding bos token to each of the samples
+        """
+        if isinstance(text[0], torch.LongTensor):
+            return text
 
-    #     text = [self.tokenizer.bos_token + txt for txt in text]
-    #     return self.tokenizer(
-    #         text,
-    #         truncation=True,
-    #         max_length=self.config.seq_length,
-    #         return_tensors="pt",
-    #     )
+        encoded = self.tokenizer.encode_batch(
+            text,
+            # truncation=True,
+            # max_length=self.config.train.seq_length,
+            # return_tensors="pt",
+        )
+
+        return [e.ids for e in encoded]
 
     # def generate(self, input_ids, attention_mask=None, **kwargs):
     #     """Wraps hf's `generate` adding some specific method's defaults"""
@@ -164,12 +168,13 @@ class NeoXRLModel(BaseRLModel):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
-        import megatron  # type: ignore
 
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
-        megatron.training.train(
+        from megatron.training import train
+
+        train(
             self.neox_args,
             self.timers,
             self.model,

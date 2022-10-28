@@ -237,6 +237,7 @@ from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec  # type: ign
 
 class HeadsLayerSpec(LayerSpec):
     def __init__(self, specs: Sequence[LayerSpec]):
+        super().__init__(Heads)
         self.branches = specs
 
     def build(self):
@@ -244,11 +245,12 @@ class HeadsLayerSpec(LayerSpec):
 
 
 class Heads(nn.Module):
-    def __init__(self, modules: Sequence[nn.Module]):
-        self.branches = modules
+    def __init__(self, heads: Sequence[nn.Module]):
+        super().__init__()
+        self.heads = heads
 
     def forward(self, x: torch.Tensor):
-        return [m(x) for m in self.branches]
+        return [m(x) for m in self.heads]
 
 
 from megatron.model import GPT2ModelPipe
