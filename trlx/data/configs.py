@@ -63,7 +63,7 @@ class TrainConfig:
     :param learning_rate_target: Target learning rate after decay
     :type learning_rate_target: float
 
-    :param checkpoint_interval: Save model every save_interval steps
+    :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
 
     :param eval_interval: Evaluate model every eval_interval steps
