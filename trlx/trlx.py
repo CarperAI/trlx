@@ -1,12 +1,16 @@
 import os
 from typing import Callable, Iterable, List, Optional, Tuple
 
+from megatron.neox_arguments import NeoXArgs
 from trlx.data.configs import TRLConfig
-from trlx.model.accelerate_ilql_model import AccelerateILQLModel
+
+# from trlx.model.accelerate_ilql_model import AccelerateILQLModel
 from trlx.model.neox_ilql_model import NeoXRLModel
-from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+
+# from trlx.model.accelerate_ppo_model import AcceleratePPOModel
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
-from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+
+# from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.utils.loading import get_model, get_orchestrator
 
@@ -73,7 +77,12 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        model = NeoXRLModel(config=config)
+        neox_args = NeoXArgs.consume_neox_args()
+        neox_args.configure_distributed_args()
+        neox_args.build_tokenizer()  # tokenizer needs to be build in training in order to set the padding vocab
+        neox_args.initialize_tensorboard_writer()  # is initialized if tensorboard directory is defined
+
+        model = NeoXRLModel(config=config, neox_args=neox_args)
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         if eval_prompts is None:

@@ -20,7 +20,9 @@ from transformers import AutoModelForCausalLM, PretrainedConfig
 
 import wandb
 
-import megatron  # type: ignore
+import megatron
+
+print(dir(megatron), megatron.__file__)
 from megatron import print_rank_0, mpu
 
 from attrs import define
@@ -249,10 +251,10 @@ class Heads(nn.Module):
         return [m(x) for m in self.branches]
 
 
-print(dir(megatron.model))
+from megatron.model import GPT2ModelPipe
 
 
-class GPTNeoXWithValueHeads(megatron.model.GPT2ModelPipe):
+class GPTNeoXWithValueHeads(GPT2ModelPipe):
     def __init__(
         self,
         config: megatron.NeoXArgs,
@@ -271,9 +273,7 @@ class GPTNeoXWithValueHeads(megatron.model.GPT2ModelPipe):
         self.specs[-1] = HeadsLayerSpec(
             specs=[
                 embedding,
-                ilql_config.layer_spec(
-                    self.model.hidden_size, config.padded_vocab_size
-                ),
+                ilql_config.layer_spec(self.hidden_size, config.padded_vocab_size),
             ],
         )
         PipelineModule.__init__(

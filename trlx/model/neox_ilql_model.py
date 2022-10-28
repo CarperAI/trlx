@@ -8,15 +8,14 @@ import torch
 import torch.nn.functional as F
 import sys
 
-sys.path.append("/fsx/home-uwu/gpt-neox")
 import megatron  # type: ignore
+from trlx.model.nn.ilql_models import GPTNeoXWithValueHeads
 
 from transformers import AutoTokenizer
 
 import wandb
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
-from trlx.model.nn.ilql_models import GPTNeoXWithValueHeads
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -34,6 +33,7 @@ class NeoXRLModel(BaseRLModel):
         self, config: TRLConfig, neox_args: megatron.NeoXArgs, train_mode=True
     ):
         super().__init__(config, train_mode)
+
         neox_args.is_pipe_parallel = True
 
         megatron.utils.init_wandb(neox_args=neox_args)
@@ -164,6 +164,8 @@ class NeoXRLModel(BaseRLModel):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
+        import megatron  # type: ignore
+
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 

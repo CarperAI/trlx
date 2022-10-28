@@ -1,5 +1,18 @@
 # Generates positive movie reviews by learning from sentiment-labeled IMDB dataset
+import sys
+from accelerate.utils import imports
 
+
+def always_false():
+    return False
+
+
+imports.is_megatron_lm_available = always_false
+
+
+sys.path.append("/fsx/home-uwu/gpt-neox/")
+
+import megatron
 from datasets import load_dataset
 from transformers import pipeline
 
