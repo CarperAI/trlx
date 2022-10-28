@@ -181,9 +181,7 @@ class AccelerateRLModel(BaseRLModel):
                     columns_data.append(values)
 
             rows = list(zip(*columns_data))
-            # stats["samples"] = wandb.Table(columns=columns, rows=rows)
-
-            # print(rows[0])
+            stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
         return stats
 
