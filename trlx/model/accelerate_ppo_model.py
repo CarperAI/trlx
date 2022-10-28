@@ -7,6 +7,7 @@ from trlx.model.accelerate_base_model import AccelerateRLModel
 from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
+from trlx.utils import add_stat
 
 
 class AdaptiveKLController:
@@ -101,6 +102,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         advantages = advantages.detach()
 
         all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
+
         attention_mask = (
             all_tokens.not_equal(self.tokenizer.pad_token_id)
             .long()
@@ -126,15 +128,14 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
         mask = attention_mask[:, -gen_len:]
+        n_nonterminal = mask.sum()
 
         vf_losses1 = (vpred - returns) ** 2
         vf_losses2 = (vpredclipped - returns) ** 2
         vf_loss = 0.5 * torch.sum(torch.max(vf_losses1, vf_losses2) * mask) / mask.sum()
 
-        kl = logprob - all_logprobs
-        # Record mean_kl for kl coef adjustment
-        self.mean_kl = torch.mean(torch.sum(kl, dim=-1)).item()
-        ratio = torch.exp(kl)
+        log_ratio = (logprob - all_logprobs) * mask
+        ratio = torch.exp(log_ratio)
 
         pg_losses = -advantages * ratio
         pg_losses2 = -advantages * torch.clamp(
@@ -146,11 +147,27 @@ class AcceleratePPOModel(AccelerateRLModel):
         pg_loss = torch.sum(torch.max(pg_losses, pg_losses2) * mask) / mask.sum()
         loss = pg_loss + self.config.method.vf_coef * vf_loss
 
+        with torch.no_grad():
+            # Record mean_kl for kl coef adjustment
+            self.mean_kl = torch.mean(torch.sum(log_ratio, dim=-1)).item()
+            mean_kl2 = torch.mean((ratio - 1) - log_ratio)
+
+        clip_fraction = (
+            (torch.abs(ratio - 1) > self.config.method.cliprange).float().mean()
+        )
+
         stats = {
-            "loss": loss,
-            "pg_loss": pg_loss,
-            "vf_loss": vf_loss,
+            "loss/pg": pg_loss,
+            "loss/vf": vf_loss,
+            "loss/loss": loss,
+            "clip_fraction": clip_fraction,
+            "kl": self.mean_kl,
+            "kl2": mean_kl2,
         }
+
+        add_stat(stats, "returns", returns, mask, n_nonterminal)
+        add_stat(stats, "advantages", advantages, mask, n_nonterminal)
+        add_stat(stats, "values", vpred, mask, n_nonterminal)
 
         return loss, stats
 

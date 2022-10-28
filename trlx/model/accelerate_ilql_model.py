@@ -7,6 +7,7 @@ from trlx.model import register_model
 from trlx.model.nn.ilql_models import CausalLMWithValueHeads
 
 from .accelerate_base_model import AccelerateRLModel
+from trlx.utils import add_stat
 
 
 @register_model
@@ -147,11 +148,22 @@ class AccelerateILQLModel(AccelerateRLModel):
             + self.params.cql_scale * loss_cql
             + self.params.awac_scale * loss_awac
         )
+
         stats = {
-            f"losses/{k}": v
-            for k, v in locals().items()
-            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
+            "loss/loss": loss,
+            "loss/v": loss_v,
+            "loss/q": loss_q,
+            "loss/cql": loss_cql,
+            "loss/awac": loss_awac,
         }
+
+        add_stat(stats, "vs", V, terminal_mask, n_nonterminal)
+
+        if self.params.two_qs:
+            add_stat(stats, "qs0", qs[0], terminal_mask.unsqueeze(-1), n_nonterminal)
+            add_stat(stats, "qs1", qs[1], terminal_mask.unsqueeze(-1), n_nonterminal)
+        else:
+            add_stat(stats, "qs", qs, terminal_mask.unsqueeze(-1), n_nonterminal)
 
         return loss, stats
 

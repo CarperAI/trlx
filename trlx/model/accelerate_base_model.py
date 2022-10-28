@@ -192,6 +192,8 @@ class AccelerateRLModel(BaseRLModel):
                     columns.append(metric)
                     columns_data.append(values)
 
+                print(f"{mean_metrics=}")
+
             rows = list(zip(*columns_data))
             stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
@@ -210,6 +212,9 @@ class AccelerateRLModel(BaseRLModel):
             total=self.total_steps, disable=not self.accelerator.is_local_main_process
         )
         self.iter_count = 0
+
+        results = self.evaluate()
+        self.accelerator.log(results)
 
         for _ in range(self.config.train.epochs):
             for batch in self.train_dataloader:
@@ -242,7 +247,11 @@ class AccelerateRLModel(BaseRLModel):
                         )
                         self.accelerator.log(results)
 
-                    desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
+                    desc = ", ".join(
+                        f"{k}: {v:.2f}"
+                        for k, v in stats.items()
+                        if k.startswith("loss")
+                    )
                     tbar.set_description(desc)
                     tbar.update()
 

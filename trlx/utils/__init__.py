@@ -114,3 +114,15 @@ def sentiment_score(sentiments: Iterable[float]):
         [-s["score"] if s["label"] == "NEGATIVE" else s["score"] for s in sentiments]
     )
     return sentiments
+
+
+def add_stat(stats, name, xs, mask, n):
+    mean = (xs * mask).sum() / n
+    stats.update(
+        {
+            f"{name}/mean": mean,
+            f"{name}/min": torch.where(mask.bool(), xs, np.inf).min(),
+            f"{name}/max": torch.where(mask.bool(), xs, -np.inf).max(),
+            f"{name}/std": ((xs - mean) * mask).pow(2).sum() / n,
+        }
+    )

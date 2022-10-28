@@ -9,6 +9,7 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.utils import Clock
 from trlx.utils.modeling import logprobs_from_logits
+from time import time
 
 
 @register_orchestrator
@@ -42,6 +43,9 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model.reward_fn = reward_fn
         self.rl_model.metric_fn = metric_fn
 
+        self.ref_mean = None
+        self.ref_std = None
+
     def score(self, samples):
         """
         Batched scoring function taking text and generating scalar
@@ -63,14 +67,25 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
+            exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
+            stats["exp_generate_time"] = time() - exp_generate_time
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
+
+            exp_score_time = time()
             scores = torch.as_tensor(self.score(texts))
+
+            if self.ref_mean is None:
+                self.ref_mean, self.ref_std = scores.mean(), scores.std()
+
+            scores = (scores - self.ref_mean) / (self.ref_std + 1e-30)
+            stats["exp_score_time"] = time() - exp_score_time
+            stats["exp_score_mean"] = scores.mean()
 
             # Precompute logprobs, values
             all_tokens = torch.cat(
@@ -102,6 +117,7 @@ class PPOOrchestrator(Orchestrator):
             non_score_rewards = -self.rl_model.kl_ctl.value * kls
             all_rewards = non_score_rewards.clone()
             all_rewards[:, -1] += scores.to(self.rl_model.accelerator.device)
+            stats["kl_ctl_value"] = self.rl_model.kl_ctl.value
 
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
@@ -123,7 +139,7 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
 
-        stats = {"exp_time": exp_time}
+        stats["exp_time"] = exp_time
         self.rl_model.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to model's rollout storage
