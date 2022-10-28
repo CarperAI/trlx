@@ -3,7 +3,7 @@ tune_config:
   metric: "mean_reward"
   search_alg: null
   scheduler: null
-  num_samples: 3
+  num_samples: 5
   max_concurrent_trials: null
   time_budget_s: null
   reuse_actors: null
@@ -21,7 +21,7 @@ train:
     strategy: "choice"
     choices: [36, 48, 52]
   epochs: 1  # Train for max(epochs, total_steps)
-  total_steps: 1000  # Train for max(epochs, total_steps)
+  total_steps: 2000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
   lr_ramp_steps: 100  # learning rate warm up

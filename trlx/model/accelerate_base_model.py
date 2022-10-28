@@ -18,6 +18,7 @@ else:
     from tqdm import tqdm
 
 from ray import tune
+from ray.air import session
 
 
 @register_model
@@ -228,7 +229,7 @@ class AccelerateRLModel(BaseRLModel):
                             }
                         )
                         self.accelerator.log(results)
-                        # tune.report(results)
+                        session.report(results)
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
                     tbar.set_description(desc)
