@@ -17,7 +17,7 @@ if importlib.util.find_spec("rich") is not None:
 else:
     from tqdm import tqdm
 
-from ray import tune
+import ray
 from ray.air import session
 
 
@@ -181,7 +181,8 @@ class AccelerateRLModel(BaseRLModel):
                     columns_data.append(values)
 
             rows = list(zip(*columns_data))
-            stats["samples"] = wandb.Table(columns=columns, rows=rows)
+            if not ray.is_initialized():
+                stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
         return stats
 

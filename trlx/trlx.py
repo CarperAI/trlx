@@ -96,7 +96,10 @@ def train(
             config.model.model_path = model_path
 
         model = AccelerateILQLModel(
-            config=config, logit_mask=logit_mask, metric_fn=metric_fn
+            config=config,
+            accelerator=accelerator,
+            logit_mask=logit_mask,
+            metric_fn=metric_fn,
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))

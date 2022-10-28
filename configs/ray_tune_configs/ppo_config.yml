@@ -3,7 +3,7 @@ tune_config:
   metric: "mean_reward"
   search_alg: null # "bayesopt"
   scheduler: "hyperband" # null
-  num_samples: 5
+  num_samples: 1
   max_concurrent_trials: null
   time_budget_s: null
   reuse_actors: null
