@@ -227,7 +227,10 @@ class AccelerateRLModel(BaseRLModel):
                             }
                         )
                         self.accelerator.log(results)
-                        session.report(results)
+
+                        # Report the metrics to Ray Tune.
+                        if ray.is_initialized():
+                            session.report(results)
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
                     tbar.set_description(desc)
