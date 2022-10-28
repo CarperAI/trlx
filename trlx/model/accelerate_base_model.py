@@ -160,7 +160,7 @@ class AccelerateRLModel(BaseRLModel):
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
-                stats["mean_reward"] = float(mean_reward)
+                stats["mean_reward"] = mean_reward
                 print(f"{mean_reward=}")
 
             # additionally log any other metrics
