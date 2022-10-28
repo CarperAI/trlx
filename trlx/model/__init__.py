@@ -46,6 +46,10 @@ class BaseRLModel:
     def push_to_store(self, data):
         self.store.push(data)
 
+    def add_eval_pipeline(self, eval_pipeline):
+        """Adds pipeline from with validation prompts"""
+        self.eval_pipeline = eval_pipeline
+
     @abstractmethod
     def act(self, data: RLElement) -> RLElement:
         """

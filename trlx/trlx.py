@@ -88,7 +88,9 @@ def train(
         if eval_prompts is None:
             eval_prompts = [model.tokenizer.bos_token] * batch_size
 
-        eval_pipeline = PromptPipeline(eval_prompts, model.tokenizer)
+        eval_pipeline = PromptPipeline(
+            (model.tokenizer.encode(p).ids for p in eval_prompts), None
+        )
 
         orch = OfflineOrchestrator(model, split_token=split_token)
         orch.make_experience(samples, rewards)

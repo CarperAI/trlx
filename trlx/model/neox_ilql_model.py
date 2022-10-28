@@ -8,7 +8,11 @@ import torch
 import torch.nn.functional as F
 import sys
 
+import deepspeed
 import megatron  # type: ignore
+from megatron.utils import Timers, get_total_params
+from megatron import print_rank_0, mpu
+
 from trlx.model.nn.ilql_models import GPTNeoXWithValueHeads
 
 from transformers import AutoTokenizer
@@ -35,20 +39,58 @@ class NeoXRLModel(BaseRLModel):
         super().__init__(config, train_mode)
 
         neox_args.is_pipe_parallel = True
-
+        neox_args.iteration = 0
         megatron.utils.init_wandb(neox_args=neox_args)
+
+        self.timers = Timers(
+            use_wandb=neox_args.use_wandb,
+            tensorboard_writer=neox_args.tensorboard_writer,
+        )
+
         megatron.initialize.initialize_megatron(neox_args)
-        # Retrieves model equipped for ppo, ilql, etc
-        self.neox_args = neox_args
-        self.tokenizer = neox_args.tokenizer.tokenizer
-        self.model = GPTNeoXWithValueHeads(config=neox_args, ilql_config=config.method)
+
+        model = GPTNeoXWithValueHeads(config=neox_args, ilql_config=config.method)
 
         from megatron.training import get_optimizer, get_learning_rate_scheduler
 
-        self.optimizer, self.param_groups = get_optimizer(self.model, neox_args)
-        self.lr_scheduler = get_learning_rate_scheduler(
-            optimizer=self.optimizer, neox_args=neox_args
+        optimizer, param_groups = get_optimizer(model, neox_args)
+        lr_scheduler = get_learning_rate_scheduler(
+            optimizer=optimizer, neox_args=neox_args
         )
+
+        if neox_args.deepspeed:
+            print_rank_0("DeepSpeed is enabled.")
+            if neox_args.no_load_optim:
+                assert optimizer is None
+                _model_params = None
+                _lr_scheduler = None
+            else:
+                _model_params = param_groups if optimizer is None else None
+                _lr_scheduler = lr_scheduler
+
+            model, optimizer, _, lr_scheduler = deepspeed.initialize(
+                model=model,
+                optimizer=optimizer,
+                args=neox_args,
+                lr_scheduler=_lr_scheduler,
+                dist_init_required=False,
+                model_parameters=_model_params,
+                config_params=neox_args.deepspeed_config,
+                mpu=mpu if not neox_args.is_pipe_parallel else None,
+            )
+            model.total_params = get_total_params(model.module)
+            print_rank_0(f' > total params: {"{:,}".format(model.total_params)}')
+
+            if neox_args.is_pipe_parallel:
+                model.set_has_attention_mask(True)
+                model.set_batch_fn(lambda data: data)
+        else:
+            raise ValueError("Must be using deepspeed to run neox")
+
+        # Retrieves model equipped for ppo, ilql, etc
+        self.neox_args = neox_args
+        self.tokenizer = neox_args.tokenizer.tokenizer
+        self.model = model
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
