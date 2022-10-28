@@ -23,7 +23,7 @@ class ModelConfig:
 
     model_path: str
     tokenizer_path: str
-    model_type: str  # One of the architectures present in framework.model
+    model_type: str
     num_layers_unfrozen: int = -1
 
     @classmethod
@@ -74,6 +74,9 @@ class TrainConfig:
 
     :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
     :type orchestrator: str
+
+    :param checkpoint_dir: Directory to save checkpoints
+    :type checkpoint_dir: str
 
     :param project_name: Project name for wandb
     :type project_name: str
