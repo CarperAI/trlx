@@ -91,6 +91,8 @@ class NeoXRLModel(BaseRLModel):
         self.neox_args = neox_args
         self.tokenizer = neox_args.tokenizer.tokenizer
         self.model = model
+        self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
@@ -215,6 +217,7 @@ class NeoXRLModel(BaseRLModel):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         from megatron.training import train
+        import dataclasses
 
         train(
             self.neox_args,
@@ -222,8 +225,14 @@ class NeoXRLModel(BaseRLModel):
             self.model,
             self.optimizer,
             self.lr_scheduler,
-            train_dataloader,
-            eval_dataloader,
+            (
+                (
+                    (b.input_ids, b.attention_mask.cumsum(-1) - 1, b.attention_mask),
+                    (b.rewards, b.dones),
+                )
+                for b in iter(train_dataloader)
+            ),
+            iter(eval_dataloader),
         )
 
     # @abstractmethod
