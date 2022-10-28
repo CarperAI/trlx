@@ -104,3 +104,65 @@ def get_param_space(config: dict):
     method_dict = parse_param_space(config["method"])
 
     return {"model": model_dict, "train": train_dict, "method": method_dict}
+
+
+def get_search_alg(tune_config: dict):
+    """Initialize the search algorithm and return it.
+
+    Bayesian Optimization is currently supported.
+    """
+    search_alg = tune_config["search_alg"]
+
+    if search_alg == "bayesopt":
+        try:
+            from ray.tune.search.bayesopt import BayesOptSearch
+        except ImportError:
+            raise ImportError(
+                "Please pip install bayesian-optimization to use BayesOptSearch."
+            )
+
+        assert "metric" in tune_config.keys() and "mode" in tune_config.keys()
+        "Please specify metric and mode for BayesOptSearch."
+
+        return BayesOptSearch(metric=tune_config["metric"], mode=tune_config["mode"])
+
+    return None
+
+
+def get_scheduler(tune_config: dict):
+    """Initialize the scheduler and return it.
+
+    The schedulers can early terminate bad trials, pause trials,
+    clone trials, and alter hyperparameters of a running trial.
+
+    Refer to the documentation for more info:
+    https://docs.ray.io/en/latest/tune/api_docs/schedulers.html#tune-schedulers
+
+    Currently available schedulers are:
+        - `hyperband` - Implements the HyperBand early stopping algorithm.
+
+    """
+    scheduler = tune_config["scheduler"]
+
+    if scheduler == "hyperband":
+        return tune.schedulers.HyperBandScheduler()
+
+    return None
+
+
+def get_tune_config(config: dict):
+    """Get the tune config to initialized `tune.TuneConfig`
+    to be passed `tune.Tuner`.
+    """
+    tune_config = config["tune_config"]
+
+    if "search_alg" in tune_config.keys() and tune_config["search_alg"] is not None:
+        tune_config["search_alg"] = get_search_alg(tune_config)
+
+    if "scheduler" in tune_config.keys() and tune_config["scheduler"] is not None:
+        tune_config["scheduler"] = get_scheduler(tune_config)
+
+    # Remove config keys with None values.
+    tune_config = {k: v for k, v in tune_config.items() if v is not None}
+
+    return tune_config
