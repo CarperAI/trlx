@@ -6,6 +6,7 @@ from typing import Optional, Tuple, Union
 import torch
 from torch import nn
 from transformers.modeling_outputs import ModelOutput
+import deepspeed
 
 from transformers import (  # isort:skip
     AutoConfig,
@@ -16,9 +17,10 @@ from transformers import (  # isort:skip
 
 
 @dataclass
-class CausalLMOutputWithCrossAttentions(ModelOutput):
+class HydraLMOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: torch.FloatTensor = None
+    ref_logits: torch.FloatTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -113,6 +115,7 @@ class ModelBranch(PreTrainedModel):
         # Defined by the main trunk
         self.n_embd = config.n_embd
         self.num_layers_unfrozen = num_layers_unfrozen
+        self.num_layers_frozen = len(model_trunk.transformer.h) - self.num_layers_unfrozen
         self.model_trunk = model_trunk
 
         self.ln_f = deepcopy(self.model_trunk.transformer.ln_f)
@@ -134,7 +137,28 @@ class ModelBranch(PreTrainedModel):
         for parameter in self.lm_head.parameters():
             parameter.requires_grad = False
 
-    def branch_forward(
+        for parameter in self.ln_f.parameters():
+            parameter.requires_grad = False
+
+    # Simply place each layer and lm_head on same gpu as corresponding unfrozen layer, head
+    def parallelize(self, device_map=None):
+        # Device map has form (key: cuda_device, value: gpt_block_index_list)
+        print("PARALLELIZING BRANCH MODEL")
+        self.device_map = self.model_trunk.device_map
+        trunk_blocks = self.model_trunk.transformer.h
+        for k, v in self.device_map.items():
+            cuda_device = "cuda:" + str(k)
+            for block_ind in v:
+                # Only need to place branch layers
+                if block_ind >= self.num_layers_frozen:
+                    self.h[block_ind - self.num_layers_frozen] = self.h[block_ind - self.num_layers_frozen].to(cuda_device)
+
+        self.ln_f = self.ln_f.to(self.model_trunk.transformer.last_device)
+        # Put lm_head on first device in attempt to evenly distribute weights
+        self.lm_head = self.lm_head.to(self.model_trunk.transformer.first_device)
+        self.model_parallel = True
+
+    def forward(
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -150,7 +174,7 @@ class ModelBranch(PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
-    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
+    ):
 
         batch_size = hidden_states.size()[0]
 
@@ -222,6 +246,8 @@ class ModelBranch(PreTrainedModel):
         )
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
+            # Shift block index by number of frozen layers
+            i = i + self.num_layers_unfrozen
 
             # Model parallel
             if self.model_parallel:
@@ -317,7 +343,7 @@ class ModelBranch(PreTrainedModel):
             value=None,
         )
 
-    def forward(self, input_ids, **x):
+    '''def forward(self, input_ids, **x):
         if x.get("return_dict") is not None:
             return_dict = x["return_dict"]
         else:
@@ -334,7 +360,7 @@ class ModelBranch(PreTrainedModel):
         outputs = self.branch_forward(input_hidden_state, output_shape, **x)
         if not return_dict:
             return outputs.logits
-        return outputs
+        return outputs'''
 
 
 class GPTHydraHeadWithValueModel(nn.Module):
@@ -358,6 +384,7 @@ class GPTHydraHeadWithValueModel(nn.Module):
         self.v_head = make_head(self.n_embd, 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
+
         if num_layers_unfrozen > 0:
             hf_config = AutoConfig.from_pretrained(config)
             hf_config.n_embd = self.n_embd
@@ -366,6 +393,20 @@ class GPTHydraHeadWithValueModel(nn.Module):
                 self.gpt,
                 self.num_layers_unfrozen,
             )
+
+        # Register external parameters
+        for block in self.ref_model.h:
+            for param in block.parameters():
+                deepspeed.zero.register_external_parameter(self, param)
+        
+        for param in self.ref_model.lm_head.parameters():
+            deepspeed.zero.register_external_parameter(self, param)
+
+        for param in self.ref_model.ln_f.parameters():
+            deepspeed.zero.register_external_parameter(self, param)
+
+        #self.model_parallel = False
+        #self.device_map = None
 
     def generate(self, input_ids, **x):
         return self.gpt.generate(input_ids, **x)
@@ -379,13 +420,17 @@ class GPTHydraHeadWithValueModel(nn.Module):
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
         mc_token_ids=None,
         lm_labels=None,
         mc_labels=None,
-        return_dict=False,
-        output_attentions=False,
-        output_hidden_states=False,
+        return_dict=True,
+        use_cache=False,
+        output_attentions=False,  # Need to output attentions by default to compute ref branch
+        output_hidden_states=True,
     ):
+        #print("STARTING FORWARD PASS")
         loss = None
         transformer_outputs = self.gpt.transformer(
             input_ids,
@@ -397,17 +442,45 @@ class GPTHydraHeadWithValueModel(nn.Module):
             inputs_embeds=inputs_embeds,
             output_hidden_states=output_hidden_states,
         )
-        hidden_states = transformer_outputs[0]
-        lm_logits = self.gpt.lm_head(hidden_states)
+
+        # Computing trunk logits
+        hidden_states = transformer_outputs.hidden_states[-1]
+        lm_logits = self.gpt.lm_head(hidden_states).to(torch.float32)
         value = self.v_head(hidden_states).squeeze(-1)
 
+        # Computing branch logits
+        ## Select hidden state before first layer of branch.
+        input_hidden_state = transformer_outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
+        # Get size of last hidden state
+        output_shape = hidden_states[-1].size()
+        outputs = self.ref_model(
+                                      input_hidden_state,  # Takes as input hidden_states instead of input_ids
+                                      output_shape=output_shape,  # output_size given by main trunk
+                                      past_key_values=past_key_values,
+                                      attention_mask=attention_mask,
+                                      token_type_ids=token_type_ids,
+                                      position_ids=position_ids,
+                                      head_mask=head_mask,
+                                      inputs_embeds=inputs_embeds,
+                                      encoder_hidden_states=encoder_hidden_states,
+                                      encoder_attention_mask=encoder_attention_mask,
+                                      use_cache=use_cache,
+                                      output_attentions=output_attentions,
+                                      output_hidden_states=output_hidden_states,
+                                      return_dict=True,
+                                    )
+        ref_logits = outputs.logits
+
+        #print("RETURNING LOGITS")
         if not return_dict:
-            outputs = (lm_logits,) + transformer_outputs[1:] + (value,)
+            outputs = (lm_logits,) + transformer_outputs[1:] + (value,) + (ref_logits,)
             return outputs
 
-        return CausalLMOutputWithCrossAttentions(
+
+        return HydraLMOutput(
             loss=loss,
             logits=lm_logits,
+            ref_logits=ref_logits,
             past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,

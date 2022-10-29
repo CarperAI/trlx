@@ -9,6 +9,7 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.utils import Clock
 from trlx.utils.modeling import logprobs_from_logits
+import time
 
 
 @register_orchestrator
@@ -49,9 +50,14 @@ class PPOOrchestrator(Orchestrator):
         """
         Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
         """
+        print("MAKING EXPERIENCES")
+
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+        # If using zero3 master node generates experiences in batch
+        # and broadcasts to worker nodes
+
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
@@ -60,7 +66,13 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
+            #print("GENERATING SAMPLES")
+            #print("MODEL PARALLELL: ", self.rl_model.model.model_parallel)
+            #self.rl_model.accelerator.wait_for_everyone()
+            # Removing barriers seems to help with generation deadlock
             samples = self.rl_model.generate(**batch)
+            #print("FINISHED GENERATING SAMPLES")
+            #self.rl_model.accelerator.wait_for_everyone()
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
@@ -87,12 +99,15 @@ class PPOOrchestrator(Orchestrator):
                 (query_tensors.to(samples.device), response_tensors), dim=1
             )
             with torch.no_grad():
+                #TODO(dahoas): probably we want to compute these logits with attention masks
+                print("COMPUTING LOGITS", torch.distributed.get_rank())
                 logits, _, v = self.rl_model.model(all_tokens)
+                print("COMPUTING REF LOGITS")
                 ref_logits = self.rl_model.unwrapped_model.ref_model(
                     all_tokens, return_dict=False
                 )
 
-            ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+            #ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
@@ -131,6 +146,22 @@ class PPOOrchestrator(Orchestrator):
 
         stats = {"exp_time": exp_time}
         self.rl_model.accelerator.log(stats, step=iter_count)
+
+            # If model parallel need to communicate dataset elements
+            #if self.rl_model.model_parallel:
+            #    self.rl_model.accelerator.broadcast(ppo_rl_elements, 0)
+
+        # Wait to receive ppo_rl_elements from main process
+        #print("WAITING FOR MAIN PROCESS")
+        #self.rl_model.accelerator.wait_for_everyone()
+
+        # If model parallel take subset of broadcasted data
+        #if self.rl_model.model_parallel:
+        #    rank = torch.distributed.get_rank()
+        #    world_size = torch.distributed.get_world_size()
+        #    shard_size = len(ppo_rl_elements) // world_size
+        #    assert shard_size * world_size == len(ppo_rl_elements)
+        #    ppo_rl_elements = ppo_rl_elements[rank*shard_size : (rank+1)*shard_size]
 
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)

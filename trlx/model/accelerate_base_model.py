@@ -29,6 +29,7 @@ class AccelerateRLModel(BaseRLModel):
         super().__init__(config, train_mode)
 
         self.accelerator = Accelerator(log_with="wandb")
+        #self.accelerator = Accelerator()
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
@@ -37,6 +38,7 @@ class AccelerateRLModel(BaseRLModel):
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
+        self.unwrapped_model = self.model
         self.max_length = config.train.seq_length
 
         if config.model.tokenizer_path:
@@ -109,10 +111,13 @@ class AccelerateRLModel(BaseRLModel):
 
         kwargs = dict(self.generate_kwargs, **kwargs)
 
-        with torch.no_grad():
-            return self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask, **kwargs
-            )
+        # For some reason calling @torch.no_grads() causes a hang
+        return self.model.generate(
+            input_ids=input_ids, attention_mask=attention_mask, **kwargs
+        )
+        #return self.accelerator.unwrap_model(self.model).generate(
+        #    input_ids=input_ids, attention_mask=attention_mask, **kwargs
+        #)
 
     def get_components(self) -> Dict[str, any]:
         components = (

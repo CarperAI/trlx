@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-
+import os
 from trlx.data.configs import TRLConfig
 from trlx.model import register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
@@ -8,6 +8,7 @@ from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 
+DS_STAGE = os.environ.get("DEEPSPEED_ZERO_STAGE", "0")
 
 class AdaptiveKLController:
     def __init__(self, init_kl_coef, target, horizon):
@@ -47,7 +48,7 @@ class AcceleratePPOModel(AccelerateRLModel):
             self.model, self.opt, self.scheduler, rollout_loader
         )
 
-        self.unwrapped_model = self.accelerator.unwrap_model(self.model)
+        #self.unwrapped_model = self.accelerator.unwrap_model(self.model)
 
         self.store.clear_history()
         if config.method.target is not None:
@@ -69,6 +70,10 @@ class AcceleratePPOModel(AccelerateRLModel):
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.eos_token_id,
         )
+
+        self.model_parallel = True if DS_STAGE == "3" else False
+        #if self.model_parallel:
+        #    self.unwrapped_model.parallelize()
 
     def get_arch(self, config: TRLConfig):
         return GPTHydraHeadWithValueModel(
