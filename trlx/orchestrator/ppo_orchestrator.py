@@ -50,7 +50,7 @@ class PPOOrchestrator(Orchestrator):
         """
         Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
         """
-        print("MAKING EXPERIENCES")
+        #print("MAKING EXPERIENCES")
 
         ppo_rl_elements = []
         stats = {}
@@ -72,7 +72,7 @@ class PPOOrchestrator(Orchestrator):
             # Removing barriers seems to help with generation deadlock
             samples = self.rl_model.generate(**batch)
             #print("FINISHED GENERATING SAMPLES")
-            #self.rl_model.accelerator.wait_for_everyone()
+            
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
@@ -101,11 +101,7 @@ class PPOOrchestrator(Orchestrator):
             with torch.no_grad():
                 #TODO(dahoas): probably we want to compute these logits with attention masks
                 print("COMPUTING LOGITS", torch.distributed.get_rank())
-                logits, _, v = self.rl_model.model(all_tokens)
-                print("COMPUTING REF LOGITS")
-                ref_logits = self.rl_model.unwrapped_model.ref_model(
-                    all_tokens, return_dict=False
-                )
+                logits, v, ref_logits = self.rl_model.model(all_tokens)
 
             #ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
@@ -165,3 +161,4 @@ class PPOOrchestrator(Orchestrator):
 
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)
+        #self.rl_model.accelerator.wait_for_everyone()

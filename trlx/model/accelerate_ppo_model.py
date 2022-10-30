@@ -4,11 +4,11 @@ import os
 from trlx.data.configs import TRLConfig
 from trlx.model import register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
+from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel, PretrainedHydraModel
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
 
-DS_STAGE = os.environ.get("DEEPSPEED_ZERO_STAGE", "0")
+#DS_STAGE = os.environ.get("DEEPSPEED_ZERO_STAGE", "0")
 
 class AdaptiveKLController:
     def __init__(self, init_kl_coef, target, horizon):
@@ -71,14 +71,10 @@ class AcceleratePPOModel(AccelerateRLModel):
             pad_token_id=self.tokenizer.eos_token_id,
         )
 
-        self.model_parallel = True if DS_STAGE == "3" else False
-        #if self.model_parallel:
-        #    self.unwrapped_model.parallelize()
+        
 
     def get_arch(self, config: TRLConfig):
-        return GPTHydraHeadWithValueModel(
-            self.config.model.model_path, self.config.model.num_layers_unfrozen
-        )
+        return PretrainedHydraModel(config.model.model_path, config.model.num_layers_unfrozen)
 
     def ref_generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
@@ -131,8 +127,8 @@ class AcceleratePPOModel(AccelerateRLModel):
         position_ids = attention_mask.cumsum(-1) - 1
         position_ids.masked_fill_(attention_mask.eq(0), 0)
 
-        logits, _, vpred = self.model(
-            all_tokens, attention_mask, position_ids=position_ids
+        logits, vpred, _ = self.model(
+            all_tokens, attention_mask=attention_mask, position_ids=position_ids
         )
         logprob = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
 

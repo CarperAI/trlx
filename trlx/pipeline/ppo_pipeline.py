@@ -13,11 +13,11 @@ class PPORolloutStorage(BaseRolloutStore):
     Rollout storage for training PPO
     """
 
-    def __init__(self, pad_token_id):
+    def __init__(self, pad_token_id, batch_size=128):
         super().__init__()
 
         self.pad_token_id = pad_token_id
-        self.history: Iterable[PPORLElement] = [None]
+        self.history: Iterable[PPORLElement] = batch_size*[None]
 
     def push(self, exps: Iterable[PPORLElement]):
         self.history += exps

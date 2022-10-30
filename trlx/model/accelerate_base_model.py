@@ -27,18 +27,17 @@ class AccelerateRLModel(BaseRLModel):
 
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
-
-        self.accelerator = Accelerator(log_with="wandb")
         #self.accelerator = Accelerator()
 
-        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
+        #TODO(dahoas): why is this here?
+        '''if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
         else:
-            torch.random.manual_seed(config.train.seed)
+            torch.random.manual_seed(config.train.seed)'''
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
-        self.unwrapped_model = self.model
+        self.accelerator = Accelerator(log_with="wandb")
         self.max_length = config.train.seq_length
 
         if config.model.tokenizer_path:
@@ -99,7 +98,7 @@ class AccelerateRLModel(BaseRLModel):
         return self.tokenizer(
             text,
             truncation=True,
-            max_length=self.config.seq_length,
+            max_length=self.config.train.seq_length,
             return_tensors="pt",
         )
 
@@ -221,10 +220,12 @@ class AccelerateRLModel(BaseRLModel):
                 for _ in range(self.n_updates_per_batch):
                     forward_time = time()
                     loss, stats = self.loss(batch)
+                    print("Finished computing loss")
                     forward_time = time() - forward_time
 
                     backward_time = time()
                     self.accelerator.backward(loss)
+                    print("FINISHED backprop")
                     backward_time = time() - backward_time
 
                     self.opt.step()
