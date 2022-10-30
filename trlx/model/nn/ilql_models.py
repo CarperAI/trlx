@@ -110,8 +110,8 @@ class ILQLConfig(MethodConfig):
         ).sum() / n_nonterminal
 
         if self.two_qs:
+            qs = [q[:, :-1] for q in qs]
             nactions = qs[0].shape[1]
-            print(qs[0].shape, actions.shape, actions.reshape(-1).shape)
             loss_cql_q1 = (
                 F.cross_entropy(
                     qs[0].reshape(-1, dsize),
@@ -148,13 +148,13 @@ class ILQLConfig(MethodConfig):
         ).sum() / labels.attention_mask[:, 1:].sum()
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
-        stats = {
-            f"losses/{k}": v
-            for k, v in locals().items()
-            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
-        }
+        # stats = {
+        #     f"losses/{k}": v
+        #     for k, v in locals().items()
+        #     if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
+        # }
 
-        return loss, stats
+        return loss
 
 
 class ILQLHeads(nn.Module):

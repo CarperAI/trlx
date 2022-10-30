@@ -143,7 +143,7 @@ class NeoXRLModel(BaseRLModel):
 
         it: Iterable[ILQLBatch] = iter(train_dataloader)
         flattened = map(preprocess, it)
-        for i in range(10):
+        for i in range(len(train_dataloader) * self.config.train_epochs):
             print(self.model.train_batch(flattened))
         from megatron.training import train
         import dataclasses
