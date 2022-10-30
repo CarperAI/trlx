@@ -59,10 +59,14 @@ class ILQLConfig(MethodConfig):
     def layer_spec(self, hidden_size: int, vocab_size: int):
         return LayerSpec(ILQLHeads, hidden_size, vocab_size, self)
 
-    def loss(self, x, batch: ILQLBatch):
-        logits, qs, target_qs, vs = x
+    def loss(self, outputs, labels: ILQLBatch):
+
+        logits, (qs, target_qs, vs) = outputs
+
         actions = (
-            batch.input_ids[:, 1:].gather(dim=1, index=batch.actions_ixs).unsqueeze(-1)
+            labels.input_ids[:, 1:]
+            .gather(dim=1, index=labels.actions_ixs)
+            .unsqueeze(-1)
         )
         bsize, ntokens, dsize = logits.shape
 
@@ -78,15 +82,15 @@ class ILQLConfig(MethodConfig):
             Q = qs.gather(-1, actions).squeeze(-1)
             targetQ = target_qs.gather(-1, actions).squeeze(-1).detach()
 
-        terminal_mask = batch.dones[:, :-1]
+        terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
 
         # values of current states
         V = vs[:, :-1].squeeze()
         # values of next states
-        Vnext = vs[:, 1:].squeeze() * batch.dones[:, 1:]
+        Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
-        Q_ = batch.rewards + self.gamma * Vnext.detach()
+        Q_ = labels.rewards + self.gamma * Vnext.detach()
 
         if self.two_qs:
             loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
@@ -107,6 +111,7 @@ class ILQLConfig(MethodConfig):
 
         if self.two_qs:
             nactions = qs[0].shape[1]
+            print(qs[0].shape, actions.shape, actions.reshape(-1).shape)
             loss_cql_q1 = (
                 F.cross_entropy(
                     qs[0].reshape(-1, dsize),
@@ -136,11 +141,11 @@ class ILQLConfig(MethodConfig):
         loss_awac = (
             F.cross_entropy(
                 logits[:, :-1, :].reshape(-1, dsize),
-                batch.input_ids[:, 1:].reshape(-1),
+                labels.input_ids[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
-            * batch.attention_mask[:, 1:]
-        ).sum() / batch.attention_mask[:, 1:].sum()
+            * labels.attention_mask[:, 1:]
+        ).sum() / labels.attention_mask[:, 1:].sum()
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
         stats = {
@@ -247,7 +252,7 @@ class HeadsLayerSpec(LayerSpec):
 class Heads(nn.Module):
     def __init__(self, heads: Sequence[nn.Module]):
         super().__init__()
-        self.heads = heads
+        self.heads = nn.ModuleList(heads)
 
     def forward(self, x: torch.Tensor):
         return [m(x) for m in self.heads]

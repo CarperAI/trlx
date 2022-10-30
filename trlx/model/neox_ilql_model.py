@@ -14,7 +14,7 @@ from megatron.utils import Timers, get_total_params
 from megatron import print_rank_0, mpu
 
 from trlx.model.nn.ilql_models import GPTNeoXWithValueHeads
-
+from trlx.data.ilql_types import ILQLBatch
 from transformers import AutoTokenizer
 
 import wandb
@@ -80,10 +80,10 @@ class NeoXRLModel(BaseRLModel):
             )
             model.total_params = get_total_params(model.module)
             print_rank_0(f' > total params: {"{:,}".format(model.total_params)}')
+            model.set_batch_fn(None)
 
             if neox_args.is_pipe_parallel:
                 model.set_has_attention_mask(True)
-                model.set_batch_fn(lambda data: data)
         else:
             raise ValueError("Must be using deepspeed to run neox")
 
@@ -110,147 +110,40 @@ class NeoXRLModel(BaseRLModel):
 
         return [e.ids for e in encoded]
 
-    # def generate(self, input_ids, attention_mask=None, **kwargs):
-    #     """Wraps hf's `generate` adding some specific method's defaults"""
-    #     input_ids = input_ids.to(self.accelerator.device)
-    #     if attention_mask is not None:
-    #         attention_mask = attention_mask.to(self.accelerator.device)
-
-    #     kwargs = dict(self.generate_kwargs, **kwargs)
-
-    #     with torch.no_grad():
-    #         return self.accelerator.unwrap_model(self.model).generate(
-    #             input_ids=input_ids, attention_mask=attention_mask, **kwargs
-    #         )
-
-    # def get_components(self) -> Dict[str, Any]:
-    #     components = (
-    #         {"model": self.model, "opt": self.opt, "scheduler": self.scheduler}
-    #         if self.train_mode
-    #         else {"model": self.model}
-    #     )
-    #     return components
-
-    # def save(self, directory=None):
-    #     """Creates checkpoint of optimizer, scheduler and a model"""
-    #     self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
-
-    # def add_eval_pipeline(self, eval_pipeline):
-    #     """Adds pipeline from with validation prompts"""
-    #     self.eval_pipeline = eval_pipeline
-
-    # def evaluate(self):
-    #     """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
-    #     stats = {}
-    #     all_samples = []
-    #     generate_time = time()
-    #     for prompts in self.eval_dataloader:
-    #         if isinstance(prompts, torch.Tensor):
-    #             samples = self.generate(prompts)
-    #         else:
-    #             samples = self.generate(**prompts)
-
-    #         if isinstance(samples, tuple):
-    #             samples, *_ = samples
-
-    #         pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-    #         all_samples.append(
-    #             F.pad(
-    #                 samples,
-    #                 (0, self.max_length - samples.shape[1]),
-    #                 value=pad_token,
-    #             )
-    #         )
-    #     stats["generate_time"] = time() - generate_time
-
-    #     samples = self.accelerator.gather(torch.vstack(all_samples))
-
-    #     if self.accelerator.is_main_process:
-    #         if self.tokenizer:
-    #             samples = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
-
-    #         if isinstance(samples[0], str):
-    #             columns_data = [samples]
-    #         else:
-    #             columns_data = [samples.tolist()]
-    #         columns = ["samples"]
-
-    #         # in online setting, compute the reward for validation
-    #         if self.reward_fn:
-    #             rewards = torch.as_tensor(self.reward_fn(samples), dtype=torch.float)
-    #             mean_reward = rewards.mean()
-    #             columns.append("reward")
-    #             columns_data.append(rewards)
-    #             stats["mean_reward"] = mean_reward
-    #             print(f"{mean_reward=}")
-
-    #         # additionally log any other metrics
-    #         if self.metric_fn:
-    #             metric_time = time()
-    #             metrics = self.metric_fn(samples)
-    #             stats["metric_time"] = time() - metric_time
-
-    #             mean_metrics = {
-    #                 f"metrics/{k}": torch.as_tensor(xs).mean(-1)
-    #                 for k, xs in metrics.items()
-    #             }
-
-    #             stats.update(mean_metrics)
-
-    #             for metric, values in metrics.items():
-    #                 columns.append(metric)
-    #                 columns_data.append(values)
-
-    #         rows = list(zip(*columns_data))
-    #         stats["samples"] = wandb.Table(columns=columns, rows=rows)
-
-    #         print(rows[0])
-
-    #     return stats
-
     def learn(self):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
 
+        self.model.train()
+
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
+        from megatron.utils import get_ltor_masks_and_position_ids
+
+        def broadcast_dataclass(obj: object):
+            d = {
+                k: mpu.broadcast_data([0], [v], v.dtype)[0]
+                for k, v in obj.__dict__.items()
+            }
+            return type(obj)(**d)
+
+        def preprocess(b: ILQLBatch):
+            b = broadcast_dataclass(b)
+            # print(b)
+            tokens = b.input_ids
+            attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+                data=tokens,
+                eod_token=self.neox_args.tokenizer.eod,
+                eod_mask_loss=self.neox_args.eod_mask_loss,
+            )
+
+            return (tokens, position_ids, attention_mask), b
+
+        it: Iterable[ILQLBatch] = iter(train_dataloader)
+        flattened = map(preprocess, it)
+        for i in range(10):
+            print(self.model.train_batch(flattened))
         from megatron.training import train
         import dataclasses
-
-        train(
-            self.neox_args,
-            self.timers,
-            self.model,
-            self.optimizer,
-            self.lr_scheduler,
-            (
-                (
-                    (b.input_ids, b.attention_mask.cumsum(-1) - 1, b.attention_mask),
-                    (b.rewards, b.dones),
-                )
-                for b in iter(train_dataloader)
-            ),
-            iter(eval_dataloader),
-        )
-
-    # @abstractmethod
-    # def get_arch(self, config: TRLConfig):
-    #     """Returns a specific wrapper of the decoder architecture"""
-    #     pass
-
-    # @abstractmethod
-    # def loss(self, batch) -> Tuple[float, Dict]:
-    #     """Compute loss on a batch from `store` and return some statistics"""
-    #     pass
-
-    # @abstractmethod
-    # def post_backward_callback(self):
-    #     """Do something after model update"""
-    #     pass
-
-    # @abstractmethod
-    # def post_epoch_callback(self):
-    #     """Do something after exhausting/single pass over `self.store`"""
-    #     pass
