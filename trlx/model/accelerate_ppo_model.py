@@ -48,8 +48,6 @@ class AcceleratePPOModel(AccelerateRLModel):
             self.model, self.opt, self.scheduler, rollout_loader
         )
 
-        #self.unwrapped_model = self.accelerator.unwrap_model(self.model)
-
         self.store.clear_history()
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
@@ -71,6 +69,9 @@ class AcceleratePPOModel(AccelerateRLModel):
             pad_token_id=self.tokenizer.eos_token_id,
         )
 
+        #dummy_input = self.tokenizer(["hello world"], return_tensors="pt")["input_ids"]
+        #self.model.generate(dummy_input)
+        #exit()
         
 
     def get_arch(self, config: TRLConfig):

@@ -136,9 +136,11 @@ def z3_model_branch():
     accelerator = Accelerator()
     branch, dataloader, opt, scheduler = accelerator.prepare(branch, dataloader, opt, scheduler)
 
-    #dummy_input = tokenizer(["Hello world"], return_tensors='pt')['input_ids'].to(accelerator.device)
-    #branch.generate(dummy_input)
-    #exit()
+    # Generation hangs when inputs on different ranks are not the same
+    text = "hello world" if torch.distributed.get_rank() == 0 else "goodbye my sweet prince"
+    dummy_input = tokenizer([text], return_tensors='pt')['input_ids'].to(accelerator.device)
+    branch.generate(dummy_input)
+    exit()
 
     data = iter(dataloader)
     batch = next(data)

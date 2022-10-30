@@ -57,6 +57,7 @@ class PPOOrchestrator(Orchestrator):
         clock = Clock()
         # If using zero3 master node generates experiences in batch
         # and broadcasts to worker nodes
+        #self.rl_model.accelerator.wait_for_everyone()
 
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
@@ -70,6 +71,8 @@ class PPOOrchestrator(Orchestrator):
             #print("MODEL PARALLELL: ", self.rl_model.model.model_parallel)
             #self.rl_model.accelerator.wait_for_everyone()
             # Removing barriers seems to help with generation deadlock
+            #self.rl_model.model(**batch)
+            #batch.input_ids = batch.input_ids.to(self.rl_model.accelerator.device)
             samples = self.rl_model.generate(**batch)
             #print("FINISHED GENERATING SAMPLES")
             
@@ -161,4 +164,4 @@ class PPOOrchestrator(Orchestrator):
 
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)
-        #self.rl_model.accelerator.wait_for_everyone()
+        self.rl_model.accelerator.wait_for_everyone()
