@@ -117,7 +117,9 @@ class NeoXRLModel(BaseRLModel):
 
         self.model.train()
 
-        train_dataloader = self.store.create_loader(self.config.train.batch_size)
+        train_dataloader = self.store.create_loader(
+            self.neox_args.train_micro_batch_size_per_gpu
+        )
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         from megatron.utils import get_ltor_masks_and_position_ids
@@ -143,7 +145,7 @@ class NeoXRLModel(BaseRLModel):
 
         it: Iterable[ILQLBatch] = iter(train_dataloader)
         flattened = map(preprocess, it)
-        for i in range(len(train_dataloader) * self.config.train_epochs):
+        for i in range(len(train_dataloader) * self.config.train.epochs):
             print(self.model.train_batch(flattened))
         from megatron.training import train
         import dataclasses
