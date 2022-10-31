@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -80,6 +80,9 @@ class TrainConfig:
 
     :param project_name: Project name for wandb
     :type project_name: str
+
+    :param entity_name: Entity name for wandb
+    :type entity_name: str
     """
 
     total_steps: int
@@ -102,6 +105,7 @@ class TrainConfig:
 
     checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
+    entity_name: Optional[str] = None
     seed: int = 1000
 
     @classmethod
