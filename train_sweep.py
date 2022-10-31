@@ -72,7 +72,6 @@ if __name__ == "__main__":
     }
 
     # Register the training function that will be used for training the model.
-    # train_function = get_train_function(args.example_name)
     train_function = get_train_function(args.example_name)
     tune.register_trainable("train_function", train_function)
 
