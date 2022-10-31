@@ -126,6 +126,18 @@ def get_search_alg(tune_config: dict):
         "Please specify metric and mode for BayesOptSearch."
 
         return BayesOptSearch(metric=tune_config["metric"], mode=tune_config["mode"])
+    elif search_alg == "bohb":
+        try:
+            from ray.tune.search.bohb import TuneBOHB
+        except ImportError:
+            raise ImportError(
+                "Please pip install hpbandster and ConfigSpace to use TuneBOHB."
+            )
+
+        assert "metric" in tune_config.keys() and "mode" in tune_config.keys()
+        "Please specify metric and mode for TuneBOHB."
+
+        return TuneBOHB()
 
     return None
 
@@ -147,6 +159,8 @@ def get_scheduler(tune_config: dict):
 
     if scheduler == "hyperband":
         return tune.schedulers.HyperBandScheduler()
+    if scheduler == "hyperbandforbohb":
+        return tune.schedulers.HyperBandForBOHB()
 
     return None
 
