@@ -28,6 +28,8 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
     )
 
     results = tuner.fit()
+    print("#"*10)
+    print(tuner._local_tuner.get_experiment_checkpoint_dir())
     print("Best hyperparameters found were: ", results.get_best_result().config)
 
 

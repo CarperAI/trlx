@@ -3,7 +3,7 @@ tune_config:
   metric: "mean_reward"
   search_alg: "bohb" # null
   scheduler: "hyperbandforbohb" # null
-  num_samples: 10
+  num_samples: 1
   max_concurrent_trials: null
   time_budget_s: null
   reuse_actors: null
