@@ -11,6 +11,8 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.utils.loading import get_model, get_orchestrator
 
+import ray
+
 
 def train(
     model_path: Optional[str] = None,
@@ -49,7 +51,7 @@ def train(
     accelerator = Accelerator(log_with="wandb")
 
     # Initialize tracker
-    if accelerator.is_main_process:
+    if accelerator.is_main_process and not ray.is_initialized():
         accelerator.init_trackers(
             project_name=config.train.project_name,
             config=config.to_dict(),
@@ -60,7 +62,7 @@ def train(
             },
         )
 
-        # run = accelerator.get_tracker("wandb")
+        run = accelerator.get_tracker("wandb")
 
     if reward_fn is not None:
         if model_path:
@@ -117,6 +119,7 @@ def train(
 
     model.learn()
 
-    accelerator.end_training()
+    if accelerator.is_main_process and not ray.is_initialized():
+        accelerator.end_training()
 
     return model

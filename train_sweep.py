@@ -12,12 +12,19 @@ from trlx.ray_tune import get_param_space
 from trlx.ray_tune import get_tune_config
 from trlx.ray_tune import get_train_function
 
+from ray.tune.logger import JsonLoggerCallback
+from ray.tune.logger import CSVLoggerCallback
+
 
 def tune_function(train_function, param_space: dict, tune_config: dict, resources: dict):
     tuner = tune.Tuner(
         tune.with_resources(train_function, resources=resources),
         param_space=param_space,
         tune_config=tune.TuneConfig(**tune_config),
+        run_config = ray.air.RunConfig(
+            local_dir="ray_results",
+            callbacks=[CSVLoggerCallback()]
+        ),
     )
 
     results = tuner.fit()
@@ -39,9 +46,6 @@ if __name__ == "__main__":
         "--num-gpus", type=int, default=0, help="Number of GPUs to use per exp."
     )
     parser.add_argument(
-        "--smoke-test", action="store_true", help="Finish quickly for testing"
-    )
-    parser.add_argument(
         "--server-address",
         type=str,
         default=None,
@@ -57,14 +61,10 @@ if __name__ == "__main__":
     param_space = get_param_space(config)
 
     # Initialize Ray.
-    if args.smoke_test:
-        ray.init(num_cpus=args.num_cpus, num_gpus=args.num_gpus)
-    elif args.server_address:
-        ray.init(
-            num_cpus=args.num_cpus,
-            num_gpus=args.num_gpus,
-            address=f"ray://{args.server_address}"
-        )
+    if args.server_address:
+        ray.init(address=f"ray://{args.server_address}")
+    else:
+        ray.init()
 
     resources = {
         "cpu": args.num_cpus,

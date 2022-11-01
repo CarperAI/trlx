@@ -21,6 +21,14 @@ import ray
 from ray.air import session
 
 
+def parse_results_for_session(results: dict):
+    for k, v in results.items():
+        if isinstance(v, torch.Tensor):
+            results[k] = float(v)
+
+    return results
+
+
 @register_model
 class AccelerateRLModel(BaseRLModel):
     """
@@ -227,11 +235,14 @@ class AccelerateRLModel(BaseRLModel):
                                 "backward_time": backward_time,
                             }
                         )
-                        self.accelerator.log(results)
+
+                        if not ray.is_initialized():
+                            self.accelerator.log(results)
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():
-                            session.report(results)
+                            tmp_results = parse_results_for_session(results)
+                            session.report(tmp_results)
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
                     tbar.set_description(desc)

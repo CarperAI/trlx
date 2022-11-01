@@ -147,3 +147,5 @@ wandb/
 OUT/
 
 ckpts/
+
+ray_results/
