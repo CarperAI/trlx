@@ -11,6 +11,7 @@ from trlx.ray_tune import load_ray_yaml
 from trlx.ray_tune import get_param_space
 from trlx.ray_tune import get_tune_config
 from trlx.ray_tune import get_train_function
+from trlx.ray_tune.wandb import log_trials
 
 from ray.tune.logger import JsonLoggerCallback
 from ray.tune.logger import CSVLoggerCallback
@@ -28,8 +29,8 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
     )
 
     results = tuner.fit()
-    print("#"*10)
-    print(tuner._local_tuner.get_experiment_checkpoint_dir())
+
+    log_trials(tuner._local_tuner.get_experiment_checkpoint_dir(), param_space["train"]["project_name"])
     print("Best hyperparameters found were: ", results.get_best_result().config)
 
 
