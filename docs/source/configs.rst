@@ -26,11 +26,9 @@ the specific method being used (i.e. ILQL or PPO)
 **PPO**
 
 .. autoclass:: trlx.data.method_configs.PPOConfig
-    :undoc-members:
     :members:
 
 **ILQL**
 
 .. autoclass:: trlx.data.method_configs.ILQLConfig
-    :undoc-members:
     :members:

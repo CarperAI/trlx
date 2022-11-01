@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -23,7 +23,7 @@ class ModelConfig:
 
     model_path: str
     tokenizer_path: str
-    model_type: str  # One of the architectures present in framework.model
+    model_type: str
     num_layers_unfrozen: int = -1
 
     @classmethod
@@ -75,8 +75,14 @@ class TrainConfig:
     :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
     :type orchestrator: str
 
+    :param checkpoint_dir: Directory to save checkpoints
+    :type checkpoint_dir: str
+
     :param project_name: Project name for wandb
     :type project_name: str
+
+    :param entity_name: Entity name for wandb
+    :type entity_name: str
     """
 
     total_steps: int
@@ -99,6 +105,7 @@ class TrainConfig:
 
     checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
+    entity_name: Optional[str] = None
     seed: int = 1000
 
     @classmethod

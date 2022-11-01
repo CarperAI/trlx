@@ -6,8 +6,6 @@ from torchtyping import TensorType
 @dataclass
 class PPORLElement:
     """
-    RLElement for PPO
-
     :param query_tensor: The query tensor i.e. the prompt tokens. Should be a long tensor.
     :type query_tensor: torch.Tensor
 
