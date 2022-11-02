@@ -63,6 +63,16 @@ class ILQLConfig(MethodConfig):
 
         logits, (qs, target_qs, vs) = outputs
 
+        qs = [
+            q.gather(
+                dim=1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
+            )
+            for q in qs
+        ]
+        vs = vs.gather(
+            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1])
+        )
+
         actions = (
             labels.input_ids[:, 1:]
             .gather(dim=1, index=labels.actions_ixs)
@@ -88,6 +98,7 @@ class ILQLConfig(MethodConfig):
         # values of current states
         V = vs[:, :-1].squeeze()
         # values of next states
+        print(vs.shape, labels.dones.shape)
         Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
@@ -110,7 +121,7 @@ class ILQLConfig(MethodConfig):
         ).sum() / n_nonterminal
 
         if self.two_qs:
-            qs = [q[:, :-1] for q in qs]
+            # qs = [q[:, :-1] for q in qs]
             nactions = qs[0].shape[1]
             loss_cql_q1 = (
                 F.cross_entropy(

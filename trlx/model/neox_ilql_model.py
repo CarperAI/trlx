@@ -73,7 +73,7 @@ class NeoXRLModel(BaseRLModel):
                 optimizer=optimizer,
                 args=neox_args,
                 lr_scheduler=_lr_scheduler,
-                dist_init_required=False,
+                dist_init_required=True,
                 model_parameters=_model_params,
                 config_params=neox_args.deepspeed_config,
                 mpu=mpu if not neox_args.is_pipe_parallel else None,
@@ -134,18 +134,22 @@ class NeoXRLModel(BaseRLModel):
         def preprocess(b: ILQLBatch):
             b = broadcast_dataclass(b)
             # print(b)
-            tokens = b.input_ids
+            tokens = b.input_ids  # [:, :-1]
             attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
                 data=tokens,
                 eod_token=self.neox_args.tokenizer.eod,
                 eod_mask_loss=self.neox_args.eod_mask_loss,
             )
+            # return (tokens, position_ids, attention_mask), (
+            #     b.input_ids[:, 1:],
+            #     loss_mask,
+            # )
 
             return (tokens, position_ids, attention_mask), b
 
         it: Iterable[ILQLBatch] = iter(train_dataloader)
         flattened = map(preprocess, it)
         for i in range(len(train_dataloader) * self.config.train.epochs):
-            print(self.model.train_batch(flattened))
+            print_rank_0(self.model.train_batch(flattened))
         from megatron.training import train
         import dataclasses
