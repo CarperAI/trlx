@@ -169,7 +169,7 @@ class AccelerateRLModel(BaseRLModel):
                 columns.append("reward")
                 columns_data.append(rewards)
                 stats["mean_reward"] = mean_reward
-                print(f"{mean_reward=}")
+                # print(f"{mean_reward=}")
 
             # additionally log any other metrics
             if self.metric_fn:

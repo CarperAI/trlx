@@ -30,7 +30,11 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
 
     results = tuner.fit()
 
-    log_trials(tuner._local_tuner.get_experiment_checkpoint_dir(), param_space["train"]["project_name"])
+    log_trials(
+        tuner._local_tuner.get_experiment_checkpoint_dir(),
+        param_space["train"]["project_name"]
+    )
+
     print("Best hyperparameters found were: ", results.get_best_result().config)
 
 
