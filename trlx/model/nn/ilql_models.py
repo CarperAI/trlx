@@ -3,7 +3,7 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import chain
-from typing import Union, Sequence, Any, TypeVar
+from typing import Union, Sequence, Any, TypeVar, Tuple
 
 from torchtyping import TensorType  # type: ignore
 from trlx.data.ilql_types import ILQLBatch
@@ -60,17 +60,28 @@ class ILQLConfig(MethodConfig):
         return LayerSpec(ILQLHeads, hidden_size, vocab_size, self)
 
     def loss(self, outputs, labels: ILQLBatch):
-
+        input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones = labels
+        labels = ILQLBatch(
+            input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
+        )
         logits, (qs, target_qs, vs) = outputs
 
         qs = [
             q.gather(
-                dim=1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
+                dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
             )
             for q in qs
         ]
+
+        target_qs = [
+            q.gather(
+                dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
+            )
+            for q in target_qs
+        ]
+
         vs = vs.gather(
-            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1])
+            dim=1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1])
         )
 
         actions = (
@@ -98,7 +109,6 @@ class ILQLConfig(MethodConfig):
         # values of current states
         V = vs[:, :-1].squeeze()
         # values of next states
-        print(vs.shape, labels.dones.shape)
         Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
@@ -149,6 +159,11 @@ class ILQLConfig(MethodConfig):
                 * terminal_mask
             ).sum() / n_nonterminal
 
+        print(logits.shape, labels.input_ids.shape)
+        print(
+            "as", labels.actions_ixs.shape, labels.states_ixs.shape, labels.dones.shape
+        )
+
         loss_awac = (
             F.cross_entropy(
                 logits[:, :-1, :].reshape(-1, dsize),
@@ -186,21 +201,16 @@ class ILQLHeads(nn.Module):
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
 
-    def forward(
-        self,
-        hs: TensorType["N", "T", "C"],  # type: ignore
-        states_ixs=None,
-        actions_ixs=None,
-    ):
-        if states_ixs is not None:
-            states_hs = hs.gather(
-                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
-            actions_hs = hs.gather(
-                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
-        else:
-            states_hs = actions_hs = hs
+    def forward(self, args: Tuple[TensorType["N", "T", "C"], Any]):
+        states_ixs, actions_ixs, hs = args
+        actions_hs = states_hs = hs
+        print(states_ixs.shape, actions_ixs.shape, hs.shape)
+        # states_hs = hs.gather(
+        #     dim=1, index=states_ixs.long().unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+        # )
+        # actions_hs = hs.gather(
+        #     dim=1, index=actions_ixs.long().unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+        # )
 
         if self.config.two_qs:
             qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
@@ -270,6 +280,111 @@ class Heads(nn.Module):
 
 
 from megatron.model import GPT2ModelPipe
+from megatron.model.utils import Lambda
+
+
+def get_layer_name(layer):
+    if isinstance(layer, LayerSpec):
+        return layer.typename.__name__
+    elif isinstance(layer, nn.Module):
+        return layer.__class__.__name__
+    else:
+        return layer.__name__
+
+
+def lift_to_layerspec(x):
+    if isinstance(x, LayerSpec):
+        return x
+    elif isinstance(x, nn.Module):
+        return LayerSpec(lambda: x)
+    else:  # assuming function
+        return LayerSpec(Lambda, x)
+
+
+def get_callable(x):
+    if isinstance(x, LayerSpec):
+        return x.build()
+    elif isinstance(x, nn.Module):
+        return x
+    else:  # assuming function
+        return x
+
+
+class ParMapLayerSpec(LayerSpec):
+    def __init__(self, specs):
+        class NamedFlatmap(FlatMap):
+            pass
+
+        NamedFlatmap.__name__ = ",".join(get_layer_name(spec) for spec in specs)
+
+        super().__init__(NamedFlatmap)
+        self.specs = specs
+
+    def build(self):
+        # print([(type(m), get_layer_name(m)) for m in self.specs])
+        return self.typename(modules=[get_callable(m) for m in self.specs])
+
+
+class FlatMap(nn.Module):
+    def __init__(self, modules):
+        super().__init__()
+        self.branches = nn.ModuleList(modules)
+
+    def forward(self, xs: Sequence[Any]):
+        print(len(xs), [len(x) for x in xs])
+        return type(xs)(
+            filter(
+                lambda x: x is None, (branch(x) for x, branch in zip(xs, self.branches))
+            )
+        )
+
+
+class PassRLData(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = get_callable(model)
+
+    def forward(self, args):
+        # DeepSpeed is hardcoded with attention_mask last
+        (states_ixs, actions_ixs), model_args = args[:2], args[2:]
+        if len(model_args) == 1:
+            m = self.model(model_args[0])
+        else:
+            m = self.model(model_args)
+
+        if not isinstance(m, (tuple, list)):
+            m = (m,)
+        return (states_ixs, actions_ixs, *m)
+
+
+class DropRLData(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = get_callable(model)
+
+    def forward(self, args):
+        # DeepSpeed is hardcoded with attention_mask last
+        (states_ixs, actions_ixs), model_args = args[:2], args[2:]
+        if len(model_args) == 1:
+            m = self.model(model_args[0])
+        else:
+            m = self.model(model_args)
+
+        return m
+
+
+def get_named_subclass(cls, name):
+    class Sub(cls):
+        pass
+
+    Sub.__name__ = name
+
+    return Sub
+
+
+class Drop(nn.Identity):
+    def forward(self, x):
+        return None
 
 
 class GPTNeoXWithValueHeads(GPT2ModelPipe):
@@ -288,12 +403,21 @@ class GPTNeoXWithValueHeads(GPT2ModelPipe):
 
         self.loss_fn = ilql_config.loss
         embedding = self.specs[-1]
-        self.specs[-1] = HeadsLayerSpec(
-            specs=[
-                embedding,
-                ilql_config.layer_spec(self.hidden_size, config.padded_vocab_size),
-            ],
-        )
+        new_specs = [
+            LayerSpec(get_named_subclass(PassRLData, get_layer_name(ls)), ls)
+            for ls in self.specs[:-1]
+        ] + [
+            HeadsLayerSpec(
+                specs=[
+                    LayerSpec(DropRLData, embedding),
+                    ilql_config.layer_spec(self.hidden_size, config.padded_vocab_size),
+                ]
+            )
+        ]
+
+        self.specs = new_specs
+
+        print([get_layer_name(spec) for spec in self.specs])
         PipelineModule.__init__(
             self,
             layers=self.specs,
@@ -321,7 +445,11 @@ class CausalLMWithValueHeads(nn.Module):
             config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
             if config_path:
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
-                    config_path
+                    config_pathb.states_ixs,
+                    b.actions_ixs,
+                    b.input_ids,
+                    b.dones,
+                    b.rewards,
                 )
 
         if isinstance(config, PretrainedConfig):

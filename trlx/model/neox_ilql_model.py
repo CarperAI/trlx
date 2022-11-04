@@ -1,8 +1,9 @@
 import importlib
 import os
 from abc import abstractmethod
+from dataclasses import astuple
 from time import time
-from typing import Any, Dict, Iterable, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Sequence, Tuple, Union, TypeVar
 
 import torch
 import torch.nn.functional as F
@@ -25,6 +26,8 @@ if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
 else:
     from tqdm import tqdm
+
+T = TypeVar("T")
 
 
 @register_model
@@ -121,10 +124,9 @@ class NeoXRLModel(BaseRLModel):
             self.neox_args.train_micro_batch_size_per_gpu
         )
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-
         from megatron.utils import get_ltor_masks_and_position_ids
 
-        def broadcast_dataclass(obj: object):
+        def broadcast_dataclass(obj: T) -> T:
             d = {
                 k: mpu.broadcast_data([0], [v], v.dtype)[0]
                 for k, v in obj.__dict__.items()
@@ -132,11 +134,21 @@ class NeoXRLModel(BaseRLModel):
             return type(obj)(**d)
 
         def preprocess(b: ILQLBatch):
-            b = broadcast_dataclass(b)
+            from copy import deepcopy
+
+            b = deepcopy(broadcast_dataclass(b))
             # print(b)
             tokens = b.input_ids  # [:, :-1]
+            print(
+                "inputs",
+                f"{b.input_ids.shape=}",
+                f"{b.actions_ixs.shape=}",
+                f"{b.states_ixs.shape=}",
+                f"{b.dones.shape=}",
+            )
+            # raise SystemExit
             attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                data=tokens,
+                data=b.input_ids,
                 eod_token=self.neox_args.tokenizer.eod,
                 eod_mask_loss=self.neox_args.eod_mask_loss,
             )
@@ -145,7 +157,20 @@ class NeoXRLModel(BaseRLModel):
             #     loss_mask,
             # )
 
-            return (tokens, position_ids, attention_mask), b
+            return (
+                b.states_ixs.clone(),
+                b.actions_ixs.clone(),
+                b.input_ids.clone(),
+                position_ids,
+                attention_mask,
+            ), (
+                b.input_ids,
+                b.attention_mask,
+                b.rewards,
+                b.states_ixs,
+                b.actions_ixs,
+                b.dones,
+            )
 
         it: Iterable[ILQLBatch] = iter(train_dataloader)
         flattened = map(preprocess, it)
