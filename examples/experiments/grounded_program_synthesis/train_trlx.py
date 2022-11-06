@@ -60,4 +60,4 @@ if __name__ == "__main__":
     train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
     trl_config = TRLConfig.load_yaml("config/trlx_ppo_config.yml")
 
-    model = trlx.train("moyix/codegen-350M-mono-gptj", reward_fn=reward_fn, prompts=train_prompts,config=trl_config)
+    model = trlx.train("reshinthadith/codegen_350M_list_manip_5_len", reward_fn=reward_fn, prompts=train_prompts,config=trl_config)
