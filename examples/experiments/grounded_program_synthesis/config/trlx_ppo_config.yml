@@ -1,0 +1,45 @@
+model:
+  model_path: "moyix/codegen-350M-mono-gptj"  # Name of hf model to load
+  tokenizer_path: "Salesforce/codegen-350M-mono"  # Name of hf tokenizer to load
+  model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
+  num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
+
+train:
+  seq_length: 256  # Size of LM context
+  epochs: 10  # Train for max(epochs, total_steps)
+  total_steps: 80000  # Train for max(epochs, total_steps)
+  batch_size: 8  # batch size
+
+  lr_ramp_steps: 100  # learning rate warm up
+  lr_decay_steps: 79000  # learning rate decay
+  weight_decay: 1.0e-6  # weight decay param
+  learning_rate_init: 1.412e-4  # init learning rate
+  learning_rate_target: 1.412e-4  # target final learning rate
+  opt_betas: [0.9, 0.95] # adam betas
+
+  checkpoint_interval: 1000000  # checkpoint interval
+  eval_interval: 16  # eval interval
+
+  pipeline: "PPOPipeline"  # prompt pipeline to load
+  orchestrator: "PPOOrchestrator"  # orchestrator to load
+
+method:
+  name: 'ppoconfig'  # Name of RL method config
+  num_rollouts: 8  # Number of rollouts to collect per epoch
+  chunk_size: 8  # Number of rollouts to collect in one loop of orchestrator
+  ppo_epochs: 4  # Number of ppo epochs
+  init_kl_coef: 0.2  # init kl coefficient
+  target: 6  # target kl coefficient
+  horizon: 10000  # PPO horizon
+  gamma: 1  # PPO discount
+  lam: 0.95  # PPO lambda
+  cliprange: 0.2  # clip range
+  cliprange_value: 0.2  # clip range
+  vf_coef: 0.2  # value term weight
+  gen_kwargs:
+    max_length: 256  # LM max sample gen length
+    min_length: 48  # LM min sample gen length
+    top_k: 0.0  # top k
+    top_p: 0.7  # top p
+    do_sample: True  # sample
+    temperature: 0.5

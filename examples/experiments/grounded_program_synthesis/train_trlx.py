@@ -1,11 +1,13 @@
 # Toy example of optimizing textual interior designs to output the least number of rooms
 # Also see https://architext.design/
 import trlx
+from trlx.data.configs import TRLConfig
 from lang import Interpreter
 import json
-from logging import logger
+import logging
 
-logger = logger.get_logger(__name__)
+
+logger = logging.getLogger(__name__)
 
 class DSLDataset:
     def __init__(self):
@@ -16,7 +18,8 @@ class DSLDataset:
     def load_datapoints(self,split="train"):
         if split == "train":
             for datapoint in self.train_data:
-                yield datapoint["input"]
+                if "ERROR" not in datapoint["input"]:
+                    yield datapoint["input"]
         elif split == "test":
             for datapoint in self.test_data:
                 yield datapoint["input"]
@@ -52,5 +55,9 @@ if __name__ == "__main__":
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -4]),1)"])) == [1]
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -a]),1)"])) == [-1]
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -3]),1)"])) == [-0.5]
+    #Datset
+    dataset = DSLDataset()
+    train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
+    trl_config = TRLConfig.load_yaml("config/trlx_ppo_config.yml")
 
-    model = trlx.train("moyix/codegen-350M-mono-gptj", reward_fn=reward_fn, prompts=prompts)
+    model = trlx.train("moyix/codegen-350M-mono-gptj", reward_fn=reward_fn, prompts=train_prompts,config=trl_config)

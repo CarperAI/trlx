@@ -17,6 +17,7 @@ def init_random_input(len_range:int=5,value_gen=5)->list:
 
 const_integer = [-5,-4,-3,-2,-1,1,2,3,4,5]
 
+#Functions in the DSL
 def take(input_list:list, n:int)->list:
     return input_list[:n]
 
@@ -296,7 +297,8 @@ def create_synthetic_dataset(size:int,io_size=3)->dict:
             function = sampled[-1]["function_template"]
             prompt_inp  = f"Input: {inp} Output: {out} Function:"
             prompt_out = function
-            output_list.append({"input":prompt_inp,"output":prompt_out,"io_inp":inp,"io_out":out})
+            if out != [] and out != "ERROR":
+                output_list.append({"input":prompt_inp,"output":prompt_out,"io_inp":inp,"io_out":out})
         except:
             pass
 
@@ -310,8 +312,8 @@ if __name__ == "__main__":
     #sampler = Sampler()
     # pprint(sampler.sample_production())
     # pprint(interpreter("div_n(reverse([-2, -5, -4]),1)"))
-    train_data = create_synthetic_dataset(100_000)
-    test_data = create_synthetic_dataset(1_000)
+    train_data = create_synthetic_dataset(200_000)
+    test_data = create_synthetic_dataset(2_000)
     print(f"Train data size: {len(train_data)}")
     print(f"Test data size: {len(test_data)}")
     write_to_json(train_data,"dataset/train.json")
