@@ -5,9 +5,9 @@ from tqdm import tqdm
 import json
 
 
-def init_random_input(len_range:int=5,value_gen=5)->list:
-    len_gen = random.randint(2, len_range+1)
-    value_range = list(range(-value_gen, value_gen+1))
+def init_random_input(len_range: int = 5, value_gen=5) -> list:
+    len_gen = random.randint(2, len_range + 1)
+    value_range = list(range(-value_gen, value_gen + 1))
     output = []
     for index in range(len_gen):
         value_gen = random.choice(value_range)
@@ -15,44 +15,56 @@ def init_random_input(len_range:int=5,value_gen=5)->list:
     return output
 
 
-const_integer = [-5,-4,-3,-2,-1,1,2,3,4,5]
+const_integer = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
 
-#Functions in the DSL
-def take(input_list:list, n:int)->list:
+# Functions in the DSL
+def take(input_list: list, n: int) -> list:
     return input_list[:n]
 
-def drop(input_list:list, n:int)->list:
+
+def drop(input_list: list, n: int) -> list:
     return input_list[n:]
 
-def minimum(input_list:list)->int:
+
+def minimum(input_list: list) -> int:
     return min(input_list)
 
-def maximum(input_list:list)->int:
+
+def maximum(input_list: list) -> int:
     return max(input_list)
 
-def reverse(input_list:list)->list:
+
+def reverse(input_list: list) -> list:
     return input_list[::-1]
 
-def sort_asc(input_list:list)->list:
+
+def sort_asc(input_list: list) -> list:
     return sorted(input_list)
 
-def sort_des(input_list:list)->list:
-    return sorted(input_list,reverse=True)
 
-def add_n(input_list:list,n:int)->list:
-    return [x+n for x in input_list]
+def sort_des(input_list: list) -> list:
+    return sorted(input_list, reverse=True)
 
-def sub_n(input_list:list,n:int)->list:
-    return [x-n for x in input_list]
 
-def mul_n(input_list:list,n:int)->list:
-    return [x*n for x in input_list]
+def add_n(input_list: list, n: int) -> list:
+    return [x + n for x in input_list]
 
-def div_n(input_list:list,n:int)->list:
-    return [x/n for x in input_list]
 
-def expand_copy(input_list:list)->list:
+def sub_n(input_list: list, n: int) -> list:
+    return [x - n for x in input_list]
+
+
+def mul_n(input_list: list, n: int) -> list:
+    return [x * n for x in input_list]
+
+
+def div_n(input_list: list, n: int) -> list:
+    return [x / n for x in input_list]
+
+
+def expand_copy(input_list: list) -> list:
     return input_list + input_list
+
 
 list_manip_dsl = {
     "take": take,
@@ -63,60 +75,60 @@ list_manip_dsl = {
     "add_n": add_n,
     "sub_n": sub_n,
     "mul_n": mul_n,
-    #"div_n": div_n,
-    "expand_copy": expand_copy
-
+    # "div_n": div_n,
+    "expand_copy": expand_copy,
 }
+
 
 class Interpreter:
     def __init__(self) -> None:
         self.parser = list_manip_dsl
-    
-    def __call__(self,statement_string:str):
+
+    def __call__(self, statement_string: str):
         """
         Evaluation Function for the interpreter.
         args:
             statement_string (str) : Statement String
         """
         try:
-            return eval(statement_string) #Adding an exception to unparsable strings
+            return eval(statement_string)  # Adding an exception to unparsable strings
         except:
             return "ERROR"
+
 
 interpreter = Interpreter()
 
 
-generation_template = {
-    "function_template" : "NONE",
-    "output" : "NONE",
-    "input" : []
-}
+generation_template = {"function_template": "NONE", "output": "NONE", "input": []}
 
-def gen_take(expr1=None,expr2=None):
+
+def gen_take(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
-        expr2 = random.choice(range(1,len(expr1)-1))
+        expr2 = random.choice(range(1, len(expr1) - 1))
 
     formatted_fn = f"take({expr1},{expr2})"
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
-def gen_drop(expr1=None,expr2=None):
+
+def gen_drop(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
-        expr2 = random.choice(range(1,len(expr1)-1))
+        expr2 = random.choice(range(1, len(expr1) - 1))
 
     formatted_fn = f"drop({expr1},{expr2})"
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
+
 
 def gen_minimum(expr1=None):
     if expr1 == None:
@@ -129,6 +141,7 @@ def gen_minimum(expr1=None):
     template["input"] = [expr1]
     return template
 
+
 def gen_maximum(expr1=None):
     if expr1 == None:
         expr1 = init_random_input()
@@ -139,6 +152,7 @@ def gen_maximum(expr1=None):
     template["output"] = interpreter(formatted_fn)
     template["input"] = [expr1]
     return template
+
 
 def gen_reverse(expr1=None):
     if expr1 == None:
@@ -151,6 +165,7 @@ def gen_reverse(expr1=None):
     template["input"] = [expr1]
     return template
 
+
 def gen_sort_asc(expr1=None):
     if expr1 == None:
         expr1 = init_random_input()
@@ -161,6 +176,7 @@ def gen_sort_asc(expr1=None):
     template["output"] = interpreter(formatted_fn)
     template["input"] = [expr1]
     return template
+
 
 def gen_sort_des(expr1=None):
     if expr1 == None:
@@ -173,7 +189,8 @@ def gen_sort_des(expr1=None):
     template["input"] = [expr1]
     return template
 
-def gen_add_n(expr1=None,expr2=None):
+
+def gen_add_n(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
@@ -183,10 +200,11 @@ def gen_add_n(expr1=None,expr2=None):
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
-def gen_sub_n(expr1=None,expr2=None):
+
+def gen_sub_n(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
@@ -196,10 +214,11 @@ def gen_sub_n(expr1=None,expr2=None):
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
-def gen_mul_n(expr1=None,expr2=None):
+
+def gen_mul_n(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
@@ -209,10 +228,11 @@ def gen_mul_n(expr1=None,expr2=None):
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
-def gen_div_n(expr1=None,expr2=None):
+
+def gen_div_n(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
@@ -222,20 +242,21 @@ def gen_div_n(expr1=None,expr2=None):
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
-def gen_expand_copy(expr1=None,expr2=None):
+
+def gen_expand_copy(expr1=None, expr2=None):
     if expr1 == None:
         expr1 = init_random_input()
     if expr2 == None:
-        expr2 = random.choice(range(1,3))
+        expr2 = random.choice(range(1, 3))
 
     formatted_fn = f"expand_copy({expr1},{expr2})"
     template = copy.copy(generation_template)
     template["function_template"] = formatted_fn
     template["output"] = interpreter(formatted_fn)
-    template["input"] = [expr1,expr2]
+    template["input"] = [expr1, expr2]
     return template
 
 
@@ -251,11 +272,17 @@ list_manip_dsl_gen = {
     "sub_n": gen_sub_n,
     "mul_n": gen_mul_n,
     "div_n": gen_div_n,
-    "expand_copy": gen_expand_copy
+    "expand_copy": gen_expand_copy,
 }
 
+
 class Sampler:
-    def __init__(self,max_sample_length:int=5,code_sep:str=";",interpreter_sep:str="->"):
+    def __init__(
+        self,
+        max_sample_length: int = 5,
+        code_sep: str = ";",
+        interpreter_sep: str = "->",
+    ):
         self.max_sample_length = max_sample_length
         self.parser = Interpreter()
         self.production_list = list_manip_dsl
@@ -264,10 +291,10 @@ class Sampler:
         self.code_sep = code_sep
         self.interpreter_sep = interpreter_sep
 
-    def sample_production(self,gen_length:int=5):
+    def sample_production(self, gen_length: int = 5):
         init_flag = True
         hash_functions = []
-        if gen_length==None:
+        if gen_length == None:
             gen_length = self.max_sample_length
 
         for ind in range(gen_length):
@@ -278,7 +305,9 @@ class Sampler:
                 init_flag = False
             else:
                 random_chosen_function = random.choice(self.production_idt)
-                generated_function = self.production_gen_list[random_chosen_function](hash_functions[-1]["function_template"])
+                generated_function = self.production_gen_list[random_chosen_function](
+                    hash_functions[-1]["function_template"]
+                )
                 if generated_function["output"] == "ERROR":
                     break
                 hash_functions.append(generated_function)
@@ -286,36 +315,44 @@ class Sampler:
         return hash_functions
 
 
-def create_synthetic_dataset(size:int,io_size=3)->dict:
+def create_synthetic_dataset(size: int, io_size=3) -> dict:
     output_list = []
     sampler = Sampler()
     for i in tqdm(range(size)):
         try:
-            sampled =  sampler.sample_production()
+            sampled = sampler.sample_production()
             inp = sampled[0]["input"][0]
             out = sampled[-1]["output"]
             function = sampled[-1]["function_template"]
-            prompt_inp  = f"Input: {inp} Output: {out} Function:"
+            prompt_inp = f"Input: {inp} Output: {out} Function:"
             prompt_out = function
             if out != [] and out != "ERROR":
-                output_list.append({"input":prompt_inp,"output":prompt_out,"io_inp":inp,"io_out":out})
+                output_list.append(
+                    {
+                        "input": prompt_inp,
+                        "output": prompt_out,
+                        "io_inp": inp,
+                        "io_out": out,
+                    }
+                )
         except:
             pass
 
     return output_list
-        
-def write_to_json(data:dict,file_name:str):
-    with open(file_name,"w") as f:
-        json.dump(data,f,indent=2)
+
+
+def write_to_json(data: dict, file_name: str):
+    with open(file_name, "w") as f:
+        json.dump(data, f, indent=2)
+
 
 if __name__ == "__main__":
-    #sampler = Sampler()
+    # sampler = Sampler()
     # pprint(sampler.sample_production())
     # pprint(interpreter("div_n(reverse([-2, -5, -4]),1)"))
     train_data = create_synthetic_dataset(200_000)
     test_data = create_synthetic_dataset(2_000)
     print(f"Train data size: {len(train_data)}")
     print(f"Test data size: {len(test_data)}")
-    write_to_json(train_data,"dataset/train.json")
-    write_to_json(test_data,"dataset/test.json")
-
+    write_to_json(train_data, "dataset/train.json")
+    write_to_json(test_data, "dataset/test.json")
