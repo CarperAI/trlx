@@ -70,6 +70,7 @@ class AccelerateRLModel(BaseRLModel):
                 init_kwargs={
                     "wandb": {
                         "name": f"{config.model.model_path}",
+                        "entity": self.config.train.entity_name,
                         "mode": "disabled"
                         if os.environ.get("debug", False)
                         else "online",
