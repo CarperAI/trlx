@@ -3,6 +3,7 @@ import copy
 from pprint import pprint
 from tqdm import tqdm
 import json
+from transformers import AutoTokenizer
 
 
 def init_random_input(len_range: int = 5, value_gen=5) -> list:
@@ -18,6 +19,7 @@ def init_random_input(len_range: int = 5, value_gen=5) -> list:
 const_integer = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
 
 # Functions in the DSL
+# Each function defines a transformation in the given DSL Grammar.
 def take(input_list: list, n: int) -> list:
     return input_list[:n]
 
@@ -66,6 +68,7 @@ def expand_copy(input_list: list) -> list:
     return input_list + input_list
 
 
+# Main Production Rules for the Toy DSL.
 list_manip_dsl = {
     "take": take,
     "drop": drop,
@@ -75,11 +78,11 @@ list_manip_dsl = {
     "add_n": add_n,
     "sub_n": sub_n,
     "mul_n": mul_n,
-    # "div_n": div_n,
     "expand_copy": expand_copy,
 }
 
 
+# Use this class to execute programs written in the DSL.
 class Interpreter:
     def __init__(self) -> None:
         self.parser = list_manip_dsl
@@ -98,8 +101,20 @@ class Interpreter:
 
 interpreter = Interpreter()
 
-
+# TEMPLATE
+# This is used to store the input, output and the function template.
+# Input : List given as an input to the function.
+# function_template : The atomic function in a given DSL Grammar
+# Output : Transformed outut by applying function on the input.
 generation_template = {"function_template": "NONE", "output": "NONE", "input": []}
+
+
+# Each of the generate function is used to generate a template for a given function
+# if chosen while sampling the dataset.
+# each function takes in expressions based on the grammar and generates a template.
+# Example: gen_take() generates a template for the take function.
+# take function has two arguments, 
+# list_expression and a bounded integer(Should not be more than the length of the list)..
 
 
 def gen_take(expr1=None, expr2=None):
@@ -346,11 +361,28 @@ def write_to_json(data: dict, file_name: str):
         json.dump(data, f, indent=2)
 
 
+def basic_stats(dataset, tokenizer):
+    """
+    Basic stats to calculate the token length of the dataset.
+    """
+    length_list = []
+    for examples in tqdm(dataset):
+        datapoint = tokenizer(
+            examples["input"] + " " + examples["output"] + "<|endoftext|>"
+        )
+        length_list.append(len(datapoint["input_ids"]))
+    return {
+        "max": max(length_list),
+        "min": min(length_list),
+        "mean": sum(length_list) / len(length_list),
+    }
+
+
 if __name__ == "__main__":
     # sampler = Sampler()
     # pprint(sampler.sample_production())
     # pprint(interpreter("div_n(reverse([-2, -5, -4]),1)"))
-    train_data = create_synthetic_dataset(200_000)
+    train_data = create_synthetic_dataset(2000000)
     test_data = create_synthetic_dataset(2_000)
     print(f"Train data size: {len(train_data)}")
     print(f"Test data size: {len(test_data)}")

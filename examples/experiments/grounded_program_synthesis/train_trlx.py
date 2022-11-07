@@ -78,4 +78,4 @@ if __name__ == "__main__":
         prompts=train_prompts,
         config=trl_config,
     )
-    print(model)
+    model.save_pretrained(output_path)
