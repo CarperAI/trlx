@@ -109,13 +109,13 @@ interpreter = Interpreter()
 generation_template = {"function_template": "NONE", "output": "NONE", "input": []}
 
 
-# Each of the generate function is used to generate a 
+# Each of the generate function is used to generate a
 # template for a given function
 # if chosen while sampling the dataset.
 # each function takes in expressions based on the grammar and generates a template.
 # Example: gen_take() generates a template for the take function.
-# take function has two arguments, 
-# list_expression and a bounded integer(Should not be more 
+# take function has two arguments,
+# list_expression and a bounded integer(Should not be more
 # than the length of the list)..
 
 
