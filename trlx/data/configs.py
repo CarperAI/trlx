@@ -48,7 +48,7 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param lr_init: Initial learning rate after ramp up
+    :param lr_init: Initial learning rate value
     :type lr_init: float
 
     :param lr_target: Target learning rate after decay
