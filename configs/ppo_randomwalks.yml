@@ -6,15 +6,15 @@ model:
 
 train:
   seq_length: 10
-  epochs: 100
+  epochs: 200
   total_steps: 1000
   batch_size: 128
 
   lr_ramp_steps: 100
   lr_decay_steps: 79000
   weight_decay: 1.0e-6
-  learning_rate_init: 1e-3
-  learning_rate_target: 1e-3
+  learning_rate_init: 5e-4
+  learning_rate_target: 5e-4
   opt_betas: [0.9, 0.95]
 
   checkpoint_interval: 10000
@@ -35,7 +35,7 @@ method:
   lam: 0.95
   cliprange: 0.2
   cliprange_value: 0.2
-  vf_coef: 2.3
+  vf_coef: 1.0
   gen_kwargs:
     max_length: 10
     min_length: 2

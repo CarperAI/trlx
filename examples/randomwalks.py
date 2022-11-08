@@ -1,7 +1,7 @@
 # Toy problem similar to the one described in Decision Transformer (Chen et al. 2021):
 # Find graph's shortest paths by learning from a dataset of sampled random walks.
 # A single reward is given at the end of the trajectory.
-# No dynamics, an invalid path and a not found path is penalized the same.
+# No dynamics, impossible paths and not correct paths are penalized the same.
 
 import networkx as nx
 import numpy as np
@@ -69,8 +69,9 @@ def generate_random_walks(
 
     def metric_fn(samples):
         # a negative reward for an invalid or a not found path
-        neginfty = -100
+        infty = 100
         lengths = []
+        best_possible_lengths = []
 
         for s in samples:
             if gpt2_tokenizer:
@@ -81,24 +82,31 @@ def generate_random_walks(
             for ix in range(len(s)):
                 # a nonexisting path is taken
                 if s[ix] >= n_nodes or ix > 0 and not adj[s[ix - 1], s[ix]]:
-                    length = neginfty
+                    length = infty
                     break
                 elif s[ix] == 0:
-                    length = -ix - 1
+                    length = ix + 1
                     break
 
             if length is None:
-                length = neginfty
+                length = infty
+
             lengths.append(length)
+            # allows for inorder checking of % optimality
+            best_possible_lengths.append(best_lengths[s[0] - 1])
 
         lengths = torch.tensor(lengths, dtype=torch.float)
-        bound_lengths = torch.where(lengths.eq(neginfty), worstlen, lengths).abs()
+        bound_lengths = torch.where(lengths.eq(infty), worstlen, lengths).abs()
+        # -1 for invalid or not found path, length^-1 for correct paths
+        scaled_rewards = torch.where(lengths.eq(infty), -1, 1 / lengths)
+        best_possible_lengths = torch.as_tensor(best_possible_lengths)
+
         return {
-            # negative lengths
+            "rewards": scaled_rewards,
             "lengths": lengths,
             # % optimal when compared to the shortest path
             "optimality": (worstlen - bound_lengths)
-            / (worstlen - best_lengths if lengths.shape == best_lengths.shape else 0),
+            / (worstlen - best_possible_lengths),
         }
 
     logit_mask = torch.tensor(adj)

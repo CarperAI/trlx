@@ -13,8 +13,8 @@ train:
   lr_ramp_steps: 100
   lr_decay_steps: 3366
   weight_decay: 1e-6
-  learning_rate_init: 1e-3
-  learning_rate_target: 1e-3
+  learning_rate_init: 5e-4
+  learning_rate_target: 5e-4
   opt_betas: [0.9, 0.95]
 
   checkpoint_interval: 100000
