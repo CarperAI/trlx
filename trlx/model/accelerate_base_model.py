@@ -1,9 +1,12 @@
 import importlib
 import os
+import sys
 from abc import abstractmethod
 from time import time
 from typing import Dict, Iterable, Tuple
 
+import random
+import numpy as np
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator
@@ -18,6 +21,8 @@ if importlib.util.find_spec("rich") is not None:
 else:
     from tqdm import tqdm
 
+import torch.distributed as dist
+
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
@@ -30,10 +35,12 @@ class AccelerateRLModel(BaseRLModel):
 
         self.accelerator = Accelerator(log_with="wandb")
 
-        if int(os.environ.get("WORLD_SIZE", 1)) > 1:
-            torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
-        else:
-            torch.random.manual_seed(config.train.seed)
+        if dist.is_initialized():
+            dist.barrier(device_ids=[int(os.environ.get("LOCAL_RANK"))])
+
+        torch.manual_seed(config.train.seed + dist.get_rank())
+        np.random.seed(config.train.seed + dist.get_rank())
+        random.seed(config.train.seed + dist.get_rank())
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
@@ -63,13 +70,20 @@ class AccelerateRLModel(BaseRLModel):
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
 
+        script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
+        if not isinstance(config.model.model_path, str):
+            model_name = str(config.model.model_path).split()[0]
+        else:
+            model_name = config.model.model_path.split("/")[-1]
+
         if self.accelerator.is_main_process:
+            run_name = f"{script_name}/{model_name}"
             self.accelerator.init_trackers(
                 project_name=self.config.train.project_name,
                 config=self.config.to_dict(),
                 init_kwargs={
                     "wandb": {
-                        "name": f"{config.model.model_path}",
+                        "name": run_name,
                         "mode": "disabled"
                         if os.environ.get("debug", False)
                         else "online",
@@ -77,7 +91,15 @@ class AccelerateRLModel(BaseRLModel):
                 },
             )
 
-        self.opt = torch.optim.AdamW(
+        opt_cls = (
+            torch.optim.AdamW
+            if self.accelerator.state.deepspeed_plugin is None
+            or "optimizer"
+            not in self.accelerator.state.deepspeed_plugin.deepspeed_config
+            else accelerate.utils.DummyOptim
+        )
+
+        self.opt = opt_cls(
             self.model.parameters(),
             lr=float(self.config.train.learning_rate_init),
             betas=self.config.train.opt_betas,
