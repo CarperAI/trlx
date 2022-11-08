@@ -51,7 +51,7 @@ class CausalLMWithValueHeads(nn.Module):
 
         if hasattr(self.gpt, "gpt_neox"):
             self.gpt.transformer = self.gpt.gpt_neox
-            self.gpt.lm_head = self.gpt_embed_out
+            self.gpt.lm_head = self.gpt.embed_out
             self.n_embd = self.gpt.config.hidden_size
             gpt_blocks = self.gpt.gpt_neox.layers
         else:
