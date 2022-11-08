@@ -49,12 +49,6 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
         self.store.clear_history()
-        if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(
-                config.method.init_kl_coef, config.method.target, config.method.horizon
-            )
-        else:
-            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
@@ -150,7 +144,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         with torch.no_grad():
             # Record mean_kl for kl coef adjustment
             self.mean_kl = torch.mean(torch.sum(log_ratio, dim=-1)).item()
-            mean_kl2 = torch.mean((ratio - 1) - log_ratio)
+            mean_kl3 = torch.mean((ratio - 1) - log_ratio)
 
         clip_fraction = (
             (torch.abs(ratio - 1) > self.config.method.cliprange).float().mean()
@@ -162,7 +156,8 @@ class AcceleratePPOModel(AccelerateRLModel):
             "loss/loss": loss,
             "clip_fraction": clip_fraction,
             "kl": self.mean_kl,
-            "kl2": mean_kl2,
+            "kl3": mean_kl3,
+            "ratio": ratio.mean(),
         }
 
         add_stat(stats, "returns", returns, mask, n_nonterminal)

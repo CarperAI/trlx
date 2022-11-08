@@ -5,6 +5,7 @@ from typing import Any, Iterable, List
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
 from torchtyping import TensorType
 
@@ -88,34 +89,6 @@ class Clock:
         return sec_per_samp * n_samp
 
 
-# Sampling
-
-
-def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
-    """
-    Takes batched distribution over tokens and masks out scores for tokens
-    that are not in the top k for that distribution.
-    """
-
-    # Get topk per distribution
-    # For each dist, getting last value gives k-th largest
-    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
-    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
-
-
-# Sentiment/scores
-
-
-def sentiment_score(sentiments: Iterable[float]):
-    """
-    Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
-    """
-    sentiments = torch.tensor(
-        [-s["score"] if s["label"] == "NEGATIVE" else s["score"] for s in sentiments]
-    )
-    return sentiments
-
-
 def add_stat(stats, name, xs, mask, n):
     mean = (xs * mask).sum() / n
     stats.update(
@@ -123,6 +96,42 @@ def add_stat(stats, name, xs, mask, n):
             f"{name}/mean": mean,
             f"{name}/min": torch.where(mask.bool(), xs, np.inf).min(),
             f"{name}/max": torch.where(mask.bool(), xs, -np.inf).max(),
-            f"{name}/std": ((xs - mean) * mask).pow(2).sum() / n,
+            f"{name}/std": torch.sqrt(((xs - mean) * mask).pow(2).sum() / n),
         }
     )
+
+
+class RunningMoments:
+    def __init__(self):
+        """
+        Calculates the running mean and std of a data stream. Modified version of
+        https://github.com/DLR-RM/stable-baselines3/blob/a6f5049a99a4c21a6f0bcce458ca3306cef310e0/stable_baselines3/common/running_mean_std.py
+        """
+        self.mean = 0
+        self.std = 1
+        self.var = 1
+        self.count = 1e-24
+
+    def update(self, xs):
+        """Updates running moments from batch's moments computed across ranks"""
+        if dist.is_initialized():
+            all_xs = [torch.empty_like(xs) for _ in range(dist.get_world_size())]
+            dist.all_gather(all_xs, xs)
+            xs = torch.stack(all_xs)
+
+        xs_count = xs.numel()
+        xs_var, xs_mean = torch.var_mean(xs, unbiased=False)
+
+        delta = xs_mean - self.mean
+        tot_count = self.count + xs_count
+
+        m_a = self.var * self.count
+        m_b = xs_var * xs_count
+        m_2 = m_a + m_b + delta**2 * self.count * xs_count / tot_count
+
+        self.mean += delta * xs_count / tot_count
+        self.var = m_2 / tot_count
+        self.std = (self.var * tot_count / (tot_count - 1)).sqrt()
+        self.count = tot_count
+
+        return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()

@@ -7,7 +7,7 @@ from trlx.model import BaseRLModel
 from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
-from trlx.utils import Clock
+from trlx.utils import Clock, RunningMoments
 from trlx.utils.modeling import logprobs_from_logits
 from time import time
 
@@ -43,6 +43,7 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model.reward_fn = reward_fn
         self.rl_model.metric_fn = metric_fn
 
+        self.running = RunningMoments()
         self.ref_mean = None
         self.ref_std = None
 
@@ -78,14 +79,19 @@ class PPOOrchestrator(Orchestrator):
             )
 
             exp_score_time = time()
-            scores = torch.as_tensor(self.score(texts))
+            scores = torch.as_tensor(self.score(texts), device=samples.device)
+            stats["exp_score_time"] = time() - exp_score_time
 
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
 
-            scores = (scores - self.ref_mean) / (self.ref_std + 1e-30)
-            stats["exp_score_time"] = time() - exp_score_time
-            stats["exp_score_mean"] = scores.mean()
+            all_scores_mean, all_scores_std = self.running.update(scores)
+            scores /= self.running.std
+
+            stats["exp_scores_mean"] = all_scores_mean
+            stats["exp_scores_std"] = all_scores_std
+            stats["running_mean"] = self.running.mean
+            stats["running_std"] = self.running.std
 
             # Precompute logprobs, values
             all_tokens = torch.cat(
