@@ -22,7 +22,8 @@ def train(
 
     Args:
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory
-        reward_fn (List[str] -> List[float]): Function to rate batches of generated samples
+        reward_fn (List -> List[float]): Function to rate batches of generated samples
+        experience_fn (Optional[Callable]): Function to generate samples and rewards
         dataset (List[str], List[float]): Lists of samples and rewards
         prompts (List[str]): Prompts to sample off from during online training
         eval_prompts (List[str]): Prompts to periodically validate training on
