@@ -22,7 +22,7 @@ class Block(nn.Module):
         super().__init__()
         self.linear = nn.Linear(in_dim, out_dim)
         self.a1 = nn.GELU()
-    
+
     def forward(self, x):
         return self.a1(self.linear(x))
 
@@ -111,7 +111,7 @@ def z3_model_branch():
         attention_mask = input['attention_mask']
         return {'input_ids': input_ids, 'attention_mask': attention_mask}
 
-    dataloader = DataLoader(input, 128, collate_fn=collate_fn)
+    dataloader = DataLoader(input, 2, collate_fn=collate_fn)
     #trunk = AutoModelForCausalLM.from_pretrained('gpt2')
     #hf_config = trunk.config
     #branch = ModelBranch(hf_config, trunk, 2)
@@ -136,22 +136,40 @@ def z3_model_branch():
     accelerator = Accelerator()
     branch, dataloader, opt, scheduler = accelerator.prepare(branch, dataloader, opt, scheduler)
 
-    # Generation hangs when inputs on different ranks are not the same
+    '''# Generation hangs when inputs on different ranks are not the same
     text = "hello world" if torch.distributed.get_rank() == 0 else "goodbye my sweet prince"
-    dummy_input = tokenizer([text], return_tensors='pt')['input_ids'].to(accelerator.device)
-    branch.generate(dummy_input)
-    exit()
-
-    data = iter(dataloader)
-    batch = next(data)
-    output = branch(**batch)
-
-    out = branch.generate(**batch)
+    tokenizer.pad_token = tokenizer.eos_token
+    dummy_input = tokenizer([text], padding="max_length", truncation=True, max_length=12, return_tensors='pt')['input_ids'].to(accelerator.device)
+    gen_kwargs = {'max_length': 24, 'min_length': 24}
+    print(dummy_input.size())
+    out = branch.generate(dummy_input, **gen_kwargs)
+    print(out.size())
     decoded_out = tokenizer.batch_decode(out)
     print(decoded_out)
+    exit()'''
 
-    output = branch(**batch)
-    
+    # Seem to be able to backprop with no loop
+    for i, batch in enumerate(iter(dataloader)):
+        print("STEP", i)
+
+        # Issue seems to be with calling generate or no grad forward around backprop
+        #with torch.no_grad():
+        #out = branch.generate(**batch)  # Also cannot call .generate around forward/
+        #decoded_out = tokenizer.batch_decode(out)
+        with torch.no_grad():
+            branch.eval()
+            out = branch.generate(**batch)  # Also cannot call .generate around forward/
+            decoded_out = tokenizer.batch_decode(out)
+            _ = branch(**batch)  #  Issue with calling no grad forward around backward
+
+        branch.train()
+        logits, vpred, ref_logits = branch(**batch)
+        loss = logits.sum()
+        accelerator.backward(loss)
+        accelerator.wait_for_everyone()
+
+    print("EXITING")
+
 
 if __name__ == "__main__":
     #simple_hydra()

@@ -44,6 +44,7 @@ class AccelerateRLModel(BaseRLModel):
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.padding_side = "left"
+            self.tokenizer.max_length = 8  #TODO(dahoas): Need to change this
         else:
             self.tokenizer = None
 

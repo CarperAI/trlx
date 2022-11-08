@@ -50,6 +50,8 @@ class PPOOrchestrator(Orchestrator):
         """
         Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
         """
+        # Turn model to eval model
+        self.rl_model.model.eval()
         #print("MAKING EXPERIENCES")
 
         ppo_rl_elements = []
@@ -73,9 +75,11 @@ class PPOOrchestrator(Orchestrator):
             # Removing barriers seems to help with generation deadlock
             #self.rl_model.model(**batch)
             #batch.input_ids = batch.input_ids.to(self.rl_model.accelerator.device)
+            print("batch", batch.keys())
+            print("batch_size", batch["input_ids"].size())
             samples = self.rl_model.generate(**batch)
             #print("FINISHED GENERATING SAMPLES")
-            
+
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
@@ -165,3 +169,6 @@ class PPOOrchestrator(Orchestrator):
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)
         self.rl_model.accelerator.wait_for_everyone()
+
+        # Turn model to train mode
+        self.rl_model.model.train()

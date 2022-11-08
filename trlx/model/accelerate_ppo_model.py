@@ -72,7 +72,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         #dummy_input = self.tokenizer(["hello world"], return_tensors="pt")["input_ids"]
         #self.model.generate(dummy_input)
         #exit()
-        
+
 
     def get_arch(self, config: TRLConfig):
         return PretrainedHydraModel(config.model.model_path, config.model.num_layers_unfrozen)

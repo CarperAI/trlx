@@ -18,7 +18,7 @@ class PromptPipeline(BasePipeline):
     def __init__(self, prompts, tokenizer=None):
         super().__init__()
         self.tokenizer = tokenizer
-        self.prompts = list(map(tokenizer if tokenizer else (lambda x: x), prompts))
+        self.prompts = list(map(lambda x: tokenizer(x, truncation=True, max_length=tokenizer.max_length) if tokenizer else (lambda x: x), prompts))
 
     def __getitem__(self, ix: int):
         return self.prompts[ix]
@@ -28,7 +28,7 @@ class PromptPipeline(BasePipeline):
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
         collate_fn = (
-            DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
+            DataCollatorWithPadding(self.tokenizer, padding="max_length", max_length=self.tokenizer.max_length) if self.tokenizer else torch.vstack
         )
         return DataLoader(
             self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle
