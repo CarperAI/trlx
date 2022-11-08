@@ -169,7 +169,6 @@ class CausalLMWithValueHeads(nn.Module):
         max_length=32,
         temperature=1,
         top_k=20,
-        logit_mask=None,
         logs=True,
         pad_token_id=50256,
         eos_token_id=50256,
@@ -207,9 +206,6 @@ class CausalLMWithValueHeads(nn.Module):
 
             logits = logits[:, -1, :]
             vs = vs[:, -1, :]
-
-            if logit_mask is not None:
-                logits[torch.where(logit_mask[input_ids[:, -1].squeeze()])] = -np.inf
 
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)

@@ -15,12 +15,10 @@ class AccelerateILQLModel(AccelerateRLModel):
     def __init__(
         self,
         config,
-        logit_mask=None,
         metric_fn=None,
         train_mode=True,
     ):
         super().__init__(config, train_mode)
-        self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None
         self.params = config.method
@@ -187,7 +185,6 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.generate_kwargs = {
             "beta": self.config.method.betas[0],
             "max_length": self.max_length,
-            "logit_mask": self.logit_mask,
             "eos_token_id": self.tokenizer.eos_token_id if self.tokenizer else 0,
             "pad_token_id": self.tokenizer.pad_token_id if self.tokenizer else 0,
         }
