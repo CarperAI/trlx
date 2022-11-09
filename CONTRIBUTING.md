@@ -10,7 +10,6 @@ Here are some guidelines to help you get started 🚀.
 
 To submit a bug report or a feature request, please open an [issue](https://github.com/CarperAI/trlx/issues) by clicking on the `New Issue` button and selecting the respective issue template. Make sure to fill out all the required information and provide as much detail as possible. For bug reports, this means including a minimal code example that reproduces the bug, and for feature requests, it means providing a clear and detailed description of the feature you would like to see implemented.
 
-
 ## Submitting code
 
 > **Note**: Make sure to first search through the [issue tracker](https://github.com/CarperAI/trlx/issues) and [PR list](https://github.com/CarperAI/trlx/pulls) to avoid duplicating work. If you want to work on a non-trivial feature, we highly recommended that you first open an issue in the [issue tracker](https://github.com/CarperAI/trlx/issues) to get feedback from core developers.
@@ -49,6 +48,8 @@ Follow these steps to start contributing code:
 6. Push the changes to your fork.
 
 Finally ... 🥁 ... Create a [pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request) to the `trlX` repository! Make sure to include a description of your changes and link to any relevant issues.
+
+> __Tip__: If you're looking to introduce an experimental feature, we suggest testing the behavior of your proposed feature on some of the existing [examples](https://github.com/CarperAI/trlx/tree/master/examples), such as [random walks](https://github.com/CarperAI/trlx/blob/master/examples/randomwalks.py). This will help you get a better sense of how the feature would work in practice and will also help you identify any potential flaws in the implementation.
 
 ## Asking questions
 
