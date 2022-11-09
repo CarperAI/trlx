@@ -50,7 +50,7 @@ if __name__ == "__main__":
         "--num-cpus", type=int, default=4, help="Number of CPUs to use per exp."
     )
     parser.add_argument(
-        "--num-gpus", type=int, default=0, help="Number of GPUs to use per exp."
+        "--num-gpus", type=int, default=1, help="Number of GPUs to use per exp."
     )
     parser.add_argument(
         "--server-address",
