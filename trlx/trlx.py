@@ -62,8 +62,6 @@ def train(
             },
         )
 
-        run = accelerator.get_tracker("wandb")
-
     if reward_fn is not None:
         if model_path:
             config.model.model_path = model_path
