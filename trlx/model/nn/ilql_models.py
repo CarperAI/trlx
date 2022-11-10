@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from itertools import chain
 from typing import Union, Sequence, Any, TypeVar, Tuple
 
-from torchtyping import TensorType  # type: ignore
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
 
@@ -19,13 +18,6 @@ from torch import nn
 from transformers import AutoModelForCausalLM, PretrainedConfig
 
 import wandb
-
-import megatron
-
-print(dir(megatron), megatron.__file__)
-from megatron import print_rank_0, mpu
-
-from attrs import define
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
@@ -54,16 +46,9 @@ class ILQLConfig(MethodConfig):
     two_qs: bool
 
     def heads(self, hidden_size: int, vocab_size: int):
-        return ILQLHeads(hidden_size, vocab_size, self)
-
-    def layer_spec(self, hidden_size: int, vocab_size: int):
-        return LayerSpec(ILQLHeads, hidden_size, vocab_size, self)
+        return ILQLHeads(self, hidden_size, vocab_size)
 
     def loss(self, outputs, labels: ILQLBatch):
-        input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones = labels
-        labels = ILQLBatch(
-            input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
-        )
         logits, (qs, target_qs, vs) = outputs
 
         qs = [
@@ -131,7 +116,7 @@ class ILQLConfig(MethodConfig):
         ).sum() / n_nonterminal
 
         if self.two_qs:
-            # qs = [q[:, :-1] for q in qs]
+
             nactions = qs[0].shape[1]
             loss_cql_q1 = (
                 F.cross_entropy(
@@ -159,11 +144,6 @@ class ILQLConfig(MethodConfig):
                 * terminal_mask
             ).sum() / n_nonterminal
 
-        print(logits.shape, labels.input_ids.shape)
-        print(
-            "as", labels.actions_ixs.shape, labels.states_ixs.shape, labels.dones.shape
-        )
-
         loss_awac = (
             F.cross_entropy(
                 logits[:, :-1, :].reshape(-1, dsize),
@@ -174,17 +154,18 @@ class ILQLConfig(MethodConfig):
         ).sum() / labels.attention_mask[:, 1:].sum()
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
-        # stats = {
-        #     f"losses/{k}": v
-        #     for k, v in locals().items()
-        #     if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
-        # }
 
-        return loss
+        stats = {
+            f"losses/{k}": v
+            for k, v in locals().items()
+            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
+        }
+
+        return loss, stats
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, hidden_size: int, vocab_size: int, config: ILQLConfig):
+    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -201,28 +182,18 @@ class ILQLHeads(nn.Module):
             self.target_q2_head = deepcopy(self.q2_head)
             self.target_q2_head.requires_grad_(False)
 
-    def forward(self, args: Tuple[TensorType["N", "T", "C"], Any]):
-        states_ixs, actions_ixs, hs = args
-        actions_hs = states_hs = hs
-        print(states_ixs.shape, actions_ixs.shape, hs.shape)
-        # states_hs = hs.gather(
-        #     dim=1, index=states_ixs.long().unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-        # )
-        # actions_hs = hs.gather(
-        #     dim=1, index=actions_ixs.long().unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-        # )
-
+    def forward(self, hs: torch.Tensor):
         if self.config.two_qs:
-            qs = (self.q1_head(actions_hs), self.q2_head(actions_hs))
+            qs = (self.q1_head(hs), self.q2_head(hs))
             target_qs = (
-                self.target_q1_head(actions_hs),
-                self.target_q2_head(actions_hs),
+                self.target_q1_head(hs),
+                self.target_q2_head(hs),
             )
         else:
-            qs = self.q1_head(actions_hs)
-            target_qs = self.target_q1_head(actions_hs)
+            qs = self.q1_head(hs)
+            target_qs = self.target_q1_head(hs)
 
-        vs = self.v_head(states_hs)
+        vs = self.v_head(hs)
 
         return qs, target_qs, vs
 
@@ -258,177 +229,6 @@ class ILQLHeads(nn.Module):
             self._sync_target_q_heads(self.config.alpha)
 
 
-from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec  # type: ignore
-
-
-class HeadsLayerSpec(LayerSpec):
-    def __init__(self, specs: Sequence[LayerSpec]):
-        super().__init__(Heads)
-        self.branches = specs
-
-    def build(self):
-        return Heads(heads=[m.build() for m in self.branches])
-
-
-class Heads(nn.Module):
-    def __init__(self, heads: Sequence[nn.Module]):
-        super().__init__()
-        self.heads = nn.ModuleList(heads)
-
-    def forward(self, x: torch.Tensor):
-        return [m(x) for m in self.heads]
-
-
-from megatron.model import GPT2ModelPipe
-from megatron.model.utils import Lambda
-
-
-def get_layer_name(layer):
-    if isinstance(layer, LayerSpec):
-        return layer.typename.__name__
-    elif isinstance(layer, nn.Module):
-        return layer.__class__.__name__
-    else:
-        return layer.__name__
-
-
-def lift_to_layerspec(x):
-    if isinstance(x, LayerSpec):
-        return x
-    elif isinstance(x, nn.Module):
-        return LayerSpec(lambda: x)
-    else:  # assuming function
-        return LayerSpec(Lambda, x)
-
-
-def get_callable(x):
-    if isinstance(x, LayerSpec):
-        return x.build()
-    elif isinstance(x, nn.Module):
-        return x
-    else:  # assuming function
-        return x
-
-
-class ParMapLayerSpec(LayerSpec):
-    def __init__(self, specs):
-        class NamedFlatmap(FlatMap):
-            pass
-
-        NamedFlatmap.__name__ = ",".join(get_layer_name(spec) for spec in specs)
-
-        super().__init__(NamedFlatmap)
-        self.specs = specs
-
-    def build(self):
-        # print([(type(m), get_layer_name(m)) for m in self.specs])
-        return self.typename(modules=[get_callable(m) for m in self.specs])
-
-
-class FlatMap(nn.Module):
-    def __init__(self, modules):
-        super().__init__()
-        self.branches = nn.ModuleList(modules)
-
-    def forward(self, xs: Sequence[Any]):
-        print(len(xs), [len(x) for x in xs])
-        return type(xs)(
-            filter(
-                lambda x: x is None, (branch(x) for x, branch in zip(xs, self.branches))
-            )
-        )
-
-
-class PassRLData(nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = get_callable(model)
-
-    def forward(self, args):
-        # DeepSpeed is hardcoded with attention_mask last
-        (states_ixs, actions_ixs), model_args = args[:2], args[2:]
-        if len(model_args) == 1:
-            m = self.model(model_args[0])
-        else:
-            m = self.model(model_args)
-
-        if not isinstance(m, (tuple, list)):
-            m = (m,)
-        return (states_ixs, actions_ixs, *m)
-
-
-class DropRLData(nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = get_callable(model)
-
-    def forward(self, args):
-        # DeepSpeed is hardcoded with attention_mask last
-        (states_ixs, actions_ixs), model_args = args[:2], args[2:]
-        if len(model_args) == 1:
-            m = self.model(model_args[0])
-        else:
-            m = self.model(model_args)
-
-        return m
-
-
-def get_named_subclass(cls, name):
-    class Sub(cls):
-        pass
-
-    Sub.__name__ = name
-
-    return Sub
-
-
-class Drop(nn.Identity):
-    def forward(self, x):
-        return None
-
-
-class GPTNeoXWithValueHeads(GPT2ModelPipe):
-    def __init__(
-        self,
-        config: megatron.NeoXArgs,
-        ilql_config: ILQLConfig,
-    ):
-        super().__init__(
-            neox_args=config,
-            num_tokentypes=0,
-            parallel_output=True,
-            topology=mpu.get_topology(),
-            use_cache=False,
-        )
-
-        self.loss_fn = ilql_config.loss
-        embedding = self.specs[-1]
-        new_specs = [
-            LayerSpec(get_named_subclass(PassRLData, get_layer_name(ls)), ls)
-            for ls in self.specs[:-1]
-        ] + [
-            HeadsLayerSpec(
-                specs=[
-                    LayerSpec(DropRLData, embedding),
-                    ilql_config.layer_spec(self.hidden_size, config.padded_vocab_size),
-                ]
-            )
-        ]
-
-        self.specs = new_specs
-
-        print([get_layer_name(spec) for spec in self.specs])
-        PipelineModule.__init__(
-            self,
-            layers=self.specs,
-            loss_fn=self.loss_fn,
-            topology=self.__topology__,
-            activation_checkpoint_interval=self.activation_checkpoint_interval,
-            partition_method=config.pipe_partition_method,
-            checkpointable_layers=["GMLPBlock", "ParallelTransformerLayerPipe"],
-        )
-
-
 class CausalLMWithValueHeads(nn.Module):
     """This is a wrapper around huggingface AutoModelForCausalLM with two additional scalar heads"""
 
@@ -445,11 +245,7 @@ class CausalLMWithValueHeads(nn.Module):
             config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
             if config_path:
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
-                    config_pathb.states_ixs,
-                    b.actions_ixs,
-                    b.input_ids,
-                    b.dones,
-                    b.rewards,
+                    config_path
                 )
 
         if isinstance(config, PretrainedConfig):
@@ -500,9 +296,7 @@ class CausalLMWithValueHeads(nn.Module):
         hs = out.last_hidden_state
 
         logits = self.gpt.lm_head(hs)
-        qs, target_qs, vs = self.ilql_heads(
-            hs, actions_ixs=actions_ixs, states_ixs=states_ixs
-        )
+        qs, target_qs, vs = self.ilql_heads(hs)
 
         return logits, qs, target_qs, vs, out.past_key_values
 

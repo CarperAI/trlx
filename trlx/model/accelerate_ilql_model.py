@@ -70,7 +70,7 @@ class AccelerateILQLModel(AccelerateRLModel):
             states_ixs=batch.states_ixs,
         )
 
-        return self.ilql.loss((logits, qs, target_qs, vs), batch)
+        return self.ilql.loss((logits, (qs, target_qs, vs)), batch)
 
     def prepare_learning(self):
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
