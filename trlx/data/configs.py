@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -23,7 +23,7 @@ class ModelConfig:
 
     model_path: str
     tokenizer_path: str
-    model_type: str  # One of the architectures present in framework.model
+    model_type: str
     num_layers_unfrozen: int = -1
 
     @classmethod
@@ -48,20 +48,20 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param lr_ramp_steps: Number of steps before learning rate reaches learning_rate_init
-    :type lr_ramp_steps: int
+    :param lr_init: Initial learning rate value
+    :type lr_init: float
 
-    :param lr_decay_steps: Number of after ramp up steps before learning rate decays to learning_rate_target
-    :type lr_decay_steps: int
+    :param lr_target: Target learning rate after decay
+    :type lr_target: float
+
+    :param opt_betas: Beta parameters for Adam optimizer
+    :type opt_betas: Tuple[float]
+
+    :param opt_eps: Epsilon for optimizer
+    :type opt_eps: float
 
     :param weight_decay: Weight decay for optimizer
     :type weight_decay: float
-
-    :param learning_rate_init: Initial learning rate after ramp up
-    :type learning_rate_init: float
-
-    :param learning_rate_target: Target learning rate after decay
-    :type learning_rate_target: float
 
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
@@ -75,8 +75,14 @@ class TrainConfig:
     :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
     :type orchestrator: str
 
+    :param checkpoint_dir: Directory to save checkpoints
+    :type checkpoint_dir: str
+
     :param project_name: Project name for wandb
     :type project_name: str
+
+    :param entity_name: Entity name for wandb
+    :type entity_name: str
     """
 
     total_steps: int
@@ -84,12 +90,11 @@ class TrainConfig:
     epochs: int
     batch_size: int
 
-    lr_ramp_steps: int
-    lr_decay_steps: int
-    weight_decay: float
-    learning_rate_init: float
-    learning_rate_target: float
+    lr_init: float
+    lr_target: float
     opt_betas: Tuple[float]
+    opt_eps: float
+    weight_decay: float
 
     checkpoint_interval: int
     eval_interval: int
@@ -99,6 +104,7 @@ class TrainConfig:
 
     checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
+    entity_name: Optional[str] = None
     seed: int = 1000
 
     @classmethod

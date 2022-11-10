@@ -70,6 +70,7 @@ class AccelerateRLModel(BaseRLModel):
                 init_kwargs={
                     "wandb": {
                         "name": f"{config.model.model_path}",
+                        "entity": self.config.train.entity_name,
                         "mode": "disabled"
                         if os.environ.get("debug", False)
                         else "online",
@@ -79,14 +80,16 @@ class AccelerateRLModel(BaseRLModel):
 
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
-            lr=float(self.config.train.learning_rate_init),
+            lr=self.config.train.lr_init,
             betas=self.config.train.opt_betas,
+            eps=self.config.train.opt_eps,
+            weight_decay=self.config.train.weight_decay,
         )
 
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.opt,
             self.config.train.total_steps,
-            eta_min=float(self.config.train.learning_rate_target),
+            eta_min=self.config.train.lr_target,
         )
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
