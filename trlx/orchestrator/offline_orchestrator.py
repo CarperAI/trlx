@@ -48,12 +48,12 @@ class OfflineOrchestrator(Orchestrator):
             states_ixs.append(s_ixs)
             dones.append(terminals)
 
-        # if self.model.tokenizer:
-        #     prompt = self.model.tokenizer.decode(input_ids[0][: states_ixs[0][1]])
-        #     response = self.model.tokenizer.decode(input_ids[0][states_ixs[0][1] :])
-        #     print("[Sample example]")
-        #     print("Prompt: ", prompt)
-        #     print("Response: ", response)
+        if self.model.tokenizer:
+            prompt = self.model.tokenizer.decode(input_ids[0][: states_ixs[0][1]])
+            response = self.model.tokenizer.decode(input_ids[0][states_ixs[0][1] :])
+            print("[Sample example]")
+            print("Prompt: ", prompt)
+            print("Response: ", response)
 
         print(f"[Mean reward] {torch.Tensor(rewards).mean():.2f}")
         print(
