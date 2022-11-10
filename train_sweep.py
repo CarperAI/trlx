@@ -1,6 +1,7 @@
 # Usage: python train_sweep.py --config configs/ray_tune_configs/ppo_config.yml --example-name ppo_sentiments
 import wandb
 import argparse
+from pathlib import Path
 
 import ray
 from ray.air import session
@@ -11,7 +12,7 @@ from trlx.ray_tune import load_ray_yaml
 from trlx.ray_tune import get_param_space
 from trlx.ray_tune import get_tune_config
 from trlx.ray_tune import get_train_function
-from trlx.ray_tune.wandb import log_trials
+from trlx.ray_tune.wandb import log_trials, create_report
 
 from ray.tune.logger import JsonLoggerCallback
 from ray.tune.logger import CSVLoggerCallback
@@ -33,6 +34,13 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
     log_trials(
         tuner._local_tuner.get_experiment_checkpoint_dir(),
         param_space["train"]["project_name"]
+    )
+
+    create_report(
+        param_space,
+        tune_config,
+        Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
+        results.get_best_result().config
     )
 
     print("Best hyperparameters found were: ", results.get_best_result().config)
