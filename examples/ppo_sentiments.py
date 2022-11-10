@@ -26,6 +26,7 @@ def main():
         "lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
+        batch_size=256,
         device=device,
     )
 
