@@ -5,6 +5,7 @@ from transformers import pipeline
 
 import trlx
 from typing import List, Dict
+import os
 
 
 def get_positive_score(scores):
@@ -19,7 +20,7 @@ def main():
         top_k=2,
         truncation=True,
         batch_size=256,
-        device=-1,
+        device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
     def metric_fn(samples: List[str]) -> Dict[str, List[float]]:
