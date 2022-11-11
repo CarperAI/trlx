@@ -265,7 +265,6 @@ class CausalLMWithValueHeads(nn.Module):
         temperature=1,
         top_k=20,
         logit_mask=None,
-        logs=True,
         pad_token_id=50256,
         eos_token_id=50256,
     ):
@@ -321,29 +320,10 @@ class CausalLMWithValueHeads(nn.Module):
             )
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
-            if logs:
-                tensors["qs"].append(qs)
-                tensors["vs"].append(vs)
-                tensors["adv"].append(adv)
-                tensors["pi"].append(pi)
-
             if torch.all(finished):
                 break
 
-        stats = {}
-        for name, xs in tensors.items():
-            xs = torch.vstack(xs)
-            xs = torch.where(torch.isfinite(xs), xs, 0)
-
-            stats.update(
-                {
-                    f"tensors/{name}/{beta}": wandb.Histogram(
-                        xs.cpu().float().view(-1)
-                    ),
-                }
-            )
-
-        return samples, stats
+        return samples
 
     @property
     def dummy_inputs(self):

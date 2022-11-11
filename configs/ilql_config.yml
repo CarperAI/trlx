@@ -7,7 +7,7 @@ model:
 train:
   seq_length: 64
   batch_size: 128
-  epochs: 10
+  epochs: 100
   total_steps: 10000
 
   lr_init: 1.0e-4
@@ -17,7 +17,7 @@ train:
   weight_decay: 1.0e-6
 
   checkpoint_interval: 1000
-  eval_interval: 64
+  eval_interval: 128
 
   pipeline: "OfflinePipeline"
   orchestrator: "OfflineOrchestrator"
