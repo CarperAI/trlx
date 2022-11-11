@@ -2,11 +2,11 @@ import importlib
 import os
 from abc import abstractmethod
 from time import time
-from typing import Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from accelerate import Accelerator
+from accelerate import Accelerator  # type: ignore
 from transformers import AutoTokenizer
 
 import wandb
@@ -92,10 +92,13 @@ class AccelerateRLModel(BaseRLModel):
             eta_min=self.config.train.lr_target,
         )
 
-    def tokenize(self, text: Iterable[str]):
+    def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
         Tokenize a batch of text after adding bos token to each of the samples
         """
+        if isinstance(text[0], torch.LongTensor):
+            return text
+
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
@@ -117,7 +120,7 @@ class AccelerateRLModel(BaseRLModel):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def get_components(self) -> Dict[str, any]:
+    def get_components(self) -> Dict[str, Any]:
         components = (
             {"model": self.model, "opt": self.opt, "scheduler": self.scheduler}
             if self.train_mode

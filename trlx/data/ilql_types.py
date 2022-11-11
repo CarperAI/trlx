@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from torchtyping import TensorType
+from torchtyping import TensorType  # type: ignore
 
 
 @dataclass
