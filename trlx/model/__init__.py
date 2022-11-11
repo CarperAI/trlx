@@ -15,7 +15,7 @@ _MODELS: Dict[str, Any] = {}  # registry
 
 
 def register_model(name):
-    """Decorator used register a CARP architecture
+    """Decorator used register an architecture
     Args:
         name: Name of the architecture
     """

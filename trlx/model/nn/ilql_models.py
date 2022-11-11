@@ -2,6 +2,7 @@ import os
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import reduce
 from itertools import chain
 from typing import Union, Sequence, Any, TypeVar, Tuple
 
@@ -76,18 +77,9 @@ class ILQLConfig(MethodConfig):
         )
         bsize, ntokens, dsize = logits.shape
 
-        # compute two separate q-value estimates, to then select minimum values from both
-        if self.two_qs:
-            Q1 = qs[0].gather(-1, actions).squeeze(-1)
-            Q2 = qs[1].gather(-1, actions).squeeze(-1)
-
-            targetQ1 = target_qs[0].gather(-1, actions).squeeze(-1).detach()
-            targetQ2 = target_qs[1].gather(-1, actions).squeeze(-1).detach()
-            targetQ = torch.minimum(targetQ1, targetQ2)
-        else:
-            Q = qs.gather(-1, actions).squeeze(-1)
-            targetQ = target_qs.gather(-1, actions).squeeze(-1).detach()
-
+        Q = [q.gather(-1, actions).squeeze(-1) for q in qs]
+        targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
+        targetQ = reduce(torch.minimum, targetQs)
         terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
 
@@ -98,12 +90,8 @@ class ILQLConfig(MethodConfig):
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
 
-        if self.two_qs:
-            loss_q1 = ((Q1 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
-            loss_q2 = ((Q2 - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
-            loss_q = loss_q1 + loss_q2
-        else:
-            loss_q = ((Q - Q_) * terminal_mask).pow(2).sum() / n_nonterminal
+        loss_qs = [((Qi - Q_) * terminal_mask).pow(2).sum() / n_nonterminal for Qi in Q]
+        loss_q = sum(loss_qs)
 
         targetQ = targetQ.detach()
 
@@ -115,34 +103,17 @@ class ILQLConfig(MethodConfig):
             * terminal_mask
         ).sum() / n_nonterminal
 
-        if self.two_qs:
+        nactions = qs[0].shape[1]
 
-            nactions = qs[0].shape[1]
-            loss_cql_q1 = (
-                F.cross_entropy(
-                    qs[0].reshape(-1, dsize),
-                    actions.reshape(-1),
-                    reduction="none",
-                ).reshape(bsize, nactions)
-                * terminal_mask
-            ).sum() / n_nonterminal
-            loss_cql_q2 = (
-                F.cross_entropy(
-                    qs[1].reshape(-1, dsize),
-                    actions.reshape(-1),
-                    reduction="none",
-                ).reshape(bsize, nactions)
-                * terminal_mask
-            ).sum() / n_nonterminal
-            loss_cql = loss_cql_q1 + loss_cql_q2
-        else:
-            nactions = qs.shape[1]
-            loss_cql = (
-                F.cross_entropy(
-                    qs.reshape(-1, dsize), actions.reshape(-1), reduction="none"
-                ).reshape(bsize, nactions)
-                * terminal_mask
-            ).sum() / n_nonterminal
+        def cql_loss(q):
+            loss = F.cross_entropy(
+                q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
+            )
+            loss = loss.reshape(bsize, nactions) * terminal_mask
+            loss = loss.sum() / n_nonterminal
+            return loss
+
+        loss_cql = sum(cql_loss(q) for q in qs)
 
         loss_awac = (
             F.cross_entropy(
@@ -177,23 +148,36 @@ class ILQLHeads(nn.Module):
 
         self.config = config
 
-        if self.config.two_qs:
-            self.q2_head = make_head(self.hidden_size, self.vocab_size)
-            self.target_q2_head = deepcopy(self.q2_head)
-            self.target_q2_head.requires_grad_(False)
+        n_qs = 2 if self.config.two_qs else 1
 
-    def forward(self, hs: torch.Tensor):
-        if self.config.two_qs:
-            qs = (self.q1_head(hs), self.q2_head(hs))
-            target_qs = (
-                self.target_q1_head(hs),
-                self.target_q2_head(hs),
+        self.q_heads = nn.ModuleList(
+            make_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
+        )
+        self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
+
+        for q_head in self.target_q_heads:
+            q_head.requires_grad_(False)
+
+    def forward(
+        self,
+        hs: torch.Tensor,
+        states_ixs: torch.Tensor = None,
+        actions_ixs: torch.Tensor = None,
+    ):
+
+        if states_ixs is not None:
+            states_hs = hs.gather(
+                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
+            )
+            actions_hs = hs.gather(
+                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
             )
         else:
-            qs = self.q1_head(hs)
-            target_qs = self.target_q1_head(hs)
+            states_hs = actions_hs = hs
 
-        vs = self.v_head(hs)
+        qs = tuple(q_head(actions_hs) for q_head in self.q_heads)
+        target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
+        vs = self.v_head(states_hs)
 
         return qs, target_qs, vs
 

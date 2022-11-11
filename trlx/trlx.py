@@ -75,15 +75,15 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        model = get_model(config.model.model_type)(config)
+        model = AccelerateILQLModel(
+            config=config, logit_mask=logit_mask, metric_fn=metric_fn
+        )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         if eval_prompts is None:
             eval_prompts = [model.tokenizer.bos_token] * batch_size
 
-        eval_pipeline = PromptPipeline(
-            (model.tokenizer.encode(p).ids for p in eval_prompts), None
-        )
+        eval_pipeline = PromptPipeline(eval_prompts, model.tokenizer)
 
         orch = OfflineOrchestrator(model, split_token=split_token)
         orch.make_experience(samples, rewards)
