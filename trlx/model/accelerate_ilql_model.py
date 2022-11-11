@@ -3,10 +3,13 @@ from typing import Iterable, Sequence, Union, cast
 import torch
 import torch.nn.functional as F
 
+
 from trlx.model import register_model
 from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
+from trlx.utils import to_device
+
 from .accelerate_base_model import AccelerateRLModel
 
 
@@ -52,16 +55,8 @@ class AccelerateILQLModel(AccelerateRLModel):
         if self.iter_count % self.config.method.steps_for_target_q_sync == 0:
             self.accelerator.unwrap_model(self.model).sync_target_q_heads()
 
-    def loss(self, batch):
-
-        batch = ILQLBatch(
-            input_ids=batch.input_ids.to(self.accelerator.device),
-            attention_mask=batch.attention_mask.to(self.accelerator.device),
-            rewards=batch.rewards.to(self.accelerator.device),
-            states_ixs=batch.states_ixs.to(self.accelerator.device),
-            actions_ixs=batch.actions_ixs.to(self.accelerator.device),
-            dones=batch.dones.to(self.accelerator.device),
-        )
+    def loss(self, batch: ILQLBatch):
+        batch = to_device(batch, self.accelerator.device)
 
         logits, qs, target_qs, vs, _ = self.model(
             input_ids=batch.input_ids,
