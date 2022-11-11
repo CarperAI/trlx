@@ -1,7 +1,7 @@
 model:
-  model_path : "gpt2"
+  model_path: "gpt2"
   tokenizer_path: "gpt2"
-  model_type : "ILQLModel"
+  model_type: "ILQLModel"
   num_layers_unfrozen: -1
 
 train:
@@ -19,8 +19,8 @@ train:
   checkpoint_interval: 1000
   eval_interval: 128
 
-  pipeline : "OfflinePipeline"
-  orchestrator : "OfflineOrchestrator"
+  pipeline: "OfflinePipeline"
+  orchestrator: "OfflineOrchestrator"
   seed: 1000
 
 method:
