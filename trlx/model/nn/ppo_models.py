@@ -3,16 +3,197 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
+import numpy as np
 import torch
-from torch import nn
-from transformers.modeling_outputs import ModelOutput
-
-from transformers import (  # isort:skip
+import torch.nn as nn
+from torchtyping import TensorType
+from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.modeling_outputs import ModelOutput
+
+from trlx.data.method_configs import MethodConfig, register_method
+from trlx.utils.modeling import flatten_dict, whiten
+
+
+# KL Controllers
+
+
+class AdaptiveKLController:
+    """Adaptive KL Controller as described in Ziegler et al. "Fine-Tuning Language Models from Human Preferences"
+    Reference: Section 2.2 https://arxiv.org/pdf/1909.08593.pdf#page=2
+    Source: https://github.com/openai/lm-human-preferences/blob/master/lm_human_preferences/train_policy.py
+    """
+
+    def __init__(self, init_kl_coef: float, target: float, horizon: int):
+        self.value = init_kl_coef
+        self.target = target
+        self.horizon = horizon
+
+    def update(self, current: float, n_steps: int):
+        """Returns adaptively updated KL coefficient, βₜ₊₁.
+        Arguments:
+            current: The current KL value between the newest policy and the initial policy.
+        """
+        proportional_error = np.clip(current / self.target - 1, -0.2, 0.2)  # ϵₜ
+        mult = 1 + proportional_error * n_steps / self.horizon
+        self.value *= mult  # βₜ₊₁
+
+
+class FixedKLController:
+    """Fixed KL controller."""
+
+    def __init__(self, kl_coef):
+        self.value = kl_coef
+
+    def update(self, current: float, n_steps: int):
+        """Returns updated KL coefficient, βₜ₊₁.
+        Arguments:
+            current: The current KL value between the newest policy and the initial policy.
+        """
+        pass
+
+
+# PPO Configs
+
+
+@dataclass
+@register_method
+class PPOConfig(MethodConfig):
+    """
+    Config for PPO method
+
+    :param ppo_epochs: Number of updates per batch
+    :type ppo_epochs: int
+
+    :param num_rollouts: Number  of experiences to observe before learning
+    :type num_rollouts: int
+
+    :param init_kl_coef: Initial value for KL coefficient
+    :type init_kl_coef: float
+
+    :param target: Target value for KL coefficient
+    :type target: float
+
+    :param horizon: Number of steps for KL coefficient to reach target
+    :type horizon: int
+
+    :param gamma: Discount factor
+    :type gamma: float
+
+    :param lam: GAE lambda
+    :type lam: float
+
+    :param cliprange: Clipping range for PPO policy loss (1 - cliprange, 1 + cliprange)
+    :type cliprange: float
+
+    :param cliprange_value: Clipping range for predicted values (observed values - cliprange_value, observed values + cliprange_value)
+    :type cliprange_value: float
+
+    :param vf_coef: Value loss scale w.r.t policy loss
+    :type vf_coef: float
+
+    :param gen_kwargs: Additioanl kwargs for the generation
+    :type gen_kwargs: Dict[str, Any]
+    """
+
+    ppo_epochs: int
+    num_rollouts: int
+    chunk_size: int
+    init_kl_coef: float
+    target: float
+    horizon: int
+    gamma: float
+    lam: float
+    cliprange: float
+    cliprange_value: float
+    vf_coef: float
+    gen_kwargs: dict
+
+    def get_advantages_and_returns(
+        self,
+        values: TensorType["batch_size", "response_size"],
+        rewards: TensorType["batch_size", "response_size"],
+        response_length: int,
+        use_whitening: Optional[bool] = True,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        lastgaelam = 0
+        advantages_reversed = []
+        for t in reversed(range(response_length)):
+            nextvalues = values[:, t + 1] if t < response_length - 1 else 0.0
+            delta = rewards[:, t] + self.gamma * nextvalues - values[:, t]
+            lastgaelam = delta + self.gamma * self.lam * lastgaelam
+            advantages_reversed.append(lastgaelam)
+        advantages = torch.stack(advantages_reversed[::-1], dim=1)
+        returns = advantages + values
+        if use_whitening:
+            advantages = whiten(advantages)
+        return advantages.detach(), returns
+
+    def loss(
+        self,
+        logprobs: TensorType["batch_size", "response_size"],
+        values: TensorType["batch_size", "response_size"],
+        old_logprobs: TensorType["batch_size", "response_size"],
+        old_values: TensorType["batch_size", "response_size"],
+        advantages: TensorType["batch_size", "response_size"],
+        returns: TensorType["batch_size", "response_size"],
+        mask: TensorType["batch_size", "response_size"],
+    ):
+        """PPO objective function.
+        References:
+        - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
+        """
+        values_clipped = torch.clamp(
+            values,
+            old_values - self.cliprange_value,
+            old_values + self.cliprange_value,
+        )
+        vf_loss1 = (values - returns) ** 2
+        vf_loss2 = (values_clipped - returns) ** 2
+        vf_loss = 0.5 * torch.sum(torch.max(vf_loss1, vf_loss2) * mask) / mask.sum()
+        vf_clipfrac = torch.mean((vf_loss2 > vf_loss1).float())
+
+        log_ratio = logprobs - old_logprobs
+        ratio = torch.exp(log_ratio)
+        # Unbiased KL-div estimates (`k3`). Ref: http://joschu.net/blog/kl-approx.html
+        with torch.no_grad():
+            approx_kl = torch.mean((ratio - 1) - log_ratio)
+
+        pg_loss1 = -advantages * ratio
+        pg_loss2 = -advantages * torch.clamp(
+            ratio,
+            1.0 - self.cliprange,
+            1.0 + self.cliprange,
+        )
+        pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / mask.sum()
+        pg_clipfrac = torch.mean((pg_loss2 > pg_loss1).float())
+
+        loss = pg_loss + self.vf_coef * vf_loss
+
+        stats = dict(
+            losses=dict(
+                total_loss=loss.item(),
+                policy_loss=pg_loss.item(),
+                value_loss=vf_loss.item(),
+            ),
+            values=dict(
+                mean_old_values=torch.mean(old_values),
+                var_old_values=torch.var(old_values),
+                mean_values=torch.mean(values),
+                values_error=torch.mean((values - returns) ** 2),
+                clipfrac=vf_clipfrac,
+            ),
+            policy=dict(approx_kl=approx_kl.item(), clipfrac=pg_clipfrac.item()),
+            returns=dict(mean=torch.mean(returns), var=torch.var(returns)),
+        )
+        return loss, flatten_dict(stats)
+
+
+# PPO Layers
 
 
 @dataclass

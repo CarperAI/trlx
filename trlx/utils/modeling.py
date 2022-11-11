@@ -1,3 +1,5 @@
+from typing import MutableMapping, Union
+
 import torch
 import torch.nn.functional as F
 
@@ -11,19 +13,24 @@ def whiten(values, shift_mean=True):
     return whitened
 
 
-def clip_by_value(x, tensor_min, tensor_max):
-    """
-    Tensor extenstion to torch.clamp
-    https://github.com/pytorch/pytorch/issues/2793#issuecomment-428784713
-    """
-    clipped = torch.max(torch.min(x, tensor_max), tensor_min)
-    return clipped
-
-
 def logprobs_from_logits(logits, labels):
-    """
-    See: https://github.com/pytorch/pytorch/issues/563#issuecomment-330103591
-    """
-    logp = F.log_softmax(logits, dim=2)
-    logpy = torch.gather(logp, 2, labels.unsqueeze(2)).squeeze(-1)
-    return logpy
+    """Compute log softmax values from logits."""
+    logprobs = F.log_softmax(logits, dim=-1)
+    logprobs_labels = torch.gather(logprobs, dim=-1, index=labels.unsqueeze(-1))
+    return logprobs_labels.squeeze(-1)
+
+
+def flatten_dict(
+    d: Union[dict, MutableMapping],
+    parent_key: str = "",
+    sep: str = "/",
+) -> dict:
+    # From: https://stackoverflow.com/a/6027615
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
