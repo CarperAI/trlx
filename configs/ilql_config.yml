@@ -17,7 +17,7 @@ train:
   weight_decay: 1.0e-6
 
   checkpoint_interval: 1000
-  eval_interval: 16
+  eval_interval: 256
 
   pipeline : "OfflinePipeline"
   orchestrator : "OfflineOrchestrator"
