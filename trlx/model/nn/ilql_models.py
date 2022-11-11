@@ -51,25 +51,6 @@ class ILQLConfig(MethodConfig):
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
-
-        qs = [
-            q.gather(
-                dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
-            )
-            for q in qs
-        ]
-
-        target_qs = [
-            q.gather(
-                dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1])
-            )
-            for q in target_qs
-        ]
-
-        vs = vs.gather(
-            dim=1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1])
-        )
-
         actions = (
             labels.input_ids[:, 1:]
             .gather(dim=1, index=labels.actions_ixs)
@@ -142,10 +123,6 @@ class ILQLHeads(nn.Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.v_head = make_head(self.hidden_size, 1)
-        self.q1_head = make_head(self.hidden_size, self.vocab_size)
-        self.target_q1_head = deepcopy(self.q1_head)
-        self.target_q1_head.requires_grad_(False)
-
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
@@ -182,16 +159,9 @@ class ILQLHeads(nn.Module):
         return qs, target_qs, vs
 
     def _sync_target_q_heads(self, alpha):
-        for target_param, copy_param in zip(
-            self.target_q1_head.parameters(), self.q1_head.parameters()
-        ):
-            target_param.data.copy_(
-                (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
-            )
-
-        if self.config.two_qs:
+        for target_q_head, q_head in zip(self.target_q_heads, self.q_heads):
             for target_param, copy_param in zip(
-                self.target_q2_head.parameters(), self.q2_head.parameters()
+                target_q_head.parameters(), q_head.parameters()
             ):
                 target_param.data.copy_(
                     (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
@@ -200,10 +170,8 @@ class ILQLHeads(nn.Module):
     def sync_target_q_heads(self):
         if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
             params = chain(
-                self.q1_head.parameters(),
-                self.target_q1_head.parameters(),
-                self.q2_head.parameters() if self.config.two_qs else [],
-                self.target_q2_head.parameters() if self.config.two_qs else [],
+                chain(q_head.parameters() for q_head in self.q_heads),
+                chain(q_head.parameters() for q_head in self.target_q_heads),
             )
 
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
@@ -280,7 +248,9 @@ class CausalLMWithValueHeads(nn.Module):
         hs = out.last_hidden_state
 
         logits = self.gpt.lm_head(hs)
-        qs, target_qs, vs = self.ilql_heads(hs)
+        qs, target_qs, vs = self.ilql_heads(
+            hs, states_ixs=states_ixs, actions_ixs=actions_ixs
+        )
 
         return logits, qs, target_qs, vs, out.past_key_values
 
