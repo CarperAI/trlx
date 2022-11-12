@@ -37,6 +37,7 @@ def train(
         split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
+    assert (reward_fn is None) ^ (dataset is None), "One and only one of reward_fn or dataset should be provided"
 
     if reward_fn is not None:
         if config is None:
@@ -47,7 +48,7 @@ def train(
 
         model: AcceleratePPOModel = get_model(config.model.model_type)(config)
 
-        batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
+        batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 0))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
 
         if eval_prompts is None:
@@ -75,7 +76,7 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        model = AccelerateILQLModel(
+        model = get_model(config.model.model_type)(
             config=config, logit_mask=logit_mask, metric_fn=metric_fn
         )
 

@@ -1,6 +1,9 @@
 from datasets import load_dataset
 from transformers import pipeline
 
+from trlx.utils.megatron import enable_neox
+enable_neox("/fsx/home-uwu/gpt-neox")
+
 import trlx
 from typing import List, Dict
 import os
