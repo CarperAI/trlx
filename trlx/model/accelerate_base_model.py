@@ -6,6 +6,7 @@ from typing import Dict, Iterable, Tuple
 
 import torch
 import torch.nn.functional as F
+from accelerate import Accelerator  # type: ignore
 from transformers import AutoTokenizer
 
 import wandb
@@ -35,10 +36,10 @@ class AccelerateRLModel(BaseRLModel):
     RL Model that uses accelerate for training
     """
 
-    def __init__(self, config, accelerator, train_mode=True):
+    def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.accelerator = accelerator
+        self.accelerator = Accelerator(log_with="wandb")
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
@@ -72,6 +73,21 @@ class AccelerateRLModel(BaseRLModel):
 
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
+
+        if self.accelerator.is_main_process and not ray.is_initialized():
+            self.accelerator.init_trackers(
+                project_name=self.config.train.project_name,
+                config=self.config.to_dict(),
+                init_kwargs={
+                    "wandb": {
+                        "name": f"{config.model.model_path}",
+                        "entity": self.config.train.entity_name,
+                        "mode": "disabled"
+                        if os.environ.get("debug", False)
+                        else "online",
+                    }
+                },
+            )
 
         self.opt = torch.optim.AdamW(
             self.model.parameters(),

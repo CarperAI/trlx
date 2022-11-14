@@ -14,12 +14,11 @@ class AccelerateILQLModel(AccelerateRLModel):
     def __init__(
         self,
         config,
-        accelerator,
         logit_mask=None,
         metric_fn=None,
         train_mode=True,
     ):
-        super().__init__(config, train_mode, accelerator)
+        super().__init__(config, train_mode)
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None

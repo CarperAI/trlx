@@ -40,35 +40,13 @@ def train(
     """
 
     if reward_fn is not None:
-        config_path = "configs/ppo_config.yml"
-    elif dataset is not None:
-        config_path = "configs/ilql_config.yml"
+        if config is None:
+            config = TRLConfig.load_yaml("configs/ppo_config.yml")
 
-    if config is None:
-        config = TRLConfig.load_yaml(config_path)
-
-    # Initialize Accelerator
-    accelerator = Accelerator(log_with="wandb")
-
-    # Initialize tracker
-    if accelerator.is_main_process and not ray.is_initialized():
-        accelerator.init_trackers(
-            project_name=config.train.project_name,
-            config=config.to_dict(),
-            init_kwargs={
-                "wandb": {
-                    "mode": "disabled" if os.environ.get("debug", False) else "online",
-                }
-            },
-        )
-
-    if reward_fn is not None:
         if model_path:
             config.model.model_path = model_path
 
-        model: AcceleratePPOModel = get_model(config.model.model_type)(
-            config, accelerator
-        )
+        model: AcceleratePPOModel = get_model(config.model.model_type)(config)
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
@@ -92,12 +70,14 @@ def train(
                 f"Number of samples {len(samples)} should match the number of rewards {len(rewards)}"
             )
 
+        if config is None:
+            config = TRLConfig.load_yaml("configs/ilql_config.yml")
+
         if model_path:
             config.model.model_path = model_path
 
         model = AccelerateILQLModel(
             config=config,
-            accelerator=accelerator,
             logit_mask=logit_mask,
             metric_fn=metric_fn,
         )
