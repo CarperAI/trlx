@@ -2,7 +2,7 @@ import importlib
 import os
 from abc import abstractmethod
 from time import time
-from typing import Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -91,20 +91,25 @@ class AccelerateRLModel(BaseRLModel):
 
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
-            lr=float(self.config.train.learning_rate_init),
+            lr=self.config.train.lr_init,
             betas=self.config.train.opt_betas,
+            eps=self.config.train.opt_eps,
+            weight_decay=self.config.train.weight_decay,
         )
 
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.opt,
             self.config.train.total_steps,
-            eta_min=float(self.config.train.learning_rate_target),
+            eta_min=self.config.train.lr_target,
         )
 
-    def tokenize(self, text: Iterable[str]):
+    def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
         Tokenize a batch of text after adding bos token to each of the samples
         """
+        if isinstance(text[0], torch.LongTensor):
+            return text
+
         text = [self.tokenizer.bos_token + txt for txt in text]
         return self.tokenizer(
             text,
@@ -126,7 +131,7 @@ class AccelerateRLModel(BaseRLModel):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def get_components(self) -> Dict[str, any]:
+    def get_components(self) -> Dict[str, Any]:
         components = (
             {"model": self.model, "opt": self.opt, "scheduler": self.scheduler}
             if self.train_mode
