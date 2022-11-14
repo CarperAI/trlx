@@ -138,8 +138,10 @@ def get_search_alg(tune_config: dict):
         "Please specify metric and mode for TuneBOHB."
 
         return TuneBOHB()
-
-    return None
+    elif search_alg == "random":
+        return None
+    else:
+        NotImplementedError("Search algorithm not supported.")
 
 
 def get_scheduler(tune_config: dict):
@@ -159,10 +161,12 @@ def get_scheduler(tune_config: dict):
 
     if scheduler == "hyperband":
         return tune.schedulers.HyperBandScheduler()
-    if scheduler == "hyperbandforbohb":
+    elif scheduler == "hyperbandforbohb":
         return tune.schedulers.HyperBandForBOHB()
-
-    return None
+    elif scheduler == "fifo":
+        return None
+    else:
+        NotImplementedError("Scheduler not supported.")
 
 
 def get_tune_config(config: dict):

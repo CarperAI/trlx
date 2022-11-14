@@ -1,8 +1,8 @@
 tune_config:
   mode: "max"
   metric: "mean_reward"
-  search_alg: "bohb" # null
-  scheduler: "hyperbandforbohb" # null
+  search_alg: "bohb" # random
+  scheduler: "hyperbandforbohb" # fifo
   num_samples: 15
   max_concurrent_trials: null
   time_budget_s: null
