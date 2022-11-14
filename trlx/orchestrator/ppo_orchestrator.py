@@ -10,6 +10,9 @@ from trlx.pipeline import BasePipeline
 from trlx.utils import Clock
 from trlx.utils.modeling import logprobs_from_logits
 
+import ray
+from ray.air import session
+
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
@@ -124,7 +127,9 @@ class PPOOrchestrator(Orchestrator):
             ppo_rl_elements += new_ppo_rl_elements
 
         stats = {"exp_time": exp_time}
-        self.rl_model.accelerator.log(stats, step=iter_count)
+
+        if not ray.is_initialized():
+            self.rl_model.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)

@@ -1,6 +1,8 @@
 import os
 from typing import Callable, Iterable, List, Optional, Tuple
 
+from accelerate import Accelerator
+
 from trlx.data.configs import TRLConfig
 
 from trlx.model.accelerate_ilql_model import AccelerateILQLModel
@@ -11,6 +13,8 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.utils.loading import get_model, get_orchestrator
+
+import ray
 
 
 def train(
@@ -76,7 +80,9 @@ def train(
             config.model.model_path = model_path
 
         model = AccelerateILQLModel(
-            config=config, logit_mask=logit_mask, metric_fn=metric_fn
+            config=config,
+            logit_mask=logit_mask,
+            metric_fn=metric_fn,
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))

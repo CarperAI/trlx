@@ -1,12 +1,28 @@
+tune_config:
+  mode: "max"
+  metric: "mean_reward"
+  search_alg: "bohb" # random
+  scheduler: "hyperbandforbohb" # fifo
+  num_samples: 15
+  max_concurrent_trials: null
+  time_budget_s: null
+  reuse_actors: null
+
 model:
   model_path: "lvwerra/gpt2-imdb"  # Name of hf model to load
   tokenizer_path: "gpt2"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
-  num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
+  num_layers_unfrozen:  # Number of bottom layers to freeze during training
+    strategy: "choice"
+    values: [2, 3]
 
 train:
-  seq_length: 48  # Size of LM context
-  epochs: 1000 # Train for max(epochs, total_steps)
+  seq_length:  # Size of LM context
+    strategy: "choice"
+    values: [36, 48, 52]
+  epochs:  # Train for max(epochs, total_steps)
+    strategy: "choice"
+    values: [80, 100, 120]
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
@@ -17,21 +33,30 @@ train:
   weight_decay: 1.0e-6  # weight decay param
 
   checkpoint_interval: 10000  # checkpoint interval
-  eval_interval: 16  # eval interval
+  eval_interval: 4  # eval interval
 
   pipeline: "PPOPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
+  project_name: "trlx-hyperopt-bohb"
 
 method:
   name: 'ppoconfig'  # Name of RL method config
-  num_rollouts: 128  # Number of rollouts to collect per epoch
+  num_rollouts:  # Number of rollouts to collect per epoch
+    strategy: "choice"
+    values: [96, 128]
   chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
-  ppo_epochs: 4  # Number of ppo epochs
-  init_kl_coef: 0.2  # init kl coefficient
+  ppo_epochs:  # Number of ppo epochs
+    strategy: "randint"
+    values: [3, 6] # 3 is inclusive, 6 is exclusive
+  init_kl_coef: # init kl coefficient
+    strategy: "quniform"
+    values: [0.1, 0.3, 0.1]
   target: 6  # target kl coefficient, set None for fixed kl coef
   horizon: 10000  # PPO horizon
   gamma: 1  # PPO discount
-  lam: 0.95  # PPO lambda
+  lam: # PPO lambda
+    strategy: "uniform"
+    values: [0.93, 0.98]
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
   vf_coef: 2.3  # value term weight
