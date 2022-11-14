@@ -99,8 +99,4 @@ def train(
         raise ValueError(f"Either {dataset=} or {reward_fn=} should be given")
 
     model.learn()
-
-    if accelerator.is_main_process and not ray.is_initialized():
-        accelerator.end_training()
-
     return model

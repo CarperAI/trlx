@@ -26,12 +26,11 @@ train:
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
-  lr_ramp_steps: 100  # learning rate warm up
-  lr_decay_steps: 79000  # learning rate decay
-  weight_decay: 1.0e-6  # weight decay param
-  learning_rate_init: 1.412e-4  # init learning rate
-  learning_rate_target: 1.412e-4  # target final learning rate
+  lr_init: 1.412e-4  # init learning rate
+  lr_target: 1.412e-4  # target final learning rate
   opt_betas: [0.9, 0.95] # adam betas
+  opt_eps: 1.0e-8  # adam eps
+  weight_decay: 1.0e-6  # weight decay param
 
   checkpoint_interval: 10000  # checkpoint interval
   eval_interval: 4  # eval interval
