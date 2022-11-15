@@ -10,7 +10,7 @@ from torchtyping import TensorType  # type: ignore
 from trlx.model.nn.ilql_models import ILQLConfig, ILQLHeads
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
-
+import wandb
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -265,7 +265,10 @@ class GPTNeoXWithValueHeads(GPT2ModelPipe):
             vs = vs.gather(1, states_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1]))
             outputs = (logits, (qs, target_qs, vs))
 
-            return ilql_config.loss(outputs, labels)[0]
+            loss, stats = ilql_config.loss(outputs, labels)
+            if torch.distributed.get_rank() == 0:
+                wandb.log(stats, config.iteration)
+            return loss
 
         self.loss_fn = wrap_loss
 

@@ -37,7 +37,9 @@ def train(
         split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
-    assert (reward_fn is None) ^ (dataset is None), "One and only one of reward_fn or dataset should be provided"
+    assert (reward_fn is None) ^ (
+        dataset is None
+    ), "One and only one of reward_fn or dataset should be provided"
 
     if reward_fn is not None:
         if config is None:
@@ -84,7 +86,7 @@ def train(
         if eval_prompts is None:
             eval_prompts = [model.tokenizer.bos_token] * batch_size
 
-        eval_pipeline = PromptPipeline(eval_prompts, model.tokenizer)
+        eval_pipeline = PromptPipeline(eval_prompts, None)
 
         orch = OfflineOrchestrator(model, split_token=split_token)
         orch.make_experience(samples, rewards)

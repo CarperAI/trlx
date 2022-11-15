@@ -14,7 +14,9 @@ import deepspeed
 import megatron  # type: ignore
 from megatron.neox_arguments import NeoXArgs
 from megatron.utils import Timers, get_total_params
+from megatron.text_generation_utils import generate_samples_from_prompt
 from megatron import print_rank_0, mpu
+from megatron.logging import tb_wandb_log
 
 from trlx.model.nn.ilql_models import ILQLConfig, ILQLHeads
 from trlx.model.nn.neox_ilql_models import GPTNeoXWithValueHeads, preprocess_batch
@@ -63,6 +65,8 @@ class NeoXILQLModel(BaseRLModel):
 
         super().__init__(config)
 
+        self.neox_args = neox_args
+
         if neox_args is None:
             neox_args = NeoXArgs.consume_neox_args()
             neox_args.configure_distributed_args()
@@ -72,6 +76,7 @@ class NeoXILQLModel(BaseRLModel):
         neox_args.iteration = 0
         megatron.utils.init_wandb(neox_args=neox_args)
 
+        self.metric_fn = metric_fn
         self.timers = Timers(
             use_wandb=neox_args.use_wandb,
             tensorboard_writer=neox_args.tensorboard_writer,
@@ -132,6 +137,29 @@ class NeoXILQLModel(BaseRLModel):
 
         return [self.tokenizer(e) for e in text]
 
+    def evaluate(self):
+
+        for i in range(len(self.eval_pipeline)):
+            prompt = self.eval_pipeline[i]
+            completions = generate_samples_from_prompt(
+                neox_args=self.neox_args,
+                model=self.model,
+                text=prompt,
+            )
+            if self.metric_fn is not None:
+                metrics = self.metric_fn(
+                    [c["context"] + c["text"] for c in completions]
+                )
+                mean_metrics = {k: m.mean().item() for k, m in metrics.items()}
+                for k, v in mean_metrics.items():
+                    tb_wandb_log(
+                        k,
+                        v,
+                        self.neox_args.iteration,
+                        self.neox_args.use_wandb,
+                        self.neox_args.tensorboard_writer,
+                    )
+
     def learn(self):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
@@ -142,7 +170,6 @@ class NeoXILQLModel(BaseRLModel):
         train_dataloader = self.store.create_loader(
             self.neox_args.train_micro_batch_size_per_gpu
         )
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         for i in range(self.config.train.epochs):
             it: Iterable[ILQLBatch] = iter(
@@ -150,6 +177,8 @@ class NeoXILQLModel(BaseRLModel):
             )
             for batch_idx in range(len(train_dataloader)):
                 print_rank_0(self.model.train_batch(data_iter=it))
+                self.neox_args.iteration += 1
+
                 if batch_idx % self.config.method.steps_for_target_q_sync == 0:
 
                     def sync_target_q(m):
@@ -157,3 +186,6 @@ class NeoXILQLModel(BaseRLModel):
                             m.sync_target_q_heads()
 
                     self.model.apply(sync_target_q)
+
+                if batch_idx % self.config.train.eval_interval == 0:
+                    self.evaluate()
