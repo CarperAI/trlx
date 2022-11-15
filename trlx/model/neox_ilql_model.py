@@ -16,6 +16,7 @@ from megatron.neox_arguments import NeoXArgs
 from megatron.utils import Timers, get_total_params
 from megatron import print_rank_0, mpu
 
+from trlx.model.nn.ilql_models import ILQLConfig, ILQLHeads
 from trlx.model.nn.neox_ilql_models import GPTNeoXWithValueHeads, preprocess_batch
 from trlx.data.ilql_types import ILQLBatch
 from transformers import AutoTokenizer
@@ -45,6 +46,7 @@ class NeoXTokenizerWrapper(object):
     def __call__(self, text: str) -> torch.Tensor:
         return self.tokenizer.encode(text).ids
 
+
 @register_model
 class NeoXILQLModel(BaseRLModel):
     """
@@ -52,7 +54,11 @@ class NeoXILQLModel(BaseRLModel):
     """
 
     def __init__(
-        self, config: TRLConfig, neox_args: megatron.NeoXArgs = None, logit_mask=None, metric_fn=None
+        self,
+        config: TRLConfig,
+        neox_args: megatron.NeoXArgs = None,
+        logit_mask=None,
+        metric_fn=None,
     ):
 
         super().__init__(config)
@@ -104,16 +110,14 @@ class NeoXILQLModel(BaseRLModel):
             )
             model.total_params = get_total_params(model.module)
             print_rank_0(f' > total params: {"{:,}".format(model.total_params)}')
-            model.set_batch_fn(partial(preprocess_batch, neox_args=neox_args))
+            model.set_batch_fn(partial(preprocess_batch, neox_args))
 
             if neox_args.is_pipe_parallel:
                 model.set_has_attention_mask(True)
         else:
             raise ValueError("Must be using deepspeed to run neox")
 
-        # Retrieves model equipped for ppo, ilql, etc
         self.neox_args = neox_args
-        # self.tokenizer = neox_args.tokenizer.tokenizer
         self.tokenizer = NeoXTokenizerWrapper(neox_args.tokenizer.tokenizer)
         self.model = model
         self.optimizer = optimizer
@@ -139,53 +143,17 @@ class NeoXILQLModel(BaseRLModel):
             self.neox_args.train_micro_batch_size_per_gpu
         )
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-        from megatron.utils import get_ltor_masks_and_position_ids
 
-        def broadcast_dataclass(obj: T) -> T:
-            d = {
-                k: mpu.broadcast_data([0], [v], v.dtype)[0]
-                for k, v in obj.__dict__.items()
-            }
-            return type(obj)(**d)
-
-        def preprocess(b: ILQLBatch):
-            from copy import deepcopy
-
-            b = deepcopy(broadcast_dataclass(b))
-
-            tokens = b.input_ids  # [:, :-1]
-            print(
-                "inputs",
-                f"{b.input_ids.shape=}",
-                f"{b.actions_ixs.shape=}",
-                f"{b.states_ixs.shape=}",
-                f"{b.dones.shape=}",
-            )
-
-            attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                data=b.input_ids,
-                eod_token=self.neox_args.tokenizer.eod,
-                eod_mask_loss=self.neox_args.eod_mask_loss,
-            )
-            return (
-                b.states_ixs,
-                b.actions_ixs,
-                b.input_ids,
-                position_ids,
-                attention_mask,
-            ), (
-                b.input_ids,
-                b.attention_mask,
-                b.rewards,
-                b.states_ixs,
-                b.actions_ixs,
-                b.dones,
-            )
-
-        print(f"{len(train_dataloader)=}")
         for i in range(self.config.train.epochs):
-            it: Iterable[ILQLBatch] = iter(deepspeed.utils.RepeatingLoader(train_dataloader))
-            flattened = iter(map(preprocess, it))
-            for batch in range(len(train_dataloader)):
-                print_rank_0(self.model.train_batch(it))
+            it: Iterable[ILQLBatch] = iter(
+                deepspeed.utils.RepeatingLoader(train_dataloader)
+            )
+            for batch_idx in range(len(train_dataloader)):
+                print_rank_0(self.model.train_batch(data_iter=it))
+                if batch_idx % self.config.method.steps_for_target_q_sync == 0:
 
+                    def sync_target_q(m):
+                        if isinstance(m, ILQLHeads):
+                            m.sync_target_q_heads()
+
+                    self.model.apply(sync_target_q)

@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from itertools import chain
 from typing import Union, Sequence, Any, TypeVar, Tuple
 
@@ -114,6 +114,7 @@ class PassRLData(nn.Module):
     def forward(self, args):
         # DeepSpeed is hardcoded with attention_mask last
         (states_ixs, actions_ixs), model_args = args[:2], args[2:]
+
         if len(model_args) == 1:
             m = self.model(model_args[0])
         else:
@@ -121,6 +122,7 @@ class PassRLData(nn.Module):
 
         if not isinstance(m, (tuple, list)):
             m = (m,)
+
         return (states_ixs, actions_ixs, *m)
 
 
@@ -147,7 +149,9 @@ class CallWithRLData(nn.Module):
 
     def forward(self, args):
         (states_ixs, actions_ixs), model_args = args[:2], args[2:]
-        return self.model(*model_args, states_ixs=states_ixs.long(), actions_ixs=actions_ixs.long())
+        return self.model(
+            *model_args, states_ixs=states_ixs.long(), actions_ixs=actions_ixs.long()
+        )
 
 
 def get_named_subclass(cls, name):
@@ -163,27 +167,49 @@ class Drop(nn.Identity):
     def forward(self, x):
         return None
 
+
 T = TypeVar("T")
 
+
 def broadcast_dataclass(obj: T) -> T:
-    d = { k: mpu.broadcast_data([k], v, v.dtype)[k] for k, v in obj.__dict__.items() }
+    d = {
+        k: mpu.broadcast_data([k], obj.__dict__, v.dtype)[k]
+        for k, v in obj.__dict__.items()
+    }
     return type(obj)(**d)
 
+
+DTYPE_MAP = {
+    "input_ids": torch.long,
+    "attention_mask": torch.long,
+    "rewards": torch.float,
+    "states_ixs": torch.long,
+    "actions_ixs": torch.long,
+    "dones": torch.long,
+}
+
+
 def preprocess_batch(neox_args: NeoXArgs, b: ILQLBatch):
-    b = broadcast_dataclass(b)
+
+    field_types = [(field.name, field.type) for field in fields(ILQLBatch)]
+    field_types = sorted(field_types, key=lambda nt: nt[0])
+
+    # on non-zero ranks, the input batch is none
+    data_dict = None if b is None else b.__dict__
+    data_dict = {
+        k: mpu.broadcast_data([k], data_dict, DTYPE_MAP[k])[k]
+        for k, dtype in field_types
+    }
+
+    b = ILQLBatch(**data_dict)
 
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         data=b.input_ids,
         eod_token=neox_args.tokenizer.eod,
         eod_mask_loss=neox_args.eod_mask_loss,
     )
-    return (
-        b.states_ixs,
-        b.actions_ixs,
-        b.input_ids,
-        position_ids,
-        attention_mask,
-    ), (
+
+    return (b.input_ids, position_ids, attention_mask,), (
         b.input_ids,
         b.attention_mask,
         b.rewards,
@@ -191,6 +217,15 @@ def preprocess_batch(neox_args: NeoXArgs, b: ILQLBatch):
         b.actions_ixs,
         b.dones,
     )
+    return (b.states_ixs, b.actions_ixs, b.input_ids, position_ids, attention_mask,), (
+        b.input_ids,
+        b.attention_mask,
+        b.rewards,
+        b.states_ixs,
+        b.actions_ixs,
+        b.dones,
+    )
+
 
 class GPTNeoXWithValueHeads(GPT2ModelPipe):
     def __init__(
@@ -217,7 +252,20 @@ class GPTNeoXWithValueHeads(GPT2ModelPipe):
                 actions_ixs=actions_ixs,
                 dones=dones,
             )
-            return ilql_config.loss(outputs, labels)
+
+            logits, (qs, target_qs, vs) = outputs
+            qs = [
+                q.gather(1, actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1]))
+                for q in qs
+            ]
+            target_qs = [
+                q.gather(1, actions_ixs.unsqueeze(-1).repeat(1, 1, q.shape[-1]))
+                for q in target_qs
+            ]
+            vs = vs.gather(1, states_ixs.unsqueeze(-1).repeat(1, 1, vs.shape[-1]))
+            outputs = (logits, (qs, target_qs, vs))
+
+            return ilql_config.loss(outputs, labels)[0]
 
         self.loss_fn = wrap_loss
 
@@ -241,10 +289,22 @@ class GPTNeoXWithValueHeads(GPT2ModelPipe):
                 ]
             )
         ]
+        new_specs = self.specs[:-1] + [
+            HeadsLayerSpec(
+                specs=[
+                    embedding,
+                    LayerSpec(
+                        ILQLHeads,
+                        ilql_config,
+                        self.hidden_size,
+                        config.padded_vocab_size,
+                    ),
+                ]
+            )
+        ]
 
         self.specs = new_specs
 
-        print([get_layer_name(spec) for spec in self.specs])
         PipelineModule.__init__(
             self,
             layers=self.specs,
@@ -254,4 +314,3 @@ class GPTNeoXWithValueHeads(GPT2ModelPipe):
             partition_method=config.pipe_partition_method,
             checkpointable_layers=["GMLPBlock", "ParallelTransformerLayerPipe"],
         )
-

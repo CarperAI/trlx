@@ -67,9 +67,9 @@ class ILQLConfig(MethodConfig):
         # values of current states
         V = vs[:, :-1].squeeze()
         # values of next states
-        print(f"in loss: {vs[:, 1:].shape=}, {labels.dones[:, 1:].shape=}, {labels.actions_ixs.shape=}, {labels.states_ixs.shape=}")
+        # print(f"in loss: {vs[:, 1:].shape=}, {labels.dones[:, 1:].shape=}, {labels.actions_ixs.shape=}, {labels.states_ixs.shape=}")
 
-        print(f"{vs[:, 1:].device=}, {labels.dones[:, 1:].device=}, {labels.actions_ixs.device=}, {labels.states_ixs.device=}")
+        # print(f"{vs[:, 1:].device=}, {labels.dones[:, 1:].device=}, {labels.actions_ixs.device=}, {labels.states_ixs.device=}")
         Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
@@ -159,8 +159,8 @@ class ILQLHeads(nn.Module):
         target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
         vs = self.v_head(states_hs)
 
-        print(f"in heads: {qs[0].shape=}, {target_qs[0].shape=}, {vs.shape=}, {states_ixs.shape=}, {actions_ixs.shape=}")
-        print(f"{qs[0].device=}, {target_qs[0].device=}, {vs.device=}, {states_ixs.device=}, {actions_ixs.device=}")
+        # print(f"in heads: {qs[0].shape=}, {target_qs[0].shape=}, {vs.shape=}, {states_ixs.shape=}, {actions_ixs.shape=}")
+        # print(f"{qs[0].device=}, {target_qs[0].device=}, {vs.device=}, {states_ixs.device=}, {actions_ixs.device=}")
         return qs, target_qs, vs
 
     def _sync_target_q_heads(self, alpha):
