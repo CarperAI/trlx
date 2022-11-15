@@ -7,9 +7,9 @@ import ray
 from ray.air import session
 from ray import tune
 import importlib
+import yaml
 
 import trlx
-from trlx.ray_tune import load_ray_yaml
 from trlx.ray_tune import get_param_space
 from trlx.ray_tune import get_tune_config
 from trlx.ray_tune.wandb import log_trials, create_report
@@ -72,10 +72,11 @@ if __name__ == "__main__":
         help="The address of server to connect to if using Ray Client.",
     )
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     # Read config and parse it
-    config = load_ray_yaml(args.config)
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
     tune_config = get_tune_config(config.pop("tune_config"))
     param_space = get_param_space(config)
 
@@ -90,7 +91,7 @@ if __name__ == "__main__":
         "gpu": args.num_gpus,
     }
 
-    # convert nested path to a script to a module path
+    # convert a nested path to script to a module path
     script_path = args.script.replace(".py", "").replace("/", ".")
     script = importlib.import_module(script_path)
     # Register the training function that will be used for training the model.
