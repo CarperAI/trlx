@@ -223,7 +223,8 @@ class AccelerateRLModel(BaseRLModel):
         self.prepare_learning()
 
         tbar = tqdm(
-            total=self.total_steps, disable=not self.accelerator.is_local_main_process
+            total=self.total_steps,
+            disable=not self.accelerator.is_local_main_process or ray.is_initialized(),
         )
         self.iter_count = 0
 

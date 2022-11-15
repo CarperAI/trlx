@@ -64,7 +64,7 @@ def log_trials(trial_path: str, project_name: str):
         run.finish()
 
 
-def create_report(param_space, tune_config, trial_path, best_config=None):
+def create_report(project_name, param_space, tune_config, trial_path, best_config=None):
     def get_column_names(param_space):
         column_names = []
         for k, v in param_space.items():
@@ -119,7 +119,7 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
         return metrics
 
     report = wb.Report(
-        project=param_space["train"]["project_name"],
+        project=project_name,
         title=f"Hyperparameter Optimization Report: {trial_path}",
         description="This is a report that shows the results of a hyperparameter optimization experiment.",
     )
@@ -144,15 +144,15 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
                 get_scatter_plot(tune_config["metric"]),
             ],
             runsets=[
-                wb.RunSet(
-                    project=param_space["train"]["project_name"]
-                ).set_filters_with_python_expr(f'group == "{trial_path}"')
+                wb.RunSet(project=project_name).set_filters_with_python_expr(
+                    f'group == "{trial_path}"'
+                )
             ],
         ),
     ]
 
     metrics = get_metrics_with_history(
-        param_space["train"]["project_name"],
+        project_name,
         trial_path,
     )
 

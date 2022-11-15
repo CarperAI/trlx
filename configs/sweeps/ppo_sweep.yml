@@ -1,0 +1,17 @@
+tune_config:
+  mode: "max"
+  metric: "mean_reward"
+  search_alg: "random"
+  scheduler: "fifo"
+  num_samples: 32
+  max_concurrent_trials: 8
+
+lr_init:
+  strategy: "loguniform"
+  values: [1e-6, 1e-2]
+init_kl_coef:
+  strategy: "uniform"
+  values: [0, 0.2]
+vf_coef:
+  strategy: "uniform"
+  values: [0.5, 2]
