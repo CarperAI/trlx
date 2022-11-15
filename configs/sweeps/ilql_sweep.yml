@@ -1,8 +1,8 @@
 tune_config:
   mode: "max"
   metric: "metrics/sentiments"
-  search_alg: "random"
-  scheduler: "fifo"
+  search_alg: "bohb"
+  scheduler: "hyperbandforbohb"
   num_samples: 32
   max_concurrent_trials: 8
 

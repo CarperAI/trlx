@@ -18,14 +18,15 @@ from ray.tune.logger import JsonLoggerCallback
 from ray.tune.logger import CSVLoggerCallback
 
 
-def tune_function(train_function, param_space: dict, tune_config: dict, resources: dict):
+def tune_function(
+    train_function, param_space: dict, tune_config: dict, resources: dict
+):
     tuner = tune.Tuner(
         tune.with_resources(train_function, resources=resources),
         param_space=param_space,
         tune_config=tune.TuneConfig(**tune_config),
-        run_config = ray.air.RunConfig(
-            local_dir="ray_results",
-            callbacks=[CSVLoggerCallback()]
+        run_config=ray.air.RunConfig(
+            local_dir="ray_results", callbacks=[CSVLoggerCallback()]
         ),
     )
 
@@ -42,7 +43,7 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
         param_space,
         tune_config,
         Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
-        results.get_best_result().config
+        results.get_best_result().config,
     )
 
     print("Best hyperparameters found were: ", results.get_best_result().config)
@@ -50,11 +51,12 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("script", type=str, help="Path to the script")
     parser.add_argument(
-        "script", type=str, help="Path to the script"
-    )
-    parser.add_argument(
-        "--config", type=str, required=True, help="The config file defining the param_space."
+        "--config",
+        type=str,
+        required=True,
+        help="The config file defining the param_space.",
     )
     parser.add_argument(
         "--num-cpus", type=int, default=4, help="Number of CPUs to use per exp."
