@@ -1,9 +1,9 @@
 tune_config:
   mode: "max"
   metric: "metrics/sentiments"
-  search_alg: "bohb"
-  scheduler: "hyperbandforbohb"
-  num_samples: 32
+  search_alg: "random"
+  scheduler: "fifo"
+  num_samples: 8
   max_concurrent_trials: 8
 
 lr_init:
@@ -11,7 +11,7 @@ lr_init:
   values: [0.00001, 0.01]
 tau:
   strategy: "uniform"
-  values: [0.6, 0.95]
+  values: [0.6, 0.9]
 steps_for_target_q_sync:
   strategy: "choice"
   values: [1, 5, 10]

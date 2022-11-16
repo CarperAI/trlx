@@ -14,8 +14,6 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.utils.loading import get_model, get_orchestrator
 
-import ray
-
 
 def train(
     model_path: Optional[str] = None,

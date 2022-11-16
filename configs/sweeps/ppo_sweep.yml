@@ -1,14 +1,14 @@
 tune_config:
   mode: "max"
   metric: "mean_reward"
-  search_alg: "random"
-  scheduler: "fifo"
+  search_alg: "bohb"
+  scheduler: "hyperbandforbohb"
   num_samples: 32
   max_concurrent_trials: 8
 
 lr_init:
   strategy: "loguniform"
-  values: [1e-6, 1e-2]
+  values: [0.00001, 0.01]
 init_kl_coef:
   strategy: "uniform"
   values: [0, 0.2]

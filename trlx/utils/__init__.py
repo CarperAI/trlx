@@ -1,7 +1,7 @@
 import os
 import time
 from functools import reduce
-from typing import Any, Iterable, List
+from typing import Any, Iterable, List, Dict
 from dataclasses import is_dataclass
 
 import numpy as np
@@ -136,3 +136,17 @@ def to_device(tree, device):
     Move all tensors in tree to device
     """
     return tree_map(lambda x: x.to(device), tree)
+
+
+def filter_non_scalars(xs: Dict) -> Dict:
+    """
+    Trims everything that can't be casted to float
+    """
+    ys = {}
+    for k, v in xs.items():
+        try:
+            ys[k] = float(v)
+        except TypeError:
+            continue
+
+    return ys

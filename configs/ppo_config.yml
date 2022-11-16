@@ -6,7 +6,7 @@ model:
 
 train:
   seq_length: 48  # Size of LM context
-  epochs: 1000 # Train for max(epochs, total_steps)
+  epochs: 100 # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
@@ -17,7 +17,7 @@ train:
   weight_decay: 1.0e-6  # weight decay param
 
   checkpoint_interval: 10000  # checkpoint interval
-  eval_interval: 16  # eval interval
+  eval_interval: 100  # eval interval
 
   pipeline: "PPOPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load

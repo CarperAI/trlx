@@ -205,6 +205,7 @@ class AccelerateRLModel(BaseRLModel):
                     columns_data.append(values)
 
             rows = list(zip(*columns_data))
+            print(rows[0])
             if not ray.is_initialized():
                 stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
@@ -223,15 +224,15 @@ class AccelerateRLModel(BaseRLModel):
             if checkpoint:
                 with checkpoint.as_directory() as dir:
                     self.accelerator.load_state(dir)
+
                     with open(os.path.join(dir, "state.json")) as f:
                         state = json.load(f)
-                        print(f"{state=}")
                         self.iter_count = state["iter_count"]
 
         tbar = tqdm(
             initial=self.iter_count,
             total=self.total_steps,
-            disable=not self.accelerator.is_local_main_process or ray.is_initialized(),
+            disable=not self.accelerator.is_local_main_process,
         )
 
         for _ in range(self.config.train.epochs):

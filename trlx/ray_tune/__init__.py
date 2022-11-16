@@ -1,11 +1,4 @@
-import yaml
 from ray import tune
-
-
-def load_ray_yaml(path: str):
-    with open(path, "r") as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    return config
 
 
 def get_param_space(config: dict):
