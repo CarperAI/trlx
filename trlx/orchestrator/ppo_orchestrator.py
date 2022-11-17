@@ -87,12 +87,19 @@ class PPOOrchestrator(Orchestrator):
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running.update(scores)
-            scores /= self.running.std
 
             stats["exp_scores_mean"] = all_scores_mean
             stats["exp_scores_std"] = all_scores_std
             stats["running_mean"] = self.running.mean
             stats["running_std"] = self.running.std
+
+            if self.rl_model.config.method.scale_reward:
+                scores /= self.running.std
+
+            clip_reward = self.rl_model.config.method.clip_reward
+            if clip_reward:
+                scores = torch.clip(scores, -clip_reward, clip_reward)
+
             # Precompute logprobs, values
             all_tokens = torch.cat(
                 (query_tensors.to(samples.device), response_tensors), dim=1
