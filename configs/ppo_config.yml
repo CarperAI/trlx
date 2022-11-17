@@ -10,8 +10,8 @@ train:
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
-  lr_init: 1.412e-4  # init learning rate
-  lr_target: 1.412e-4  # target final learning rate
+  lr_init: 1.0e-4  # init learning rate
+  lr_target: 1.0e-4  # target final learning rate
   opt_betas: [0.9, 0.95] # adam betas
   opt_eps: 1.0e-8  # adam eps
   weight_decay: 1.0e-6  # weight decay param
@@ -27,14 +27,14 @@ method:
   num_rollouts: 128  # Number of rollouts to collect per epoch
   chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs: 4  # Number of ppo epochs
-  init_kl_coef: 0.2  # init kl coefficient
+  init_kl_coef: 0.05  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef
   horizon: 10000  # PPO horizon
   gamma: 1  # PPO discount
   lam: 0.95  # PPO lambda
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
-  vf_coef: 2.3  # value term weight
+  vf_coef: 1  # value term weight
   gen_kwargs:
     max_length: 48  # LM max sample gen length
     min_length: 48  # LM min sample gen length

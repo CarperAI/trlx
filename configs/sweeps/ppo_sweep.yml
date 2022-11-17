@@ -1,11 +1,12 @@
 tune_config:
   mode: "max"
   metric: "mean_reward"
-  search_alg: "bohb"
-  scheduler: "hyperbandforbohb"
+  search_alg: "random"
+  scheduler: "fifo"
   num_samples: 32
   max_concurrent_trials: 8
 
+# https://docs.ray.io/en/latest/tune/api_docs/search_space.html#tune-sample-docs
 lr_init:
   strategy: "loguniform"
   values: [0.00001, 0.01]
