@@ -111,7 +111,7 @@ class PPOConfig(MethodConfig):
     cliprange: float
     cliprange_value: float
     vf_coef: float
-    scale_reward: bool
+    scale_reward: str
     clip_reward: float
     gen_kwargs: dict
 
