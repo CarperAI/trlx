@@ -8,8 +8,9 @@ from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValu
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.utils import Clock
-from trlx.utils.modeling import logprobs_from_logits
+from trlx.utils.modeling import logprobs_from_logits, RunningMoments
 
+from time import time
 import ray
 from ray.air import session
 
@@ -45,6 +46,10 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model.reward_fn = reward_fn
         self.rl_model.metric_fn = metric_fn
 
+        self.running = RunningMoments()
+        self.ref_mean = None
+        self.ref_std = None
+
     def score(self, samples):
         """
         Batched scoring function taking text and generating scalar
@@ -66,14 +71,34 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
+            exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
+            stats["exp_generate_time"] = time() - exp_generate_time
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
-            scores = torch.as_tensor(self.score(texts))
+            exp_score_time = time()
+            scores = torch.as_tensor(self.score(texts), device=samples.device)
+            stats["exp_score_time"] = time() - exp_score_time
+
+            if self.ref_mean is None:
+                self.ref_mean, self.ref_std = scores.mean(), scores.std()
+            all_scores_mean, all_scores_std = self.running.update(scores)
+
+            stats["exp_scores_mean"] = all_scores_mean
+            stats["exp_scores_std"] = all_scores_std
+            stats["running_mean"] = self.running.mean
+            stats["running_std"] = self.running.std
+
+            if self.rl_model.config.method.scale_reward:
+                scores /= self.running.std
+
+            clip_reward = self.rl_model.config.method.clip_reward
+            if clip_reward:
+                scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
             all_tokens = torch.cat(
@@ -126,7 +151,8 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
 
-        stats = {"exp_time": exp_time}
+        stats["kl_ctl_value"] = self.rl_model.kl_ctl.value
+        stats["exp_time"] = exp_time
 
         if not ray.is_initialized():
             self.rl_model.accelerator.log(stats, step=iter_count)

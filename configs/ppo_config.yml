@@ -6,7 +6,7 @@ model:
 
 train:
   seq_length: 48  # Size of LM context
-  epochs: 1000 # Train for max(epochs, total_steps)
+  epochs: 100 # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
 
@@ -35,6 +35,8 @@ method:
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
   vf_coef: 2.3  # value term weight
+  scale_reward: True
+  clip_reward: 10
   gen_kwargs:
     max_length: 48  # LM max sample gen length
     min_length: 48  # LM min sample gen length
