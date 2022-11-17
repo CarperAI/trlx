@@ -31,15 +31,15 @@ def tune_function(
     )
 
     results = tuner.fit()
-    projectname = "sweep"
+    project_name = tune_config.get("project_name", "sweep")
 
     log_trials(
         tuner._local_tuner.get_experiment_checkpoint_dir(),
-        projectname,
+        project_name,
     )
 
     create_report(
-        projectname,
+        project_name,
         param_space,
         tune_config,
         Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,

@@ -4,6 +4,7 @@ import os
 import json
 import pandas as pd
 from pathlib import Path
+import math
 
 import wandb
 
@@ -21,9 +22,8 @@ ray_info = [
     "warmup_time",
     "should_checkpoint",
     "training_iteration",
-    "time_total_s",
-    "pid",
     "timestamp",
+    "pid",
 ]
 
 
@@ -38,6 +38,10 @@ def parse_result(result):
             out[k] = v
 
     return out
+
+
+def significant(x):
+    return round(x, 1 - int(math.floor(math.log10(x))))
 
 
 def log_trials(trial_path: str, project_name: str):
@@ -57,8 +61,10 @@ def log_trials(trial_path: str, project_name: str):
         with open(os.path.join(trial, "params.json"), "r") as f:
             params = json.load(f)
 
+        name = ",".join(f"{k}={significant(v)}" for k, v in params.items())
         # Initialize wandb
         run = wandb.init(
+            name=name,
             project=project_name,
             config=params,
             group=trial_path.stem,
@@ -108,6 +114,13 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
         entity_project = f"{entity}/{project_name}" if entity else project_name
         api = wandb.Api()
         runs = api.runs(entity_project)
+
+        runs = sorted(
+            runs,
+            key=lambda run: run.summary.get(tune_config["metric"], -math.inf),
+            reverse=True,
+        )
+
         for run in runs:
             if run.group == str(group_name):
                 history = run.history()
@@ -198,3 +211,4 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
         ]
 
     report.save()
+    print(report.url)

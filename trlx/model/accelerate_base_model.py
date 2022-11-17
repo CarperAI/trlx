@@ -1,4 +1,5 @@
 import importlib
+import sys
 import os
 from abc import abstractmethod
 from time import time
@@ -69,13 +70,20 @@ class AccelerateRLModel(BaseRLModel):
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
 
+        script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
+        if not isinstance(config.model.model_path, str):
+            model_name = str(config.model.model_path).split()[0]
+        else:
+            model_name = config.model.model_path.split("/")[-1]
+        run_name = f"{script_name}/{model_name}"
+
         if self.accelerator.is_main_process and not ray.is_initialized():
             self.accelerator.init_trackers(
                 project_name=self.config.train.project_name,
                 config=self.config.to_dict(),
                 init_kwargs={
                     "wandb": {
-                        "name": f"{config.model.model_path}",
+                        "name": run_name,
                         "entity": self.config.train.entity_name,
                         "mode": "disabled"
                         if os.environ.get("debug", False)
@@ -228,6 +236,9 @@ class AccelerateRLModel(BaseRLModel):
                     with open(os.path.join(dir, "state.json")) as f:
                         state = json.load(f)
                         self.iter_count = state["iter_count"]
+        else:
+            results = self.evaluate()
+            self.accelerator.log(results)
 
         tbar = tqdm(
             initial=self.iter_count,
