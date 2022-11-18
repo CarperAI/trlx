@@ -47,8 +47,8 @@ class PPOOrchestrator(Orchestrator):
         self.rl_model.metric_fn = metric_fn
 
         self.running = RunningMoments()
-        self.ref_mean = None
-        self.ref_std = None
+        self.ref_mean = self.rl_model.config.method.ref_mean
+        self.ref_std = self.rl_model.config.method.ref_std
 
     def score(self, samples):
         """
@@ -88,7 +88,6 @@ class PPOOrchestrator(Orchestrator):
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running.update(scores)
-
             stats["exp_scores_mean"] = all_scores_mean
             stats["exp_scores_std"] = all_scores_std
             stats["running_mean"] = self.running.mean
@@ -99,7 +98,7 @@ class PPOOrchestrator(Orchestrator):
             elif self.rl_model.config.method.scale_reward == "ref":
                 scores /= self.ref_std
 
-            clip_reward = self.rl_model.config.method.clip_reward
+            clip_reward = self.rl_model.config.method.cliprange_reward
             if clip_reward:
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
