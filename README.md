@@ -41,7 +41,7 @@ accelerate launch examples/simulacra.py
 
 #### Use Ray Tune to launch hyperparameter sweep
 ```bash
-python train_sweep.py --config configs/ray_tune_configs/ppo_config.yml --example-name ppo_sentiments
+python train_sweep.py --config configs/ray_tune_configs/ppo_config.yml --sweep-fn ppo_sentiments
 ```
 
 For more usage see [examples](./examples)

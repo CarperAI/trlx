@@ -49,7 +49,7 @@ def tune_function(train_function, param_space: dict, tune_config: dict, resource
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--example-name", type=str, default="ppo_sentiments", help="Name of the example"
+        "--sweep-fn", type=str, default="ppo_sentiments", help="Name of the function to sweep over."
     )
     parser.add_argument(
         "--config", type=str, default=None, required=True, help="The config file defining the param_space."
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     }
 
     # Register the training function that will be used for training the model.
-    train_function = get_train_function(args.example_name)
+    train_function = get_train_function(args.sweep_fn)
     tune.register_trainable("train_function", train_function)
 
     tune_function(train_function, param_space, tune_config, resources)

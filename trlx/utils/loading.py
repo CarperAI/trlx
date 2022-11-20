@@ -14,6 +14,9 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
 
+# Register sweep functions
+from trlx.ray_tune import _SWEEPS
+from trlx.ray_tune.train_funcs import ppo_sentiments_train
 
 def get_model(name: str) -> Callable:
     """
@@ -49,4 +52,17 @@ def get_orchestrator(name: str) -> Callable:
     else:
         raise Exception(
             "Error: Trying to access an orchestrator that has not been registered"
+        )
+
+
+def get_sweep_fn(name: str) -> Callable:
+    """
+    Return constructor for specified sweep function
+    """
+    name = name.lower()
+    if name in _SWEEPS:
+        return _SWEEPS[name]
+    else:
+        raise Exception(
+            "Error: Trying to access a sweep function that has not been registered"
         )

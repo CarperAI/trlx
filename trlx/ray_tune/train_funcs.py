@@ -6,7 +6,7 @@ from datasets import load_dataset
 import trlx
 from trlx.data.configs import TRLConfig
 
-
+@register_sweep("ppo_sentiments")
 def ppo_sentiments_train(config: dict):
     from transformers import pipeline
 
