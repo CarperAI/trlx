@@ -91,12 +91,13 @@ class RunningMoments:
         delta = xs_mean - self.mean
         tot_count = self.count + xs_count
 
-        m_a = self.var * self.count
-        m_b = xs_var * xs_count
-        m_2 = m_a + m_b + delta**2 * self.count * xs_count / tot_count
+        new_sum = xs_var * xs_count
+        # correct old_sum deviation accounting for the new mean
+        old_sum = self.var * self.count + delta**2 * self.count * xs_count / tot_count
+        tot_sum = old_sum + new_sum
 
         self.mean += delta * xs_count / tot_count
-        self.var = m_2 / tot_count
+        self.var = tot_sum / tot_count
         self.std = (self.var * tot_count / (tot_count - 1)).sqrt()
         self.count = tot_count
 

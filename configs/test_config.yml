@@ -35,6 +35,10 @@ method:
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
   vf_coef: 1.0  # value term weight
+  scale_reward: "running" # False|"ref"|"running" estimate against which to scale rewards
+  cliprange_reward: 10
+  ref_mean: null
+  ref_std: null
   gen_kwargs:
     max_length: 48  # LM max sample gen length
     min_length: 48  # LM min sample gen length
