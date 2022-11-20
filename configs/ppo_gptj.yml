@@ -19,7 +19,7 @@ train:
   checkpoint_interval: 1000000  # checkpoint interval
   eval_interval: 16  # eval interval
 
-  pipeline: "PPOPipeline"  # prompt pipeline to load
+  pipeline: "PromptPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
 
 method:
