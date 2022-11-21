@@ -65,6 +65,9 @@ if __name__ == "__main__":
         "--num-gpus", type=int, default=1, help="Number of GPUs to use per exp."
     )
     parser.add_argument(
+        "-y", "--assume-yes", action="store_true", help="Don't ask for confirmation"
+    )
+    parser.add_argument(
         "--server-address",
         type=str,
         default=None,
@@ -91,7 +94,15 @@ if __name__ == "__main__":
         "gpu": args.num_gpus,
     }
 
-    # convert a nested path to script to a module path
+    print(f'WARNING: Importing main from "{args.script}" and everything along with it')
+
+    if not args.assume_yes:
+        print("Please confirm y/n: ", end="")
+        if input() != "y":
+            print("Exiting")
+            exit(1)
+
+    # convert a nested path to a module path
     script_path = args.script.replace(".py", "").replace("/", ".")
     script = importlib.import_module(script_path)
     # Register the training function that will be used for training the model.
