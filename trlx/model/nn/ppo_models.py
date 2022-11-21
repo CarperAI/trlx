@@ -111,6 +111,10 @@ class PPOConfig(MethodConfig):
     cliprange: float
     cliprange_value: float
     vf_coef: float
+    scale_reward: str
+    ref_mean: Optional[float]
+    ref_std: Optional[float]
+    cliprange_reward: float
     gen_kwargs: dict
 
     def get_advantages_and_returns(

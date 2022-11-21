@@ -1,8 +1,18 @@
 from typing import Callable
 
+# Register load models via module import
 from trlx.model import _MODELS
+from trlx.model.accelerate_ilql_model import AccelerateILQLModel
+from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+
+# Register load orchestrators via module import
 from trlx.orchestrator import _ORCH
+from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
+
+# Register load pipelines via module import
 from trlx.pipeline import _DATAPIPELINE
+from trlx.pipeline.offline_pipeline import PromptPipeline
 
 
 def get_model(name: str) -> Callable:

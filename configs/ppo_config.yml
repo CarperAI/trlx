@@ -19,8 +19,9 @@ train:
   checkpoint_interval: 10000  # checkpoint interval
   eval_interval: 100  # eval interval
 
-  pipeline: "PPOPipeline"  # prompt pipeline to load
+  pipeline: "PromptPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
+  entity_name: "jon-tow"
 
 method:
   name: 'ppoconfig'  # Name of RL method config
@@ -34,7 +35,11 @@ method:
   lam: 0.95  # PPO lambda
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
-  vf_coef: 1  # value term weight
+  vf_coef: 2.3  # value term weight
+  scale_reward: "running" # False | "ref" | "running" estimate against which to scale rewards
+  ref_mean: null
+  ref_std: null # rescale rewards with this deviation
+  cliprange_reward: 10
   gen_kwargs:
     max_length: 48  # LM max sample gen length
     min_length: 48  # LM min sample gen length
