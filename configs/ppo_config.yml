@@ -1,14 +1,14 @@
 model:
-  model_path: "lvwerra/gpt2-imdb"  # Name of hf model to load
+  model_path: "lvwerra/gpt2-imdb" #"EleutherAI/gpt-j-6B" #"lvwerra/gpt2-imdb"  # Name of hf model to load
   tokenizer_path: "gpt2"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
-  num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
+  num_layers_unfrozen: 1  # Number of bottom layers to freeze during training
 
 train:
   seq_length: 24  # Size of LM context
   epochs: 1000  # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
-  batch_size: 128  # batch size
+  batch_size: 8  # batch size
 
   lr_ramp_steps: 100  # learning rate warm up
   lr_decay_steps: 79000  # learning rate decay
@@ -25,8 +25,8 @@ train:
 
 method:
   name: 'ppoconfig'  # Name of RL method config
-  num_rollouts: 128  # Number of rollouts to collect per epoch
-  chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
+  num_rollouts: 8  # Number of rollouts to collect per epoch
+  chunk_size: 8  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs: 4  # Number of ppo epochs
   init_kl_coef: 0.2  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef

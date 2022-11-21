@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader
 import torch
 from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel, PretrainedHydraModel
 
+import deepspeed
+from transformers.deepspeed import HfDeepSpeedConfig
+import os
+
 
 
 config = TRLConfig.load_yaml("configs/ppo_config.yml")
@@ -111,13 +115,16 @@ def z3_model_branch():
         attention_mask = input['attention_mask']
         return {'input_ids': input_ids, 'attention_mask': attention_mask}
 
-    dataloader = DataLoader(input, 2, collate_fn=collate_fn)
+    dataloader = DataLoader(input, 1, collate_fn=collate_fn)
     #trunk = AutoModelForCausalLM.from_pretrained('gpt2')
     #hf_config = trunk.config
     #branch = ModelBranch(hf_config, trunk, 2)
-    branch = PretrainedHydraModel('lvwerra/gpt2-imdb', 2)
+
+    model_name = "EleutherAI/gpt-j-6B" # 'lvwerra/gpt2-imdb'
+    unfrozen_layers = 2
+    branch = PretrainedHydraModel(model_name, unfrozen_layers)
     gpt_blocks = branch.gpt.transformer.h
-    gpt_blocks_to_freeze = list(gpt_blocks)[:-2]
+    gpt_blocks_to_freeze = list(gpt_blocks)[:-unfrozen_layers]
     for m in gpt_blocks_to_freeze:
         m.requires_grad_(False)
 
@@ -135,6 +142,8 @@ def z3_model_branch():
 
     accelerator = Accelerator()
     branch, dataloader, opt, scheduler = accelerator.prepare(branch, dataloader, opt, scheduler)
+
+    print("Finished loading model")
 
     '''# Generation hangs when inputs on different ranks are not the same
     text = "hello world" if torch.distributed.get_rank() == 0 else "goodbye my sweet prince"
@@ -167,10 +176,22 @@ def z3_model_branch():
         loss = logits.sum()
         accelerator.backward(loss)
         accelerator.wait_for_everyone()
+        #exit()
 
     print("EXITING")
+
+
+def estimate_gptj():
+    branch = PretrainedHydraModel('EleutherAI/gpt-j-6B', 2)
+
+    from deepspeed.runtime.zero.stage_1_and_2 import estimate_zero2_model_states_mem_needs_all_live
+    from deepspeed.runtime.zero.stage3 import estimate_zero3_model_states_mem_needs_all_live
+
+    estimate_zero2_model_states_mem_needs_all_live(branch, num_gpus_per_node=4, num_nodes=1)
+    estimate_zero3_model_states_mem_needs_all_live(branch, num_gpus_per_node=4, num_nodes=1)
 
 
 if __name__ == "__main__":
     #simple_hydra()
     z3_model_branch()
+    #estimate_gptj()

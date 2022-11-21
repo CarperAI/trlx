@@ -22,7 +22,6 @@ if __name__ == "__main__":
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
     model = trlx.train(
-        "lvwerra/gpt2-imdb",
         reward_fn=reward_fn,
         config=config,
         prompts=prompts,

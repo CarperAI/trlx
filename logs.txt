@@ -1,33 +1,42 @@
 The following values were not passed to `accelerate launch` and had defaults used instead:
 	`--num_cpu_threads_per_process` was set to `48` to improve out-of-box performance
 To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
-[2022-10-30 14:40:24,849] [WARNING] [runner.py:178:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
+[2022-11-09 18:34:51,319] [WARNING] [runner.py:178:fetch_hostfile] Unable to find hostfile, will proceed with training with local resources only.
 Detected CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 but ignoring it because one or several of --include/--exclude/--num_gpus/--num_nodes cl args were used. If you want to use CUDA_VISIBLE_DEVICES don't pass any of these arguments to deepspeed.
-[2022-10-30 14:40:25,599] [INFO] [runner.py:504:main] cmd = /fsx/alex/.envs/accelerate/bin/python3.8 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMCwgMV19 --master_addr=127.0.0.1 --master_port=29500 --no_local_rank examples/ppo_sentiments.py
-[2022-10-30 14:40:27,316] [INFO] [launch.py:136:main] WORLD INFO DICT: {'localhost': [0, 1]}
-[2022-10-30 14:40:27,316] [INFO] [launch.py:142:main] nnodes=1, num_local_procs=2, node_rank=0
-[2022-10-30 14:40:27,316] [INFO] [launch.py:155:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0, 1]})
-[2022-10-30 14:40:27,316] [INFO] [launch.py:156:main] dist_world_size=2
-[2022-10-30 14:40:27,316] [INFO] [launch.py:158:main] Setting CUDA_VISIBLE_DEVICES=0,1
+[2022-11-09 18:34:52,204] [INFO] [runner.py:504:main] cmd = /fsx/alex/.envs/accelerate/bin/python3.8 -u -m deepspeed.launcher.launch --world_info=eyJsb2NhbGhvc3QiOiBbMCwgMSwgMiwgM119 --master_addr=127.0.0.1 --master_port=29500 --no_local_rank examples/ppo_sentiments.py
+[2022-11-09 18:34:53,941] [INFO] [launch.py:136:main] WORLD INFO DICT: {'localhost': [0, 1, 2, 3]}
+[2022-11-09 18:34:53,941] [INFO] [launch.py:142:main] nnodes=1, num_local_procs=4, node_rank=0
+[2022-11-09 18:34:53,941] [INFO] [launch.py:155:main] global_rank_mapping=defaultdict(<class 'list'>, {'localhost': [0, 1, 2, 3]})
+[2022-11-09 18:34:53,941] [INFO] [launch.py:156:main] dist_world_size=4
+[2022-11-09 18:34:53,941] [INFO] [launch.py:158:main] Setting CUDA_VISIBLE_DEVICES=0,1,2,3
 Reusing dataset imdb (/fsx/home-alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
 Reusing dataset imdb (/fsx/home-alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
-[2022-10-30 14:40:36,139] [INFO] [comm.py:633:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
-[2022-10-30 14:40:38,997] [INFO] [partition_parameters.py:413:__exit__] finished initializing model with 0.16B parameters
+Reusing dataset imdb (/fsx/home-alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+Reusing dataset imdb (/fsx/home-alex/.cache/huggingface/datasets/imdb/plain_text/1.0.0/2fdd8b9bcadd6e7055e742a706876ba43f19faee861df134affd7a3f60fc38a1)
+[2022-11-09 18:36:31,714] [INFO] [comm.py:633:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+wandb: Currently logged in as: dahoas. Use `wandb login --relogin` to force relogin
+wandb: wandb version 0.13.5 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
 wandb: Tracking run with wandb version 0.13.2
-wandb: W&B syncing is set to `offline` in this directory.  
-wandb: Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
-[2022-10-30 14:40:41,298] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed info: version=0.7.2, git-hash=unknown, git-branch=unknown
-[2022-10-30 14:40:41,555] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Flops Profiler Enabled: False
-[2022-10-30 14:40:41,556] [INFO] [logging.py:68:log_dist] [Rank 0] Removing param_group that has no 'params' in the client Optimizer
-[2022-10-30 14:40:41,556] [INFO] [logging.py:68:log_dist] [Rank 0] Using client Optimizer as basic optimizer
-[2022-10-30 14:40:41,562] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Basic Optimizer = {basic_optimizer.__class__.__name__}
-[2022-10-30 14:40:41,562] [INFO] [utils.py:52:is_zero_supported_optimizer] Checking ZeRO support for optimizer=AdamW type=<class 'torch.optim.adamw.AdamW'>
-[2022-10-30 14:40:41,562] [INFO] [logging.py:68:log_dist] [Rank 0] Creating fp16 ZeRO stage 3 optimizer
-[2022-10-30 14:40:41,686] [INFO] [utils.py:827:see_memory_usage] Stage 3 initialize beginning
-[2022-10-30 14:40:41,687] [INFO] [utils.py:828:see_memory_usage] MA 0.32 GB         Max_MA 0.61 GB         CA 0.78 GB         Max_CA 1 GB 
-[2022-10-30 14:40:41,687] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 24.71 GB, percent = 2.2%
-[2022-10-30 14:40:41,689] [INFO] [stage3.py:114:__init__] Reduce bucket size 500000000
-[2022-10-30 14:40:41,689] [INFO] [stage3.py:115:__init__] Prefetch bucket size 50000000
+wandb: Run data is saved locally in /fsx/alex/repos/trlx/wandb/run-20221109_183637-2dq5lt46
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run EleutherAI/gpt-j-6B
+wandb: ⭐️ View project at https://wandb.ai/dahoas/trlx
+wandb: 🚀 View run at https://wandb.ai/dahoas/trlx/runs/2dq5lt46
+[2022-11-09 18:36:38,338] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed info: version=0.7.2, git-hash=unknown, git-branch=unknown
+[2022-11-09 18:36:48,526] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Flops Profiler Enabled: False
+[2022-11-09 18:36:48,527] [INFO] [logging.py:68:log_dist] [Rank 0] Removing param_group that has no 'params' in the client Optimizer
+[2022-11-09 18:36:48,527] [INFO] [logging.py:68:log_dist] [Rank 0] Using client Optimizer as basic optimizer
+[2022-11-09 18:36:48,544] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Basic Optimizer = {basic_optimizer.__class__.__name__}
+[2022-11-09 18:36:48,544] [INFO] [utils.py:52:is_zero_supported_optimizer] Checking ZeRO support for optimizer=AdamW type=<class 'torch.optim.adamw.AdamW'>
+[2022-11-09 18:36:48,544] [INFO] [logging.py:68:log_dist] [Rank 0] Creating fp16 ZeRO stage 3 optimizer
+[2022-11-09 18:36:48,651] [INFO] [utils.py:827:see_memory_usage] Stage 3 initialize beginning
+[2022-11-09 18:36:48,652] [INFO] [utils.py:828:see_memory_usage] MA 24.3 GB         Max_MA 24.3 GB         CA 24.3 GB         Max_CA 24 GB 
+[2022-11-09 18:36:48,652] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 161.83 GB, percent = 14.4%
+[2022-11-09 18:36:48,654] [INFO] [stage3.py:114:__init__] Reduce bucket size 500000000
+[2022-11-09 18:36:48,654] [INFO] [stage3.py:115:__init__] Prefetch bucket size 50000000
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
 Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
 Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
 Emitting ninja build file /fsx/alex/.cache/torch_extensions/py38_cu113/utils/build.ninja...
@@ -35,30 +44,42 @@ Building extension module utils...
 Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
 ninja: no work to do.
 Loading extension module utils...
-Time to load utils op: 1.0713436603546143 seconds
+Time to load utils op: 1.192406177520752 seconds
 Loading extension module utils...
-Time to load utils op: 1.105639934539795 seconds
-[2022-10-30 14:40:43,362] [INFO] [utils.py:827:see_memory_usage] DeepSpeedZeRoOffload initialize [begin]
-[2022-10-30 14:40:43,363] [INFO] [utils.py:828:see_memory_usage] MA 0.32 GB         Max_MA 0.32 GB         CA 0.78 GB         Max_CA 1 GB 
-[2022-10-30 14:40:43,363] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 24.73 GB, percent = 2.2%
-Parameter Offload: Total persistent parameters: 124417 in 128 params
-[2022-10-30 14:40:43,455] [INFO] [utils.py:827:see_memory_usage] DeepSpeedZeRoOffload initialize [end]
-[2022-10-30 14:40:43,456] [INFO] [utils.py:828:see_memory_usage] MA 0.32 GB         Max_MA 0.33 GB         CA 0.78 GB         Max_CA 1 GB 
-[2022-10-30 14:40:43,456] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 24.73 GB, percent = 2.2%
-[2022-10-30 14:40:43,871] [INFO] [stage3.py:368:_setup_for_real_optimizer] optimizer state initialized
+Time to load utils op: 1.20662522315979 seconds
+Loading extension module utils...
+Time to load utils op: 1.2055554389953613 seconds
+Loading extension module utils...
+Time to load utils op: 1.2044501304626465 seconds
+[2022-11-09 18:36:50,473] [INFO] [utils.py:827:see_memory_usage] DeepSpeedZeRoOffload initialize [begin]
+[2022-11-09 18:36:50,474] [INFO] [utils.py:828:see_memory_usage] MA 24.3 GB         Max_MA 24.3 GB         CA 24.3 GB         Max_CA 24 GB 
+[2022-11-09 18:36:50,474] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 161.88 GB, percent = 14.4%
+Parameter Offload: Total persistent parameters: 965057 in 125 params
+[2022-11-09 18:36:50,612] [INFO] [utils.py:827:see_memory_usage] DeepSpeedZeRoOffload initialize [end]
+[2022-11-09 18:36:50,613] [INFO] [utils.py:828:see_memory_usage] MA 6.16 GB         Max_MA 24.49 GB         CA 24.5 GB         Max_CA 24 GB 
+[2022-11-09 18:36:50,613] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 161.89 GB, percent = 14.4%
+[2022-11-09 18:36:59,154] [INFO] [stage3.py:368:_setup_for_real_optimizer] optimizer state initialized
+Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
+
+No modifications detected for re-loaded extension module utils, skipping build step...
+Loading extension module utils...
+Time to load utils op: 0.0024204254150390625 seconds
 Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
 No modifications detected for re-loaded extension module utils, skipping build step...
 Loading extension module utils...
-Time to load utils op: 0.0018215179443359375 seconds
-[2022-10-30 14:40:43,982] [INFO] [utils.py:827:see_memory_usage] After initializing ZeRO optimizer
-[2022-10-30 14:40:43,983] [INFO] [utils.py:828:see_memory_usage] MA 3.12 GB         Max_MA 3.41 GB         CA 3.74 GB         Max_CA 4 GB 
-[2022-10-30 14:40:43,983] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 24.74 GB, percent = 2.2%
-[2022-10-30 14:40:43,984] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Final Optimizer = AdamW
-[2022-10-30 14:40:43,984] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed using client LR scheduler
-[2022-10-30 14:40:43,984] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed LR Scheduler = None
-[2022-10-30 14:40:43,984] [INFO] [logging.py:68:log_dist] [Rank 0] step=0, skipped=0, lr=[0.0001412], mom=[[0.9, 0.95]]
-[2022-10-30 14:40:43,985] [INFO] [config.py:987:print] DeepSpeedEngine configuration:
-[2022-10-30 14:40:43,985] [INFO] [config.py:991:print]   activation_checkpointing_config  {
+Time to load utils op: 0.0024476051330566406 seconds
+No modifications detected for re-loaded extension module utils, skipping build step...
+Loading extension module utils...
+Time to load utils op: 0.0009603500366210938 seconds
+[2022-11-09 18:36:59,533] [INFO] [utils.py:827:see_memory_usage] After initializing ZeRO optimizer
+[2022-11-09 18:36:59,534] [INFO] [utils.py:828:see_memory_usage] MA 32.21 GB         Max_MA 33.75 GB         CA 37.12 GB         Max_CA 37 GB 
+[2022-11-09 18:36:59,534] [INFO] [utils.py:836:see_memory_usage] CPU Virtual Memory:  used = 162.37 GB, percent = 14.5%
+[2022-11-09 18:36:59,534] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed Final Optimizer = AdamW
+[2022-11-09 18:36:59,535] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed using client LR scheduler
+[2022-11-09 18:36:59,535] [INFO] [logging.py:68:log_dist] [Rank 0] DeepSpeed LR Scheduler = None
+[2022-11-09 18:36:59,535] [INFO] [logging.py:68:log_dist] [Rank 0] step=0, skipped=0, lr=[0.0001412], mom=[[0.9, 0.95]]
+[2022-11-09 18:36:59,536] [INFO] [config.py:987:print] DeepSpeedEngine configuration:
+[2022-11-09 18:36:59,536] [INFO] [config.py:991:print]   activation_checkpointing_config  {
     "partition_activations": false, 
     "contiguous_memory_optimization": false, 
     "cpu_checkpointing": false, 
@@ -66,10 +87,10 @@ Time to load utils op: 0.0018215179443359375 seconds
     "synchronize_checkpoint_boundary": false, 
     "profile": false
 }
-[2022-10-30 14:40:43,985] [INFO] [config.py:991:print]   aio_config ................... {'block_size': 1048576, 'queue_depth': 8, 'thread_count': 1, 'single_submit': False, 'overlap_events': True}
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   amp_enabled .................. False
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   amp_params ................... False
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   autotuning_config ............ {
+[2022-11-09 18:36:59,536] [INFO] [config.py:991:print]   aio_config ................... {'block_size': 1048576, 'queue_depth': 8, 'thread_count': 1, 'single_submit': False, 'overlap_events': True}
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   amp_enabled .................. False
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   amp_params ................... False
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   autotuning_config ............ {
     "enabled": false, 
     "start_step": null, 
     "end_step": null, 
@@ -94,28 +115,28 @@ Time to load utils op: 0.0018215179443359375 seconds
     "min_train_micro_batch_size_per_gpu": 1, 
     "num_tuning_micro_batch_sizes": 3
 }
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   bfloat16_enabled ............. False
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   checkpoint_tag_validation_enabled  True
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   checkpoint_tag_validation_fail  False
-[2022-10-30 14:40:43,986] [INFO] [config.py:991:print]   comms_config ................. <deepspeed.comm.config.DeepSpeedCommsConfig object at 0x7f4f557e8190>
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   communication_data_type ...... None
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   compression_config ........... {'weight_quantization': {'shared_parameters': {'enabled': False, 'quantizer_kernel': False, 'schedule_offset': 0, 'quantize_groups': 1, 'quantize_verbose': False, 'quantization_type': 'symmetric', 'quantize_weight_in_forward': False, 'rounding': 'nearest', 'fp16_mixed_quantize': False, 'quantize_change_ratio': 0.001}, 'different_groups': {}}, 'activation_quantization': {'shared_parameters': {'enabled': False, 'quantization_type': 'symmetric', 'range_calibration': 'dynamic', 'schedule_offset': 1000}, 'different_groups': {}}, 'sparse_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'row_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'head_pruning': {'shared_parameters': {'enabled': False, 'method': 'topk', 'schedule_offset': 1000}, 'different_groups': {}}, 'channel_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'layer_reduction': {'enabled': False}}
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   curriculum_enabled ........... False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   curriculum_params ............ False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   dataloader_drop_last ......... False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   disable_allgather ............ False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   dump_state ................... False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   dynamic_loss_scale_args ...... None
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   eigenvalue_enabled ........... False
-[2022-10-30 14:40:43,987] [INFO] [config.py:991:print]   eigenvalue_gas_boundary_resolution  1
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_layer_name ........ bert.encoder.layer
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_layer_num ......... 0
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_max_iter .......... 100
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_stability ......... 1e-06
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_tol ............... 0.01
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   eigenvalue_verbose ........... False
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   elasticity_enabled ........... False
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   flops_profiler_config ........ {
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   bfloat16_enabled ............. False
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   checkpoint_tag_validation_enabled  True
+[2022-11-09 18:36:59,537] [INFO] [config.py:991:print]   checkpoint_tag_validation_fail  False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   comms_config ................. <deepspeed.comm.config.DeepSpeedCommsConfig object at 0x7f9ea4e7b190>
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   communication_data_type ...... None
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   compression_config ........... {'weight_quantization': {'shared_parameters': {'enabled': False, 'quantizer_kernel': False, 'schedule_offset': 0, 'quantize_groups': 1, 'quantize_verbose': False, 'quantization_type': 'symmetric', 'quantize_weight_in_forward': False, 'rounding': 'nearest', 'fp16_mixed_quantize': False, 'quantize_change_ratio': 0.001}, 'different_groups': {}}, 'activation_quantization': {'shared_parameters': {'enabled': False, 'quantization_type': 'symmetric', 'range_calibration': 'dynamic', 'schedule_offset': 1000}, 'different_groups': {}}, 'sparse_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'row_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'head_pruning': {'shared_parameters': {'enabled': False, 'method': 'topk', 'schedule_offset': 1000}, 'different_groups': {}}, 'channel_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'layer_reduction': {'enabled': False}}
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   curriculum_enabled ........... False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   curriculum_params ............ False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   dataloader_drop_last ......... False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   disable_allgather ............ False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   dump_state ................... False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   dynamic_loss_scale_args ...... None
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   eigenvalue_enabled ........... False
+[2022-11-09 18:36:59,538] [INFO] [config.py:991:print]   eigenvalue_gas_boundary_resolution  1
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_layer_name ........ bert.encoder.layer
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_layer_num ......... 0
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_max_iter .......... 100
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_stability ......... 1e-06
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_tol ............... 0.01
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   eigenvalue_verbose ........... False
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   elasticity_enabled ........... False
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   flops_profiler_config ........ {
     "enabled": false, 
     "profile_step": 1, 
     "module_depth": -1, 
@@ -123,19 +144,19 @@ Time to load utils op: 0.0018215179443359375 seconds
     "detailed": true, 
     "output_file": null
 }
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   fp16_auto_cast ............... None
-[2022-10-30 14:40:43,988] [INFO] [config.py:991:print]   fp16_enabled ................. False
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   fp16_master_weights_and_gradients  False
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   global_rank .................. 0
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   gradient_accumulation_steps .. 1
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   gradient_clipping ............ 1.0
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   gradient_predivide_factor .... 1.0
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   initial_dynamic_scale ........ 4294967296
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   load_universal_checkpoint .... False
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   loss_scale ................... 0
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   memory_breakdown ............. False
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   monitor_config ............... <deepspeed.monitor.config.DeepSpeedMonitorConfig object at 0x7f4f557e81f0>
-[2022-10-30 14:40:43,989] [INFO] [config.py:991:print]   nebula_config ................ {
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   fp16_auto_cast ............... None
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   fp16_enabled ................. False
+[2022-11-09 18:36:59,539] [INFO] [config.py:991:print]   fp16_master_weights_and_gradients  False
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   global_rank .................. 0
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   gradient_accumulation_steps .. 1
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   gradient_clipping ............ 1.0
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   gradient_predivide_factor .... 1.0
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   initial_dynamic_scale ........ 4294967296
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   load_universal_checkpoint .... False
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   loss_scale ................... 0
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   memory_breakdown ............. False
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   monitor_config ............... <deepspeed.monitor.config.DeepSpeedMonitorConfig object at 0x7f9ea4e7b0a0>
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   nebula_config ................ {
     "enabled": false, 
     "persistent_storage_path": null, 
     "persistent_time_interval": 100, 
@@ -143,29 +164,29 @@ Time to load utils op: 0.0018215179443359375 seconds
     "enable_nebula_load": true, 
     "load_path": null
 }
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   optimizer_legacy_fusion ...... False
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   optimizer_name ............... None
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   optimizer_params ............. None
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   pipeline ..................... {'stages': 'auto', 'partition': 'best', 'seed_layers': False, 'activation_checkpoint_interval': 0}
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   pld_enabled .................. False
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   pld_params ................... False
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   prescale_gradients ........... False
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   scheduler_name ............... None
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   scheduler_params ............. None
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   sparse_attention ............. None
-[2022-10-30 14:40:43,990] [INFO] [config.py:991:print]   sparse_gradients_enabled ..... False
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   steps_per_print .............. inf
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   train_batch_size ............. 256
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   train_micro_batch_size_per_gpu  128
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   wall_clock_breakdown ......... False
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   world_size ................... 2
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   zero_allow_untested_optimizer  True
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   zero_config .................. stage=3 contiguous_gradients=True reduce_scatter=True reduce_bucket_size=500000000 allgather_partitions=True allgather_bucket_size=500000000 overlap_comm=True load_from_fp32_weights=True elastic_checkpoint=False offload_param=DeepSpeedZeroOffloadParamConfig(device='none', nvme_path=None, buffer_count=5, buffer_size=100000000, max_in_cpu=1000000000, pin_memory=False) offload_optimizer=DeepSpeedZeroOffloadOptimizerConfig(device='none', nvme_path=None, buffer_count=4, pin_memory=False, pipeline=False, pipeline_read=False, pipeline_write=False, fast_init=False) sub_group_size=1000000000 cpu_offload_param=None cpu_offload_use_pin_memory=None cpu_offload=None prefetch_bucket_size=50000000 param_persistence_threshold=100000 model_persistence_threshold=9223372036854775807 max_live_parameters=1000000000 max_reuse_distance=1000000000 gather_16bit_weights_on_model_save=False stage3_gather_fp16_weights_on_model_save=False ignore_unused_parameters=True legacy_stage1=False round_robin_gradients=False
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   zero_enabled ................. True
-[2022-10-30 14:40:43,991] [INFO] [config.py:991:print]   zero_optimization_stage ...... 3
-[2022-10-30 14:40:43,991] [INFO] [config.py:976:print_user_config]   json = {
-    "train_batch_size": 256, 
-    "train_micro_batch_size_per_gpu": 128, 
+[2022-11-09 18:36:59,540] [INFO] [config.py:991:print]   optimizer_legacy_fusion ...... False
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   optimizer_name ............... None
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   optimizer_params ............. None
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   pipeline ..................... {'stages': 'auto', 'partition': 'best', 'seed_layers': False, 'activation_checkpoint_interval': 0}
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   pld_enabled .................. False
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   pld_params ................... False
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   prescale_gradients ........... False
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   scheduler_name ............... None
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   scheduler_params ............. None
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   sparse_attention ............. None
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   sparse_gradients_enabled ..... False
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   steps_per_print .............. inf
+[2022-11-09 18:36:59,541] [INFO] [config.py:991:print]   train_batch_size ............. 32
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   train_micro_batch_size_per_gpu  8
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   wall_clock_breakdown ......... False
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   world_size ................... 4
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   zero_allow_untested_optimizer  True
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   zero_config .................. stage=3 contiguous_gradients=True reduce_scatter=True reduce_bucket_size=500000000 allgather_partitions=True allgather_bucket_size=500000000 overlap_comm=True load_from_fp32_weights=True elastic_checkpoint=False offload_param=DeepSpeedZeroOffloadParamConfig(device='none', nvme_path=None, buffer_count=5, buffer_size=100000000, max_in_cpu=1000000000, pin_memory=False) offload_optimizer=DeepSpeedZeroOffloadOptimizerConfig(device='none', nvme_path=None, buffer_count=4, pin_memory=False, pipeline=False, pipeline_read=False, pipeline_write=False, fast_init=False) sub_group_size=1000000000 cpu_offload_param=None cpu_offload_use_pin_memory=None cpu_offload=None prefetch_bucket_size=50000000 param_persistence_threshold=100000 model_persistence_threshold=9223372036854775807 max_live_parameters=1000000000 max_reuse_distance=1000000000 gather_16bit_weights_on_model_save=False stage3_gather_fp16_weights_on_model_save=False ignore_unused_parameters=True legacy_stage1=False round_robin_gradients=False
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   zero_enabled ................. True
+[2022-11-09 18:36:59,542] [INFO] [config.py:991:print]   zero_optimization_stage ...... 3
+[2022-11-09 18:36:59,542] [INFO] [config.py:976:print_user_config]   json = {
+    "train_batch_size": 32, 
+    "train_micro_batch_size_per_gpu": 8, 
     "gradient_accumulation_steps": 1, 
     "zero_optimization": {
         "stage": 3, 
@@ -184,15 +205,21 @@ Time to load utils op: 0.0018215179443359375 seconds
 Using /fsx/alex/.cache/torch_extensions/py38_cu113 as PyTorch extensions root...
 No modifications detected for re-loaded extension module utils, skipping build step...
 Loading extension module utils...
-Time to load utils op: 0.0014410018920898438 seconds
-MAKING EXPERIENCES
-MAKING EXPERIENCES
+Time to load utils op: 0.0013942718505859375 seconds
+batch dict_keys(['input_ids', 'attention_mask'])
+batch_size torch.Size([8, 8])
+batch dict_keys(['input_ids', 'attention_mask'])
+batch_size torch.Size([8, 8])
+batch dict_keys(['input_ids', 'attention_mask'])
+batch_size torch.Size([8, 8])
+batch dict_keys(['input_ids', 'attention_mask'])
+batch_size torch.Size([8, 8])
 Traceback (most recent call last):
   File "examples/ppo_sentiments.py", line 24, in <module>
     model = trlx.train(
   File "/fsx/alex/repos/trlx/trlx/trlx.py", line 57, in train
     orch.make_experience(config.method.num_rollouts)
-  File "/fsx/alex/repos/trlx/trlx/orchestrator/ppo_orchestrator.py", line 73, in make_experience
+  File "/fsx/alex/repos/trlx/trlx/orchestrator/ppo_orchestrator.py", line 80, in make_experience
     samples = self.rl_model.generate(**batch)
   File "/fsx/alex/repos/trlx/trlx/model/accelerate_base_model.py", line 115, in generate
     return self.model.generate(
@@ -204,93 +231,34 @@ Traceback (most recent call last):
     outputs = self(
   File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
     result = forward_call(*input, **kwargs)
-  File "/fsx/alex/repos/trlx/trlx/model/nn/ppo_models.py", line 865, in forward
-    ref_output = self.branch_forward(input_hidden_state, output_shape, **x)
-  File "/fsx/alex/repos/trlx/trlx/model/nn/ppo_models.py", line 778, in branch_forward
+  File "/fsx/alex/repos/trlx/trlx/model/nn/ppo_models.py", line 849, in forward
+    output = self.gpt(input_ids, **x)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
+    result = forward_call(*input, **kwargs)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gptj/modeling_gptj.py", line 821, in forward
+    transformer_outputs = self.transformer(
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
+    result = forward_call(*input, **kwargs)
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gptj/modeling_gptj.py", line 676, in forward
     outputs = block(
   File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
     result = forward_call(*input, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 400, in forward
-    hidden_states = self.ln_1(hidden_states)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1137, in _call_impl
-    result = hook(self, input)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/parameter_offload.py", line 342, in _pre_forward_module_hook
-    self.pre_sub_module_forward_function(module)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/autograd/grad_mode.py", line 27, in decorate_context
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/parameter_offload.py", line 465, in pre_sub_module_forward_function
-    param_coordinator.fetch_sub_module(sub_module)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/autograd/grad_mode.py", line 27, in decorate_context
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/partitioned_param_coordinator.py", line 271, in fetch_sub_module
-    self.__inflight_param_registry.pop(param).wait()
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/partition_parameters.py", line 525, in wait
-    param.data = instrument_w_nvtx(torch.cat)(partitions).view(param.ds_shape)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-Traceback (most recent call last):
-    return func(*args, **kwargs)
-RuntimeError: torch.cat(): expected a non-empty list of Tensors
-  File "examples/ppo_sentiments.py", line 24, in <module>
-    model = trlx.train(
-  File "/fsx/alex/repos/trlx/trlx/trlx.py", line 57, in train
-    orch.make_experience(config.method.num_rollouts)
-  File "/fsx/alex/repos/trlx/trlx/orchestrator/ppo_orchestrator.py", line 73, in make_experience
-    samples = self.rl_model.generate(**batch)
-  File "/fsx/alex/repos/trlx/trlx/model/accelerate_base_model.py", line 115, in generate
-    return self.model.generate(
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/autograd/grad_mode.py", line 27, in decorate_context
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/generation_utils.py", line 1326, in generate
-    return self.sample(
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/generation_utils.py", line 1942, in sample
-    outputs = self(
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gptj/modeling_gptj.py", line 310, in forward
+    attn_outputs = self.attn(
   File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
     result = forward_call(*input, **kwargs)
-  File "/fsx/alex/repos/trlx/trlx/model/nn/ppo_models.py", line 865, in forward
-    ref_output = self.branch_forward(input_hidden_state, output_shape, **x)
-  File "/fsx/alex/repos/trlx/trlx/model/nn/ppo_models.py", line 778, in branch_forward
-    outputs = block(
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gptj/modeling_gptj.py", line 211, in forward
+    query = self.q_proj(hidden_states)
   File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1148, in _call_impl
     result = forward_call(*input, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/transformers/models/gpt2/modeling_gpt2.py", line 400, in forward
-    hidden_states = self.ln_1(hidden_states)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/module.py", line 1137, in _call_impl
-    result = hook(self, input)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/parameter_offload.py", line 342, in _pre_forward_module_hook
-    self.pre_sub_module_forward_function(module)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/autograd/grad_mode.py", line 27, in decorate_context
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/parameter_offload.py", line 465, in pre_sub_module_forward_function
-    param_coordinator.fetch_sub_module(sub_module)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/autograd/grad_mode.py", line 27, in decorate_context
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/partitioned_param_coordinator.py", line 271, in fetch_sub_module
-    self.__inflight_param_registry.pop(param).wait()
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/runtime/zero/partition_parameters.py", line 525, in wait
-    param.data = instrument_w_nvtx(torch.cat)(partitions).view(param.ds_shape)
-  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/deepspeed/utils/nvtx.py", line 11, in wrapped_fn
-    return func(*args, **kwargs)
-RuntimeError: torch.cat(): expected a non-empty list of Tensors
-wandb: Waiting for W&B process to finish... (failed 1).
-wandb: - 0.000 MB of 0.000 MB uploaded (0.000 MB deduped)wandb: \ 0.000 MB of 0.000 MB uploaded (0.000 MB deduped)wandb: | 0.000 MB of 0.000 MB uploaded (0.000 MB deduped)wandb:                                                                                
-wandb: You can sync this run to the cloud by running:
-wandb: wandb sync /fsx/alex/repos/trlx/wandb/offline-run-20221030_144040-3dwihk5g
-wandb: Find logs at: ./wandb/offline-run-20221030_144040-3dwihk5g/logs
-[2022-10-30 14:40:49,346] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 12316
-[2022-10-30 14:40:49,696] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 12317
-[2022-10-30 14:40:49,696] [ERROR] [launch.py:292:sigkill_handler] ['/fsx/alex/.envs/accelerate/bin/python3.8', '-u', 'examples/ppo_sentiments.py'] exits with return code = 1
+  File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/torch/nn/modules/linear.py", line 114, in forward
+    return F.linear(input, self.weight, self.bias)
+RuntimeError: CUDA error: CUBLAS_STATUS_NOT_INITIALIZED when calling `cublasCreate(handle)`
+[2022-11-09 18:37:06,096] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 11244
+[2022-11-09 18:37:07,059] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 11245
+[2022-11-09 18:37:07,059] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 11246
+[2022-11-09 18:37:08,007] [INFO] [launch.py:286:sigkill_handler] Killing subprocess 11247
+[2022-11-09 18:37:09,036] [ERROR] [launch.py:292:sigkill_handler] ['/fsx/alex/.envs/accelerate/bin/python3.8', '-u', 'examples/ppo_sentiments.py'] exits with return code = 1
 Traceback (most recent call last):
   File "/fsx/alex/.envs/accelerate/bin/accelerate", line 11, in <module>
     load_entry_point('accelerate', 'console_scripts', 'accelerate')()
@@ -300,4 +268,4 @@ Traceback (most recent call last):
     deepspeed_launcher(args)
   File "/fsx/alex/.envs/accelerate/lib64/python3.8/site-packages/accelerate/commands/launch.py", line 540, in deepspeed_launcher
     raise subprocess.CalledProcessError(returncode=process.returncode, cmd=cmd)
-subprocess.CalledProcessError: Command '['deepspeed', '--no_local_rank', '--num_gpus', '2', 'examples/ppo_sentiments.py']' returned non-zero exit status 1.
+subprocess.CalledProcessError: Command '['deepspeed', '--no_local_rank', '--num_gpus', '4', 'examples/ppo_sentiments.py']' returned non-zero exit status 1.
