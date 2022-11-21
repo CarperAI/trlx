@@ -6,17 +6,21 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
+import transformers
 from torchtyping import TensorType
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    PretrainedConfig,
-    PreTrainedModel,
-)
 from transformers.modeling_outputs import ModelOutput
 
 from trlx.data.method_configs import MethodConfig, register_method
-from trlx.utils.modeling import flatten_dict, whiten
+from trlx.utils.modeling import (
+    flatten_dict,
+    get_causal_base_model,
+    get_causal_lm_head,
+    get_final_norm,
+    get_hidden_layers,
+    get_hidden_size,
+    make_head,
+    whiten,
+)
 
 
 # KL Controllers
@@ -211,33 +215,24 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-def make_head(n_embd: int, out: int):
-    return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
-    )
-
-
-class GPTHeadWithValueModel(nn.Module):
-    """
-    The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head.
+class CausalLMWithValueHead(nn.Module):
+    """The CausalLMWithValueModel class implements a causal language model with
+    a secondary, scalar head.
     """
 
-    def __init__(self, config: Union[PretrainedConfig, str]):
+    def __init__(self, config: Union[transformers.PretrainedConfig, str]):
         super().__init__()
-        if isinstance(config, PretrainedConfig):
-            self.gpt = AutoModelForCausalLM.from_config(config)
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
         else:
-            self.gpt = AutoModelForCausalLM.from_pretrained(config)
+            self.config = config
+        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model.transformer = get_causal_base_model(self.base_model)
+        self.base_model.lm_head = get_causal_lm_head(self.base_model)
+        self.value_head = make_head(get_hidden_size(self.config), 1)
 
-        if hasattr(self.gpt.config, "hidden_size"):
-            self.n_embd = self.gpt.config.hidden_size
-        else:
-            self.n_embd = self.gpt.config.n_embd
-
-        self.v_head = make_head(self.n_embd, 1)
-
-    def generate(self, input_ids, **x):
-        return self.gpt.generate(input_ids, **x)
+    def generate(self, input_ids, **kwargs):
+        return self.base_model.generate(input_ids, **kwargs)
 
     def forward(
         self,
@@ -256,7 +251,7 @@ class GPTHeadWithValueModel(nn.Module):
         output_hidden_states=False,
     ):
         loss = None
-        transformer_outputs = self.gpt.transformer(
+        transformer_outputs = self.base_model.transformer(
             input_ids,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -265,9 +260,9 @@ class GPTHeadWithValueModel(nn.Module):
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
         )
-        hidden_states = transformer_outputs[0]
-        lm_logits = self.gpt.lm_head(hidden_states)
-        value = self.v_head(hidden_states).squeeze(-1)
+        last_hidden_state = transformer_outputs.last_hidden_state
+        lm_logits = self.base_model.lm_head(last_hidden_state)
+        value = self.value_head(last_hidden_state).squeeze(-1)
 
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)
@@ -284,21 +279,26 @@ class GPTHeadWithValueModel(nn.Module):
         )
 
 
-class ModelBranch(PreTrainedModel):
+class ModelBranch(transformers.PreTrainedModel):
     """
     ModelBranch implements the frozen upper trunk of the reference model
     used when computing the PPO KL-divergence penalty. Expects a list of
     frozen transformer blocks and an lm_head from the base model.
     """
 
-    def __init__(self, config, transformer_blocks, ln_f, lm_head):
+    def __init__(
+        self,
+        config: transformers.PretrainedConfig,
+        transformer_blocks: nn.ModuleList,
+        final_norm: nn.Module,
+        lm_head: nn.Module,
+    ):
         super().__init__(config)
 
         # Defined by the main trunk
-        self.n_embd = config.n_embd
-
-        self.h = deepcopy(nn.ModuleList(transformer_blocks))
-        self.ln_f = deepcopy(ln_f)
+        self.hidden_size = get_hidden_size(config)
+        self.transformer_blocks = deepcopy(nn.ModuleList(transformer_blocks))
+        self.final_norm = deepcopy(final_norm)
         self.lm_head = deepcopy(lm_head)
 
         # Model parallel
@@ -307,7 +307,7 @@ class ModelBranch(PreTrainedModel):
         self.gradient_checkpointing = False
 
         # Turning off grad saves memory
-        for block in self.h:
+        for block in self.transformer_blocks:
             for parameter in block.parameters():
                 parameter.requires_grad = False
         for parameter in lm_head.parameters():
@@ -351,7 +351,7 @@ class ModelBranch(PreTrainedModel):
         device = hidden_states.device
 
         if past_key_values is None:
-            past_key_values = tuple([None] * len(self.h))
+            past_key_values = tuple([None] * len(self.transformer_blocks))
 
         # GPT2Attention mask.
         if attention_mask is not None:
@@ -400,7 +400,9 @@ class ModelBranch(PreTrainedModel):
             () if output_attentions and self.config.add_cross_attention else None
         )
         all_hidden_states = () if output_hidden_states else None
-        for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
+        for i, (block, layer_past) in enumerate(
+            zip(self.transformer_blocks, past_key_values)
+        ):
 
             # Model parallel
             if self.model_parallel:
@@ -460,7 +462,7 @@ class ModelBranch(PreTrainedModel):
                     if i == v[-1] and "cuda:" + str(k) != self.last_device:
                         hidden_states = hidden_states.to("cuda:" + str(k + 1))
 
-        hidden_states = self.ln_f(hidden_states)
+        hidden_states = self.final_norm(hidden_states)
 
         hidden_states = hidden_states.view(output_shape)
         # Add last hidden state
@@ -497,41 +499,38 @@ class ModelBranch(PreTrainedModel):
         )
 
 
-class GPTHydraHeadWithValueModel(nn.Module):
-    """The GPTHeadWithValueModel class implements a GPT-type language model with a secondary, scalar head."""
+class CausalLMHydraWithValueHead(nn.Module):
+    """The CausalLMHydraWithValueHead class implements a causal language model
+    with a secondary, scalar head.
+    """
 
     def __init__(
-        self, config: Union[PretrainedConfig, str], num_layers_unfrozen: int = -1
+        self,
+        config: Union[transformers.PretrainedConfig, str],
+        num_layers_unfrozen: int = -1,
     ):
         super().__init__()
-        if isinstance(config, PretrainedConfig):
-            self.gpt = AutoModelForCausalLM.from_config(config)
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
         else:
-            self.gpt = AutoModelForCausalLM.from_pretrained(config)
-
-        if hasattr(self.gpt.config, "hidden_size"):
-            self.n_embd = self.gpt.config.hidden_size
-            self.gpt.config.n_embd = self.n_embd
-        else:
-            self.n_embd = self.gpt.config.n_embd
-
-        self.v_head = make_head(self.n_embd, 1)
+            self.config = config
+        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model.transformer = get_causal_base_model(self.base_model)
+        self.base_model.lm_head = get_causal_lm_head(self.base_model)
+        self.value_head = make_head(get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
-            transformer_blocks = list(self.gpt.transformer.h)[-num_layers_unfrozen:]
-            # Retrive hf_config to init
-            hf_config = AutoConfig.from_pretrained(config)
-            hf_config.n_embd = self.n_embd
+            transformer_blocks = list(get_hidden_layers(self.base_model))
             self.frozen_head = ModelBranch(
-                hf_config,
-                transformer_blocks,
-                self.gpt.transformer.ln_f,
-                self.gpt.lm_head,
+                self.config,
+                transformer_blocks[-num_layers_unfrozen:],
+                get_final_norm(self.base_model),
+                get_causal_lm_head(self.base_model),
             )
 
     def generate(self, input_ids, **x):
-        return self.gpt.generate(input_ids, **x)
+        return self.base_model.generate(input_ids, **x)
 
     def forward_hydra(self, input_ids, **x):
         if x.get("return_dict") is not None:
@@ -569,7 +568,7 @@ class GPTHydraHeadWithValueModel(nn.Module):
         output_hidden_states=False,
     ):
         loss = None
-        transformer_outputs = self.gpt.transformer(
+        transformer_outputs = self.base_model.transformer(
             input_ids,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
@@ -579,9 +578,9 @@ class GPTHydraHeadWithValueModel(nn.Module):
             inputs_embeds=inputs_embeds,
             output_hidden_states=output_hidden_states,
         )
-        hidden_states = transformer_outputs[0]
-        lm_logits = self.gpt.lm_head(hidden_states)
-        value = self.v_head(hidden_states).squeeze(-1)
+        last_hidden_state = transformer_outputs.last_hidden_state
+        lm_logits = self.base_model.lm_head(last_hidden_state)
+        value = self.value_head(last_hidden_state).squeeze(-1)
 
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)

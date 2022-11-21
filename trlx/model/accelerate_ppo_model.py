@@ -10,7 +10,7 @@ from trlx.model.accelerate_base_model import AccelerateRLModel
 from trlx.model.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
-    GPTHydraHeadWithValueModel,
+    CausalLMHydraWithValueHead,
 )
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import logprobs_from_logits
@@ -46,7 +46,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
     def get_arch(self, config: TRLConfig):
-        return GPTHydraHeadWithValueModel(
+        return CausalLMHydraWithValueHead(
             self.config.model.model_path, self.config.model.num_layers_unfrozen
         )
 

@@ -4,10 +4,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Union, Sequence, Any, TypeVar, Tuple
+from typing import Union, Sequence
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
+from trlx.utils.modeling import get_causal_base_model, get_causal_lm_head, get_hidden_layers, get_hidden_size, make_head
 
 
 import deepspeed  # type: ignore
@@ -16,9 +17,6 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
-from transformers import AutoModelForCausalLM, PretrainedConfig
-
-import wandb
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
@@ -26,12 +24,6 @@ def topk_mask(xs: torch.FloatTensor, k: int):
         return xs
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
-
-
-def make_head(n_embd: int, out: int):
-    return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
-    )
 
 
 @dataclass
@@ -122,7 +114,7 @@ class ILQLHeads(nn.Module):
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.v_head = make_head(self.hidden_size, 1)
+        self.value_head = make_head(self.hidden_size, 1)
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
@@ -154,7 +146,7 @@ class ILQLHeads(nn.Module):
 
         qs = tuple(q_head(actions_hs) for q_head in self.q_heads)
         target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
-        vs = self.v_head(states_hs)
+        vs = self.value_head(states_hs)
 
         return qs, target_qs, vs
 
@@ -186,7 +178,7 @@ class CausalLMWithValueHeads(nn.Module):
 
     def __init__(
         self,
-        config: Union[PretrainedConfig, str],
+        config: Union[transformers.PretrainedConfig, str],
         ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):
@@ -199,32 +191,26 @@ class CausalLMWithValueHeads(nn.Module):
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
                     config_path
                 )
-
-        if isinstance(config, PretrainedConfig):
-            self.gpt = AutoModelForCausalLM.from_config(config)
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
         else:
-            self.gpt = AutoModelForCausalLM.from_pretrained(config)
+            self.config = config
+        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model.transformer = get_causal_base_model(self.base_model)
+        self.base_model.lm_head = get_causal_lm_head(self.base_model)
 
-        if hasattr(self.gpt, "gpt_neox"):
-            self.gpt.transformer = self.gpt.gpt_neox
-            self.gpt.lm_head = self.gpt_embed_out
-            self.n_embd = self.gpt.config.hidden_size
-            gpt_blocks = self.gpt.gpt_neox.layers
-        else:
-            self.n_embd = self.gpt.config.n_embd
-            gpt_blocks = self.gpt.transformer.h
-
+        hidden_layers = get_hidden_layers(self.base_model)
         if num_layers_unfrozen == 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)
+            hidden_layers_to_freeze = list(hidden_layers)
         elif num_layers_unfrozen > 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)[:-num_layers_unfrozen]
+            hidden_layers_to_freeze = list(hidden_layers)[:-num_layers_unfrozen]
         else:
-            gpt_blocks_to_freeze = []
-
-        for m in gpt_blocks_to_freeze:
+            hidden_layers_to_freeze = []
+        for m in hidden_layers_to_freeze:
             m.requires_grad_(False)
 
-        self.ilql_heads = ilql_config.heads(self.n_embd, self.gpt.config.vocab_size)
+        self.hidden_size = get_hidden_size(self.config)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.base_model.config.vocab_size)
         self.ilql_config = ilql_config
 
     def sync_target_q_heads(self):
@@ -239,7 +225,7 @@ class CausalLMWithValueHeads(nn.Module):
         actions_ixs=None,
         states_ixs=None,
     ):
-        out = self.gpt.transformer(
+        out = self.base_model.transformer(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -247,7 +233,7 @@ class CausalLMWithValueHeads(nn.Module):
         )
         hs = out.last_hidden_state
 
-        logits = self.gpt.lm_head(hs)
+        logits = self.base_model.lm_head(hs)
         qs, target_qs, vs = self.ilql_heads(
             hs, states_ixs=states_ixs, actions_ixs=actions_ixs
         )
@@ -327,8 +313,8 @@ class CausalLMWithValueHeads(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {"input_ids": torch.ones(1, 1, device=self.gpt.device, dtype=torch.long)}
+        return {"input_ids": torch.ones(1, 1, device=self.base_model.device, dtype=torch.long)}
 
     @property
     def device(self):
-        return self.gpt.device
+        return self.base_model.device
