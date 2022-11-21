@@ -12,7 +12,6 @@ from trlx.utils.modeling import logprobs_from_logits, RunningMoments
 
 from time import time
 import ray
-from ray.air import session
 
 
 @register_orchestrator

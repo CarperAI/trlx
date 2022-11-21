@@ -4,27 +4,44 @@ import os
 import json
 import pandas as pd
 from pathlib import Path
+import math
 
 import wandb
 
 wandb.require("report-editing")
 import wandb.apis.reports as wb
 
+ray_info = [
+    "done",
+    "time_this_iter_s",
+    "timesteps_total",
+    "episodes_total",
+    "iterations_since_restore",
+    "timesteps_since_restore",
+    "time_since_restore",
+    "warmup_time",
+    "should_checkpoint",
+    "training_iteration",
+    "timestamp",
+    "pid",
+]
+
 
 def parse_result(result):
-    tmp_result = {}
-    for key, value in result.items():
-        if not "time" in key and isinstance(value, (int, float)):
-            tmp_result[key] = value
+    out = {}
+    for k, v in result.items():
+        if (
+            isinstance(v, (int, float))
+            and not k.startswith("config.")
+            and k not in ray_info
+        ):
+            out[k] = v
 
-    tmp_result.pop("done", None)
-    tmp_result.pop("timesteps_total", None)
-    tmp_result.pop("episodes_total", None)
-    tmp_result.pop("iterations_since_restore", None)
-    tmp_result.pop("training_iteration", None)
-    tmp_result.pop("pid", None)
+    return out
 
-    return tmp_result
+
+def significant(x):
+    return round(x, 1 - int(math.floor(math.log10(x))))
 
 
 def log_trials(trial_path: str, project_name: str):
@@ -44,10 +61,12 @@ def log_trials(trial_path: str, project_name: str):
         with open(os.path.join(trial, "params.json"), "r") as f:
             params = json.load(f)
 
+        name = ",".join(f"{k}={significant(v)}" for k, v in params.items())
         # Initialize wandb
         run = wandb.init(
+            name=name,
             project=project_name,
-            config=dict(params),
+            config=params,
             group=trial_path.stem,
             job_type="hyperopt",
         )
@@ -55,31 +74,17 @@ def log_trials(trial_path: str, project_name: str):
         # Open result.json and log the metrics to W&B.
         with open(os.path.join(trial, "result.json"), "r") as f:
             for line in f:
-                result = dict(json.loads(line))
+                result = json.loads(line)
                 result.pop("config", None)
-                result = parse_result(result)
-                wandb.log(result)
+                wandb.log(parse_result(result))
 
         # Close the W&B run.
         run.finish()
 
 
-def create_report(param_space, tune_config, trial_path, best_config=None):
-    def get_column_names(param_space):
-        column_names = []
-        for k, v in param_space.items():
-            if isinstance(v, dict):
-                for kk, vv in v.items():
-                    try:
-                        if vv.__module__ == "ray.tune.search.sample":
-                            column_names.append(f"{k}.{kk}")
-                    except AttributeError:
-                        pass
-
-        return column_names
-
+def create_report(project_name, param_space, tune_config, trial_path, best_config=None):
     def get_parallel_coordinate(param_space, metric):
-        column_names = get_column_names(param_space)
+        column_names = list(param_space.keys())
         columns = [wb.reports.PCColumn(column) for column in column_names]
 
         return wb.ParallelCoordinatesPlot(
@@ -109,6 +114,13 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
         entity_project = f"{entity}/{project_name}" if entity else project_name
         api = wandb.Api()
         runs = api.runs(entity_project)
+
+        runs = sorted(
+            runs,
+            key=lambda run: run.summary.get(tune_config["metric"], -math.inf),
+            reverse=True,
+        )
+
         for run in runs:
             if run.group == str(group_name):
                 history = run.history()
@@ -119,7 +131,7 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
         return metrics
 
     report = wb.Report(
-        project=param_space["train"]["project_name"],
+        project=project_name,
         title=f"Hyperparameter Optimization Report: {trial_path}",
         description="This is a report that shows the results of a hyperparameter optimization experiment.",
     )
@@ -144,15 +156,15 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
                 get_scatter_plot(tune_config["metric"]),
             ],
             runsets=[
-                wb.RunSet(
-                    project=param_space["train"]["project_name"]
-                ).set_filters_with_python_expr(f'group == "{trial_path}"')
+                wb.RunSet(project=project_name).set_filters_with_python_expr(
+                    f'group == "{trial_path}"'
+                )
             ],
         ),
     ]
 
     metrics = get_metrics_with_history(
-        param_space["train"]["project_name"],
+        project_name,
         trial_path,
     )
 
@@ -181,9 +193,9 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
         wb.PanelGrid(
             panels=line_plot_panels,
             runsets=[
-                wb.RunSet(
-                    project=param_space["train"]["project_name"]
-                ).set_filters_with_python_expr(f'group == "{trial_path}"')
+                wb.RunSet(project=project_name).set_filters_with_python_expr(
+                    f'group == "{trial_path}"'
+                )
             ],
         ),
     ]
@@ -199,3 +211,4 @@ def create_report(param_space, tune_config, trial_path, best_config=None):
         ]
 
     report.save()
+    print(report.url)

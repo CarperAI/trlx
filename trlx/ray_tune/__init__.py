@@ -1,11 +1,4 @@
-import yaml
 from ray import tune
-
-
-def load_ray_yaml(path: str):
-    with open(path, "r") as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    return config
 
 
 def get_param_space(config: dict):
@@ -50,7 +43,7 @@ def get_param_space(config: dict):
             return tune.quniform(*value["values"])
         elif strategy == "loguniform":
             assert isinstance(value["values"], list)
-            assert len(value["values"]) == 3
+            assert 2 <= len(value["values"]) <= 3
             return tune.loguniform(*value["values"])
         elif strategy == "qloguniform":
             assert isinstance(value["values"], list)
@@ -87,24 +80,11 @@ def get_param_space(config: dict):
             assert isinstance(value["values"], list)
             return tune.grid_search(value["values"])
 
-    def parse_param_space(param_space: dict):
-        """Parse the param space from the config file by
-        replacing the strategies with relevant distribution APIs.
+    for k, v in config.items():
+        if k != "tune_config":
+            config[k] = get_strategy(v)
 
-        """
-        for k, v in param_space.items():
-            if isinstance(v, dict):
-                if "strategy" in v.keys():
-                    strategy = get_strategy(v)
-                    param_space[k] = strategy
-
-        return param_space
-
-    model_dict = parse_param_space(config["model"])
-    train_dict = parse_param_space(config["train"])
-    method_dict = parse_param_space(config["method"])
-
-    return {"model": model_dict, "train": train_dict, "method": method_dict}
+    return config
 
 
 def get_search_alg(tune_config: dict):
@@ -169,12 +149,10 @@ def get_scheduler(tune_config: dict):
         NotImplementedError("Scheduler not supported.")
 
 
-def get_tune_config(config: dict):
+def get_tune_config(tune_config: dict):
     """Get the tune config to initialized `tune.TuneConfig`
     to be passed `tune.Tuner`.
     """
-    tune_config = config["tune_config"]
-
     if "search_alg" in tune_config.keys() and tune_config["search_alg"] is not None:
         tune_config["search_alg"] = get_search_alg(tune_config)
 
@@ -185,12 +163,3 @@ def get_tune_config(config: dict):
     tune_config = {k: v for k, v in tune_config.items() if v is not None}
 
     return tune_config
-
-
-def get_train_function(example_name: str):
-    if example_name == "ppo_sentiments":
-        from .train_funcs import ppo_sentiments_train
-
-        return ppo_sentiments_train
-    else:
-        NotImplementedError("Example not implemented yet.")
