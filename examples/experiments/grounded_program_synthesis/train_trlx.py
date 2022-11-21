@@ -1,10 +1,9 @@
-# Toy example of optimizing textual interior designs to output the least number of rooms
-# Also see https://architext.design/
 import trlx
 from trlx.data.configs import TRLConfig
 from lang import Interpreter
 import json
 import logging
+import yaml
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +49,25 @@ def reward_fn(samples):
     return reward_list
 
 
+default_config = yaml.safe_load(open("config/trlx_ppo_config.yml"))
+
+
+def main(hparams={}):
+    config = TRLConfig.update(default_config, hparams)
+
+    # Dataset
+    dataset = DSLDataset()
+    train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
+
+    model = trlx.train(
+        "reshinthadith/codegen_350M_list_manip_5_len",
+        reward_fn=reward_fn,
+        prompts=train_prompts,
+        config=config,
+    )
+    model.save_pretrained("dataset/trained_model")
+
+
 if __name__ == "__main__":
     # TEST REWARD FUNTION
     assert (
@@ -67,15 +85,5 @@ if __name__ == "__main__":
             ["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -3]),1)"]
         )
     ) == [-0.5]
-    # Datset
-    dataset = DSLDataset()
-    train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
-    trl_config = TRLConfig.load_yaml("config/trlx_ppo_config.yml")
 
-    model = trlx.train(
-        "reshinthadith/codegen_350M_list_manip_5_len",
-        reward_fn=reward_fn,
-        prompts=train_prompts,
-        config=trl_config,
-    )
-    model.save_pretrained("dataset/trained_model")
+    main()
