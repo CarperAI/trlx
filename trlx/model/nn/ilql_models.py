@@ -8,7 +8,13 @@ from typing import Union, Sequence
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
-from trlx.utils.modeling import get_causal_base_model, get_causal_lm_head, get_hidden_layers, get_hidden_size, make_head
+from trlx.utils.modeling import (
+    get_causal_base_model,
+    get_causal_lm_head,
+    get_hidden_layers,
+    get_hidden_size,
+    make_head,
+)
 
 
 import deepspeed  # type: ignore
@@ -210,7 +216,9 @@ class CausalLMWithValueHeads(nn.Module):
             m.requires_grad_(False)
 
         self.hidden_size = get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(self.hidden_size, self.base_model.config.vocab_size)
+        self.ilql_heads = ilql_config.heads(
+            self.hidden_size, self.base_model.config.vocab_size
+        )
         self.ilql_config = ilql_config
 
     def sync_target_q_heads(self):
@@ -313,7 +321,11 @@ class CausalLMWithValueHeads(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {"input_ids": torch.ones(1, 1, device=self.base_model.device, dtype=torch.long)}
+        return {
+            "input_ids": torch.ones(
+                1, 1, device=self.base_model.device, dtype=torch.long
+            )
+        }
 
     @property
     def device(self):
