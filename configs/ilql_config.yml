@@ -8,16 +8,16 @@ train:
   seq_length: 64
   batch_size: 128
   epochs: 100
-  total_steps: 10000
+  total_steps: 1000
 
-  lr_init: 1.0e-4
-  lr_target: 1.0e-4
+  lr_init: 5.0e-5
+  lr_target: 5.0e-5
   opt_betas: [0.9, 0.95]
   opt_eps: 1.0e-8
   weight_decay: 1.0e-6
 
   checkpoint_interval: 1000
-  eval_interval: 128
+  eval_interval: 100
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
@@ -29,7 +29,7 @@ method:
   gamma: 0.99
   cql_scale: 0.1
   awac_scale: 1
-  alpha: 0.005
-  steps_for_target_q_sync: 1
-  betas: [16]
+  alpha: 0.001
+  steps_for_target_q_sync: 5
+  betas: [4]
   two_qs: true

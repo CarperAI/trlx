@@ -2,8 +2,10 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
+import yaml
 from typing import List, Dict
 import os
+from trlx.data.configs import TRLConfig
 
 
 def get_positive_score(scores):
@@ -11,7 +13,12 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def main():
+default_config = yaml.safe_load(open("configs/ilql_config.yml"))
+
+
+def main(hparams={}):
+    config = TRLConfig.update(default_config, hparams)
+
     sentiment_fn = pipeline(
         "sentiment-analysis",
         "lvwerra/distilbert-imdb",
@@ -32,6 +39,7 @@ def main():
         dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
+        config=config,
     )
 
 

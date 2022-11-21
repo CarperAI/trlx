@@ -1,9 +1,11 @@
 import importlib
+import sys
 import os
 from abc import abstractmethod
 from time import time
 from typing import Any, Dict, Iterable, Sequence, Tuple, Union
 
+import json
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
@@ -20,14 +22,8 @@ else:
 
 import ray
 from ray.air import session
-
-
-def parse_results_for_session(results: dict):
-    for k, v in results.items():
-        if isinstance(v, torch.Tensor):
-            results[k] = float(v)
-
-    return results
+from ray.air.checkpoint import Checkpoint
+from trlx.utils import filter_non_scalars
 
 
 @register_model
@@ -74,13 +70,20 @@ class AccelerateRLModel(BaseRLModel):
         for m in gpt_blocks_to_freeze:
             m.requires_grad_(False)
 
+        script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
+        if not isinstance(config.model.model_path, str):
+            model_name = str(config.model.model_path).split()[0]
+        else:
+            model_name = config.model.model_path.split("/")[-1]
+        run_name = f"{script_name}/{model_name}"
+
         if self.accelerator.is_main_process and not ray.is_initialized():
             self.accelerator.init_trackers(
                 project_name=self.config.train.project_name,
                 config=self.config.to_dict(),
                 init_kwargs={
                     "wandb": {
-                        "name": f"{config.model.model_path}",
+                        "name": run_name,
                         "entity": self.config.train.entity_name,
                         "mode": "disabled"
                         if os.environ.get("debug", False)
@@ -210,6 +213,7 @@ class AccelerateRLModel(BaseRLModel):
                     columns_data.append(values)
 
             rows = list(zip(*columns_data))
+            print(rows[0])
             if not ray.is_initialized():
                 stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
@@ -221,11 +225,26 @@ class AccelerateRLModel(BaseRLModel):
         """
 
         self.prepare_learning()
+        self.iter_count = 0
+
+        if ray.is_initialized():
+            checkpoint = session.get_checkpoint()
+            if checkpoint:
+                with checkpoint.as_directory() as dir:
+                    self.accelerator.load_state(dir)
+
+                    with open(os.path.join(dir, "state.json")) as f:
+                        state = json.load(f)
+                        self.iter_count = state["iter_count"]
+        else:
+            results = self.evaluate()
+            self.accelerator.log(results)
 
         tbar = tqdm(
-            total=self.total_steps, disable=not self.accelerator.is_local_main_process
+            initial=self.iter_count,
+            total=self.total_steps,
+            disable=not self.accelerator.is_local_main_process,
         )
-        self.iter_count = 0
 
         for _ in range(self.config.train.epochs):
             for batch in self.train_dataloader:
@@ -262,8 +281,13 @@ class AccelerateRLModel(BaseRLModel):
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():
-                            tmp_results = parse_results_for_session(results)
-                            session.report(tmp_results)
+                            self.save("state")
+                            with open("state/state.json", "w") as f:
+                                json.dump(dict(iter_count=self.iter_count), f)
+                            checkpoint = Checkpoint.from_directory("state")
+                            session.report(
+                                filter_non_scalars(results), checkpoint=checkpoint
+                            )
 
                     desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
                     tbar.set_description(desc)

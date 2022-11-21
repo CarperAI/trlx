@@ -1,0 +1,19 @@
+tune_config:
+  mode: "max"
+  metric: "metrics/sentiments"
+  search_alg: "random"
+  scheduler: "fifo"
+  num_samples: 32
+
+lr_init:
+  strategy: "loguniform"
+  values: [0.00001, 0.01]
+tau:
+  strategy: "uniform"
+  values: [0.6, 0.9]
+steps_for_target_q_sync:
+  strategy: "choice"
+  values: [1, 5, 10]
+alpha:
+  strategy: "loguniform"
+  values: [0.001, 1.0]
