@@ -303,7 +303,11 @@ class CausalLMWithValueHeads(nn.Module):
             vs = vs[:, -1, :]
 
             if logit_mask is not None:
-                logits[torch.where(logit_mask[input_ids[:, -1].squeeze()])] = -np.inf
+                logits[
+                    torch.where(
+                        logit_mask[input_ids[:, -1].squeeze().to(logit_mask.device)]
+                    )
+                ] = -np.inf
 
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)
