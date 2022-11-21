@@ -1,4 +1,4 @@
-# Usage: python train_sweep.py --config configs/ray_tune_configs/ppo_config.yml --example-name ppo_sentiments
+# python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 import wandb
 import argparse
 from pathlib import Path
