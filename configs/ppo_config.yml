@@ -35,8 +35,8 @@ method:
   lam: 0.95  # PPO lambda
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
-  vf_coef: 2.3  # value term weight
-  scale_reward: "running" # False | "ref" | "running" estimate against which to scale rewards
+  vf_coef: 1  # value term weight
+  scale_reward: False # False | "ref" | "running" estimate against which to scale rewards
   ref_mean: null
   ref_std: null # rescale rewards with this deviation
   cliprange_reward: 10
