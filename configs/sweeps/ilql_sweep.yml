@@ -3,8 +3,7 @@ tune_config:
   metric: "metrics/sentiments"
   search_alg: "random"
   scheduler: "fifo"
-  num_samples: 8
-  max_concurrent_trials: 8
+  num_samples: 32
 
 lr_init:
   strategy: "loguniform"
