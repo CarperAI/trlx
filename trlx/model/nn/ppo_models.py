@@ -226,7 +226,8 @@ class CausalLMWithValueHead(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.name_or_path)
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
         self.value_head = make_head(get_hidden_size(self.config), 1)
@@ -514,7 +515,8 @@ class CausalLMHydraWithValueHead(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.name_or_path)
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
         self.value_head = make_head(get_hidden_size(self.config), 1)
@@ -524,7 +526,7 @@ class CausalLMHydraWithValueHead(nn.Module):
             transformer_blocks = list(get_hidden_layers(self.base_model))
             self.frozen_head = ModelBranch(
                 self.config,
-                transformer_blocks[-num_layers_unfrozen:],
+                transformer_blocks[-self.num_layers_unfrozen:],
                 get_final_norm(self.base_model),
                 get_causal_lm_head(self.base_model),
             )

@@ -18,6 +18,19 @@ def make_head(n_embd: int, out: int) -> nn.Sequential:
     )
 
 
+def freeze_bottom_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+    """Freezes the bottom transformer block layers of the specified model."""
+    hidden_layers = get_hidden_layers(model)
+    if num_layers_unfrozen == 0:
+        hidden_layers_to_freeze = list(hidden_layers)
+    elif num_layers_unfrozen > 0:
+        hidden_layers_to_freeze = list(hidden_layers)[:-num_layers_unfrozen]
+    else:
+        hidden_layers_to_freeze = []
+    for layer in hidden_layers_to_freeze:
+        layer.requires_grad_(False)
+
+
 # HuggingFace utilities
 
 
@@ -25,7 +38,7 @@ def rhasattr(obj, attr):
     """A chain-able attribute version of hasattr. For example, to check if
     `obj` has the attribute `foo.bar.baz`, you can use:
         `rhasattr(obj, "foo.bar.baz")`
-    Reference: https://stackoverflow.com/a/31174427
+    Reference: https://stackoverflow.com/a/67303315
     """
     _nested_attrs = attr.split(".")
     _curr_obj = obj

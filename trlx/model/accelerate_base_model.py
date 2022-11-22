@@ -14,6 +14,7 @@ from transformers import AutoTokenizer
 import wandb
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
+from trlx.utils.modeling import freeze_bottom_layers
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -42,33 +43,20 @@ class AccelerateRLModel(BaseRLModel):
         else:
             torch.random.manual_seed(config.train.seed)
 
-        # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
         self.max_length = config.train.seq_length
 
+        # Retrieves model equipped for ppo, ilql, etc
+        self.model = self.get_arch(self.config)
+        freeze_bottom_layers(
+            self.model.base_model, self.config.model.num_layers_unfrozen
+        )
+        
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.padding_side = "left"
         else:
             self.tokenizer = None
-
-        if hasattr(self.model.gpt, "gpt_neox"):
-            gpt_blocks = self.model.gpt.gpt_neox.layers
-        else:
-            gpt_blocks = self.model.gpt.transformer.h
-
-        # freeze transformer's bottom layers if num_layers_unfrozen >= 0
-        num_layers_unfrozen = self.config.model.num_layers_unfrozen
-        if num_layers_unfrozen == 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)
-        elif num_layers_unfrozen > 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)[:-num_layers_unfrozen]
-        else:
-            gpt_blocks_to_freeze = []
-
-        for m in gpt_blocks_to_freeze:
-            m.requires_grad_(False)
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):

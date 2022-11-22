@@ -9,6 +9,7 @@ from typing import Union, Sequence
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
 from trlx.utils.modeling import (
+    freeze_bottom_layers,
     get_causal_base_model,
     get_causal_lm_head,
     get_hidden_layers,
@@ -201,19 +202,11 @@ class CausalLMWithValueHeads(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_config(self.config)
+        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.name_or_path)
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
-
-        hidden_layers = get_hidden_layers(self.base_model)
-        if num_layers_unfrozen == 0:
-            hidden_layers_to_freeze = list(hidden_layers)
-        elif num_layers_unfrozen > 0:
-            hidden_layers_to_freeze = list(hidden_layers)[:-num_layers_unfrozen]
-        else:
-            hidden_layers_to_freeze = []
-        for m in hidden_layers_to_freeze:
-            m.requires_grad_(False)
+        freeze_bottom_layers(self.base_model, num_layers_unfrozen)
 
         self.hidden_size = get_hidden_size(self.config)
         self.ilql_heads = ilql_config.heads(
