@@ -101,18 +101,27 @@ class PPOOrchestrator(Orchestrator):
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
-            all_tokens = torch.cat(
-                (query_tensors.to(samples.device), response_tensors), dim=1
+            all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
+                query_tensors, response_tensors
             )
             with torch.no_grad():
-                logits, _, v = self.rl_model.model(all_tokens)
+                logits, _, v = self.rl_model.model(
+                    all_tokens, attention_mask, position_ids=position_ids
+                )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
                     ref_logits = self.rl_model.model.forward_hydra(
-                        all_tokens, return_dict=False
+                        all_tokens,
+                        attention_mask=attention_mask,
+                        position_ids=position_ids,
+                        return_dict=False,
                     )
                 else:
-                    ref_logits, _, _ = self.ref_model(all_tokens.cpu())
+                    ref_logits, _, _ = self.ref_model(
+                        all_tokens.cpu(),
+                        attention_mask.cpu(),
+                        position_ids=position_ids.cpu(),
+                    )
 
             ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])

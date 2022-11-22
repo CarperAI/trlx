@@ -24,7 +24,7 @@ else:
 import ray
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
-from trlx.utils import filter_non_scalars
+from trlx.utils import filter_non_scalars, get_git_tag
 
 
 @register_model
@@ -73,6 +73,7 @@ class AccelerateRLModel(BaseRLModel):
                     "wandb": {
                         "name": run_name,
                         "entity": self.config.train.entity_name,
+                        "tags": [get_git_tag()],
                         "mode": "disabled"
                         if os.environ.get("debug", False)
                         else "online",
@@ -226,7 +227,7 @@ class AccelerateRLModel(BaseRLModel):
                         self.iter_count = state["iter_count"]
         else:
             results = self.evaluate()
-            self.accelerator.log(results)
+            self.accelerator.log(results, step=self.iter_count)
 
         tbar = tqdm(
             initial=self.iter_count,
@@ -253,19 +254,12 @@ class AccelerateRLModel(BaseRLModel):
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
                         self.save()
 
+                    stats["forward_time"] = forward_time
+                    stats["backward_time"] = backward_time
+
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
-
-                        results.update(stats)
-                        results.update(
-                            {
-                                "forward_time": forward_time,
-                                "backward_time": backward_time,
-                            }
-                        )
-
-                        if not ray.is_initialized():
-                            self.accelerator.log(results)
+                        stats.update(results)
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():
@@ -274,10 +268,17 @@ class AccelerateRLModel(BaseRLModel):
                                 json.dump(dict(iter_count=self.iter_count), f)
                             checkpoint = Checkpoint.from_directory("state")
                             session.report(
-                                filter_non_scalars(results), checkpoint=checkpoint
+                                filter_non_scalars(stats), checkpoint=checkpoint
                             )
 
-                    desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items())
+                    if not ray.is_initialized():
+                        self.accelerator.log(stats, step=self.iter_count)
+
+                    desc = ", ".join(
+                        f"{k}: {v:.2f}"
+                        for k, v in stats.items()
+                        if k.startswith("loss")
+                    )
                     tbar.set_description(desc)
                     tbar.update()
 
