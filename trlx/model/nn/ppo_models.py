@@ -227,10 +227,11 @@ class CausalLMWithValueHead(nn.Module):
         else:
             self.config = config
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path)
+            self.config.name_or_path
+        )
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
-        self.value_head = make_head(get_hidden_size(self.config), 1)
+        self.v_head = make_head(get_hidden_size(self.config), 1)
 
     def generate(self, input_ids, **kwargs):
         return self.base_model.generate(input_ids, **kwargs)
@@ -263,7 +264,7 @@ class CausalLMWithValueHead(nn.Module):
         )
         last_hidden_state = transformer_outputs.last_hidden_state
         lm_logits = self.base_model.lm_head(last_hidden_state)
-        value = self.value_head(last_hidden_state).squeeze(-1)
+        value = self.v_head(last_hidden_state).squeeze(-1)
 
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)
@@ -516,17 +517,18 @@ class CausalLMHydraWithValueHead(nn.Module):
         else:
             self.config = config
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path)
+            self.config.name_or_path
+        )
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
-        self.value_head = make_head(get_hidden_size(self.config), 1)
+        self.v_head = make_head(get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
             transformer_blocks = list(get_hidden_layers(self.base_model))
             self.frozen_head = ModelBranch(
                 self.config,
-                transformer_blocks[-self.num_layers_unfrozen:],
+                transformer_blocks[-self.num_layers_unfrozen :],
                 get_final_norm(self.base_model),
                 get_causal_lm_head(self.base_model),
             )
@@ -582,7 +584,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         )
         last_hidden_state = transformer_outputs.last_hidden_state
         lm_logits = self.base_model.lm_head(last_hidden_state)
-        value = self.value_head(last_hidden_state).squeeze(-1)
+        value = self.v_head(last_hidden_state).squeeze(-1)
 
         if not return_dict:
             outputs = (lm_logits,) + transformer_outputs[1:] + (value,)

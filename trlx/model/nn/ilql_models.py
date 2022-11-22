@@ -121,7 +121,7 @@ class ILQLHeads(nn.Module):
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.value_head = make_head(self.hidden_size, 1)
+        self.v_head = make_head(self.hidden_size, 1)
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
@@ -153,7 +153,7 @@ class ILQLHeads(nn.Module):
 
         qs = tuple(q_head(actions_hs) for q_head in self.q_heads)
         target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
-        vs = self.value_head(states_hs)
+        vs = self.v_head(states_hs)
 
         return qs, target_qs, vs
 
@@ -203,7 +203,8 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self.config = config
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path)
+            self.config.name_or_path
+        )
         self.base_model.transformer = get_causal_base_model(self.base_model)
         self.base_model.lm_head = get_causal_lm_head(self.base_model)
         freeze_bottom_layers(self.base_model, num_layers_unfrozen)

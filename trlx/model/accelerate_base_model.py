@@ -50,7 +50,7 @@ class AccelerateRLModel(BaseRLModel):
         freeze_bottom_layers(
             self.model.base_model, self.config.model.num_layers_unfrozen
         )
-        
+
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.pad_token = self.tokenizer.eos_token
