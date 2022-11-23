@@ -11,6 +11,7 @@ from trlx.model.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
     CausalLMHydraWithValueHead,
+    CausalLMWithValueHead,
 )
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import logprobs_from_logits
@@ -46,9 +47,15 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
     def get_arch(self, config: TRLConfig):
-        return CausalLMHydraWithValueHead(
-            self.config.model.model_path, self.config.model.num_layers_unfrozen
+        ########################################################
+        # TODO: Revert to Hydra arch before merging!
+        return CausalLMWithValueHead(
+            self.config.model.model_path,
         )
+        ########################################################
+        # return CausalLMHydraWithValueHead(
+        #     self.config.model.model_path, self.config.model.num_layers_unfrozen
+        # )
 
     def get_model_inputs(
         self,
@@ -81,7 +88,7 @@ class AcceleratePPOModel(AccelerateRLModel):
             query_tensors, response_tensors
         )
         logits, _, values_pred = self.model(
-            tokens, attention_mask, position_ids=position_ids
+            tokens, attention_mask=attention_mask, position_ids=position_ids
         )
         logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
         # Only the response part of the values/logprobs is needed

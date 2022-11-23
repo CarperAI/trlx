@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -13,11 +13,11 @@ from transformers.modeling_outputs import ModelOutput
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     flatten_dict,
-    get_causal_base_model,
-    get_causal_lm_head,
-    get_final_norm,
-    get_hidden_layers,
-    get_hidden_size,
+    hf_get_causal_base_model,
+    hf_get_causal_final_norm,
+    hf_get_causal_hidden_layers,
+    hf_get_hidden_size,
+    hf_get_lm_head,
     make_head,
     whiten,
 )
@@ -230,9 +230,20 @@ class CausalLMWithValueHead(nn.Module):
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path
         )
-        self.base_model.transformer = get_causal_base_model(self.base_model)
-        self.base_model.lm_head = get_causal_lm_head(self.base_model)
-        self.v_head = make_head(get_hidden_size(self.config), 1)
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def generate(self, input_ids, **kwargs):
         return self.base_model.generate(input_ids, **kwargs)
@@ -240,29 +251,22 @@ class CausalLMWithValueHead(nn.Module):
     def forward(
         self,
         input_ids=None,
-        past_key_values=None,
         attention_mask=None,
-        token_type_ids=None,
+        past_key_values=None,
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
-        mc_token_ids=None,
-        lm_labels=None,
-        mc_labels=None,
         return_dict=False,
-        output_attentions=False,
-        output_hidden_states=False,
     ):
-        loss = None
-        transformer_outputs = self.base_model.transformer(
-            input_ids,
-            past_key_values=past_key_values,
+        forward_kwargs = self._get_compatible_forward_kwargs(
+            input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             position_ids=position_ids,
+            past_key_values=past_key_values,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
         )
+        transformer_outputs = self.base_model.transformer(**forward_kwargs)
         last_hidden_state = transformer_outputs.last_hidden_state
         lm_logits = self.base_model.lm_head(last_hidden_state)
         value = self.v_head(last_hidden_state).squeeze(-1)
@@ -272,7 +276,7 @@ class CausalLMWithValueHead(nn.Module):
             return outputs
 
         return CausalLMOutputWithCrossAttentions(
-            loss=loss,
+            loss=None,
             logits=lm_logits,
             past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
@@ -299,7 +303,7 @@ class ModelBranch(transformers.PreTrainedModel):
         super().__init__(config)
 
         # Defined by the main trunk
-        self.hidden_size = get_hidden_size(config)
+        self.hidden_size = hf_get_hidden_size(config)
         self.transformer_blocks = deepcopy(nn.ModuleList(transformer_blocks))
         self.final_norm = deepcopy(final_norm)
         self.lm_head = deepcopy(lm_head)
@@ -322,10 +326,7 @@ class ModelBranch(transformers.PreTrainedModel):
         output_shape: torch.Tensor,  # output_size given by main trunk
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
@@ -520,18 +521,18 @@ class CausalLMHydraWithValueHead(nn.Module):
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path
         )
-        self.base_model.transformer = get_causal_base_model(self.base_model)
-        self.base_model.lm_head = get_causal_lm_head(self.base_model)
-        self.v_head = make_head(get_hidden_size(self.config), 1)
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
-            transformer_blocks = list(get_hidden_layers(self.base_model))
+            transformer_blocks = list(hf_get_causal_hidden_layers(self.base_model))
             self.frozen_head = ModelBranch(
                 self.config,
                 transformer_blocks[-self.num_layers_unfrozen :],
-                get_final_norm(self.base_model),
-                get_causal_lm_head(self.base_model),
+                final_norm=hf_get_causal_final_norm(self.base_model),
+                lm_head=self.base_model.lm_head,
             )
 
     def generate(self, input_ids, **x):
@@ -572,12 +573,10 @@ class CausalLMHydraWithValueHead(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
     ):
-        loss = None
         transformer_outputs = self.base_model.transformer(
             input_ids,
             past_key_values=past_key_values,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
@@ -592,7 +591,7 @@ class CausalLMHydraWithValueHead(nn.Module):
             return outputs
 
         return CausalLMOutputWithCrossAttentions(
-            loss=loss,
+            loss=None,
             logits=lm_logits,
             past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,

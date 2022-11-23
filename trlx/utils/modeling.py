@@ -10,7 +10,7 @@ from typing import Tuple
 
 
 def make_head(n_embd: int, out: int) -> nn.Sequential:
-    """Returns a generic sequential linear head."""
+    """Returns a generic sequential MLP head."""
     return nn.Sequential(
         nn.Linear(n_embd, n_embd * 2),
         nn.ReLU(),
@@ -18,9 +18,9 @@ def make_head(n_embd: int, out: int) -> nn.Sequential:
     )
 
 
-def freeze_bottom_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
-    hidden_layers = get_hidden_layers(model)
+    hidden_layers = hf_get_causal_hidden_layers(model)
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
     elif num_layers_unfrozen > 0:
@@ -70,7 +70,7 @@ def findattr(obj, attrs: Tuple[str]) -> Union[object, None]:
     raise ValueError(f"Could not find an attribute from `{attrs}` in `{obj}`")
 
 
-def get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Module:
+def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Module:
     """Returns the causal decoder backbone of the specified HuggingFace transformers
     model.
     NOTE: Different model configurations have different causal decoder attribute
@@ -83,18 +83,7 @@ def get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Module
     return findattr(model, decoder_attrs)
 
 
-def get_causal_lm_head(model: transformers.AutoModelForCausalLM) -> nn.Module:
-    """Returns the language modeling (lm) head of the specified HuggingFace
-    transformers model.
-    NOTE: Different model configurations have different `lm_head` attribute names.
-        - lm_head: (GPT2LMHeadModel, BloomForCausalLM)
-        - embed_out: (GPTNeoXForCausalLM)
-    """
-    lm_head_attrs = ("lm_head", "embed_out")
-    return findattr(model, lm_head_attrs)
-
-
-def get_final_norm(model: nn.Module) -> float:
+def hf_get_causal_final_norm(model: nn.Module) -> float:
     """Returns the final (layer) norm of the specified model.
     NOTE: Different model configurations have different final norm attribute names.
         - transformer.ln_f: (GPT2LMHeadModel, GPTJForCausalLM)
@@ -109,7 +98,7 @@ def get_final_norm(model: nn.Module) -> float:
     return findattr(model, norm_attrs)
 
 
-def get_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
+def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
     """Returns the hidden layers of the specified model.
     NOTE: Different model configurations have different hidden layer attribute names.
         - transformer.h: (BloomForCausalLM, GPT2LMHeadModel, GPTJForCausalLM)
@@ -124,10 +113,19 @@ def get_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
     return findattr(model, hidden_layers_attrs)
 
 
-def get_hidden_size(config: transformers.PretrainedConfig) -> int:
+def hf_get_lm_head(model: transformers.AutoModelForCausalLM) -> nn.Module:
+    """Returns the language modeling (lm) head of the specified HuggingFace
+    transformers model.
+    NOTE: Different model configurations have different `lm_head` attribute names.
+        - lm_head: (GPT2LMHeadModel, BloomForCausalLM)
+        - embed_out: (GPTNeoXForCausalLM)
+    """
+    return model.get_output_embeddings()
+
+
+def hf_get_hidden_size(config: transformers.PretrainedConfig) -> int:
     """Returns the hidden layer dimensionality of the model architecture specified
     by the HuggingFace transformers config.
-
     NOTE: Different model configurations have different hidden size attribute names.
         - hidden_size: (OPTConfig, BloomConfig)
         - n_embd: (GPT2Config, GPTJConfig)

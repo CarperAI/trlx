@@ -73,7 +73,7 @@ class PPOOrchestrator(Orchestrator):
             samples = self.rl_model.generate(**batch)
             stats["exp_generate_time"] = time() - exp_generate_time
 
-            query_tensors = batch.input_ids
+            query_tensors = batch.input_ids.to(self.rl_model.accelerator.device)
             response_tensors = samples[:, query_tensors.shape[1] :]
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
@@ -106,7 +106,7 @@ class PPOOrchestrator(Orchestrator):
             )
             with torch.no_grad():
                 logits, _, v = self.rl_model.model(
-                    all_tokens, attention_mask, position_ids=position_ids
+                    all_tokens, attention_mask=attention_mask, position_ids=position_ids
                 )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
@@ -119,7 +119,7 @@ class PPOOrchestrator(Orchestrator):
                 else:
                     ref_logits, _, _ = self.ref_model(
                         all_tokens.cpu(),
-                        attention_mask.cpu(),
+                        attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),
                     )
 

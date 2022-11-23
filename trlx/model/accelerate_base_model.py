@@ -14,7 +14,7 @@ from transformers import AutoTokenizer
 import wandb
 from trlx.data.configs import TRLConfig
 from trlx.model import BaseRLModel, register_model
-from trlx.utils.modeling import freeze_bottom_layers
+from trlx.utils.modeling import freeze_bottom_causal_layers
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -47,7 +47,7 @@ class AccelerateRLModel(BaseRLModel):
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
-        freeze_bottom_layers(
+        freeze_bottom_causal_layers(
             self.model.base_model, self.config.model.num_layers_unfrozen
         )
 

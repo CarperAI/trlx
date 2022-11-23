@@ -1,19 +1,19 @@
+import inspect
 import os
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Union, Sequence
+from typing import Any, Dict, Union, Sequence
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
 from trlx.utils.modeling import (
-    freeze_bottom_layers,
-    get_causal_base_model,
-    get_causal_lm_head,
-    get_hidden_layers,
-    get_hidden_size,
+    freeze_bottom_causal_layers,
+    hf_get_causal_base_model,
+    hf_get_hidden_size,
+    hf_get_lm_head,
     make_head,
 )
 
@@ -202,18 +202,28 @@ class CausalLMWithValueHeads(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path
-        )
-        self.base_model.transformer = get_causal_base_model(self.base_model)
-        self.base_model.lm_head = get_causal_lm_head(self.base_model)
-        freeze_bottom_layers(self.base_model, num_layers_unfrozen)
 
-        self.hidden_size = get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(
-            self.hidden_size, self.base_model.config.vocab_size
+        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.name_or_path,
         )
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
+
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
+
+        self.hidden_size = hf_get_hidden_size(self.config)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size)
         self.ilql_config = ilql_config
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
@@ -227,12 +237,13 @@ class CausalLMWithValueHeads(nn.Module):
         actions_ixs=None,
         states_ixs=None,
     ):
-        out = self.base_model.transformer(
+        forward_kwargs = self._get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
         )
+        out = self.base_model.transformer(**forward_kwargs)
         hs = out.last_hidden_state
 
         logits = self.base_model.lm_head(hs)
@@ -253,8 +264,8 @@ class CausalLMWithValueHeads(nn.Module):
         temperature=1,
         top_k=20,
         logit_mask=None,
-        pad_token_id=50256,
-        eos_token_id=50256,
+        pad_token_id=None,
+        eos_token_id=None,
     ):
         """
         Generates samples akin to hf's `.generate` but with custom logp prepossessing: changing token probabilities as to how advantageous they would be according to value functions estimations.
