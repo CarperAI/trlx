@@ -53,17 +53,26 @@ def get_distributed_config(accelerator: Accelerator):
     """
     Return accelerator distributed config
     """
-    ds_plugin = accelerator.state.deepspeed_plugin
+
     accelerate_config = accelerator.state
-    return {
+    dist_config = {
         "mixed_precision": accelerate_config.mixed_precision,
         "num_gpus": accelerate_config.num_processes,
-        "gradient_accumulation_steps": ds_plugin.gradient_accumulation_steps,
-        "gradient_clipping": ds_plugin.gradient_clipping,
-        "zero_stage": ds_plugin.zero_stage,
-        "offload_optimizer_device": ds_plugin.offload_optimizer_device,
-        "offload_param_device": ds_plugin.offload_param_device,
     }
+
+    if hasattr(accelerator.state, "deepspeed_plugin"):
+        ds_plugin = accelerator.state.deepspeed_plugin
+        dist_config.upate(
+            {
+                "gradient_accumulation_steps": ds_plugin.gradient_accumulation_steps,
+                "gradient_clipping": ds_plugin.gradient_clipping,
+                "zero_stage": ds_plugin.zero_stage,
+                "offload_optimizer_device": ds_plugin.offload_optimizer_device,
+                "offload_param_device": ds_plugin.offload_param_device,
+            }
+        )
+
+    return dist_config
 
 
 # Stats
