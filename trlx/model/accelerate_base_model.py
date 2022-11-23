@@ -26,7 +26,6 @@ from ray.air.checkpoint import Checkpoint
 from trlx.utils import filter_non_scalars, get_distributed_config, get_git_tag
 
 
-
 @register_model
 class AccelerateRLModel(BaseRLModel):
     """
