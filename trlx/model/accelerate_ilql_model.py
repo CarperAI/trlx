@@ -35,7 +35,7 @@ class AccelerateILQLModel(AccelerateRLModel):
     def get_arch(self, config):
         return CausalLMWithValueHeads(
             config.model.model_path,
-            ilql_config=config.method,
+            params=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
 

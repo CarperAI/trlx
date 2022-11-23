@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, Dict, Union, Sequence
+from typing import Any, Dict, Union, List, Sequence
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
@@ -24,6 +24,11 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
+from transformers import AutoModelForCausalLM, PretrainedConfig
+
+import wandb
+
+from trlx.utils.modeling import construct_delta_model
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
@@ -185,7 +190,7 @@ class CausalLMWithValueHeads(nn.Module):
 
     def __init__(
         self,
-        config: Union[transformers.PretrainedConfig, str],
+        config: Union[PretrainedConfig, str],
         ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):

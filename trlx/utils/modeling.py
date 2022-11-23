@@ -162,6 +162,22 @@ def get_global_statistics(xs: torch.Tensor) -> Tuple[float, float, int]:
     return global_mean, global_var, count
 
 
+from typing import Union, List
+
+try:
+    from opendelta import (
+        BitFitModel,
+        AdapterModel,
+        PrefixModel,
+        LoraModel,
+        SoftPromptModel,
+    )
+
+    _opendelta_available = True
+except ModuleNotFoundError:
+    _opendelta_available = False
+
+
 def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
     """Whitens values"""
     if distributed and dist.is_initialized():
@@ -234,7 +250,7 @@ class RunningMoments:
 
         new_sum = xs_var * xs_count
         # correct old_sum deviation accounting for the new mean
-        old_sum = self.var * self.count + delta**2 * self.count * xs_count / tot_count
+        old_sum = self.var * self.count + delta ** 2 * self.count * xs_count / tot_count
         tot_sum = old_sum + new_sum
 
         self.mean += delta * xs_count / tot_count
@@ -243,3 +259,88 @@ class RunningMoments:
         self.count = tot_count
 
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
+
+
+q
+
+
+def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
+    if num_layers_unfrozen == -1:
+        return "(\d)+"
+    n_layers = config.n_layer
+    start_layer = n_layers - num_layers_unfrozen
+    if start_layer < 0:
+        raise Exception(
+            "Number of layers unfrozen cannot be greater than number of layers in the model"
+        )
+    return "[r][{}-{}]\.".format(start_layer, n_layers - 1)
+
+
+MODIFIED_MODULES_DICT = {
+    "gpt2": {},
+    "gptj": {
+        "attention": ["attn.q_proj", "attn.k_proj", "attn.v_proj"],
+        "mlp": ["mlp.fc_in", "mlp.fc_out"],
+        "all": [
+            "attn.q_proj",
+            "attn.k_proj",
+            "attn.v_proj",
+            "attn.out_proj",
+            "lp.fc_in",
+            "mlp.fc_out",
+        ],
+    },
+    "gptneox": {
+        "attention": ["attention.query_key_value"],
+        "mlp": ["mlp.dense_h_to_4h", "mlp.dense_4h_to_h"],
+        "all": [
+            "attention.query_key_value",
+            "attention.dense",
+            "mlp.dense_h_to_4h",
+            "mlp.dense_4h_to_h",
+        ],
+    },
+}
+
+
+def get_delta_modified_modules(
+    config, modified_modules: str, num_layers_unfrozen: int = -1
+) -> List[str]:
+    module_list = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
+    prefix = generate_layer_regex(config, num_layers_unfrozen)
+    module_list = [prefix + module for module in module_list]
+    return module_list
+
+
+def get_delta_model_class(model_type: str):
+    if not _opendelta_available:
+        raise ValueError(
+            "OpenDelta package required to train with delta models. You can obtain it from https://github.com/thunlp/OpenDelta."
+        )
+    delta_models = {
+        "bitfit": BitFitModel,
+        "adapter": AdapterModel,
+        "prefix": PrefixModel,
+        "lora": LoraModel,
+        "softprompt": SoftPromptModel,
+    }
+    return delta_models[model_type]
+
+
+def construct_delta_model(
+    backbone_model,
+    delta_method: str,
+    delta_modified_modules: Union[List[str], str],
+    num_layers_unfrozen: int = -1,
+):  # -> DeltaModel:
+    delta_model_class = get_delta_model_class(delta_method)
+    modified_module_list = get_delta_modified_modules(
+        config=backbone_model.config,
+        modified_modules=delta_modified_modules,
+        num_layers_unfrozen=num_layers_unfrozen,
+    )
+    delta_model = delta_model_class(delta_method)(
+        backbone_model=backbone_model, modified_modules=modified_module_list
+    )
+    delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
+    return delta_model
