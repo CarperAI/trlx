@@ -23,7 +23,7 @@ else:
 import ray
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
-from trlx.utils import filter_non_scalars
+from trlx.utils import filter_non_scalars, get_distributed_config
 
 
 @register_model
@@ -78,9 +78,12 @@ class AccelerateRLModel(BaseRLModel):
         run_name = f"{script_name}/{model_name}"
 
         if self.accelerator.is_main_process and not ray.is_initialized():
+            config_dict = self.config.to_dict()
+            dist_config = get_distributed_config(self.accelerator)
+            config_dict["distributed"] = dist_config
             self.accelerator.init_trackers(
                 project_name=self.config.train.project_name,
-                config=self.config.to_dict(),
+                config=config_dict,
                 init_kwargs={
                     "wandb": {
                         "name": run_name,
