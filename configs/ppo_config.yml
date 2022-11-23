@@ -21,7 +21,6 @@ train:
 
   pipeline: "PromptPipeline"  # prompt pipeline to load
   orchestrator: "PPOOrchestrator"  # orchestrator to load
-  entity_name: "dahoas"  # put your wandb login here
 
 method:
   name: 'ppoconfig'  # Name of RL method config
