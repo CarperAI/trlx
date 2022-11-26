@@ -2,6 +2,7 @@ import os
 from typing import Callable, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
+from trlx.utils import set_seed
 from trlx.utils.loading import get_model, get_orchestrator, get_pipeline
 
 
@@ -30,7 +31,7 @@ def train(
         split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
-
+    set_seed(config.train.seed)
     if reward_fn is not None:
         if config is None:
             config = TRLConfig.load_yaml("configs/ppo_config.yml")
