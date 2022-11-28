@@ -520,8 +520,11 @@ class GPTHydraHeadWithValueModel(nn.Module):
         self.num_layers_unfrozen = num_layers_unfrozen
         if num_layers_unfrozen > 0:
             transformer_blocks = list(self.gpt.transformer.h)[-num_layers_unfrozen:]
-            # Retrive hf_config to init
-            hf_config = AutoConfig.from_pretrained(config)
+            if isinstance(config, PretrainedConfig):
+                hf_config = config
+            else:
+                hf_config = AutoConfig.from_pretrained(config)
+
             hf_config.n_embd = self.n_embd
             self.frozen_head = ModelBranch(
                 hf_config,
