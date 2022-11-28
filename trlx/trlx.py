@@ -31,10 +31,10 @@ def train(
         split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
-    set_seed(config.train.seed)
     if reward_fn is not None:
         if config is None:
             config = TRLConfig.load_yaml("configs/ppo_config.yml")
+        set_seed(config.train.seed)
 
         if model_path:
             config.model.model_path = model_path
@@ -67,6 +67,7 @@ def train(
 
         if config is None:
             config = TRLConfig.load_yaml("configs/ilql_config.yml")
+        set_seed(config.train.seed)
 
         if model_path:
             config.model.model_path = model_path
