@@ -1,4 +1,4 @@
-from .randomwalks import generate_random_walks
+from examples.randomwalks import generate_random_walks
 
 from transformers import GPT2Config
 import trlx
@@ -12,11 +12,11 @@ def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
     metric_fn, eval_prompts, walks, _ = generate_random_walks(seed=config.train.seed)
-    lengths = metric_fn(walks)["lengths"]
+    rewards = metric_fn(walks)["optimality"]
 
     trlx.train(
         GPT2Config(n_layer=6, n_embd=144, vocab_size=23),
-        dataset=(walks, lengths),
+        dataset=(walks, rewards),
         eval_prompts=eval_prompts,
         metric_fn=metric_fn,
         config=config,

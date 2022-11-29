@@ -52,25 +52,23 @@ def generate_random_walks(
 
         sample_walks.append(delimiter.join(walk))
 
-    worstlen = max_length
-
     # calculate the shortest paths for comparison
-    best_lengths = []
+    shortest_lengths = []
     g = nx.from_numpy_array(adj, create_using=nx.DiGraph)
     for start in set(range(n_nodes)) - {goal}:
         try:
             shortest_path = nx.shortest_path(g, start, goal)[:max_length]
-            best_lengths.append(len(shortest_path))
+            shortest_lengths.append(len(shortest_path))
         except Exception:
-            best_lengths.append(max_length)
+            shortest_lengths.append(max_length)
 
-    best_lengths = torch.tensor(best_lengths)
+    shortest_lengths = torch.tensor(shortest_lengths)
 
     def metric_fn(samples):
-        # a negative reward for an invalid or a not found path
+        # a measure for an invalid or a not found path
         infty = 100
         lengths = []
-        best_possible_lengths = []
+        ref_lengths = []
 
         for s in samples:
             if gpt2_tokenizer:
@@ -92,20 +90,16 @@ def generate_random_walks(
 
             lengths.append(length)
             # allows for inorder checking of % optimality
-            best_possible_lengths.append(best_lengths[s[0] - 1])
+            ref_lengths.append(shortest_lengths[s[0] - 1])
 
         lengths = torch.tensor(lengths, dtype=torch.float)
-        bound_lengths = torch.where(lengths.eq(infty), worstlen, lengths).abs()
-        # -1 for invalid or not found path, length^-1 for correct paths
-        scaled_rewards = torch.where(lengths.eq(infty), -1, 1 / lengths)
-        best_possible_lengths = torch.as_tensor(best_possible_lengths)
+        bound_lengths = torch.where(lengths.eq(infty), max_length, lengths).abs()
+        ref_lengths = torch.as_tensor(ref_lengths)
 
         return {
-            "rewards": scaled_rewards,
             "lengths": lengths,
-            # percentage-optimal when compared to the shortest path
-            "optimality": (worstlen - bound_lengths)
-            / (worstlen - best_possible_lengths),
+            # percentage-optimal \in (0, 1) when compared to the shortest path
+            "optimality": (max_length - bound_lengths) / (max_length - ref_lengths),
         }
 
     logit_mask = torch.tensor(adj)
