@@ -1,8 +1,3 @@
-# Toy problem similar to the one described in Decision Transformer (Chen et al. 2021):
-# Find graph's shortest paths by learning from a dataset of sampled random walks.
-# A single reward is given at the end of the trajectory.
-# No dynamics, impossible paths and not correct paths are penalized the same.
-
 import networkx as nx
 import numpy as np
 import torch
