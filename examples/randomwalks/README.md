@@ -1,4 +1,4 @@
-Toy problem similar to the one described in [Decision Transformer (Lili Chen etal. 2021)](https://arxiv.org/abs/2106.01345) [1]:
+Toy problem similar to the one described in [Decision Transformer (Lili Chen et al. 2021)](https://arxiv.org/abs/2106.01345) [1]:
 finding graph's shortest paths by learning from a dataset of sampled random
 walks.
 
