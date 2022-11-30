@@ -3,8 +3,10 @@ from examples.randomwalks import generate_random_walks
 import yaml
 import trlx
 from trlx.data.configs import TRLConfig
+import os
 
-default_config = yaml.safe_load(open("configs/ppo_randomwalks.yml"))
+config_path = os.path.join(os.path.dirname(__file__), "configs/ppo_randomwalks.yml")
+default_config = yaml.safe_load(open(config_path))
 
 
 def main(hparams={}):
@@ -13,7 +15,7 @@ def main(hparams={}):
     metric_fn, prompts, *_ = generate_random_walks(seed=config.train.seed)
 
     trlx.train(
-        "randomwalks/1M",
+        "CarperAI/randomwalks",
         reward_fn=lambda walks: metric_fn(walks)["optimality"],
         prompts=prompts,
         eval_prompts=prompts,

@@ -1,11 +1,13 @@
 from examples.randomwalks import generate_random_walks
 
-from transformers import GPT2Config
+import os
 import trlx
 from trlx.data.configs import TRLConfig
 import yaml
+from transformers import GPT2Config
 
-default_config = yaml.safe_load(open("configs/ilql_randomwalks.yml"))
+config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_randomwalks.yml")
+default_config = yaml.safe_load(open(config_path))
 
 
 def main(hparams={}):
