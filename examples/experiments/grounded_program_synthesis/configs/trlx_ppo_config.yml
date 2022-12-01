@@ -1,6 +1,6 @@
 model:
-  model_path: "Salesforce/codegen-350M-mono"  # Name of hf model to load
-  tokenizer_path: "Salesforce/codegen-350M-mono"  # Name of hf tokenizer to load
+  model_path: "reshinthadith/codegen_350M_list_manip_5_len"  # Name of hf model to load
+  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
   num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
 
