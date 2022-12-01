@@ -1,5 +1,5 @@
 # Extensible version of the GPT model
-from typing import Optional, Tuple, Union
+from typing import Optional, Mapping, Tuple, Union
 from trlx.data.ilql_types import ILQLBatch
 from trlx.utils import to_device, tree_map
 
@@ -7,9 +7,12 @@ from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.utils import (
     get_ltor_masks_and_position_ids,
 )
+
+from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
+    post_language_model_processing,
+)
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
-    post_language_model_processing,
 )
 
 
@@ -47,19 +50,27 @@ class LMHeads(MegatronModule):
         return loss, (logits, heads_output)
 
 
-class GPT(MegatronGPTModel):
+class ILQLGPT(MegatronGPTModel):
     def __init__(self, ilql_config, **kwargs):
         super().__init__(**kwargs)
-        self.ilql_heads = ilql_config.heads
+        self.ilql_heads = ilql_config.heads(
+            self.cfg.hidden_size, self.padded_vocab_size
+        )
 
     @classmethod
-    def list_available_models(cls) -> Optional[Dict[str, str]]:
+    def list_available_models(cls) -> Optional[Mapping[str, str]]:
         return None
+
+    def process_global_batch(self, batch: ILQLBatch, global_batch_size=None):
+        return batch
+
+    # def build_train_valid_test_datasets(self):
+    #    self._train_ds =
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """Model construction for for Apex Pipeline Parallelism.
         every rank will construct the model but inside the model,
-        only the relevant layers for that rank will be constructed.
+        only the relevant layers for that rank should be constructed.
         On the first rank, pre_process will be True
         On the last rank, post_process will be True
         """
@@ -76,26 +87,35 @@ class GPT(MegatronGPTModel):
         def fwd_output_and_loss_func(
             batch: ILQLBatch, model, checkpoint_activations_all_layers=None
         ):
-            batch = to_device(batch, "cuda", nonblocking=True)
+            # On first and last pipeline stages, the input data is passed in
+            if batch is not None:
+                batch = to_device(batch, "cuda", nonblocking=True)
 
-            inputs = batch.input_ids[:, :-1]
-            labels = batch.input_ids[:, 1:]
+                inputs = batch.input_ids[:, :-1]
+                labels = batch.input_ids[:, 1:]
 
-            position_ids, loss_mask, attention_mask = get_ltor_masks_and_position_ids(
-                data=inputs,
-                eod_token=self.language_model.tokenizer.eos_id,
-                reset_position_ids=False,
-                reset_attention_mask=False,
-                eod_mask_loss=False,
-            )
+                (
+                    position_ids,
+                    loss_mask,
+                    attention_mask,
+                ) = get_ltor_masks_and_position_ids(
+                    data=inputs,
+                    eod_token=self.language_model.tokenizer.eos_id,
+                    reset_position_ids=False,
+                    reset_attention_mask=False,
+                    eod_mask_loss=False,
+                )
 
-            loss_tensor = model(
-                input_ids=inputs,
-                position_ids=position_ids,
-                attention_mask=attention_mask,
-                labels=labels,
-                checkpoint_activations_all_layers=checkpoint_activations_all_layers,
-            )
+                loss_tensor = model(
+                    input_ids=inputs,
+                    position_ids=position_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
+                )
+            else:
+                # In-between stages are given data via the pipeline engine
+                loss_tensor = model()
 
             def loss_func(loss_tensor):
                 print("loss_tensor", loss_tensor)
@@ -130,12 +150,15 @@ class GPT(MegatronGPTModel):
                     )
                     return loss_for_mb, {"avg": reduced_loss}
 
-            return output_tensor, loss_func
+            return loss_tensor, loss_func
 
         return fwd_output_and_loss_func
 
     def get_forward_output_only_func(
-        self, set_inference_key_value_memory=False, inference_max_sequence_len=None
+        self,
+        set_inference_key_value_memory=False,
+        inference_max_sequence_len=None,
+        checkpoint_activations_all_layers=None,
     ):
         def fwd_output_only_func(
             batch: ILQLBatch,

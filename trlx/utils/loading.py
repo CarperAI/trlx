@@ -4,6 +4,7 @@ from typing import Callable
 from trlx.model import _MODELS
 from trlx.model.accelerate_ilql_model import AccelerateILQLModel
 from trlx.model.accelerate_ppo_model import AcceleratePPOModel
+from trlx.model.nemo_ilql_model import NeMoILQLModel
 
 # Register load orchestrators via module import
 from trlx.orchestrator import _ORCH

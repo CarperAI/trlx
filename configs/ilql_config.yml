@@ -1,7 +1,7 @@
 model:
   model_path: "gpt2"
   tokenizer_path: "gpt2"
-  model_type: "AccelerateILQLModel"
+  model_type: "NeMoILQLModel"
   num_layers_unfrozen: -1
 
 train:

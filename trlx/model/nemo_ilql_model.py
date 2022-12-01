@@ -10,8 +10,7 @@ from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
 from trlx.utils import to_device
 
-from .accelerate_base_model import AccelerateRLModel
-
+from . import BaseRLModel
 
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
@@ -36,8 +35,10 @@ from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 
+from trlx.model.nemo.gpt import ILQLGPT
 
-def train_megatron(cfg) -> None:
+
+def train_megatron(ilql_config, cfg) -> None:
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
@@ -102,13 +103,13 @@ def train_megatron(cfg) -> None:
     with open_dict(cfg):
         cfg.model.precision = cfg.trainer.precision
 
-    model = MegatronGPTModel(cfg.model, trainer)
+    model = ILQLGPT(ilql_config=ilql_config, cfg=cfg.model, trainer=trainer)
 
-    trainer.fit(model)
+    return trainer, model
 
 
 @register_model
-class AccelerateILQLModel(AccelerateRLModel):
+class NeMoILQLModel(BaseRLModel):
     def __init__(
         self,
         config: TRLConfig,
@@ -125,13 +126,9 @@ class AccelerateILQLModel(AccelerateRLModel):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-
-    def get_arch(self, config):
-        return CausalLMWithValueHeads(
-            config.model.model_path,
-            ilql_config=config.method,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,
-        )
+        self.model, self.trainer = hydra_runner()(
+            lambda megatron_cfg: train_megatron(self.ilql, megatron_cfg)
+        )()
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
@@ -149,39 +146,7 @@ class AccelerateILQLModel(AccelerateRLModel):
         if self.iter_count % self.config.method.steps_for_target_q_sync == 0:
             self.accelerator.unwrap_model(self.model).sync_target_q_heads()
 
-    def loss(self, batch: ILQLBatch):
-        batch = to_device(batch, self.accelerator.device)
-
-        logits, qs, target_qs, vs, _ = self.model(
-            input_ids=batch.input_ids,
-            attention_mask=batch.attention_mask,
-            actions_ixs=batch.actions_ixs,
-            states_ixs=batch.states_ixs,
-        )
-
-        return self.ilql.loss((logits, (qs, target_qs, vs)), batch)
-
-    def prepare_learning(self):
+    def learn(self):
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-
-        (
-            self.model,
-            self.opt,
-            self.train_dataloader,
-            self.eval_dataloader,
-        ) = self.accelerator.prepare(
-            self.model, self.opt, train_dataloader, eval_dataloader
-        )
-
-        self.n_updates_per_batch = 1
-        self.total_steps = self.config.train.epochs * len(train_dataloader)
-        self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-        self.generate_kwargs = {
-            "beta": self.config.method.betas[0],
-            "max_length": self.max_length,
-            "logit_mask": self.logit_mask,
-            "eos_token_id": self.tokenizer.eos_token_id if self.tokenizer else 0,
-            "pad_token_id": self.tokenizer.pad_token_id if self.tokenizer else 0,
-        }
+        self.trainer.fit(self.model, train_dataloader, eval_dataloader)
