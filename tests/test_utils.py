@@ -35,7 +35,10 @@ def test_hf_attr_getters(model_name: str):
         except Exception as e:
             assert False, "Failed to get model attribute with error: " + str(e)
 
-    config_getters = [modeling_utils.hf_get_hidden_size]
+    config_getters = [
+        modeling_utils.hf_get_hidden_size,
+        modeling_utils.hf_get_num_hidden_layers,
+    ]
     for get in config_getters:
         try:
             get(config)

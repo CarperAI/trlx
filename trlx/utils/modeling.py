@@ -135,6 +135,18 @@ def hf_get_hidden_size(config: transformers.PretrainedConfig) -> int:
     return findattr(config, hidden_size_attrs)
 
 
+def hf_get_num_hidden_layers(config: transformers.PretrainedConfig) -> int:
+    """Returns the number of hidden layers in the model architecture specified
+    by the HuggingFace transformers config.
+    NOTE: Different model configurations have different number-of-layers attribute
+    names.
+        - num_hidden_layers: (GPTNeoXConfig, OPTConfig)
+        - n_layer: (GPT2Config, GPTJConfig, BloomConfig)
+    """
+    num_hidden_layers_attrs = ("num_hidden_layers", "n_layer")
+    return findattr(config, num_hidden_layers_attrs)
+
+
 def get_global_statistics(xs: torch.Tensor) -> Tuple[float, float, int]:
     """
     Computes element-wise mean and variance of the tensor across processes

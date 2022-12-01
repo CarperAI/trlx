@@ -18,6 +18,7 @@ from trlx.utils.modeling import (
     hf_get_causal_hidden_layers,
     hf_get_hidden_size,
     hf_get_lm_head,
+    hf_get_num_hidden_layers,
     make_head,
     whiten,
 )
@@ -396,7 +397,7 @@ class ModelBranch(transformers.PreTrainedModel):
         # 1.0 in head_mask indicate we keep the head
         # attention_probs has shape bsz x n_heads x N x N
         # head_mask has shape n_layer x batch x n_heads x N x N
-        head_mask = self.get_head_mask(head_mask, self.config.n_layer)
+        head_mask = self.get_head_mask(head_mask, hf_get_num_hidden_layers(self.config))
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
