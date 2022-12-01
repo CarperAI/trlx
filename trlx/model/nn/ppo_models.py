@@ -334,6 +334,7 @@ class ModelBranch(transformers.PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
+        position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
 
         batch_size = hidden_states.size()[0]
@@ -527,7 +528,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
-        if num_layers_unfrozen > 0:
+        if self.num_layers_unfrozen > 0:
             transformer_blocks = list(hf_get_causal_hidden_layers(self.base_model))
             self.frozen_head = ModelBranch(
                 self.config,
@@ -535,54 +536,65 @@ class CausalLMHydraWithValueHead(nn.Module):
                 final_norm=hf_get_causal_final_norm(self.base_model),
                 lm_head=self.base_model.lm_head,
             )
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def generate(self, input_ids, **x):
         return self.base_model.generate(input_ids, **x)
 
-    def forward_hydra(self, input_ids, **x):
-        if x.get("return_dict") is not None:
-            return_dict = x["return_dict"]
+    def forward_hydra(self, input_ids, **forward_kwargs):
+        forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
+        if forward_kwargs.get("return_dict") is not None:
+            return_dict = forward_kwargs["return_dict"]
         else:
             return_dict = True
-        x["return_dict"] = True
-        x["output_hidden_states"] = True
-        output = self.forward(input_ids, **x)
+        forward_kwargs["return_dict"] = True
+        forward_kwargs["output_hidden_states"] = True
+        output = self.forward(input_ids, **forward_kwargs)
         all_hidden_states = output.hidden_states
         # Get output of last frozen hidden layer
         # Select hidden state before first layer of branch.
         input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
         # Get size of last hidden state
         output_shape = all_hidden_states[-1].size()
-        outputs = self.frozen_head(input_hidden_state, output_shape, **x)
+        outputs = self.frozen_head(input_hidden_state, output_shape, **forward_kwargs)
         if not return_dict:
             return outputs.logits
         return outputs
 
     def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        past_key_values=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        mc_token_ids=None,
-        lm_labels=None,
-        mc_labels=None,
-        return_dict=False,
-        output_attentions=False,
-        output_hidden_states=False,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        output_attentions: Optional[bool] = False,
+        output_hidden_states: Optional[bool] = True,
+        return_dict: Optional[bool] = None,
     ):
-        transformer_outputs = self.base_model.transformer(
-            input_ids,
-            past_key_values=past_key_values,
+        forward_kwargs = self._get_compatible_forward_kwargs(
+            input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
+            past_key_values=past_key_values,
+            output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
+            token_type_ids=token_type_ids,
         )
+        transformer_outputs = self.base_model.transformer(**forward_kwargs)
         last_hidden_state = transformer_outputs.last_hidden_state
         lm_logits = self.base_model.lm_head(last_hidden_state)
         value = self.v_head(last_hidden_state).squeeze(-1)
