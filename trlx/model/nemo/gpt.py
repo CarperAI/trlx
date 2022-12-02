@@ -1,6 +1,8 @@
 # Extensible version of the GPT model
 from typing import Optional, Mapping, Tuple, Union
-from trlx.data.ilql_types import ILQLBatch
+
+import torch
+from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
 from trlx.utils import to_device, tree_map
 
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
@@ -52,10 +54,8 @@ class LMHeads(MegatronModule):
 
 class ILQLGPT(MegatronGPTModel):
     def __init__(self, ilql_config, **kwargs):
+        self.ilql_config = ilql_config
         super().__init__(**kwargs)
-        self.ilql_heads = ilql_config.heads(
-            self.cfg.hidden_size, self.padded_vocab_size
-        )
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -64,23 +64,28 @@ class ILQLGPT(MegatronGPTModel):
     def process_global_batch(self, batch: ILQLBatch, global_batch_size=None):
         return batch
 
-    # def build_train_valid_test_datasets(self):
-    #    self._train_ds =
+    def build_train_valid_test_datasets(self):
+        pass
+        #    self._train_ds =
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
-        """Model construction for for Apex Pipeline Parallelism.
+        """Model construction for Apex Pipeline Parallelism.
         every rank will construct the model but inside the model,
         only the relevant layers for that rank should be constructed.
         On the first rank, pre_process will be True
         On the last rank, post_process will be True
         """
+        print("model_provider_func", pre_process, post_process)
         # This disables post-processing the lm output to the vocab
         gpt = super().model_provider_func(pre_process, post_process=False)
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
         # If running on the last pipeline stage, add the ILQL heads
         if post_process:
-            return LMHeads(gpt, self.ilql_heads)
+            return LMHeads(
+                gpt,
+                self.ilql_config.heads(self.cfg.hidden_size, self.padded_vocab_size),
+            )
         return gpt
 
     def get_forward_output_and_loss_func(self, validation_step=False):
@@ -89,7 +94,8 @@ class ILQLGPT(MegatronGPTModel):
         ):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:
-                batch = to_device(batch, "cuda", nonblocking=True)
+                batch = unflatten_dataclass(ILQLBatch)(batch)
+                batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 inputs = batch.input_ids[:, :-1]
                 labels = batch.input_ids[:, 1:]
@@ -100,7 +106,7 @@ class ILQLGPT(MegatronGPTModel):
                     attention_mask,
                 ) = get_ltor_masks_and_position_ids(
                     data=inputs,
-                    eod_token=self.language_model.tokenizer.eos_id,
+                    eod_token=self.tokenizer.eos_id,
                     reset_position_ids=False,
                     reset_attention_mask=False,
                     eod_mask_loss=False,
@@ -164,14 +170,15 @@ class ILQLGPT(MegatronGPTModel):
             batch: ILQLBatch,
             model,
         ):
-            batch = to_device(batch, "cuda", nonblocking=True)
+            batch = unflatten_dataclass(ILQLBatch)(batch)
+            batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-            inputs = batch.input_ids[:, :-1]
-            labels = batch.input_ids[:, 1:]
+            inputs = batch.input_ids[:, :-1].long()
+            labels = batch.input_ids[:, 1:].long()
 
             position_ids, loss_mask, attention_mask = get_ltor_masks_and_position_ids(
                 data=inputs,
-                eod_token=self.language_model.tokenizer.eos_id,
+                eod_token=self.tokenizer.eos_id,
                 reset_position_ids=False,
                 reset_attention_mask=False,
                 eod_mask_loss=False,

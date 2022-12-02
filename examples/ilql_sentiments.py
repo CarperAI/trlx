@@ -29,7 +29,7 @@ def main(hparams={}):
         top_k=2,
         truncation=True,
         batch_size=256,
-        device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
+        device=-1 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
     def metric_fn(samples: List[str]) -> Dict[str, List[float]]:

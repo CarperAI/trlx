@@ -131,11 +131,11 @@ def tree_map(f, tree):
         return f(tree)
 
 
-def to_device(tree, device, nonblocking=False):
+def to_device(tree, device, non_blocking=False):
     """
     Move all tensors in tree to device
     """
-    return tree_map(lambda x: x.to(device, nonblocking=nonblocking), tree)
+    return tree_map(lambda x: x.to(device, non_blocking=non_blocking), tree)
 
 
 def filter_non_scalars(xs: Dict) -> Dict:

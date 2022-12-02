@@ -3,10 +3,9 @@ from typing import Iterable, Sequence, Union, cast
 import torch
 import torch.nn.functional as F
 
-
 from trlx.model import register_model
 from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
-from trlx.data.ilql_types import ILQLBatch
+from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
 from trlx.data.configs import TRLConfig
 from trlx.utils import to_device
 
@@ -77,7 +76,7 @@ def train_megatron(ilql_config, cfg) -> None:
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
 
-    exp_manager(trainer, cfg.exp_manager)
+    # exp_manager(trainer, cfg.exp_manager)
 
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
@@ -126,9 +125,13 @@ class NeMoILQLModel(BaseRLModel):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        self.model, self.trainer = hydra_runner()(
-            lambda megatron_cfg: train_megatron(self.ilql, megatron_cfg)
-        )()
+        megatron_cfg = OmegaConf.load(
+            "/mnt/nvme/home/uwu/megatron_gpt_config_small.yaml"
+        )
+        self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
+        self.tokenizer = self.model.tokenizer.tokenizer
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.max_length = megatron_cfg.model.encoder_seq_length
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
@@ -149,4 +152,9 @@ class NeMoILQLModel(BaseRLModel):
     def learn(self):
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-        self.trainer.fit(self.model, train_dataloader, eval_dataloader)
+        train_dataloder = (ILQLBatch(**x) for x in train_dataloader)
+        # print(next(iter(eval_dataloader)).keys())
+        # eval_dataloader = (ILQLBatch(**x) for x in eval_dataloader)
+        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
+        # eval_dataloader = map(flatten_dataclass(ILQLBatch), eval_dataloader)
+        self.trainer.fit(self.model, train_dataloader)
