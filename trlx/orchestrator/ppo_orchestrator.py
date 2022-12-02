@@ -105,7 +105,7 @@ class PPOOrchestrator(Orchestrator):
                 query_tensors, response_tensors
             )
             with torch.no_grad():
-                logits, _, v = self.rl_model.model(
+                logits, *_, v = self.rl_model.model(
                     all_tokens, attention_mask=attention_mask, position_ids=position_ids
                 )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
@@ -117,7 +117,7 @@ class PPOOrchestrator(Orchestrator):
                         return_dict=False,
                     )
                 else:
-                    ref_logits, _, _ = self.ref_model(
+                    ref_logits, _, *_ = self.ref_model(
                         all_tokens.cpu(),
                         attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),

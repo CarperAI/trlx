@@ -87,7 +87,7 @@ class AcceleratePPOModel(AccelerateRLModel):
         tokens, attention_mask, position_ids = self.get_model_inputs(
             query_tensors, response_tensors
         )
-        logits, _, values_pred = self.model(
+        logits, *_, values_pred = self.model(
             tokens, attention_mask=attention_mask, position_ids=position_ids
         )
         logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
