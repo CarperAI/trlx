@@ -1,4 +1,5 @@
 from typing import Tuple
+import uuid, os, json
 
 import torch
 from torchtyping import TensorType
@@ -20,7 +21,9 @@ from trlx.utils.modeling import logprobs_from_logits
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config):
         super().__init__(config)
-
+        
+        self.setup_rollout_logging(config)
+        
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
         rollout_loader = self.store.create_loader(
@@ -102,8 +105,17 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
         self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
         return loss, stats
+    
+    def setup_rollout_logging(self, config):
+        self.data_dir = '/home/ubuntu/Algorithm-Distillation-RLHF/sentiment-data/data'
+        self.run_id = f'run-{uuid.uuid4()}'
+        self.rollout_storage_dir = os.path.join(self.data_dir, self.run_id)
+        os.mkdir(self.rollout_storage_dir)
+        with open(os.path.join(self.rollout_storage_dir, 'config.json'), 'w') as f:
+            f.write(json.dumps(config.to_dict(), indent=2))
 
     def post_epoch_callback(self):
+        self.store.export_history(location=self.rollout_storage_dir)
         self.store.clear_history()
         self.orch.make_experience(
             self.config.method.num_rollouts, self.iter_count
