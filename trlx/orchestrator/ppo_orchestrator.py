@@ -102,7 +102,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Precompute logprobs, values
             all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
-                query_tensors, response_tensors
+                query_tensors.to(response_tensors.device), response_tensors
             )
             with torch.no_grad():
                 logits, *_, v = self.rl_model.model(

@@ -40,8 +40,6 @@ class AccelerateRLModel(BaseRLModel):
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
-        else:
-            torch.random.manual_seed(config.train.seed)
 
         self.max_length = config.train.seq_length
 
