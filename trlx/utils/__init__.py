@@ -1,4 +1,5 @@
 import os
+import random
 import time
 from functools import reduce
 from typing import Any, Iterable, List, Dict
@@ -12,6 +13,16 @@ from torchtyping import TensorType
 
 import accelerate
 from accelerate import Accelerator
+
+
+def set_seed(seed: int):
+    """
+    Sets seeds across package dependencies for reproducibility.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
 
 def flatten(L: Iterable[Iterable[Any]]) -> Iterable[Any]:

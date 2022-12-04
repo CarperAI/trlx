@@ -39,8 +39,6 @@ class AccelerateRLModel(BaseRLModel):
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
-        else:
-            torch.random.manual_seed(config.train.seed)
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
