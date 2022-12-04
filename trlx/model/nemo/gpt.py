@@ -9,13 +9,19 @@ from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.utils import (
     get_ltor_masks_and_position_ids,
 )
-
+from nemo.collections.nlp.modules.common.megatron.utils import (
+    average_losses_across_data_parallel_group,
+    get_all_params_for_weight_decay_optimization,
+    get_params_for_weight_decay_optimization,
+)
 from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
     post_language_model_processing,
 )
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
+
+from einops import rearrange
 
 
 class LMHeads(MegatronModule):
@@ -29,27 +35,51 @@ class LMHeads(MegatronModule):
     def set_input_tensor(self, input_tensor):
         return self.language_model.set_input_tensor(input_tensor)
 
-    def forward(self, *args, get_key_value=False, **kwargs):
+    def forward(
+        self,
+        *args,
+        get_key_value=False,
+        forward_method_parallel_output=None,
+        heads_kwargs={},
+        **kwargs,
+    ):
+        print("LMHeads forward")
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
-        loss, logits = post_language_model_processing(
+        print(f"{lm_output=}")
+        logits = post_language_model_processing(
             lm_output,
-            labels=kwargs.get("labels", None),
+            labels=None,
             logit_weights=self.language_model.word_embeddings_weight(),
-            get_key_value=kwargs.get("get_key_value", False),
+            get_key_value=get_key_value,
             parallel_output=self.language_model.parallel_output,
-            forward_model_parallel_output=forward_method_parallel_output,
+            forward_method_parallel_output=forward_method_parallel_output,
             fp16_lm_cross_entropy=self.language_model.fp16_lm_cross_entropy,
-            return_logits=kwargs.get("encoder_input", None) is not None,
+            return_logits=True,
             sequence_parallel=self.language_model.sequence_parallel,
             gradient_accumulation_fusion=self.language_model.gradient_accumulation_fusion,
         )
+        print(f"{logits.shape=}")
 
         if get_key_value:
             logits, logits_presents = logits
             lm_output, lm_output_presents = lm_output
 
-        heads_output = self.other_heads(lm_output, *args, **kwargs)
-        return loss, (logits, heads_output)
+        heads_output = self.other_heads(
+            rearrange(lm_output, "T N C -> N T C"), **heads_kwargs
+        )
+        print(f"{heads_output=}")
+        return logits, heads_output
+
+
+class ApplyTo(torch.nn.Module):
+    """Apply a module to a subset of the inputs"""
+
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, *args, **kwargs):
+        return self.module(**kwargs)
 
 
 class ILQLGPT(MegatronGPTModel):
@@ -97,13 +127,13 @@ class ILQLGPT(MegatronGPTModel):
                 batch = unflatten_dataclass(ILQLBatch)(batch)
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                inputs = batch.input_ids[:, :-1]
-                labels = batch.input_ids[:, 1:]
+                inputs = batch.input_ids
+                labels = batch.input_ids
 
                 (
-                    position_ids,
-                    loss_mask,
                     attention_mask,
+                    loss_mask,
+                    position_ids,
                 ) = get_ltor_masks_and_position_ids(
                     data=inputs,
                     eod_token=self.tokenizer.eos_id,
@@ -112,20 +142,28 @@ class ILQLGPT(MegatronGPTModel):
                     eod_mask_loss=False,
                 )
 
-                loss_tensor = model(
+                print(
+                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
+                )
+
+                model_output = model(
                     input_ids=inputs,
-                    position_ids=position_ids,
+                    position_ids=position_ids.long(),
                     attention_mask=attention_mask,
                     labels=labels,
                     checkpoint_activations_all_layers=checkpoint_activations_all_layers,
+                    heads_kwargs=dict(
+                        states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
+                    ),
                 )
             else:
                 # In-between stages are given data via the pipeline engine
-                loss_tensor = model()
+                model_output = model()
 
-            def loss_func(loss_tensor):
-                print("loss_tensor", loss_tensor)
-                loss_for_mb = self.loss_func(loss_mask, loss_tensor)
+            def loss_func(model_output):
+                print("model_output", model_output)
+                loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                stats = {k: v.detach().item() for k, v in stats.items()}
                 if validation_step and not self.cfg.data.get(
                     "validation_drop_last", True
                 ):
@@ -147,16 +185,23 @@ class ILQLGPT(MegatronGPTModel):
                         loss_sum_and_mb_size_all_gpu,
                         group=parallel_state.get_data_parallel_group(),
                     )
+                    print(f"{loss_sum_and_mb_size_all_gpu=}")
                     return loss_for_mb, {
-                        "loss_sum_and_mb_size": loss_sum_and_mb_size_all_gpu
+                        "loss_sum_and_mb_size": loss_sum_and_mb_size_all_gpu,
+                        **stats,
                     }
                 else:
                     reduced_loss = average_losses_across_data_parallel_group(
                         [loss_for_mb]
                     )
-                    return loss_for_mb, {"avg": reduced_loss}
+                    print(f"{loss_for_mb=}, {reduced_loss=}")
+                    return loss_for_mb, {"avg": reduced_loss, **stats}
 
-            return loss_tensor, loss_func
+            def contiguous_loss(x):
+                loss, stats = loss_func(x)
+                return tree_map(lambda t: t.contiguous(), loss), stats
+
+            return tree_map(lambda t: t.contiguous(), model_output), contiguous_loss
 
         return fwd_output_and_loss_func
 
@@ -176,7 +221,7 @@ class ILQLGPT(MegatronGPTModel):
             inputs = batch.input_ids[:, :-1].long()
             labels = batch.input_ids[:, 1:].long()
 
-            position_ids, loss_mask, attention_mask = get_ltor_masks_and_position_ids(
+            attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
                 data=inputs,
                 eod_token=self.tokenizer.eos_id,
                 reset_position_ids=False,
@@ -186,12 +231,15 @@ class ILQLGPT(MegatronGPTModel):
 
             output_tensor = model(
                 input_ids=inputs,
-                position_ids=position_ids,
+                position_ids=position_ids.long(),
                 attention_mask=attention_mask,
                 labels=labels,
                 checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                 set_inference_key_value_memory=set_inference_key_value_memory,
                 inference_max_sequence_len=None,
+                heads_kwargs=dict(
+                    states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
+                ),
             )
 
             def id_func(output_tensor):

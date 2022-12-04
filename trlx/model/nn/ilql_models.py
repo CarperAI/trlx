@@ -18,6 +18,13 @@ import transformers
 from torch import nn
 from transformers import AutoModelForCausalLM, PretrainedConfig
 
+from nemo.collections.nlp.modules.common.megatron.utils import (
+    average_losses_across_data_parallel_group,
+    get_all_params_for_weight_decay_optimization,
+    get_params_for_weight_decay_optimization,
+)
+
+
 import wandb
 
 
@@ -50,6 +57,8 @@ class ILQLConfig(MethodConfig):
         return ILQLHeads(self, hidden_size, vocab_size)
 
     def loss(self, outputs, labels: ILQLBatch):
+        print("ILQL LOSS")
+        print(f"{outputs=}, {labels=}")
         logits, (qs, target_qs, vs) = outputs
         actions = (
             labels.input_ids[:, 1:]
@@ -112,6 +121,7 @@ class ILQLConfig(MethodConfig):
             for k, v in locals().items()
             if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
         }
+        print(f"{stats=}")
 
         return loss, stats
 
@@ -140,7 +150,13 @@ class ILQLHeads(nn.Module):
         hs: torch.Tensor,
         states_ixs: torch.Tensor = None,
         actions_ixs: torch.Tensor = None,
+        **kwargs,
     ):
+        print("ILQL HEADS")
+        print(f"{hs.shape=}, {states_ixs.shape=}, {actions_ixs.shape=}")
+        print(
+            f"{states_ixs.max()=} {states_ixs.min()}, {actions_ixs.max()=} {actions_ixs.min()=}"
+        )
 
         if states_ixs is not None:
             states_hs = hs.gather(
