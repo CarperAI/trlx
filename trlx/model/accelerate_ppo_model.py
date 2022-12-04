@@ -47,15 +47,9 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
     def get_arch(self, config: TRLConfig):
-        ########################################################
-        # TODO: Revert to Hydra arch before merging!
-        return CausalLMWithValueHead(
-            self.config.model.model_path,
+        return CausalLMHydraWithValueHead(
+            self.config.model.model_path, self.config.model.num_layers_unfrozen
         )
-        ########################################################
-        # return CausalLMHydraWithValueHead(
-        #     self.config.model.model_path, self.config.model.num_layers_unfrozen
-        # )
 
     def get_model_inputs(
         self,
