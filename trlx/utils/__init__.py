@@ -11,6 +11,9 @@ import torch
 from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
 from torchtyping import TensorType
 
+import accelerate
+from accelerate import Accelerator
+
 
 def set_seed(seed: int):
     """
@@ -55,6 +58,32 @@ def safe_mkdir(path: str):
     if os.path.isdir(path):
         return
     os.mkdir(path)
+
+
+def get_distributed_config(accelerator: Accelerator):
+    """
+    Return accelerator distributed config
+    """
+
+    accelerate_config = accelerator.state
+    dist_config = {
+        "mixed_precision": accelerate_config.mixed_precision,
+        "num_gpus": accelerate_config.num_processes,
+    }
+
+    if hasattr(accelerator.state, "deepspeed_plugin"):
+        ds_plugin = accelerator.state.deepspeed_plugin
+        dist_config.upate(
+            {
+                "gradient_accumulation_steps": ds_plugin.gradient_accumulation_steps,
+                "gradient_clipping": ds_plugin.gradient_clipping,
+                "zero_stage": ds_plugin.zero_stage,
+                "offload_optimizer_device": ds_plugin.offload_optimizer_device,
+                "offload_param_device": ds_plugin.offload_param_device,
+            }
+        )
+
+    return dist_config
 
 
 # Stats
