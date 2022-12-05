@@ -73,7 +73,7 @@ class PPOOrchestrator(Orchestrator):
             samples = self.rl_model.generate(**batch)
             stats["exp_generate_time"] = time() - exp_generate_time
 
-            query_tensors = batch.input_ids.to(self.rl_model.accelerator.device)
+            query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
