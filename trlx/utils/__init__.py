@@ -71,9 +71,9 @@ def get_distributed_config(accelerator: Accelerator):
         "num_gpus": accelerate_config.num_processes,
     }
 
-    if hasattr(accelerator.state, "deepspeed_plugin"):
+    if accelerator.state.deepspeed_plugin is not None:
         ds_plugin = accelerator.state.deepspeed_plugin
-        dist_config.upate(
+        dist_config.update(
             {
                 "gradient_accumulation_steps": ds_plugin.gradient_accumulation_steps,
                 "gradient_clipping": ds_plugin.gradient_clipping,
