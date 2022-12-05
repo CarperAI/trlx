@@ -98,6 +98,9 @@ class TrainConfig:
 
     :param entity_name: Entity name for wandb
     :type entity_name: str
+    
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOModel.
+    :type rollout_logging_dir: Optional[str]
     """
 
     total_steps: int
@@ -113,6 +116,7 @@ class TrainConfig:
 
     checkpoint_interval: int
     eval_interval: int
+    
 
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
@@ -121,6 +125,8 @@ class TrainConfig:
     project_name: str = "trlx"
     entity_name: Optional[str] = None
     seed: int = 1000
+    
+    rollout_logging_dir: Optional[str] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

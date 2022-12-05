@@ -22,7 +22,11 @@ class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config):
         super().__init__(config)
         
-        self.setup_rollout_logging(config)
+        if config.train.rollout_logging_dir is not None:
+            self.log_rollouts = True
+            self.setup_rollout_logging(config)
+        else:
+            self.log_rollouts = False
         
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
@@ -107,15 +111,21 @@ class AcceleratePPOModel(AccelerateRLModel):
         return loss, stats
     
     def setup_rollout_logging(self, config):
-        self.data_dir = '/home/ubuntu/Algorithm-Distillation-RLHF/sentiment-data/data'
+        # Make rollout logging dir for this run and store config
+        exists = os.path.exists(config.train.rollout_logging_dir)
+        isdir = os.path.isdir(config.train.rollout_logging_dir)
+        assert exists and isdir
+        
         self.run_id = f'run-{uuid.uuid4()}'
-        self.rollout_storage_dir = os.path.join(self.data_dir, self.run_id)
-        os.mkdir(self.rollout_storage_dir)
-        with open(os.path.join(self.rollout_storage_dir, 'config.json'), 'w') as f:
+        self.rollout_logging_dir = os.path.join(config.train.rollout_logging_dir, self.run_id)
+        os.mkdir(self.rollout_logging_dir)
+        
+        with open(os.path.join(self.rollout_logging_dir, 'config.json'), 'w') as f:
             f.write(json.dumps(config.to_dict(), indent=2))
 
     def post_epoch_callback(self):
-        self.store.export_history(location=self.rollout_storage_dir)
+        if self.log_rollouts:
+            self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
         self.orch.make_experience(
             self.config.method.num_rollouts, self.iter_count
