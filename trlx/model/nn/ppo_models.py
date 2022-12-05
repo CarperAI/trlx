@@ -777,7 +777,13 @@ class OPTModelBranch(transformers.PreTrainedModel):
         if not return_dict:
             return tuple(
                 v
-                for v in [lm_logits, hidden_states, next_cache, all_hidden_states, all_self_attns]
+                for v in [
+                    lm_logits,
+                    hidden_states,
+                    next_cache,
+                    all_hidden_states,
+                    all_self_attns,
+                ]
                 if v is not None
             )
 
