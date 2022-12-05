@@ -5,6 +5,7 @@ import torch
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
 from trlx.utils import to_device, tree_map
 
+from apex.transformer import parallel_state
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.utils import (
     get_ltor_masks_and_position_ids,
@@ -28,12 +29,17 @@ class LMHeads(MegatronModule):
     def __init__(self, language_model, other_heads):
         super().__init__()
         # must be this attribute name
+        self.pre_process = language_model.pre_process
+        self.post_process = language_model.post_process
         self.language_model = language_model
         self.other_heads = other_heads
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
         return self.language_model.set_input_tensor(input_tensor)
+
+    def word_embeddings_weight(self):
+        return self.language_model.word_embeddings_weight()
 
     def forward(
         self,
@@ -43,22 +49,22 @@ class LMHeads(MegatronModule):
         heads_kwargs={},
         **kwargs,
     ):
-        print("LMHeads forward")
+        # print("LMHeads forward")
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
-        print(f"{lm_output=}")
+        # print(f"{lm_output=}")
         logits = post_language_model_processing(
             lm_output,
             labels=None,
             logit_weights=self.language_model.word_embeddings_weight(),
             get_key_value=get_key_value,
-            parallel_output=self.language_model.parallel_output,
+            parallel_output=False,  # self.language_model.parallel_output,
             forward_method_parallel_output=forward_method_parallel_output,
             fp16_lm_cross_entropy=self.language_model.fp16_lm_cross_entropy,
             return_logits=True,
             sequence_parallel=self.language_model.sequence_parallel,
             gradient_accumulation_fusion=self.language_model.gradient_accumulation_fusion,
         )
-        print(f"{logits.shape=}")
+        # print(f"{logits.shape=}")
 
         if get_key_value:
             logits, logits_presents = logits
@@ -67,7 +73,7 @@ class LMHeads(MegatronModule):
         heads_output = self.other_heads(
             rearrange(lm_output, "T N C -> N T C"), **heads_kwargs
         )
-        print(f"{heads_output=}")
+        # print(f"{heads_output=}")
         return logits, heads_output
 
 
@@ -142,9 +148,19 @@ class ILQLGPT(MegatronGPTModel):
                     eod_mask_loss=False,
                 )
 
-                print(
-                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
-                )
+                # print(
+                #    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
+                # )
+
+                extra_args = {}
+                # Only the last pipeline stage GPT layers are wrapped with LMHeads
+                # so we pass them the heads kwargs
+                if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+                    extra_args = dict(
+                        heads_kwargs=dict(
+                            states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
+                        )
+                    )
 
                 model_output = model(
                     input_ids=inputs,
@@ -152,16 +168,14 @@ class ILQLGPT(MegatronGPTModel):
                     attention_mask=attention_mask,
                     labels=labels,
                     checkpoint_activations_all_layers=checkpoint_activations_all_layers,
-                    heads_kwargs=dict(
-                        states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
-                    ),
+                    **extra_args,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
                 model_output = model()
 
             def loss_func(model_output):
-                print("model_output", model_output)
+                # print("model_output", model_output)
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
                 stats = {k: v.detach().item() for k, v in stats.items()}
                 if validation_step and not self.cfg.data.get(
@@ -194,7 +208,7 @@ class ILQLGPT(MegatronGPTModel):
                     reduced_loss = average_losses_across_data_parallel_group(
                         [loss_for_mb]
                     )
-                    print(f"{loss_for_mb=}, {reduced_loss=}")
+                    # print(f"{loss_for_mb=}, {reduced_loss=}")
                     return loss_for_mb, {"avg": reduced_loss, **stats}
 
             def contiguous_loss(x):
