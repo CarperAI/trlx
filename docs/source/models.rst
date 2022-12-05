@@ -22,7 +22,10 @@ Note that new models must be registered with ``trlx.model.register_model``.
 .. autoclass:: trlx.model.nn.ppo_models.CausalLMWithValueHead
     :members:
 
-.. autoclass:: trlx.model.nn.ppo_models.ModelBranch
+.. autoclass:: trlx.model.nn.ppo_models.GPTModelBranch
+    :members:
+
+.. autoclass:: trlx.model.nn.ppo_models.OPTModelBranch
     :members:
 
 .. autoclass:: trlx.model.nn.ppo_models.CausalLMHydraWithValueHead

@@ -106,6 +106,10 @@ class AccelerateRLModel(BaseRLModel):
             truncation=True,
             max_length=self.config.seq_length,
             return_tensors="pt",
+            # NOTE: We manually add special tokens (bos) above so we set this False
+            # to avoid models that automatically add special tokens (e.g. OPT)
+            # adding them twice more.
+            add_special_tokens=False,
         )
 
     def generate(self, input_ids, attention_mask=None, **kwargs):

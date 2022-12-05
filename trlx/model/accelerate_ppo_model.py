@@ -11,7 +11,6 @@ from trlx.model.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
     CausalLMHydraWithValueHead,
-    CausalLMWithValueHead,
 )
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import logprobs_from_logits
