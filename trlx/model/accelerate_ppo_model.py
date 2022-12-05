@@ -1,4 +1,5 @@
 from typing import Tuple
+import uuid, os, json
 
 import torch
 from torchtyping import TensorType
@@ -20,6 +21,12 @@ from trlx.utils.modeling import logprobs_from_logits
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config):
         super().__init__(config)
+
+        if config.train.rollout_logging_dir is not None:
+            self.log_rollouts = True
+            self.setup_rollout_logging(config)
+        else:
+            self.log_rollouts = False
 
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
@@ -103,7 +110,24 @@ class AcceleratePPOModel(AccelerateRLModel):
         self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
         return loss, stats
 
+    def setup_rollout_logging(self, config):
+        # Make rollout logging dir for this run and store config
+        exists = os.path.exists(config.train.rollout_logging_dir)
+        isdir = os.path.isdir(config.train.rollout_logging_dir)
+        assert exists and isdir
+
+        self.run_id = f"run-{uuid.uuid4()}"
+        self.rollout_logging_dir = os.path.join(
+            config.train.rollout_logging_dir, self.run_id
+        )
+        os.mkdir(self.rollout_logging_dir)
+
+        with open(os.path.join(self.rollout_logging_dir, "config.json"), "w") as f:
+            f.write(json.dumps(config.to_dict(), indent=2))
+
     def post_epoch_callback(self):
+        if self.log_rollouts:
+            self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
         self.orch.make_experience(
             self.config.method.num_rollouts, self.iter_count
