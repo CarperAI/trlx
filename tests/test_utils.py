@@ -11,7 +11,6 @@ import trlx.utils.modeling as modeling_utils
 @pytest.mark.parametrize(
     "model_name",
     [
-        "bigscience/bloom-3b",
         "EleutherAI/gpt-j-6B",
         "EleutherAI/gpt-neox-20b",
         "gpt2",

@@ -47,7 +47,7 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def get_arch(self, config: TRLConfig):
         return CausalLMHydraWithValueHead(
-            self.config.model.model_path, self.config.model.num_layers_unfrozen
+            config.model.model_path, config.model.num_layers_unfrozen
         )
 
     def get_model_inputs(

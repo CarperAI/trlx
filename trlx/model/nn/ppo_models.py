@@ -653,13 +653,17 @@ class OPTModelBranch(transformers.PreTrainedModel):
     def forward(
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
+        output_shape: torch.Tensor,  # output_size given by main trunk
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
+        position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         """Override OPTForCausalLM"""
         output_attentions = (
@@ -680,7 +684,7 @@ class OPTModelBranch(transformers.PreTrainedModel):
         #######################################################################
         # Modififed OPTDecoder.forward
         #######################################################################
-        
+
         past_key_values_length = (
             past_key_values[0][0].shape[2] if past_key_values is not None else 0
         )
@@ -763,23 +767,23 @@ class OPTModelBranch(transformers.PreTrainedModel):
             all_hidden_states += (hidden_states,)
 
         next_cache = next_decoder_cache if use_cache else None
-        
+
         #######################################################################
         # End of modified OPTDecoder.forward
         #######################################################################
 
-        logits = self.lm_head(hidden_states).contiguous()
+        lm_logits = self.lm_head(hidden_states).contiguous()
 
         if not return_dict:
             return tuple(
                 v
-                for v in [hidden_states, next_cache, all_hidden_states, all_self_attns]
+                for v in [lm_logits, hidden_states, next_cache, all_hidden_states, all_self_attns]
                 if v is not None
             )
 
         return CausalLMOutputWithCrossAttentions(
             loss=None,
-            logits=logits,
+            logits=lm_logits,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
@@ -795,7 +799,6 @@ def hf_get_causal_lm_branch_class(
     gpt_branch_supported_archs = [
         "GPTJForCausalLM",
         "GPT2LMHeadModel",
-        "BloomModel",
         "GPTNeoXForCausalLM",
     ]
     opt_branch_supported_archs = ["OPTForCausalLM"]
@@ -806,6 +809,7 @@ def hf_get_causal_lm_branch_class(
         return OPTModelBranch
     else:
         raise ValueError(
-            f"Unsupported architecture: `{arch}`, supported architectures are:\n"
+            f"Unsupported architecture: `{arch}`. The following architectures are "
+            "available for model branching:\n"
             f"{gpt_branch_supported_archs + opt_branch_supported_archs}"
         )
