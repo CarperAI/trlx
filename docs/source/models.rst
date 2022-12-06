@@ -19,13 +19,16 @@ Note that new models must be registered with ``trlx.model.register_model``.
 .. autoclass:: trlx.model.accelerate_ppo_model.AcceleratePPOModel
     :members:
 
-.. autoclass:: trlx.model.nn.ppo_models.GPTHeadWithValueModel
+.. autoclass:: trlx.model.nn.ppo_models.CausalLMWithValueHead
     :members:
 
-.. autoclass:: trlx.model.nn.ppo_models.ModelBranch
+.. autoclass:: trlx.model.nn.ppo_models.GPTModelBranch
     :members:
 
-.. autoclass:: trlx.model.nn.ppo_models.GPTHydraHeadWithValueModel
+.. autoclass:: trlx.model.nn.ppo_models.OPTModelBranch
+    :members:
+
+.. autoclass:: trlx.model.nn.ppo_models.CausalLMHydraWithValueHead
     :members:
 
 **ILQL**

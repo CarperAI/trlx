@@ -11,7 +11,7 @@ from trlx.model.accelerate_base_model import AccelerateRLModel
 from trlx.model.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
-    GPTHydraHeadWithValueModel,
+    CausalLMHydraWithValueHead,
 )
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import logprobs_from_logits
@@ -53,8 +53,8 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
     def get_arch(self, config: TRLConfig):
-        return GPTHydraHeadWithValueModel(
-            self.config.model.model_path, self.config.model.num_layers_unfrozen
+        return CausalLMHydraWithValueHead(
+            config.model.model_path, config.model.num_layers_unfrozen
         )
 
     def get_model_inputs(
@@ -87,8 +87,8 @@ class AcceleratePPOModel(AccelerateRLModel):
         tokens, attention_mask, position_ids = self.get_model_inputs(
             query_tensors, response_tensors
         )
-        logits, _, values_pred = self.model(
-            tokens, attention_mask, position_ids=position_ids
+        logits, *_, values_pred = self.model(
+            tokens, attention_mask=attention_mask, position_ids=position_ids
         )
         logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
         # Only the response part of the values/logprobs is needed

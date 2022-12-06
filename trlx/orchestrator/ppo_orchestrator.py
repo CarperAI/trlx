@@ -4,7 +4,6 @@ import torch
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.model import BaseRLModel
-from trlx.model.nn.ppo_models import GPTHeadWithValueModel, GPTHydraHeadWithValueModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.utils import Clock
@@ -106,8 +105,8 @@ class PPOOrchestrator(Orchestrator):
                 query_tensors.to(response_tensors.device), response_tensors
             )
             with torch.no_grad():
-                logits, _, v = self.rl_model.model(
-                    all_tokens, attention_mask, position_ids=position_ids
+                logits, *_, v = self.rl_model.model(
+                    all_tokens, attention_mask=attention_mask, position_ids=position_ids
                 )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.rl_model.model, "frozen_head"):
@@ -118,9 +117,9 @@ class PPOOrchestrator(Orchestrator):
                         return_dict=False,
                     )
                 else:
-                    ref_logits, _, _ = self.ref_model(
+                    ref_logits, _, *_ = self.ref_model(
                         all_tokens.cpu(),
-                        attention_mask.cpu(),
+                        attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),
                     )
 

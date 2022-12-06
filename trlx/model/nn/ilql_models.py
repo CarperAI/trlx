@@ -1,13 +1,21 @@
+import inspect
 import os
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Union, Sequence, Any, TypeVar, Tuple
+from typing import Any, Dict, Union, Sequence
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import register_method, MethodConfig
+from trlx.utils.modeling import (
+    freeze_bottom_causal_layers,
+    hf_get_causal_base_model,
+    hf_get_hidden_size,
+    hf_get_lm_head,
+    make_head,
+)
 
 
 import deepspeed  # type: ignore
@@ -16,9 +24,6 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
-from transformers import AutoModelForCausalLM, PretrainedConfig
-
-import wandb
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
@@ -26,12 +31,6 @@ def topk_mask(xs: torch.FloatTensor, k: int):
         return xs
     mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
-
-
-def make_head(n_embd: int, out: int):
-    return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
-    )
 
 
 @dataclass
@@ -186,7 +185,7 @@ class CausalLMWithValueHeads(nn.Module):
 
     def __init__(
         self,
-        config: Union[PretrainedConfig, str],
+        config: Union[transformers.PretrainedConfig, str],
         ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):
@@ -199,33 +198,32 @@ class CausalLMWithValueHeads(nn.Module):
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
                     config_path
                 )
-
-        if isinstance(config, PretrainedConfig):
-            self.gpt = AutoModelForCausalLM.from_config(config)
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
         else:
-            self.gpt = AutoModelForCausalLM.from_pretrained(config)
+            self.config = config
 
-        if hasattr(self.gpt, "gpt_neox"):
-            self.gpt.transformer = self.gpt.gpt_neox
-            self.gpt.lm_head = self.gpt_embed_out
-            self.n_embd = self.gpt.config.hidden_size
-            gpt_blocks = self.gpt.gpt_neox.layers
-        else:
-            self.n_embd = self.gpt.config.n_embd
-            gpt_blocks = self.gpt.transformer.h
+        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+            self.config.name_or_path,
+        )
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
 
-        if num_layers_unfrozen == 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)
-        elif num_layers_unfrozen > 0:
-            gpt_blocks_to_freeze = list(gpt_blocks)[:-num_layers_unfrozen]
-        else:
-            gpt_blocks_to_freeze = []
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
 
-        for m in gpt_blocks_to_freeze:
-            m.requires_grad_(False)
-
-        self.ilql_heads = ilql_config.heads(self.n_embd, self.gpt.config.vocab_size)
+        self.hidden_size = hf_get_hidden_size(self.config)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size)
         self.ilql_config = ilql_config
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
 
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
@@ -239,15 +237,16 @@ class CausalLMWithValueHeads(nn.Module):
         actions_ixs=None,
         states_ixs=None,
     ):
-        out = self.gpt.transformer(
+        forward_kwargs = self._get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
         )
+        out = self.base_model.transformer(**forward_kwargs)
         hs = out.last_hidden_state
 
-        logits = self.gpt.lm_head(hs)
+        logits = self.base_model.lm_head(hs)
         qs, target_qs, vs = self.ilql_heads(
             hs, states_ixs=states_ixs, actions_ixs=actions_ixs
         )
@@ -265,8 +264,8 @@ class CausalLMWithValueHeads(nn.Module):
         temperature=1,
         top_k=20,
         logit_mask=None,
-        pad_token_id=50256,
-        eos_token_id=50256,
+        pad_token_id=None,
+        eos_token_id=None,
     ):
         """
         Generates samples akin to hf's `.generate` but with custom logp prepossessing: changing token probabilities as to how advantageous they would be according to value functions estimations.
@@ -328,8 +327,12 @@ class CausalLMWithValueHeads(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {"input_ids": torch.ones(1, 1, device=self.gpt.device, dtype=torch.long)}
+        return {
+            "input_ids": torch.ones(
+                1, 1, device=self.base_model.device, dtype=torch.long
+            )
+        }
 
     @property
     def device(self):
-        return self.gpt.device
+        return self.base_model.device

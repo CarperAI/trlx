@@ -1,6 +1,6 @@
 import unittest
 from trlx.data.configs import TRLConfig
-from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
+from trlx.model.nn.ppo_models import CausalLMHydraWithValueHead
 from trlx.utils.modeling import RunningMoments
 from transformers import AutoTokenizer
 import torch
@@ -12,7 +12,7 @@ class TestHydraHead(unittest.TestCase):
     def setUpClass(cls):
         print("Testing Hydra model...")
         config = TRLConfig.load_yaml("configs/test_config.yml")
-        cls.hydra_model = GPTHydraHeadWithValueModel(
+        cls.hydra_model = CausalLMHydraWithValueHead(
             config.model.model_path, config.model.num_layers_unfrozen
         )
 
