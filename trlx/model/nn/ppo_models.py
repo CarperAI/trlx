@@ -805,6 +805,7 @@ def hf_get_causal_lm_branch_class(
     gpt_branch_supported_archs = [
         "GPTJForCausalLM",
         "GPT2LMHeadModel",
+        "GPTNeoForCausalLM",
         "GPTNeoXForCausalLM",
     ]
     opt_branch_supported_archs = ["OPTForCausalLM"]
