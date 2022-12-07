@@ -125,9 +125,7 @@ class NeMoILQLModel(BaseRLModel):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        megatron_cfg = OmegaConf.load(
-            "/mnt/nvme/home/uwu/megatron_gpt_config_small.yaml"
-        )
+        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/40b.yaml")
         self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -151,10 +149,12 @@ class NeMoILQLModel(BaseRLModel):
 
     def learn(self):
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
+        print(f"{len(train_dataloader)=}")
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
         train_dataloder = (ILQLBatch(**x) for x in train_dataloader)
         # print(next(iter(eval_dataloader)).keys())
         # eval_dataloader = (ILQLBatch(**x) for x in eval_dataloader)
         train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
         # eval_dataloader = map(flatten_dataclass(ILQLBatch), eval_dataloader)
+
         self.trainer.fit(self.model, train_dataloader)

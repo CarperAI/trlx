@@ -32,7 +32,12 @@ class LMHeads(MegatronModule):
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
         self.language_model = language_model
+
         self.other_heads = other_heads
+
+    @property
+    def word_embeddings(self):
+        return self.language_model.word_embeddings
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
@@ -75,17 +80,6 @@ class LMHeads(MegatronModule):
         )
         # print(f"{heads_output=}")
         return logits, heads_output
-
-
-class ApplyTo(torch.nn.Module):
-    """Apply a module to a subset of the inputs"""
-
-    def __init__(self, module):
-        super().__init__()
-        self.module = module
-
-    def forward(self, *args, **kwargs):
-        return self.module(**kwargs)
 
 
 class ILQLGPT(MegatronGPTModel):
