@@ -148,6 +148,7 @@ class AccelerateRLModel(BaseRLModel):
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         all_samples = []
+        prompts_sizes = []
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
@@ -166,23 +167,43 @@ class AccelerateRLModel(BaseRLModel):
                     value=pad_token,
                 )
             )
+            prompts_sizes.append(
+                torch.as_tensor(prompts.input_ids.shape[1], device=samples.device)
+            )
         stats["generate_time"] = time() - generate_time
 
         samples = self.accelerator.gather(torch.vstack(all_samples))
+        prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
         if self.accelerator.is_main_process:
             if self.tokenizer:
-                samples = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
+                str_samples = self.tokenizer.batch_decode(
+                    samples, skip_special_tokens=True
+                )
 
-            if isinstance(samples[0], str):
-                columns_data = [samples]
+                prompts, responses = [], []
+                for sample, prompt_size in zip(samples, prompts_sizes):
+                    prompts.append(sample[:prompt_size])
+                    responses.append(sample[prompt_size:])
+
+                str_prompts = self.tokenizer.batch_decode(
+                    prompts, skip_special_tokens=True
+                )
+                str_responses = self.tokenizer.batch_decode(
+                    responses, skip_special_tokens=True
+                )
+
+            if isinstance(str_samples[0], str):
+                columns_data = [str_prompts, str_responses, str_samples]
             else:
                 columns_data = [samples.tolist()]
-            columns = ["samples"]
+            columns = ["prompt", "response", "sample"]
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                rewards = torch.as_tensor(self.reward_fn(samples), dtype=torch.float)
+                rewards = torch.as_tensor(
+                    self.reward_fn(str_samples), dtype=torch.float
+                )
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
