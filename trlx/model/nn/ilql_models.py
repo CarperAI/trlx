@@ -96,6 +96,7 @@ class ILQLConfig(MethodConfig):
         nactions = qs[0].shape[1]
 
         def cql_loss(q):
+            print(f"{q.shape=} {actions.shape=} {bsize=} {nactions=} {dsize=}")
             loss = F.cross_entropy(
                 q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
             )
@@ -104,6 +105,10 @@ class ILQLConfig(MethodConfig):
             return loss
 
         loss_cql = sum(cql_loss(q) for q in qs)
+
+        print(
+            f"{logits.shape=} {labels.input_ids.shape=} {labels.actions_ixs.shape=} {labels.states_ixs.shape=}"
+        )
 
         loss_awac = (
             F.cross_entropy(
@@ -142,8 +147,8 @@ class ILQLHeads(nn.Module):
         )
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
-        for q_head in self.target_q_heads:
-            q_head.requires_grad_(False)
+        # for q_head in self.target_q_heads:
+        #    q_head.requires_grad_(False)
 
     def forward(
         self,

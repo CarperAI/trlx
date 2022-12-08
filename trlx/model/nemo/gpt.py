@@ -53,7 +53,7 @@ class LMHeads(MegatronModule):
     ):
         # print("LMHeads forward")
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
-        # print(f"{lm_output=}")
+        print(f"{lm_output.shape=} {kwargs['input_ids'].shape=}")
         logits = post_language_model_processing(
             lm_output,
             labels=None,
@@ -66,7 +66,7 @@ class LMHeads(MegatronModule):
             sequence_parallel=self.language_model.sequence_parallel,
             gradient_accumulation_fusion=self.language_model.gradient_accumulation_fusion,
         )
-        # print(f"{logits.shape=}")
+        print(f"{logits.shape=}")
 
         if get_key_value:
             logits, logits_presents = logits
@@ -83,6 +83,10 @@ class ILQLGPT(MegatronGPTModel):
     def __init__(self, ilql_config, **kwargs):
         self.ilql_config = ilql_config
         super().__init__(**kwargs)
+        if len(list(self.parameters())) == 0:
+            raise ValueError("No parameters in model")
+        params = list(self.parameters())
+        print(f"{len(params)=}, {params[55].shape=}")
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -158,12 +162,15 @@ class ILQLGPT(MegatronGPTModel):
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
                     labels=labels,
-                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
+                    # checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                     **extra_args,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
-                model_output = model()
+                # Still need to specify thes arguments to avoid errors
+                model_output = model(
+                    input_ids=None, position_ids=None, attention_mask=None
+                )
 
             def loss_func(model_output):
                 # print("model_output", model_output)
@@ -239,7 +246,6 @@ class ILQLGPT(MegatronGPTModel):
                 position_ids=position_ids.long(),
                 attention_mask=attention_mask,
                 labels=labels,
-                checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                 set_inference_key_value_memory=set_inference_key_value_memory,
                 inference_max_sequence_len=None,
                 heads_kwargs=dict(
