@@ -34,10 +34,7 @@ class LMHeads(MegatronModule):
         self.language_model = language_model
 
         self.other_heads = other_heads
-
-    @property
-    def word_embeddings(self):
-        return self.language_model.word_embeddings
+        self.word_embeddings = language_model.word_embeddings
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
