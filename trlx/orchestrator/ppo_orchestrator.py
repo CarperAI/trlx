@@ -64,17 +64,29 @@ class PPOOrchestrator(Orchestrator):
 
         query_tensors = batch.input_ids
         response_tensors = samples[:, query_tensors.shape[1] :]
-        all_tokens = torch.cat(
-            (query_tensors.to(samples.device), response_tensors), dim=1
+
+        # Precompute logprobs, values
+        all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
+            query_tensors.to(response_tensors.device), response_tensors
         )
         with torch.no_grad():
-            logits, _, v = self.rl_model.model(all_tokens)
+            logits, *_, v = self.rl_model.model(
+                all_tokens, attention_mask=attention_mask, position_ids=position_ids
+            )
+            # TODO(dahoas): When hydra model works need to also support generation on hydra head
             if hasattr(self.rl_model.model, "frozen_head"):
                 ref_logits = self.rl_model.model.forward_hydra(
-                    all_tokens, return_dict=False
+                    all_tokens, 
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    return_dict=False,
                 )
             else:
-                ref_logits, _, _ = self.ref_model(all_tokens.cpu())
+                ref_logits, _, *_ = self.ref_model(
+                    all_tokens.cpu(),
+                    attention_mask=attention_mask.cpu(),
+                    position_ids=position_ids.cpu(),
+                )
 
         ref_logits = ref_logits.to(self.rl_model.accelerator.device)
         logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
@@ -115,7 +127,7 @@ class PPOOrchestrator(Orchestrator):
             non_score_rewards = -self.rl_model.kl_ctl.value * kls
             all_rewards = non_score_rewards.clone()
 
-            print("all_rewards.shape", all_rewards.shape)
+            #print("all_rewards.shape", all_rewards.shape)
 
             texts = self.rl_model.tokenizer.batch_decode(
                 data['samples'], skip_special_tokens=True
@@ -143,17 +155,17 @@ class PPOOrchestrator(Orchestrator):
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             all_rewards[:, -1] += scores.to(self.rl_model.accelerator.device)
-            print("all_rewards", all_rewards[0])
+            #print("all_rewards", all_rewards[0])
             all_rewards = all_rewards.cpu()
 
             data = {k: v.cpu() for k, v in data.items()}
             # print where the data tensors are
-            print("data['all_logprobs']", data['all_logprobs'][0])
-            print("data['all_ref_logprobs']", data['all_ref_logprobs'][0])
-            print("data['all_values']", data['all_values'][0])
-            print("data['query_tensors']", data['query_tensors'][0])
-            print("data['response_tensors']", data['response_tensors'][0])
-            print("all_rewards", all_rewards[0])
+            #print("data['all_logprobs']", data['all_logprobs'][0])
+            #print("data['all_ref_logprobs']", data['all_ref_logprobs'][0])
+            #print("data['all_values']", data['all_values'][0])
+            #print("data['query_tensors']", data['query_tensors'][0])
+            #print("data['response_tensors']", data['response_tensors'][0])
+            #print("all_rewards", all_rewards[0])
             
             exp_time = clock.tick()
 
