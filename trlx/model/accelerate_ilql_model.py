@@ -32,6 +32,14 @@ class AccelerateILQLModel(AccelerateRLModel):
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
 
+        self.generate_kwargs = dict(
+            config.method.gen_kwargs,
+            max_length=self.max_length,
+            logit_mask=self.logit_mask,
+            eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else 0,
+            pad_token_id=self.tokenizer.pad_token_id if self.tokenizer else 0,
+        )
+
     def get_arch(self, config):
         return CausalLMWithValueHeads(
             config.model.model_path,
@@ -87,11 +95,3 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-        self.generate_kwargs = {
-            "beta": self.config.method.betas[0],
-            "max_length": self.max_length,
-            "logit_mask": self.logit_mask,
-            "eos_token_id": self.tokenizer.eos_token_id if self.tokenizer else 0,
-            "pad_token_id": self.tokenizer.pad_token_id if self.tokenizer else 0,
-        }
