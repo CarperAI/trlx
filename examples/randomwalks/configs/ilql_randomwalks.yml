@@ -31,5 +31,9 @@ method:
   awac_scale: 1
   alpha: 0.1
   steps_for_target_q_sync: 5
-  betas: [100]
   two_qs: true
+  gen_kwargs:
+    max_new_tokens: 9
+    top_k: 1
+    beta: 100
+    temperature: 1.0
