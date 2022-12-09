@@ -194,10 +194,10 @@ class AccelerateRLModel(BaseRLModel):
                 )
 
             if isinstance(str_samples[0], str):
-                columns_data = [str_prompts, str_responses, str_samples]
+                columns_data = [str_prompts, str_responses]
             else:
                 columns_data = [samples.tolist()]
-            columns = ["prompt", "response", "sample"]
+            columns = ["prompt", "response"]
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
@@ -213,7 +213,7 @@ class AccelerateRLModel(BaseRLModel):
             # additionally log any other metrics
             if self.metric_fn:
                 metric_time = time()
-                metrics = self.metric_fn(samples)
+                metrics = self.metric_fn(str_samples)
                 stats["metric_time"] = time() - metric_time
 
                 mean_metrics = {
