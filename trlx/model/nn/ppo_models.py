@@ -218,69 +218,6 @@ class CausalLMOutputWithCrossAttentions(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-def generate(
-    lm,
-    input_ids,
-    attention_mask=None,
-    position_ids=None,
-    past_key_values=None,
-    max_length=1024,
-    temperature=1,
-    top_k=0,
-    logit_mask=None,
-    pad_token_id=None,
-    eos_token_id=None,
-):
-    if attention_mask is None:
-        attention_mask = input_ids.not_equal(pad_token_id)
-
-    if position_ids is None:
-        position_ids = attention_mask.cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask.eq(0), 0)
-
-    samples = input_ids.clone()
-    n_new_tokens = max_length - input_ids.shape[1]
-
-    finished = torch.zeros(
-        input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device
-    )
-    for _ in range(n_new_tokens):
-        if samples.shape[1] > lm.config.n_ctx:
-            input_ids = samples[:, -lm.config.n_ctx :]
-            attention_mask = attention_mask[:, -lm.config.n_ctx :]
-            position_ids = attention_mask.cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask.eq(0), 0)
-            past_key_values = None
-
-        out = lm.forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-        )
-
-        past_key_values = out.past_key_values
-        logits = out.logits[:, -1, :] / temperature
-        if top_k > 0:
-            topv = torch.topk(logits, top_k)[0]
-            logits[logits < topv[:, [-1]]] = -np.inf
-
-        input_ids = torch.multinomial(nn.functional.softmax(logits, -1), num_samples=1)
-        input_ids = (1 - finished) * input_ids + finished * eos_token_id
-        finished = (input_ids == eos_token_id).long()
-
-        samples = torch.hstack((samples, input_ids))
-        attention_mask = torch.hstack(
-            (attention_mask, (input_ids != eos_token_id).long())
-        )
-        position_ids = (position_ids[:, -1] + 1).view(-1, 1)
-
-        if torch.all(finished):
-            break
-
-    return samples
-
-
 class CausalLMWithValueHead(nn.Module):
     """The CausalLMWithValueModel class implements a causal language model with
     a secondary, scalar head.
@@ -311,7 +248,7 @@ class CausalLMWithValueHead(nn.Module):
         }
 
     def generate(self, input_ids, **kwargs):
-        return generate(self.base_model, input_ids, **kwargs)
+        return self.base_model.generate(input_ids, **kwargs)
 
     def forward(
         self,
@@ -395,7 +332,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         }
 
     def generate(self, input_ids, **x):
-        return generate(self.base_model, input_ids, **x)
+        return self.base_model.generate(input_ids, **x)
 
     def forward_hydra(self, input_ids, **forward_kwargs):
         forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
