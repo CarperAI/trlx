@@ -1,0 +1,23 @@
+model:
+  model_path: "stabilityai/stable-diffusion-2"
+  tokenizer_path: None
+  model_type: AccelerateSDModel
+  num_layers_unfrozen: 2
+
+method:
+  name: 'diffusionppoconfig'
+  num_rollouts: 4
+  chunk_size: 4
+  ppo_epochs: 4  # Number of ppo epochs
+  init_kl_coef: 0.05  # init kl coefficient
+  target: 6  # target kl coefficient, set None for fixed kl coef
+  horizon: 10000  # PPO horizon
+  gamma: 1  # PPO discount
+  lam: 0.95  # PPO lambda
+  cliprange: 0.2  # clip range
+  cliprange_value: 0.2  # clip range
+  vf_coef: 1  # value term weight
+  scale_reward: False # False | "ref" | "running" estimate against which to scale rewards
+  ref_mean: null
+  ref_std: null # rescale rewards with this deviation
+  cliprange_reward: 10
