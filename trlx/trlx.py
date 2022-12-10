@@ -99,7 +99,7 @@ def train(
         model.add_eval_pipeline(eval_pipeline)
 
     else:
-        raise ValueError(f"Either {dataset=} or {reward_fn=} should be given")
+        raise ValueError("Either {dataset=} or {reward_fn=} should be given") # kaggle tells me that's not python syntax bc it's not updated oh my god
 
     model.learn()
     return model
