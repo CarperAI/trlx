@@ -205,7 +205,6 @@ class CausalLMWithValueHeads(nn.Module):
         
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
-            device_map="auto",
             torch_dtype=torch.float16
         )
         
