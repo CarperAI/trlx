@@ -82,7 +82,13 @@ class AccelerateRLModel(BaseRLModel):
                     }
                 },
             )
-
+        # this is fine for low-memory finetuning
+        for name, param in model.named_parameters():
+            if True in [i in name for i in ["bias", "layernorm", "ln"]]:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+                
         self.opt = bnb.optim.AdamW8bit(
             self.model.parameters(),
             lr=self.config.train.lr_init,
