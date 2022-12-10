@@ -203,14 +203,9 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self.config = config
         
-        # janky
-        if not os.path.exists("trlx_offload"):
-            os.mkdir("trlx_offload")
-        
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
             device_map="auto",
-            offload_folder="trlx_offload",
             torch_dtype=torch.float16
         )
         
