@@ -245,14 +245,14 @@ class AccelerateRLModel(BaseRLModel):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
                     forward_time = time()
-                    loss, stats = self.loss(batch) / self.config.accumulate_steps
+                    loss, stats = self.loss(batch) / self.config.train.accumulate_steps
                     forward_time = time() - forward_time
 
                     backward_time = time()
                     self.accelerator.backward(loss)
                     backward_time = time() - backward_time
 
-                    if self.iter_count % self.config.accumulate_steps == 0:
+                    if self.iter_count % self.config.train.accumulate_steps == 0:
                         self.opt.step()
                         self.opt.zero_grad()
                         self.scheduler.step()
