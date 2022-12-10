@@ -47,6 +47,7 @@ def train(
                     param.requires_grad = True
                 else:
                     param.requires_grad = False
+            # I should probably add _all_ the params in the value heads as well, TODO:
                 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
