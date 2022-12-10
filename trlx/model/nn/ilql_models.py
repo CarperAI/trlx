@@ -204,7 +204,6 @@ class CausalLMWithValueHeads(nn.Module):
             self.config = config
         
         # janky
-        import os
         if not os.path.exists("trlx_offload"):
             os.mkdir("trlx_offload")
         
