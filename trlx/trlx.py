@@ -43,10 +43,10 @@ def train(
         model = get_model(config.model.model_type)(config)
         if bitfit:
             for name, param in model.model.named_parameters():
-            if True in [i in name for i in ["bias", "layernorm", "ln"]]:
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+                if True in [i in name for i in ["bias", "layernorm", "ln"]]:
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
                 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
