@@ -45,7 +45,7 @@ class AccelerateRLModel(BaseRLModel):
         self.max_length = config.train.seq_length
 
         # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
+        self.model = self.get_arch(self.config).half()
         freeze_bottom_causal_layers(
             self.model.base_model, self.config.model.num_layers_unfrozen
         )
