@@ -26,6 +26,7 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from trlx.utils import filter_non_scalars, get_distributed_config, get_git_tag
 
+import bitsandbytes as bnb
 
 @register_model
 class AccelerateRLModel(BaseRLModel):
@@ -82,7 +83,7 @@ class AccelerateRLModel(BaseRLModel):
                 },
             )
 
-        self.opt = torch.optim.AdamW(
+        self.opt = bnb.optim.AdamW8bit(
             self.model.parameters(),
             lr=self.config.train.lr_init,
             betas=self.config.train.opt_betas,
