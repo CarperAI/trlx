@@ -9,6 +9,7 @@ train:
   batch_size: 128
   epochs: 100
   total_steps: 1000
+  accumulate_steps: 1
 
   lr_init: 5.0e-5
   lr_target: 5.0e-5
