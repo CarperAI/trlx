@@ -83,7 +83,7 @@ class AccelerateRLModel(BaseRLModel):
                 },
             )
         # this is fine for low-memory finetuning
-        for name, param in model.named_parameters():
+        for name, param in self.model.named_parameters():
             if True in [i in name for i in ["bias", "layernorm", "ln"]]:
                 param.requires_grad = True
             else:
