@@ -224,7 +224,7 @@ class CausalLMWithValueHead(nn.Module):
     a secondary, scalar head.
     """
 
-    def __init__(self, config: Union[transformers.PretrainedConfig, str]), torch_dtype: str = "float32":
+    def __init__(self, config: Union[transformers.PretrainedConfig, str]):
         super().__init__()
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
