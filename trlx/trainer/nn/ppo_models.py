@@ -302,6 +302,8 @@ class CausalLMHydraWithValueHead(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
+        pre_seq_len: int = 0,
+        tuning_mode: str = ""
     ):
         super().__init__()
 
@@ -313,7 +315,6 @@ class CausalLMHydraWithValueHead(nn.Module):
             self.base_model = transformers.AutoModelForCausalLM.from_config(config)
 
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
-        self.base_model.lm_head = hf_get_lm_head(self.base_model)
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
@@ -327,9 +328,12 @@ class CausalLMHydraWithValueHead(nn.Module):
                 lm_head=self.base_model.lm_head,
             )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_transformer_args = inspect.getfullargspec(
-            self.base_model.transformer.forward
-        ).args
+        if self.config.name_or_path.find("petals") != -1:
+            self.base_model_transformer_args = ["input_ids"]
+        else:
+            self.base_model_transformer_args = inspect.getfullargspec(
+                self.base_model.transformer.forward
+            ).args
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
