@@ -290,7 +290,7 @@ class AccelerateRLModel(BaseRLModel):
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
-                        # self.save() # this uses so much vram that I can do a full run of an 800m model on colab and then this crashes it and loses all progress
+                        self.save()
                         return self.evaluate()
 
                 self.post_backward_callback()
