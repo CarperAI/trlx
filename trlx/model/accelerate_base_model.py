@@ -167,9 +167,11 @@ class AccelerateRLModel(BaseRLModel):
                     value=pad_token,
                 )
             )
-            prompts_sizes.append(
-                torch.as_tensor(prompts.input_ids.shape[1], device=samples.device)
+            sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
+                len(prompts.input_ids)
             )
+            prompts_sizes.append(sizes.to(samples.device))
+
         stats["generate_time"] = time() - generate_time
 
         samples = self.accelerator.gather(torch.vstack(all_samples))
