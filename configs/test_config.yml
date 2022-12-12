@@ -3,7 +3,7 @@ model:
   tokenizer_path: "gpt2"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
   num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
-
+  dtype: "float32" # Floating point data type to load model in
 train:
   seq_length: 64  # Size of LM context
   epochs: 100  # Train for max(epochs, total_steps)
