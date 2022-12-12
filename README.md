@@ -27,11 +27,9 @@ model = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for s
 model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
-#### Using a reward-labeled dataset and bitfit
-strays from [bitfit](https://arxiv.org/abs/2106.10199) a little, this is tuning biases and layernorms, keeps the model closer to original while also reducing memory requirements
-todo: add as a param in the yaml config instead
+#### Tuning only Biases and LayerNorm params
 ```python
-model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)], bitfit=True)
+model = trlx.train('EleutherAI/gpt-j-6B', ..., min_param_tune=True)
 ```
 
 #### Trained model is a wrapper over a given autoregressive model
