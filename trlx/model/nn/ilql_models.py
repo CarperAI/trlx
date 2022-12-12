@@ -187,7 +187,7 @@ class CausalLMWithValueHeads(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         ilql_config: ILQLConfig,
-        torch_dtype: str = "float32",
+        torch_dtype: Union[torch.dtype, str] = torch.float32,
         num_layers_unfrozen=-1,
     ):
         super().__init__()
@@ -204,11 +204,12 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self.config = config
         
-        torch_dtype = {
-            'float16': torch.float16,
-            'float32': torch.float32,
-            'bfloat16': torch.bfloat16
-        }[torch_dtype]
+        if type(torch_dtype) == str:
+            torch_dtype = {
+                'float16': torch.float16,
+                'float32': torch.float32,
+                'bfloat16': torch.bfloat16
+            }[torch_dtype]
         
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
