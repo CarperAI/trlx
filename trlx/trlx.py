@@ -16,7 +16,7 @@ def train(
     config: Optional[TRLConfig] = None,
     split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
-    min_param_tune = Optional[bool] = False,
+    min_param_tune: Optional[bool] = False,
 ):
     """
     Dispatches online or offline reinforcement training depending on whether a reward function or a list of samples & rewards is given
