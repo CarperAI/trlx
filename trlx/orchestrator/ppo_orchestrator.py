@@ -3,6 +3,7 @@ from typing import Callable, Optional
 
 import ray
 import torch
+from tqdm import trange
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
@@ -63,6 +64,7 @@ class PPOOrchestrator(Orchestrator):
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+        num_rollout_pbar = trange(num_rollouts, desc="Get rollouts")
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:

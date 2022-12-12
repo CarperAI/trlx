@@ -316,6 +316,7 @@ class CausalLMHydraWithValueHead(nn.Module):
 
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+        self.v_head.type(self.config.torch_dtype)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:

@@ -7,10 +7,10 @@ model:
   tuning_mode: "ptune"
 
 train:
-  seq_length: 48  # Size of LM context
+  seq_length: 16  # Size of LM context
   epochs: 100 # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
-  batch_size: 4  # batch size
+  batch_size: 16  # batch size
 
   lr_init: 1.0e-4  # init learning rate
   lr_target: 1.0e-4  # target final learning rate
@@ -26,8 +26,8 @@ train:
 
 method:
   name: 'ppoconfig'  # Name of RL method config
-  num_rollouts: 16  # Number of rollouts to collect per epoch
-  chunk_size: 16  # Number of rollouts to collect in one loop of orchestrator
+  num_rollouts: 64  # Number of rollouts to collect per epoch
+  chunk_size: 4  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs: 4  # Number of ppo epochs
   init_kl_coef: 0.05  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef
@@ -42,8 +42,8 @@ method:
   ref_std: null # rescale rewards with this deviation
   cliprange_reward: 10
   gen_kwargs:
-    max_length: 48  # LM max sample gen length
-    min_length: 48  # LM min sample gen length
+    max_length: 16  # LM max sample gen length
+    min_length: 16  # LM min sample gen length
     top_k: null  # top k
     top_p: 1.0  # top p
     do_sample: True  # sample
