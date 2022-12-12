@@ -204,6 +204,12 @@ class CausalLMWithValueHeads(nn.Module):
         else:
             self.config = config
         
+        torch_dtype = {
+            'float16': torch.float16,
+            'float32': torch.float32,
+            'bfloat16': torch.bfloat16
+        }[torch_dtype]
+        
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
             torch_dtype=torch_dtype
