@@ -186,7 +186,6 @@ class CausalLMWithValueHeads(nn.Module):
     def __init__(
         self,
         config: Union[transformers.PretrainedConfig, str],
-        torch_dtype: str = "float32",
         ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):
@@ -206,7 +205,7 @@ class CausalLMWithValueHeads(nn.Module):
         
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
-            torch_dtype=torch_dtype
+            torch_dtype=self.config.model.dtype
         )
         
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
