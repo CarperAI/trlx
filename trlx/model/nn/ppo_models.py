@@ -297,6 +297,7 @@ class CausalLMHydraWithValueHead(nn.Module):
     def __init__(
         self,
         config: Union[transformers.PretrainedConfig, str],
+        torch_dtype: str = "float32",
         num_layers_unfrozen: int = -1,
     ):
         super().__init__()
@@ -305,7 +306,8 @@ class CausalLMHydraWithValueHead(nn.Module):
         else:
             self.config = config
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path
+            self.config.name_or_path,
+            torch_dtype=torch_dtype
         )
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
