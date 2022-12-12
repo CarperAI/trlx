@@ -232,7 +232,7 @@ class CausalLMWithValueHead(nn.Module):
             self.config = config
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
-            torch_dtype=torch_dtype
+            torch_dtype=self.config.model.dtype
         )
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
