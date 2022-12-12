@@ -5,7 +5,7 @@ model:
   num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
 
 train:
-  seq_length: 64  # Size of LM context
+  seq_length: 48  # Size of LM context
   epochs: 100 # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
@@ -40,7 +40,7 @@ method:
   ref_std: null # rescale rewards with this deviation
   cliprange_reward: 10 # clip reward into (-clip, clip) range
   gen_kwargs:
-    max_new_tokens: 24 # model will generate at most this many tokens during rollouts
+    max_new_tokens: 40 # model will generate at most this many tokens during rollouts
     top_k: 0  # top k
     top_p: 1.0  # top p
     do_sample: True  # sample
