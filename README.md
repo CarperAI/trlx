@@ -29,6 +29,7 @@ model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 
 
 #### Using a reward-labeled dataset and bitfit
 strays from [bitfit](https://arxiv.org/abs/2106.10199) a little, this is tuning biases and layernorms, keeps the model closer to original while also reducing memory requirements
+todo: add as a param in the yaml config instead
 ```python
 model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)], bitfit=True)
 ```
