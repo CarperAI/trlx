@@ -10,7 +10,7 @@ train:
   epochs: 100 # Train for max(epochs, total_steps)
   total_steps: 10000  # Train for max(epochs, total_steps)
   batch_size: 128  # batch size
-  accumulate_steps: 1 # accumulation steps
+  gradient_accumulation_steps: 1 # accumulation steps
 
   lr_init: 1.0e-4  # init learning rate
   lr_target: 1.0e-4  # target final learning rate
