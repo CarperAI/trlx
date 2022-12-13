@@ -56,7 +56,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def get_arch(self, config: TRLConfig):
         return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen, config.model.pre_seq_len, config.model.tuning_mode
+            config.model.model_path,
+            config.model.num_layers_unfrozen,
         )
 
     def get_model_inputs(

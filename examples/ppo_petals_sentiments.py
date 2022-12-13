@@ -7,7 +7,8 @@ from typing import List
 import torch
 import yaml
 from datasets import load_dataset
-from transformers import pipeline
+from transformers import pipeline, PretrainedConfig
+from petals.client import DistributedBloomForCausalLM
 
 import trlx
 from trlx.data.configs import TRLConfig
@@ -19,6 +20,15 @@ def get_positive_score(scores):
 
 
 default_config = yaml.safe_load(open("configs/ppo_petals_config.yml"))
+
+
+def provide_model(config: PretrainedConfig):
+    model = DistributedBloomForCausalLM.from_pretrained(
+        self.config.name_or_path,
+        pre_seq_len=self.config.pre_seq_len,
+        tuning_mode=self.config.tuning_mode,
+    )
+    return model
 
 
 def main(hparams={}):

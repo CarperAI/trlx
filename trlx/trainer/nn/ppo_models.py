@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, Callable
 
 import numpy as np
 import torch
@@ -27,6 +27,10 @@ from trlx.utils.modeling import (
 )
 
 # KL Controllers
+
+TMODEL_PROVIDER = Callable[
+    [transformers.PretrainedConfig], transformer.AutoModelForCausalLM
+]
 
 
 class AdaptiveKLController:
@@ -302,8 +306,9 @@ class CausalLMHydraWithValueHead(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
+        base_model_provider: Optional[TMODEL_PROVIDER] = None,
         pre_seq_len: int = 0,
-        tuning_mode: str = ""
+        tuning_mode: str = "",
     ):
         super().__init__()
 
@@ -314,9 +319,21 @@ class CausalLMHydraWithValueHead(nn.Module):
             self.config = config
             self.base_model = transformers.AutoModelForCausalLM.from_config(config)
 
+
+        if base_model_provider is not None:
+            self.base_model = base_model_provider(config)
+        else:
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
+                self.config.name_or_path
+            )
+
+        if not hasattr(self.base_model, "lm_head"):
+            self.base_model.lm_head = hf_get_lm_head(self.base_model)
+
+        self.v_head = make_head(
+            hf_get_hidden_size(self.config), 1, type=self.config.torch_dtype
+        )
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
-        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
-        self.v_head.type(self.config.torch_dtype)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
