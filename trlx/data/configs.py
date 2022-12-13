@@ -67,8 +67,8 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
     
-    :param accumulate_steps: How many forward calls before the optimizer takes a step
-    :type accumulate_steps: int
+    :param gradient_accumulation_steps: How many forward calls before the optimizer takes a step
+    :type gradient_accumulation_steps: int
 
     :param lr_init: Initial learning rate value
     :type lr_init: float
@@ -114,7 +114,7 @@ class TrainConfig:
     seq_length: int
     epochs: int
     batch_size: int
-    accumulate_steps: int
+    gradient_accumulation_steps: int
 
     lr_init: float
     lr_target: float
