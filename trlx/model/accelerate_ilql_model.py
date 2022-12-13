@@ -36,7 +36,6 @@ class AccelerateILQLModel(AccelerateRLModel):
         return CausalLMWithValueHeads(
             config.model.model_path,
             ilql_config=config.method,
-            torch_dtype=config.model.dtype,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
 
