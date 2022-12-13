@@ -45,13 +45,7 @@ class AccelerateRLModel(BaseRLModel):
         self.max_length = config.train.seq_length
 
         # Retrieves model equipped for ppo, ilql, etc
-        torch_dtype = {
-            "float32": torch.float32,
-            "float16": torch.float16,
-            "bfloat16": torch.bfloat16
-        }[self.config.model.dtype]
-        
-        self.model = self.get_arch(self.config).to(torch_dtype)
+        self.model = self.get_arch(self.config)
         freeze_bottom_causal_layers(
             self.model.base_model, self.config.model.num_layers_unfrozen
         )
