@@ -128,9 +128,14 @@ class PPOOrchestrator(Orchestrator):
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
             )
-            values = values[:, :-1]
 
             n = samples.shape[0]
+            values = values.cpu()[:, :-1]
+            logprobs = logprobs.cpu()
+            ref_logprobs = ref_logprobs.cpu()
+            query_tensors = query_tensors.cpu()
+            response_tensors = response_tensors.cpu()
+
             start = query_tensors.shape[1] - 1
             ends = start + attention_mask[:, start:].sum(1)
             all_values = [values[ix, start : ends[ix]] for ix in range(n)]
@@ -144,9 +149,6 @@ class PPOOrchestrator(Orchestrator):
                 rs = rewards[ix][start : ends[ix]]
                 rs[-1] = scores[ix]
                 all_rewards[ix] = rs
-
-            query_tensors = query_tensors.cpu()
-            response_tensors = response_tensors.cpu()
 
             new_ppo_rl_elements = [
                 PPORLElement(
