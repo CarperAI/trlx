@@ -1,20 +1,17 @@
 import importlib
-import sys
+import json
 import os
+import sys
 from abc import abstractmethod
 from time import time
 from typing import Any, Dict, Iterable, Sequence, Tuple, Union
 
-import json
 import torch
 import torch.nn.functional as F
-from accelerate import Accelerator  # type: ignore
 from transformers import AutoTokenizer
 
 import wandb
-from trlx.data.configs import TRLConfig
-from trlx.model import BaseRLModel, register_model
-from trlx.utils.modeling import freeze_bottom_causal_layers
+from accelerate import Accelerator  # type: ignore
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -24,7 +21,17 @@ else:
 import ray
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
-from trlx.utils import filter_non_scalars, get_distributed_config, get_git_tag
+
+from trlx.data.configs import TRLConfig
+from trlx.model import BaseRLModel, register_model
+from trlx.utils import (
+    filter_non_scalars,
+    get_optimizer_class,
+    get_scheduler_class,
+    get_distributed_config,
+    get_git_tag,
+)
+from trlx.utils.modeling import freeze_bottom_causal_layers
 
 
 @register_model
@@ -82,18 +89,14 @@ class AccelerateRLModel(BaseRLModel):
                 },
             )
 
-        self.opt = torch.optim.AdamW(
+        self.opt = get_optimizer_class(config.optimizer.name)(
             self.model.parameters(),
-            lr=self.config.train.lr_init,
-            betas=self.config.train.opt_betas,
-            eps=self.config.train.opt_eps,
-            weight_decay=self.config.train.weight_decay,
+            **config.optimizer.kwargs,
         )
 
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        self.scheduler = get_scheduler_class(config.scheduler.name)(
             self.opt,
-            self.config.train.total_steps,
-            eta_min=self.config.train.lr_target,
+            **config.scheduler.kwargs,
         )
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):

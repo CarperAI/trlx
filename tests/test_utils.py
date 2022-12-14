@@ -1,8 +1,42 @@
-import accelerate
 import pytest
+import torch
 import transformers
 
+import accelerate
+import trlx.utils as utils
 import trlx.utils.modeling as modeling_utils
+
+# Test general utils
+
+
+@pytest.mark.parametrize(
+    "optimizer_name",
+    [o.value for o in utils.OptimizerNames],
+)
+def test_optimizer_class_getters(optimizer_name: str):
+    try:
+        _class = utils.get_optimizer_class(optimizer_name)
+    except Exception as e:
+        assert False, "Failed to get optimizer class with error: " + str(e)
+
+    # Hard-check for one of the optimizers
+    _class = utils.get_optimizer_class("adamw")
+    assert _class == torch.optim.AdamW
+
+
+@pytest.mark.parametrize(
+    "scheduler_name",
+    [o.value for o in utils.SchedulerNames],
+)
+def test_scheduler_class_getters(scheduler_name: str):
+    try:
+        _class = utils.get_scheduler_class(scheduler_name)
+    except Exception as e:
+        assert False, "Failed to get scheduler class with error: " + str(e)
+
+    # Hard-check for one of the schedulers
+    _class = utils.get_scheduler_class("cosine_annealing")
+    assert _class == torch.optim.lr_scheduler.CosineAnnealingLR
 
 
 # Test modeling utils
