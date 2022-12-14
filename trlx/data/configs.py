@@ -4,18 +4,17 @@ from typing import Any, Dict, Optional, Tuple, Set
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
+import os
 
 
-def merge(base: Dict, update: Dict) -> Dict:
+def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     "Recursively updates a nested dictionary with new values"
     for k, v in base.items():
-        if k not in update:
-            continue
-
         if isinstance(v, dict):
-            base[k] = merge(v, update[k])
-        else:
+            base[k] = merge(v, update, updated)
+        elif k in update:
             base[k] = update[k]
+            updated.add(k)
 
     return base
 
@@ -182,5 +181,13 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig, config):
-        merged = merge(baseconfig, config)
+        updates = set()
+        merged = merge(baseconfig, config, updates)
+
+        for param in config:
+            if param not in updates:
+                raise ValueError(
+                    f"parameter {param} is not present in the config (typo or a wrong config)"
+                )
+
         return cls.from_dict(merged)
