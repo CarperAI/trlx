@@ -12,11 +12,9 @@ def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     for k, v in base.items():
         if isinstance(v, dict):
             base[k] = merge(v, update, updated)
-
-        for kk, vv in update.items():
-            if k == kk:
-                base[k] = vv
-                updated.add(k)
+        elif k in update:
+            base[k] = update[k]
+            updated.add(k)
 
     return base
 
