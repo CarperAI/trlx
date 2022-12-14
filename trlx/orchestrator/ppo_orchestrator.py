@@ -140,7 +140,6 @@ class PPOOrchestrator(Orchestrator):
             ends = start + attention_mask[:, start:].sum(1)
             all_values = [values[ix, start : ends[ix]] for ix in range(n)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
-            all_ref_logprobs = [ref_logprobs[ix, start : ends[ix]] for ix in range(n)]
 
             # Compute rewards
             rewards = -self.rl_model.kl_ctl.value * (logprobs - ref_logprobs)
