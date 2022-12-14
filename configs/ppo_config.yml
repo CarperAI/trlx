@@ -49,7 +49,6 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 40
-    min_length: 48
     top_k: 0
     top_p: 1.0
     do_sample: True

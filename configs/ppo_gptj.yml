@@ -9,7 +9,6 @@ train:
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
-  entity_name: "jon-tow"
 
 model:
   model_type: "AcceleratePPOModel"
