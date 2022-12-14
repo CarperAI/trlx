@@ -33,7 +33,7 @@ method:
   steps_for_target_q_sync: 5
   two_qs: true
   gen_kwargs:
-    max_new_tokens: 24
+    max_new_tokens: 56
     top_k: 20
     beta: 4
     temperature: 1.0
