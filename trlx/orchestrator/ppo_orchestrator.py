@@ -79,7 +79,7 @@ class PPOOrchestrator(Orchestrator):
                 samples, skip_special_tokens=True
             )
             exp_score_time = time()
-            scores = torch.as_tensor(self.score(texts), device=samples.device)
+            scores = torch.tensor(self.score(texts), device=samples.device)
             stats["exp_score_time"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
@@ -105,7 +105,7 @@ class PPOOrchestrator(Orchestrator):
                 query_tensors.to(response_tensors.device), response_tensors
             )
             with torch.no_grad():
-                logits, *_, v = self.rl_model.model(
+                logits, *_, values = self.rl_model.model(
                     all_tokens, attention_mask=attention_mask, position_ids=position_ids
                 )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
@@ -122,43 +122,45 @@ class PPOOrchestrator(Orchestrator):
                         attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),
                     )
+                    ref_logits = ref_logits.to(self.rl_model.accelerator.device)
 
-            ref_logits = ref_logits.to(self.rl_model.accelerator.device)
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
             )
-            start = query_tensors.size()[1] - 1
-            end = query_tensors.size()[1] + response_tensors.size()[1] - 1
-            all_values = v[:, start:end]
-            all_logprobs = logprobs[:, start:end]
-            all_ref_logprobs = ref_logprobs[:, start:end]
+            values = values[:, :-1]
+
+            n = samples.shape[0]
+            start = query_tensors.shape[1] - 1
+            ends = start + attention_mask[:, start:].sum(1)
+            all_values = [values[ix, start : ends[ix]] for ix in range(n)]
+            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+            all_ref_logprobs = [ref_logprobs[ix, start : ends[ix]] for ix in range(n)]
 
             # Compute rewards
-            kls = all_logprobs - all_ref_logprobs
-            non_score_rewards = -self.rl_model.kl_ctl.value * kls
-            all_rewards = non_score_rewards.clone()
-            all_rewards[:, -1] += scores.to(self.rl_model.accelerator.device)
+            rewards = -self.rl_model.kl_ctl.value * (logprobs - ref_logprobs)
+            all_rewards = [None] * n
+            for ix in range(n):
+                rs = rewards[ix][start : ends[ix]]
+                rs[-1] = scores[ix]
+                all_rewards[ix] = rs
 
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
-            all_logprobs = all_logprobs.cpu()
-            all_values = all_values.cpu()
-            all_rewards = all_rewards.cpu()
-
-            exp_time = clock.tick()
 
             new_ppo_rl_elements = [
                 PPORLElement(
-                    query_tensor=query_tensors[i, :],
-                    response_tensor=response_tensors[i, :],
-                    logprobs=all_logprobs[i, :],
-                    values=all_values[i, :],
-                    rewards=all_rewards[i, :],
+                    query_tensor=query_tensors[i],
+                    response_tensor=response_tensors[i],
+                    logprobs=all_logprobs[i],
+                    values=all_values[i],
+                    rewards=all_rewards[i],
                 )
-                for i in range(query_tensors.size()[0])
+                for i in range(n)
             ]
+
             ppo_rl_elements += new_ppo_rl_elements
+            exp_time = clock.tick()
 
         stats["kl_ctl_value"] = self.rl_model.kl_ctl.value
         stats["exp_time"] = exp_time

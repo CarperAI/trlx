@@ -81,7 +81,8 @@ class AcceleratePPOModel(AccelerateRLModel):
         old_values = batch.values.to(self.accelerator.device)
         old_rewards = batch.rewards.to(self.accelerator.device)
 
-        response_length = response_tensors.shape[-1]
+        response_length = old_rewards.shape[1]
+
         advantages, returns = self.config.method.get_advantages_and_returns(
             old_values, old_rewards, response_length
         )
@@ -89,15 +90,21 @@ class AcceleratePPOModel(AccelerateRLModel):
         tokens, attention_mask, position_ids = self.get_model_inputs(
             query_tensors, response_tensors
         )
+
         logits, *_, values_pred = self.model(
             tokens, attention_mask=attention_mask, position_ids=position_ids
         )
+        values_pred = values_pred[:, :-1]
         logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+        attention_mask = attention_mask[:, :-1]
+
         # Only the response part of the values/logprobs is needed
+        start = query_tensors.shape[1] - 1
+        end = start + response_length
         logprobs, values_pred, mask = (
-            logprobs[:, -response_length:],
-            values_pred[:, -response_length:],
-            attention_mask[:, -response_length:],
+            logprobs[:, start:end],
+            values_pred[:, start:end],
+            attention_mask[:, start:end],
         )
 
         loss, stats = self.config.method.loss(
