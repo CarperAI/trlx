@@ -97,12 +97,12 @@ class BaseRLModel:
 
     @abstractmethod
     def save(self, directory=None):
-        """Create checkpoint of model"""
+        """Creates a checkpoint of training states"""
         pass
 
     @abstractmethod
     def load(self, directory=None):
-        """Load Checkpoints for model"""
+        """Loads a checkpoint created from `save`"""
         pass
 
     def intervals(self, steps: int) -> Dict[str, bool]:
