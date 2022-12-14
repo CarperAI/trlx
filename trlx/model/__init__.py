@@ -96,41 +96,14 @@ class BaseRLModel:
         pass
 
     @abstractmethod
-    def get_components(self) -> Dict[str, Any]:
-        """
-        Get pytorch components (mainly for saving/loading)
-        """
+    def save(self, directory=None):
+        """Create checkpoint of model"""
         pass
 
-    def save(self, fp: str, title: str = "OUT"):
-        """
-        Try to save all components to specified path under a folder with given title
-        """
-        path = os.path.join(fp, title)
-        safe_mkdir(path)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                torch.save(components[name], os.path.join(path, name) + ".pt")
-            except:
-                print(f"Failed to save component: {name}, continuing.")
-
-    def load(self, fp: str, title: str = "OUT"):
-        """
-        Try to load all components from specified path under a folder with given title
-        """
-
-        path = os.path.join(fp, title)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                components[name] = torch.load(
-                    os.path.join(path, name) + ".pt", map_location="cpu"
-                )
-            except:
-                print(f"Failed to load component: {name}, continuing.")
+    @abstractmethod
+    def load(self, directory=None):
+        """Load Checkpoints for model"""
+        pass
 
     def intervals(self, steps: int) -> Dict[str, bool]:
         """
