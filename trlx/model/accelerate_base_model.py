@@ -140,6 +140,10 @@ class AccelerateRLModel(BaseRLModel):
         """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
+    def load(self, directory=None):
+        """load checkpoint of optimizer, scheduler and a model"""
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir)
+
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
         self.eval_pipeline = eval_pipeline
