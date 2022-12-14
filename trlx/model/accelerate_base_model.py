@@ -128,17 +128,13 @@ class AccelerateRLModel(BaseRLModel):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def get_components(self) -> Dict[str, Any]:
-        components = (
-            {"model": self.model, "opt": self.opt, "scheduler": self.scheduler}
-            if self.train_mode
-            else {"model": self.model}
-        )
-        return components
-
     def save(self, directory=None):
         """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+
+    def load(self, directory=None):
+        """Load checkpoint of optimizer, scheduler and a model"""
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
