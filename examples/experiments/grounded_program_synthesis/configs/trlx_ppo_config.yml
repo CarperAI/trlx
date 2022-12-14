@@ -1,47 +1,55 @@
-model:
-  model_path: "reshinthadith/codegen_350M_list_manip_5_len"  # Name of hf model to load
-  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"  # Name of hf tokenizer to load
-  model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
-  num_layers_unfrozen: 2  # Number of bottom layers to freeze during training
-
 train:
-  seq_length: 256  # Size of LM context
-  epochs: 10  # Train for max(epochs, total_steps)
-  total_steps: 80000  # Train for max(epochs, total_steps)
-  batch_size: 8  # batch size
+  seq_length: 256
+  epochs: 10
+  total_steps: 80000
+  batch_size: 8
 
-  lr_init: 1.412e-4  # init learning rate
-  lr_target: 1.412e-4  # target final learning rate
-  opt_betas: [0.9, 0.95] # adam betas
-  opt_eps: 1.0e-8  # adam eps
-  weight_decay: 1.0e-6  # weight decay param
+  checkpoint_interval: 1000000
+  eval_interval: 16
 
-  checkpoint_interval: 1000000  # checkpoint interval
-  eval_interval: 16  # eval interval
+  pipeline: "PromptPipeline"
+  orchestrator: "PPOOrchestrator"
 
-  pipeline: "PromptPipeline"  # prompt pipeline to load
-  orchestrator: "PPOOrchestrator"  # orchestrator to load
+model:
+  model_type: "AcceleratePPOModel"
+  model_path: "reshinthadith/codegen_350M_list_manip_5_len"
+  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"
+  num_layers_unfrozen: 2
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 1.412e-4
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 80000 # train.total_steps
+    eta_min: 1.412e-4
 
 method:
-  name: 'ppoconfig'  # Name of RL method config
-  num_rollouts: 8  # Number of rollouts to collect per epoch
-  chunk_size: 8  # Number of rollouts to collect in one loop of orchestrator
-  ppo_epochs: 4  # Number of ppo epochs
-  init_kl_coef: 0.2  # init kl coefficient
-  target: 6  # target kl coefficient
-  horizon: 10000  # PPO horizon
-  gamma: 1  # PPO discount
-  lam: 0.95  # PPO lambda
-  cliprange: 0.2  # clip range
-  cliprange_value: 0.2  # clip range
-  vf_coef: 0.2  # value term weight
-  scale_reward: False # False|"ref"|"running" estimate against which to scale rewards
+  name: "ppoconfig"
+  num_rollouts: 8
+  chunk_size: 8
+  ppo_epochs: 4
+  init_kl_coef: 0.2
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 0.2
+  scale_reward: False
   cliprange_reward: 10
   ref_mean: null
   ref_std: null
   gen_kwargs:
-    max_new_tokens: 256 # model will generate at most this many tokens during rollouts
-    top_k: 0.0  # top k
-    top_p: 0.7  # top p
-    do_sample: True  # sample
+    max_new_tokens: 256
+    top_k: 0
+    top_p: 0.7
+    do_sample: True
     temperature: 0.5

@@ -1,6 +1,7 @@
 import os
 import random
 import time
+from enum import Enum
 from functools import reduce
 from typing import Any, Iterable, List, Dict
 from dataclasses import is_dataclass
@@ -84,6 +85,50 @@ def get_distributed_config(accelerator: Accelerator):
         )
 
     return dist_config
+
+
+class OptimizerNames(Enum):
+    """Supported optimizer names"""
+
+    ADAM: str = "adam"
+    ADAMW: str = "adamw"
+    SGD: str = "sgd"
+
+
+def get_optimizer_class(name: str):
+    """
+    Returns the optimizer class with the given name
+    """
+    if name == OptimizerNames.ADAM.value:
+        return torch.optim.Adam
+    if name == OptimizerNames.ADAMW.value:
+        return torch.optim.AdamW
+    if name == OptimizerNames.SGD.value:
+        return torch.optim.SGD
+    supported_optimizers = [o.value for o in OptimizerNames]
+    raise ValueError(
+        f"`{name}` is not a supported optimizer. "
+        f"Supported optimizers are: {supported_optimizers}"
+    )
+
+
+class SchedulerNames(Enum):
+    """Supported scheduler names"""
+
+    COSINE_ANNEALING: str = "cosine_annealing"
+
+
+def get_scheduler_class(name: str):
+    """
+    Returns the scheduler class with the given name
+    """
+    if name == SchedulerNames.COSINE_ANNEALING.value:
+        return torch.optim.lr_scheduler.CosineAnnealingLR
+    supported_schedulers = [s.value for s in SchedulerNames]
+    raise ValueError(
+        f"`{name}` is not a supported scheduler. "
+        f"Supported schedulers are: {supported_schedulers}"
+    )
 
 
 # Stats
