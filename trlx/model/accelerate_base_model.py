@@ -202,9 +202,7 @@ class AccelerateRLModel(BaseRLModel):
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                rewards = torch.as_tensor(
-                    self.reward_fn(str_samples), dtype=torch.float
-                )
+                rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)

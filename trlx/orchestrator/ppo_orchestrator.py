@@ -79,7 +79,9 @@ class PPOOrchestrator(Orchestrator):
                 samples, skip_special_tokens=True
             )
             exp_score_time = time()
-            scores = torch.tensor(self.score(texts), device=samples.device)
+            scores = torch.tensor(
+                self.score(texts), device=samples.device, dtype=torch.float
+            )
             stats["exp_score_time"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
