@@ -47,13 +47,18 @@ def train(
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
-        pipeline = get_pipeline(config.train.pipeline)(prompts, model.tokenizer)
+        max_prompt_length = (
+            config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+        )
+        pipeline = get_pipeline(config.train.pipeline)(
+            prompts, max_prompt_length, model.tokenizer
+        )
         orch = get_orchestrator(config.train.orchestrator)(
             model, pipeline, reward_fn=reward_fn, chunk_size=config.method.chunk_size
         )
         orch.make_experience(config.method.num_rollouts)
         eval_pipeline = get_pipeline(config.train.pipeline)(
-            eval_prompts, model.tokenizer
+            eval_prompts, max_prompt_length, model.tokenizer
         )
         model.add_eval_pipeline(eval_pipeline)
 
@@ -79,10 +84,14 @@ def train(
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
+        max_prompt_length = (
+            config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+        )
+
         if eval_prompts is None:
             eval_prompts = [model.tokenizer.bos_token] * batch_size
         eval_pipeline = get_pipeline(config.train.pipeline)(
-            eval_prompts, model.tokenizer
+            eval_prompts, max_prompt_length, model.tokenizer
         )
 
         orch = get_orchestrator(config.train.orchestrator)(

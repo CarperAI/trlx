@@ -48,9 +48,8 @@ method:
   ref_mean: null
   ref_std: null
   gen_kwargs:
-    max_length: 256
-    min_length: 48
-    top_k: 0.0
+    max_new_tokens: 256
+    top_k: 0
     top_p: 0.7
     do_sample: True
     temperature: 0.5
