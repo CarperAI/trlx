@@ -171,7 +171,7 @@ class AccelerateRLModel(BaseRLModel):
             )
             prompts_sizes.append(sizes.to(samples.device))
 
-        stats["generate_time"] = time() - generate_time
+        stats["time/generate"] = time() - generate_time
 
         samples = self.accelerator.gather(torch.vstack(all_samples))
         prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
@@ -206,14 +206,14 @@ class AccelerateRLModel(BaseRLModel):
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
-                stats["mean_reward"] = mean_reward
+                stats["reward/mean"] = mean_reward
                 print(f"{mean_reward=}")
 
             # additionally log any other metrics
             if self.metric_fn:
                 metric_time = time()
                 metrics = self.metric_fn(str_samples)
-                stats["metric_time"] = time() - metric_time
+                stats["time/metric"] = time() - metric_time
 
                 mean_metrics = {
                     f"metrics/{k}": torch.as_tensor(xs).mean(-1)
@@ -279,8 +279,8 @@ class AccelerateRLModel(BaseRLModel):
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
                         self.save()
 
-                    stats["forward_time"] = forward_time
-                    stats["backward_time"] = backward_time
+                    stats["time/forward"] = forward_time
+                    stats["time/backward"] = backward_time
 
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()

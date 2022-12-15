@@ -71,7 +71,7 @@ class PPOOrchestrator(Orchestrator):
 
             exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
-            stats["exp_generate_time"] = time() - exp_generate_time
+            stats["time/exp_generate"] = time() - exp_generate_time
 
             query_tensors = batch.input_ids
             response_tensors = samples[:, query_tensors.shape[1] :]
@@ -82,16 +82,16 @@ class PPOOrchestrator(Orchestrator):
             scores = torch.tensor(
                 self.score(texts), device=samples.device, dtype=torch.float
             )
-            stats["exp_score_time"] = time() - exp_score_time
+            stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running.update(scores)
-            stats["exp_scores_mean"] = all_scores_mean
-            stats["exp_scores_std"] = all_scores_std
-            stats["running_mean"] = self.running.mean
-            stats["running_std"] = self.running.std
+            stats["exp_scores/mean"] = all_scores_mean
+            stats["exp_scores/std"] = all_scores_std
+            stats["exp_scores/running_mean"] = self.running.mean
+            stats["exp_scores/running_std"] = self.running.std
 
             if self.rl_model.config.method.scale_reward == "running":
                 scores /= self.running.std
@@ -166,7 +166,7 @@ class PPOOrchestrator(Orchestrator):
             exp_time = clock.tick()
 
         stats["kl_ctl_value"] = self.rl_model.kl_ctl.value
-        stats["exp_time"] = exp_time
+        stats["time/exp"] = exp_time
 
         if not ray.is_initialized():
             self.rl_model.accelerator.log(stats, step=iter_count)
