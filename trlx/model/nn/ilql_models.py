@@ -65,8 +65,8 @@ class ILQLConfig(MethodConfig):
             .gather(dim=1, index=labels.actions_ixs)
             .unsqueeze(-1)
         )
-        bsize, ntokens, dsize = logits.shape
-
+        bsize, _, dsize = logits.shape
+        ntokens = labels.states_ixs.shape[1]
         Q = [q.gather(-1, actions).squeeze(-1) for q in qs]
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
@@ -110,10 +110,19 @@ class ILQLConfig(MethodConfig):
             f"{logits.shape=} {labels.input_ids.shape=} {labels.actions_ixs.shape=} {labels.states_ixs.shape=}"
         )
 
+        print(f"{labels.states_ixs.shape=}")
+        print(f"{labels.states_ixs=}")
+        states_logits = logits.gather(
+            1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, logits.shape[-1])
+        )
+        actual_states = labels.input_ids.gather(1, index=labels.states_ixs)
+
+        print(f"{states_logits.shape=} {actual_states.shape=}")
+
         loss_awac = (
             F.cross_entropy(
-                logits[:, :-1, :].reshape(-1, dsize),
-                labels.input_ids[:, 1:].reshape(-1),
+                states_logits[:, :-1, :].reshape(-1, dsize),
+                actual_states[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
             * labels.attention_mask[:, 1:]
@@ -166,10 +175,10 @@ class ILQLHeads(nn.Module):
         if states_ixs is not None:
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
+            ).contiguous()
             actions_hs = hs.gather(
                 dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
+            ).contiguous()
         else:
             states_hs = actions_hs = hs
 

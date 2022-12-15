@@ -25,6 +25,29 @@ from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
 from einops import rearrange
 
 
+class LogGPT(MegatronModule):
+    def __init__(self, language_model):
+        super().__init__()
+        self.language_model = language_model
+        self.pre_process = language_model.pre_process
+        self.post_process = language_model.post_process
+
+        if hasattr(language_model, "word_embeddings"):
+            self.word_embeddings = language_model.word_embeddings
+
+    def set_input_tensor(self, input_tensor):
+        self.language_model.set_input_tensor(input_tensor)
+
+    def word_embeddings_weight(self):
+        return self.language_model.word_embeddings_weight()
+
+    def forward(self, *args, **kwargs):
+        print(f"{kwargs['input_ids'].shape=}")
+        lm_output = self.language_model(*args, **kwargs)
+        print(f"{lm_output.shape=}")
+        return lm_output
+
+
 class LMHeads(MegatronModule):
     def __init__(self, language_model, other_heads):
         super().__init__()
@@ -117,7 +140,21 @@ class ILQLGPT(MegatronGPTModel):
                 gpt,
                 self.ilql_config.heads(self.cfg.hidden_size, self.padded_vocab_size),
             )
-        return gpt
+        else:
+            old_fwd = gpt.forward
+
+            def log_forward(*args, **kwargs):
+                input_shape = None
+                if kwargs["input_ids"] is not None:
+                    input_shape = kwargs["input_ids"].shape
+                elif gpt.language_model.encoder.input_tensor is not None:
+                    input_shape = gpt.language_model.encoder.input_tensor.shape
+                lm_output = old_fwd(*args, **kwargs)
+                print(f"gpt {lm_output.shape=} {input_shape=}")
+                return lm_output
+
+            gpt.forward = log_forward
+            return gpt
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
@@ -130,6 +167,14 @@ class ILQLGPT(MegatronGPTModel):
 
                 inputs = batch.input_ids
                 labels = batch.input_ids
+                if parallel_state.is_pipeline_first_stage(ignore_virtual=True):
+                    stage = "first"
+                elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+                    stage = "last"
+                else:
+                    stage = "middle"
+
+                print(f"{inputs.shape=} {labels.shape=}, {stage=}")
 
                 (
                     attention_mask,
@@ -175,7 +220,8 @@ class ILQLGPT(MegatronGPTModel):
             def loss_func(model_output):
                 # print("model_output", model_output)
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-                stats = {k: v.detach().item() for k, v in stats.items()}
+                stats = tree_map(lambda v: v.detach().item(), stats)
+
                 if validation_step and not self.cfg.data.get(
                     "validation_drop_last", True
                 ):
@@ -211,6 +257,7 @@ class ILQLGPT(MegatronGPTModel):
 
             def contiguous_loss(x):
                 loss, stats = loss_func(x)
+                print(f"{loss=}, {stats=}")
                 return tree_map(lambda t: t.contiguous(), loss), stats
 
             return tree_map(lambda t: t.contiguous(), model_output), contiguous_loss
