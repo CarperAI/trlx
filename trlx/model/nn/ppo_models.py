@@ -1,11 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-<<<<<<< HEAD
-from typing import Any, Dict, Optional, Tuple, Union
-=======
-from typing import Optional, Tuple, Union, List
->>>>>>> 97a3cdf (initial commit for trlx LORA support)
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import numpy as np
 import torch
@@ -632,17 +628,10 @@ class OPTModelBranch(transformers.PreTrainedModel):
 
     def __init__(
         self,
-<<<<<<< HEAD
         config: transformers.PretrainedConfig,
         transformer_blocks: nn.ModuleList,
         final_norm: nn.Module,
         lm_head: nn.Module,
-=======
-        config: Union[PretrainedConfig, str],
-        delta_method: str = None,
-        delta_modified_modules: Union[List[str], str] = None,
-        num_layers_unfrozen: int = -1,
->>>>>>> 97a3cdf (initial commit for trlx LORA support)
     ):
         super().__init__(config)
 
@@ -657,7 +646,6 @@ class OPTModelBranch(transformers.PreTrainedModel):
         self.device_map = None
         self.gradient_checkpointing = False
 
-<<<<<<< HEAD
         # Turning off grad saves memory
         for block in self.transformer_blocks:
             for parameter in block.parameters():
@@ -707,25 +695,6 @@ class OPTModelBranch(transformers.PreTrainedModel):
         if attention_mask is None:
             attention_mask = torch.ones(
                 hidden_states.shape[:2], dtype=torch.bool, device=hidden_states.device
-=======
-        if delta_method is not None:
-            self.delta_model = construct_delta_model(
-                backbone_model=self.gpt,
-                delta_method=delta_method,
-                delta_modified_modules=delta_modified_modules,
-            )
-        self.num_layers_unfrozen = num_layers_unfrozen
-        if num_layers_unfrozen > 0:
-            transformer_blocks = list(self.gpt.transformer.h)[-num_layers_unfrozen:]
-            # Retrive hf_config to init
-            hf_config = AutoConfig.from_pretrained(config)
-            hf_config.n_embd = self.n_embd
-            self.frozen_head = ModelBranch(
-                hf_config,
-                transformer_blocks,
-                self.gpt.transformer.ln_f,
-                self.gpt.lm_head,
->>>>>>> 97a3cdf (initial commit for trlx LORA support)
             )
 
         input_shape = hidden_states.size()[:-1]
