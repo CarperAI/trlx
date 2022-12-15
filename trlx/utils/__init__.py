@@ -244,4 +244,4 @@ def get_git_tag() -> str:
     """
     output = subprocess.check_output("git log --format='%h/%as' -n1".split())
     branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
-    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}".split("/")
+    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}"
