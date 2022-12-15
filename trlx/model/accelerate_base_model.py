@@ -35,6 +35,7 @@ from trlx.utils.modeling import freeze_bottom_causal_layers
 
 import bitsandbytes as bnb
 
+
 @register_model
 class AccelerateRLModel(BaseRLModel):
     """
@@ -44,7 +45,10 @@ class AccelerateRLModel(BaseRLModel):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.accelerator = Accelerator(log_with="wandb", gradient_accumulation_steps=config.train.gradient_accumulation_steps)
+        self.accelerator = Accelerator(
+            log_with="wandb",
+            gradient_accumulation_steps=config.train.gradient_accumulation_steps,
+        )
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])

@@ -104,7 +104,7 @@ class TrainConfig:
 
     :param batch_size: Batch size for training
     :type batch_size: int
-    
+
     :param gradient_accumulation_steps: How many forward calls before the optimizer takes a step
     :type gradient_accumulation_steps: int
 
