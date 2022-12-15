@@ -81,7 +81,7 @@ class AccelerateRLModel(BaseRLModel):
                     "wandb": {
                         "name": run_name,
                         "entity": self.config.train.entity_name,
-                        "tags": [get_git_tag()],
+                        "tags": get_git_tag(),
                         "mode": "disabled"
                         if os.environ.get("debug", False)
                         else "online",
