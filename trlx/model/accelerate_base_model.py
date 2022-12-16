@@ -94,10 +94,10 @@ class AccelerateRLModel(BaseRLModel):
 
     def setup_optimizer(self):
         """
-        Returns an optimizer derived from an instance's TRLConfig 
+        Returns an optimizer derived from an instance's TRLConfig
         """
-        optimizer_cls = get_optimizer_class(self.config.optimizer.name)
-        optimizer = optimizer_cls(
+        optimizer_class = get_optimizer_class(self.config.optimizer.name)
+        optimizer = optimizer_class(
             self.model.parameters(),
             **self.config.optimizer.kwargs,
         )
@@ -106,6 +106,7 @@ class AccelerateRLModel(BaseRLModel):
             # Force 32-bit `nn.Embedding` weights for stability. See discussion:
             # https://github.com/huggingface/transformers/issues/14819#issuecomment-1016017746
             from bitsandbytes.optim import GlobalOptimManager
+
             manager = GlobalOptimManager.get_instance()
             for module in self.model.modules():
                 if isinstance(module, torch.nn.Embedding):
@@ -114,13 +115,13 @@ class AccelerateRLModel(BaseRLModel):
                     )
 
         return optimizer
-    
+
     def setup_scheduler(self):
         """
         Returns a learning rate scheduler derived from an instance's TRLConfig
         """
-        scheduler_cls = get_scheduler_class(self.config.scheduler.name)
-        scheduler = scheduler_cls(self.opt, **self.config.scheduler.kwargs)
+        scheduler_class = get_scheduler_class(self.config.scheduler.name)
+        scheduler = scheduler_class(self.opt, **self.config.scheduler.kwargs)
         return scheduler
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):

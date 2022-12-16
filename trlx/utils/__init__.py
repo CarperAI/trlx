@@ -100,7 +100,7 @@ class OptimizerNames(Enum):
 def get_optimizer_class(name: str):
     """
     Returns the optimizer class with the given name
-    
+
     Args:
         name (str): Name of the optimizer as found in `OptimizerNames`
     """
@@ -111,6 +111,7 @@ def get_optimizer_class(name: str):
     if name == OptimizerNames.ADAM_8BIT_BNB.value:
         try:
             from bitsandbytes.optim import Adam8bit
+
             return Adam8bit
         except ImportError:
             raise ImportError(
@@ -120,6 +121,7 @@ def get_optimizer_class(name: str):
     if name == OptimizerNames.ADAMW_8BIT_BNB.value:
         try:
             from bitsandbytes.optim import AdamW8bit
+
             return AdamW8bit
         except ImportError:
             raise ImportError(
