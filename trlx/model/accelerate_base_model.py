@@ -45,10 +45,7 @@ class AccelerateRLModel(BaseRLModel):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.accelerator = Accelerator(
-            log_with="wandb",
-            gradient_accumulation_steps=config.train.gradient_accumulation_steps,
-        )
+        self.accelerator = Accelerator(log_with="wandb")
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
@@ -247,19 +244,17 @@ class AccelerateRLModel(BaseRLModel):
         for _ in range(self.config.train.epochs):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
-                    with self.accelerator.accumulate(self.model):
-                        forward_time = time()
-                        loss, stats = self.loss(batch)
-                        loss = loss / self.config.train.gradient_accumulation_steps
-                        forward_time = time() - forward_time
+                    forward_time = time()
+                    loss, stats = self.loss(batch)
+                    forward_time = time() - forward_time
 
-                        backward_time = time()
-                        self.accelerator.backward(loss)
-                        backward_time = time() - backward_time
+                    backward_time = time()
+                    self.accelerator.backward(loss)
+                    backward_time = time() - backward_time
 
-                        self.opt.step()
-                        self.opt.zero_grad()
-                        self.scheduler.step()
+                    self.opt.step()
+                    self.opt.zero_grad()
+                    self.scheduler.step()
                     self.iter_count += 1
 
                     if self.iter_count % self.config.train.checkpoint_interval == 0:

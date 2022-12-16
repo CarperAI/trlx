@@ -230,7 +230,6 @@ class CausalLMWithValueHead(nn.Module):
             self.config = transformers.AutoConfig.from_pretrained(config)
         else:
             self.config = config
-
         self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
             self.config.name_or_path,
         )

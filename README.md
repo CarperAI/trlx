@@ -27,11 +27,6 @@ model = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for s
 model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
-#### Tuning only the minimal amount of parameters (overrides num_layers_unfrozen)
-```python
-model = trlx.train('EleutherAI/gpt-j-6B', ..., min_param_tune=True)
-```
-
 #### Trained model is a wrapper over a given autoregressive model
 ```python
 model.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)

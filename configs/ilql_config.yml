@@ -3,7 +3,6 @@ train:
   batch_size: 128
   epochs: 100
   total_steps: 1000
-  gradient_accumulation_steps: 1
 
   checkpoint_interval: 1000
   eval_interval: 100

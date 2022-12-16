@@ -105,9 +105,6 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param gradient_accumulation_steps: How many forward calls before the optimizer takes a step
-    :type gradient_accumulation_steps: int
-
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
 
@@ -140,7 +137,6 @@ class TrainConfig:
     seq_length: int
     epochs: int
     batch_size: int
-    gradient_accumulation_steps: int
 
     checkpoint_interval: int
     eval_interval: int

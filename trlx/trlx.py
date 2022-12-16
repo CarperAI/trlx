@@ -16,7 +16,6 @@ def train(
     config: Optional[TRLConfig] = None,
     split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
-    min_param_tune: Optional[bool] = False,
 ):
     """
     Dispatches online or offline reinforcement training depending on whether a reward function or a list of samples & rewards is given
@@ -41,14 +40,6 @@ def train(
             config.model.model_path = model_path
 
         model = get_model(config.model.model_type)(config)
-
-        if min_param_tune:
-            for name, param in model.model.named_parameters():
-                # TODO: Make sure all of the main supported architectures have these names
-                if True in [i in name.lower() for i in ["bias", "layernorm", "ln"]]:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
