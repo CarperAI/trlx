@@ -57,7 +57,9 @@ class LMHeads(MegatronModule):
         self.language_model = language_model
 
         self.other_heads = other_heads
-        self.word_embeddings = language_model.word_embeddings
+
+        if hasattr(language_model, "word_embeddings"):
+            self.word_embeddings = language_model.word_embeddings
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
@@ -109,7 +111,6 @@ class ILQLGPT(MegatronGPTModel):
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
         params = list(self.parameters())
-        print(f"{len(params)=}, {params[55].shape=}")
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -174,6 +175,13 @@ class ILQLGPT(MegatronGPTModel):
                 else:
                     stage = "middle"
 
+                pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
+                inputs = torch.nn.functional.pad(
+                    inputs, (0, pad_by), value=self.tokenizer.eos_id
+                )
+                labels = torch.nn.functional.pad(
+                    labels, (0, pad_by), value=self.tokenizer.eos_id
+                )
                 print(f"{inputs.shape=} {labels.shape=}, {stage=}")
 
                 (
@@ -188,9 +196,9 @@ class ILQLGPT(MegatronGPTModel):
                     eod_mask_loss=False,
                 )
 
-                # print(
-                #    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
-                # )
+                print(
+                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
+                )
 
                 extra_args = {}
                 # Only the last pipeline stage GPT layers are wrapped with LMHeads
