@@ -31,6 +31,11 @@ class TestHydraHead(unittest.TestCase):
             diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(diff, 0)
 
+    def test_frozen_head(self):
+        # Ensure that all parameters of the `hydra_model.frozen_head` are actually frozen
+        for parameter in TestHydraHead.hydra_model.frozen_head.parameters():
+            self.assertTrue(parameter.requires_grad == False)
+
     def test_forward(self):
         with torch.no_grad():
             unfrozen_outputs = TestHydraHead.hydra_model(**TestHydraHead.dummy_inputs, return_dict=True, output_hidden_states=True)
