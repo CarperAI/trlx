@@ -92,19 +92,43 @@ class OptimizerNames(Enum):
 
     ADAM: str = "adam"
     ADAMW: str = "adamw"
+    ADAM_8BIT_BNB: str = "adam_8bit_bnb"
+    ADAMW_8BIT_BNB: str = "adamw_8bit_bnb"
     SGD: str = "sgd"
 
 
 def get_optimizer_class(name: str):
     """
     Returns the optimizer class with the given name
+    
+    Args:
+        name (str): Name of the optimizer as found in `OptimizerNames`
     """
     if name == OptimizerNames.ADAM.value:
         return torch.optim.Adam
     if name == OptimizerNames.ADAMW.value:
         return torch.optim.AdamW
+    if name == OptimizerNames.ADAM_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import Adam8bit
+            return Adam8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use the 8-bit Adam. "
+                "Install with: `pip install bitsandbytes`"
+            )
+    if name == OptimizerNames.ADAMW_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import AdamW8bit
+            return AdamW8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use 8-bit AdamW. "
+                "Install with: `pip install bitsandbytes`"
+            )
     if name == OptimizerNames.SGD.value:
         return torch.optim.SGD
+
     supported_optimizers = [o.value for o in OptimizerNames]
     raise ValueError(
         f"`{name}` is not a supported optimizer. "
