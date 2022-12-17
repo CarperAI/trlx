@@ -269,4 +269,5 @@ def get_git_tag() -> str:
     Returns commit's short hash and date
     """
     output = subprocess.check_output("git log --format='%h/%as' -n1".split())
-    return output.decode()[1:-2]
+    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
+    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}"

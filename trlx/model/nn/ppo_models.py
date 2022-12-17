@@ -23,6 +23,7 @@ from trlx.utils.modeling import (
     hf_get_num_hidden_layers,
     make_head,
     whiten,
+    get_tensor_stats,
 )
 
 
@@ -163,10 +164,12 @@ class PPOConfig(MethodConfig):
             old_values - self.cliprange_value,
             old_values + self.cliprange_value,
         )
+        n = mask.sum()
+
         vf_loss1 = (values - returns) ** 2
         vf_loss2 = (values_clipped - returns) ** 2
-        vf_loss = 0.5 * torch.sum(torch.max(vf_loss1, vf_loss2) * mask) / mask.sum()
-        vf_clipfrac = torch.mean((vf_loss2 > vf_loss1).float())
+        vf_loss = 0.5 * torch.sum(torch.max(vf_loss1, vf_loss2) * mask) / n
+        vf_clipfrac = torch.sum((vf_loss2 > vf_loss1).float() * mask) / n
 
         log_ratio = (logprobs - old_logprobs) * mask
         ratio = torch.exp(log_ratio)
@@ -180,8 +183,8 @@ class PPOConfig(MethodConfig):
             1.0 - self.cliprange,
             1.0 + self.cliprange,
         )
-        pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / mask.sum()
-        pg_clipfrac = torch.mean((pg_loss2 > pg_loss1).float())
+        pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / n
+        pg_clipfrac = torch.sum((pg_loss2 > pg_loss1).float() * mask) / n
 
         loss = pg_loss + self.vf_coef * vf_loss
 
@@ -192,16 +195,17 @@ class PPOConfig(MethodConfig):
                 value_loss=vf_loss.item(),
             ),
             values=dict(
-                mean_old_values=torch.mean(old_values),
-                var_old_values=torch.var(old_values),
-                mean_values=torch.mean(values),
-                values_error=torch.mean((values - returns) ** 2),
+                get_tensor_stats(values, mask, n),
+                values_error=torch.sum(((values - returns) * mask) ** 2) / n,
                 clipfrac=vf_clipfrac,
             ),
+            old_values=get_tensor_stats(old_values, mask, n),
+            returns=get_tensor_stats(returns, mask, n),
             policy=dict(approx_kl=approx_kl.item(), clipfrac=pg_clipfrac.item()),
-            returns=dict(mean=torch.mean(returns), var=torch.var(returns)),
-            ratio=(ratio * mask).sum() / mask.sum(),
+            ratio=(ratio * mask).sum() / n,
+            padding_percentage=n / mask.numel(),
         )
+
         return loss, flatten_dict(stats)
 
 

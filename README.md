@@ -53,4 +53,4 @@ and also read our [docs](https://trlX.readthedocs.io)
 
 ## Acknowledgements
 
-Many thanks to Leandro von Werra for hacking on the [trl](https://github.com/lvwerra/trl/)
+Many thanks to Leandro von Werra for contributing with [trl](https://github.com/lvwerra/trl/), a library that initially inspired this repo.
