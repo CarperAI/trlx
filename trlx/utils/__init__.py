@@ -20,6 +20,7 @@ def set_seed(seed: int):
     """
     Sets seeds across package dependencies for reproducibility.
     """
+    seed += int(os.environ.get("LOCAL_RANK", 0))
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
