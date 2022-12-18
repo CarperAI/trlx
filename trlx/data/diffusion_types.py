@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from torchtyping import TensorType
 
-@dataclas
+@dataclass
 class DiffPPORLElement:
     """
     RL Element for Diffusion PPO

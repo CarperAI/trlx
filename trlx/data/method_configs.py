@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, any] = {}  # registry
@@ -143,3 +143,9 @@ class ILQLConfig(MethodConfig):
     steps_for_target_q_sync: int
     betas: List[float]
     two_qs: bool
+
+@dataclass
+@register_method 
+class DiffPPOConfig(PPOConfig):
+    img_size: Tuple[int, int]
+    img_channels: int

@@ -4,8 +4,28 @@ model:
   model_type: AccelerateSDModel
   num_layers_unfrozen: 2
 
+train:
+  total_steps: 0
+  seq_length: None
+  epochs: None
+  batch_size: None
+  lr_ramp_steps: None
+  lr_decay_steps: None
+  weight_decay: None 
+  learning_rate_init: None
+  learning_rate_target: None
+  opt_betas: None
+  checkpoint_interval: None
+  eval_interval: None
+  pipeline: None
+  orchestrator: None
+  checkpoint_dir: None
+  project_name: None
+  seed: 1000
+  
 method:
-  name: 'diffusionppoconfig'
+  name: 'diffppoconfig'
+  img_size: [512, 512]
   num_rollouts: 4
   chunk_size: 4
   ppo_epochs: 4  # Number of ppo epochs
