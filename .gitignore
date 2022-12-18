@@ -145,3 +145,9 @@ nbs/wandb/
 wandb/
 
 OUT/
+
+
+examples/experiments/grounded_program_synthesis/dataset
+ckpts/
+
+ray_results/

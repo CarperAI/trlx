@@ -1,9 +1,22 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple, Set
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
+import os
+
+
+def merge(base: Dict, update: Dict, updated: Set) -> Dict:
+    "Recursively updates a nested dictionary with new values"
+    for k, v in base.items():
+        if isinstance(v, dict):
+            base[k] = merge(v, update, updated)
+        elif k in update:
+            base[k] = update[k]
+            updated.add(k)
+
+    return base
 
 
 @dataclass
@@ -11,20 +24,64 @@ class ModelConfig:
     """
     Config for a model.
 
-    :param model_path: Path to the model (local or on huggingface hub)
-    :type model_path: str
-
-    :param tokenizer_path: Path to the tokenizer (local or on huggingface hub)
-    :type tokenizer_path: str
-
     :param model_type: One of the registered RL models present in trlx.model
     :type model_type: str
+
+    :param model_path: Path or name of the model (local or on huggingface hub)
+    :type model_path: str
+
+    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
+    :type tokenizer_path: str
+
+    :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
+        -1 means all layers are unfrozen.
+    :type num_layers_unfrozen: int
     """
 
+    model_type: str
     model_path: str
     tokenizer_path: str
-    model_type: str
     num_layers_unfrozen: int = -1
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class OptimizerConfig:
+    """
+    Config for an optimizer.
+
+    :param name: Name of the optimizer
+    :type name: str
+
+    :param kwargs: Keyword arguments for the optimizer (e.g. lr, betas, eps, weight_decay)
+    :type kwargs: Dict[str, Any]
+    """
+
+    name: str
+    kwargs: Dict[str, Any] = None
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class SchedulerConfig:
+    """
+    Config for a learning rate scheduler.
+
+    :param name: Name of the scheduler
+    :type name: str
+
+    :param kwargs: Keyword arguments for the scheduler instance (e.g. warmup_steps, T_max)
+    :type kwargs: Dict[str, Any]
+    """
+
+    name: str
+    kwargs: Dict[str, Any] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -48,21 +105,6 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param lr_ramp_steps: Number of steps before learning rate reaches learning_rate_init
-    :type lr_ramp_steps: int
-
-    :param lr_decay_steps: Number of after ramp up steps before learning rate decays to learning_rate_target
-    :type lr_decay_steps: int
-
-    :param weight_decay: Weight decay for optimizer
-    :type weight_decay: float
-
-    :param learning_rate_init: Initial learning rate after ramp up
-    :type learning_rate_init: float
-
-    :param learning_rate_target: Target learning rate after decay
-    :type learning_rate_target: float
-
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
 
@@ -80,6 +122,18 @@ class TrainConfig:
 
     :param project_name: Project name for wandb
     :type project_name: str
+
+    :param entity_name: Entity name for wandb
+    :type entity_name: str
+
+    :param checkpoint_dir: Directory to save checkpoints
+    :type checkpoint_dir: str
+
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOModel.
+    :type rollout_logging_dir: Optional[str]
+
+    :param seed: Random seed
+    :type seed: int
     """
 
     total_steps: int
@@ -87,21 +141,18 @@ class TrainConfig:
     epochs: int
     batch_size: int
 
-    lr_ramp_steps: int
-    lr_decay_steps: int
-    weight_decay: float
-    learning_rate_init: float
-    learning_rate_target: float
-    opt_betas: Tuple[float]
-
     checkpoint_interval: int
     eval_interval: int
 
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
 
-    checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
+    entity_name: Optional[str] = None
+
+    checkpoint_dir: str = "ckpts"
+    rollout_logging_dir: Optional[str] = None
+
     seed: int = 1000
 
     @classmethod
@@ -115,9 +166,11 @@ class TRLConfig:
     Top level config for trlX. Loads configs and can be converted to dictionary.
     """
 
-    model: ModelConfig
-    train: TrainConfig
     method: MethodConfig
+    model: ModelConfig
+    optimizer: OptimizerConfig
+    scheduler: SchedulerConfig
+    train: TrainConfig
 
     @classmethod
     def load_yaml(cls, yml_fp: str):
@@ -129,17 +182,50 @@ class TRLConfig:
         """
         with open(yml_fp, mode="r") as file:
             config = yaml.safe_load(file)
-        return cls(
-            ModelConfig.from_dict(config["model"]),
-            TrainConfig.from_dict(config["train"]),
-            get_method(config["method"]["name"]).from_dict(config["method"]),
-        )
+        return cls.from_dict(config)
 
     def to_dict(self):
         """
         Convert TRLConfig to dictionary.
         """
-        data = self.model.__dict__.copy()
-        data.update(self.train.__dict__)
-        data.update(self.method.__dict__)
+        data = {
+            "method": self.method.__dict__,
+            "model": self.model.__dict__,
+            "optimizer": self.optimizer.__dict__,
+            "scheduler": self.scheduler.__dict__,
+            "train": self.train.__dict__,
+        }
+
         return data
+
+    @classmethod
+    def from_dict(cls, config: Dict):
+        """
+        Convert dictionary to TRLConfig.
+        """
+        return cls(
+            method=get_method(config["method"]["name"]).from_dict(config["method"]),
+            model=ModelConfig.from_dict(config["model"]),
+            optimizer=OptimizerConfig.from_dict(config["optimizer"]),
+            scheduler=SchedulerConfig.from_dict(config["scheduler"]),
+            train=TrainConfig.from_dict(config["train"]),
+        )
+
+    @classmethod
+    def update(cls, baseconfig: Dict, config: Dict):
+        updates = set()
+        merged = merge(baseconfig, config, updates)
+
+        for param in config:
+            if param not in updates:
+                raise ValueError(
+                    f"parameter {param} is not present in the config (typo or a wrong config)"
+                )
+
+        return cls.from_dict(merged)
+
+    def __str__(self):
+        """Returns a human-readable string representation of the config."""
+        import json
+
+        return json.dumps(self.to_dict(), indent=4)

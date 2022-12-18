@@ -1,6 +1,7 @@
 import unittest
 from trlx.data.configs import TRLConfig
-from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
+from trlx.model.nn.ppo_models import CausalLMHydraWithValueHead
+from trlx.utils.modeling import RunningMoments
 from transformers import AutoTokenizer
 import torch
 
@@ -11,7 +12,7 @@ class TestHydraHead(unittest.TestCase):
     def setUpClass(cls):
         print("Testing Hydra model...")
         config = TRLConfig.load_yaml("configs/test_config.yml")
-        cls.hydra_model = GPTHydraHeadWithValueModel(
+        cls.hydra_model = CausalLMHydraWithValueHead(
             config.model.model_path, config.model.num_layers_unfrozen
         )
 
@@ -44,3 +45,22 @@ class TestHydraHead(unittest.TestCase):
             logits_diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(hs_diff, 0)
             self.assertEqual(logits_diff, 0)
+
+class TestStatistics(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = RunningMoments()
+        cls.a1 = torch.arange(100, dtype=float)
+        cls.a2 = torch.ones(100, dtype=float)
+        cls.a3 = torch.exp(torch.arange(10, dtype=float))
+        cls.a4 = torch.tensor([-10, -1, 0, 1, 10], dtype=float)
+
+    def test_running_moments(self):
+        assert torch.isclose(self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6)
+
+        a = torch.hstack((self.a1, self.a2, self.a3, self.a4))
+        assert torch.isclose(self.m.mean, a.mean(), atol=1e-6)
+        assert torch.isclose(self.m.std, a.std(unbiased=True), atol=1e-6)

@@ -1,25 +1,25 @@
 train:
-  seq_length: 1024
-  epochs: 100
-  total_steps: 10000
-  batch_size: 128
+  seq_length: 256
+  epochs: 10
+  total_steps: 80000
+  batch_size: 8
 
-  checkpoint_interval: 10000
-  eval_interval: 100
+  checkpoint_interval: 1000000
+  eval_interval: 16
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
 
 model:
   model_type: "AcceleratePPOModel"
-  model_path: "lvwerra/gpt2-imdb"
-  tokenizer_path: "gpt2"
+  model_path: "reshinthadith/codegen_350M_list_manip_5_len"
+  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"
   num_layers_unfrozen: 2
 
 optimizer:
   name: "adamw"
   kwargs:
-    lr: 1.0e-4
+    lr: 1.412e-4
     betas: [0.9, 0.95]
     eps: 1.0e-8
     weight_decay: 1.0e-6
@@ -27,28 +27,29 @@ optimizer:
 scheduler:
   name: "cosine_annealing"
   kwargs:
-    T_max: 10000 # train.total_steps
-    eta_min: 1.0e-4
+    T_max: 80000 # train.total_steps
+    eta_min: 1.412e-4
 
 method:
   name: "ppoconfig"
-  num_rollouts: 128
-  chunk_size: 128
+  num_rollouts: 8
+  chunk_size: 8
   ppo_epochs: 4
-  init_kl_coef: 0.05
+  init_kl_coef: 0.2
   target: 6
   horizon: 10000
   gamma: 1
   lam: 0.95
   cliprange: 0.2
   cliprange_value: 0.2
-  vf_coef: 1
+  vf_coef: 0.2
   scale_reward: False
+  cliprange_reward: 10
   ref_mean: null
   ref_std: null
-  cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 40
+    max_new_tokens: 256
     top_k: 0
-    top_p: 1.0
+    top_p: 0.7
     do_sample: True
+    temperature: 0.5

@@ -1,41 +1,32 @@
-import numpy as np
+from typing import Tuple
+import uuid, os, json
+
 import torch
+from torchtyping import TensorType
 
 from trlx.data.configs import TRLConfig
+from trlx.data.ppo_types import PPORLBatch
 from trlx.model import register_model
 from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import GPTHydraHeadWithValueModel
+from trlx.model.nn.ppo_models import (
+    AdaptiveKLController,
+    FixedKLController,
+    CausalLMHydraWithValueHead,
+)
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
-from trlx.utils.modeling import clip_by_value, logprobs_from_logits, whiten
-
-
-class AdaptiveKLController:
-    def __init__(self, init_kl_coef, target, horizon):
-        self.value = init_kl_coef
-        self.target = target
-        self.horizon = horizon
-
-    def update(self, current, n_steps):
-        target = self.target
-        proportional_error = np.clip(current / target - 1, -0.2, 0.2)
-        mult = 1 + proportional_error * n_steps / self.horizon
-        self.value *= mult
-
-
-class FixedKLController:
-    """Fixed KL controller."""
-
-    def __init__(self, kl_coef):
-        self.value = kl_coef
-
-    def update(self, current, n_steps):
-        pass
+from trlx.utils.modeling import logprobs_from_logits
 
 
 @register_model
 class AcceleratePPOModel(AccelerateRLModel):
     def __init__(self, config):
         super().__init__(config)
+
+        if config.train.rollout_logging_dir is not None:
+            self.log_rollouts = True
+            self.setup_rollout_logging(config)
+        else:
+            self.log_rollouts = False
 
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
@@ -55,13 +46,6 @@ class AcceleratePPOModel(AccelerateRLModel):
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
-        if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(
-                config.method.init_kl_coef, config.method.target, config.method.horizon
-            )
-        else:
-            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
-
         self.generate_kwargs = dict(
             config.method.gen_kwargs,
             eos_token_id=self.tokenizer.eos_token_id,
@@ -69,100 +53,97 @@ class AcceleratePPOModel(AccelerateRLModel):
         )
 
     def get_arch(self, config: TRLConfig):
-        return GPTHydraHeadWithValueModel(
-            self.config.model.model_path, self.config.model.num_layers_unfrozen
+        return CausalLMHydraWithValueHead(
+            config.model.model_path, config.model.num_layers_unfrozen
         )
 
-    def loss(self, batch):
-        query_tensors = batch.query_tensors.to(self.accelerator.device)
-        response_tensors = batch.response_tensors.to(self.accelerator.device)
-        all_logprobs = batch.logprobs.to(self.accelerator.device)
-        all_values = batch.values.to(self.accelerator.device)
-        all_rewards = batch.rewards.to(self.accelerator.device)
-
-        lastgaelam = 0
-        advantages_reversed = []
-        gen_len = response_tensors.shape[1]
-        for t in reversed(range(gen_len)):
-            nextvalues = all_values[:, t + 1] if t < gen_len - 1 else 0.0
-            delta = (
-                all_rewards[:, t]
-                + self.config.method.gamma * nextvalues
-                - all_values[:, t]
-            )
-            lastgaelam = (
-                delta + self.config.method.gamma * self.config.method.lam * lastgaelam
-            )
-            advantages_reversed.append(lastgaelam)
-        advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
-
-        returns = advantages + all_values
-        advantages = whiten(advantages)
-        advantages = advantages.detach()
-
-        all_tokens = torch.cat((query_tensors, response_tensors), dim=1)
+    def get_model_inputs(
+        self,
+        query_tensors: TensorType["batch_size", "query_size"],
+        response_tensors: TensorType["batch_size", "response_size"],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        tokens = torch.cat((query_tensors, response_tensors), dim=1)[
+            :, -self.max_length :
+        ]
         attention_mask = (
-            all_tokens.not_equal(self.tokenizer.pad_token_id)
-            .long()
-            .to(all_tokens.device)
+            tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
         )
-
-        # for a proper positional encoding in case of left padding
+        # For a proper positional encoding in case of left padding
         position_ids = attention_mask.cumsum(-1) - 1
         position_ids.masked_fill_(attention_mask.eq(0), 0)
+        return tokens, attention_mask, position_ids
 
-        logits, _, vpred = self.model(
-            all_tokens, attention_mask, position_ids=position_ids
-        )
-        logprob = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
+    def loss(self, batch: PPORLBatch):
+        # Move `batch` data to `accelerator` device
+        query_tensors = batch.query_tensors.to(self.accelerator.device)
+        response_tensors = batch.response_tensors.to(self.accelerator.device)
+        old_logprobs = batch.logprobs.to(self.accelerator.device)
+        old_values = batch.values.to(self.accelerator.device)
+        old_rewards = batch.rewards.to(self.accelerator.device)
 
-        # only the generation part of the values/logprobs is needed
-        logprob, vpred = logprob[:, -gen_len:], vpred[:, -gen_len:]
+        response_length = old_rewards.shape[1]
 
-        vpredclipped = clip_by_value(
-            vpred,
-            all_values - self.config.method.cliprange_value,
-            all_values + self.config.method.cliprange_value,
-        )
-
-        mask = attention_mask[:, -gen_len:]
-
-        vf_losses1 = (vpred - returns) ** 2
-        vf_losses2 = (vpredclipped - returns) ** 2
-        vf_loss = 0.5 * torch.sum(torch.max(vf_losses1, vf_losses2) * mask) / mask.sum()
-
-        kl = logprob - all_logprobs
-        # Record mean_kl for kl coef adjustment
-        self.mean_kl = torch.mean(torch.sum(kl, dim=-1)).item()
-        ratio = torch.exp(kl)
-
-        pg_losses = -advantages * ratio
-        pg_losses2 = -advantages * torch.clamp(
-            ratio,
-            1.0 - self.config.method.cliprange,
-            1.0 + self.config.method.cliprange,
+        advantages, returns = self.config.method.get_advantages_and_returns(
+            old_values, old_rewards, response_length
         )
 
-        pg_loss = torch.sum(torch.max(pg_losses, pg_losses2) * mask) / mask.sum()
-        loss = pg_loss + self.config.method.vf_coef * vf_loss
+        tokens, attention_mask, position_ids = self.get_model_inputs(
+            query_tensors, response_tensors
+        )
 
-        stats = {
-            "loss": loss,
-            "pg_loss": pg_loss,
-            "vf_loss": vf_loss,
-        }
+        logits, *_, values_pred = self.model(
+            tokens, attention_mask=attention_mask, position_ids=position_ids
+        )
+        values_pred = values_pred[:, :-1]
+        logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+        attention_mask = attention_mask[:, :-1]
 
+        # Only the response part of the values/logprobs is needed
+        start = query_tensors.shape[1] - 1
+        end = start + response_length
+        logprobs, values_pred, mask = (
+            logprobs[:, start:end],
+            values_pred[:, start:end],
+            attention_mask[:, start:end],
+        )
+
+        loss, stats = self.config.method.loss(
+            logprobs=logprobs,
+            values=values_pred,
+            old_logprobs=old_logprobs,
+            old_values=old_values,
+            advantages=advantages,
+            returns=returns,
+            mask=mask,
+        )
+        self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
         return loss, stats
 
+    def setup_rollout_logging(self, config):
+        # Make rollout logging dir for this run and store config
+        exists = os.path.exists(config.train.rollout_logging_dir)
+        isdir = os.path.isdir(config.train.rollout_logging_dir)
+        assert exists and isdir
+
+        self.run_id = f"run-{uuid.uuid4()}"
+        self.rollout_logging_dir = os.path.join(
+            config.train.rollout_logging_dir, self.run_id
+        )
+        os.mkdir(self.rollout_logging_dir)
+
+        with open(os.path.join(self.rollout_logging_dir, "config.json"), "w") as f:
+            f.write(json.dumps(config.to_dict(), indent=2))
+
     def post_epoch_callback(self):
+        if self.log_rollouts:
+            self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
         self.orch.make_experience(
             self.config.method.num_rollouts, self.iter_count
         )  # Collect more rollouts for training
 
     def post_backward_callback(self):
-        # Update kl_coefficient
-        self.kl_ctl.update(self.mean_kl, self.config.train.batch_size)
+        self.kl_ctl.update(self.approx_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)

@@ -1,7 +1,7 @@
 import os
 import sys
 from abc import abstractmethod
-from typing import Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable
 
 import torch
 
@@ -11,11 +11,11 @@ from trlx.pipeline import BaseRolloutStore
 from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
-_MODELS: Dict[str, any] = {}  # registry
+_MODELS: Dict[str, Any] = {}  # registry
 
 
 def register_model(name):
-    """Decorator used register a CARP architecture
+    """Decorator used register an architecture
     Args:
         name: Name of the architecture
     """
@@ -45,6 +45,10 @@ class BaseRLModel:
 
     def push_to_store(self, data):
         self.store.push(data)
+
+    def add_eval_pipeline(self, eval_pipeline):
+        """Adds pipeline from with validation prompts"""
+        self.eval_pipeline = eval_pipeline
 
     @abstractmethod
     def act(self, data: RLElement) -> RLElement:
@@ -92,41 +96,14 @@ class BaseRLModel:
         pass
 
     @abstractmethod
-    def get_components(self) -> Dict[str, any]:
-        """
-        Get pytorch components (mainly for saving/loading)
-        """
+    def save(self, directory=None):
+        """Creates a checkpoint of training states"""
         pass
 
-    def save(self, fp: str, title: str = "OUT"):
-        """
-        Try to save all components to specified path under a folder with given title
-        """
-        path = os.path.join(fp, title)
-        safe_mkdir(path)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                torch.save(components[name], os.path.join(path, name) + ".pt")
-            except:
-                print(f"Failed to save component: {name}, continuing.")
-
-    def load(self, fp: str, title: str = "OUT"):
-        """
-        Try to load all components from specified path under a folder with given title
-        """
-
-        path = os.path.join(fp, title)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                components[name] = torch.load(
-                    os.path.join(path, name) + ".pt", map_location="cpu"
-                )
-            except:
-                print(f"Failed to load component: {name}, continuing.")
+    @abstractmethod
+    def load(self, directory=None):
+        """Loads a checkpoint created from `save`"""
+        pass
 
     def intervals(self, steps: int) -> Dict[str, bool]:
         """
