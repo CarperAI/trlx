@@ -1,0 +1,22 @@
+{
+  "train_micro_batch_size_per_gpu": 2,
+  "gradient_accumulation_steps": 4,
+  "fp16": {
+    "enabled": true,
+    "min_loss_scale": 0.5,
+    "fp16_scale_tolerance": 0.25,
+    "opt_level": "O2"
+  },
+  "zero_optimization": {
+    "stage": 2,
+    "offload_param": {
+      "device": "cpu"
+    },
+    "offload_optimizer": {
+      "device": "cpu"
+    },
+    "allgather_partitions": true,
+    "allgather_bucket_size": 5e8,
+    "contiguous_gradients": true
+  }
+}

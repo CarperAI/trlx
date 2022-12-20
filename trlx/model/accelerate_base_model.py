@@ -31,7 +31,7 @@ from trlx.utils import (
     get_distributed_config,
     get_git_tag,
 )
-from trlx.utils.modeling import freeze_bottom_causal_layers
+from trlx.utils.modeling import freeze_bottom_causal_layers, freeze_bottom_seq2seq_layers
 
 
 @register_model
@@ -52,14 +52,22 @@ class AccelerateRLModel(BaseRLModel):
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
-        freeze_bottom_causal_layers(
-            self.model.base_model, self.config.model.num_layers_unfrozen
-        )
+        if 't5' in self.config.model.model_path:
+            freeze_bottom_seq2seq_layers(
+                self.model.base_model, self.config.model.num_layers_unfrozen
+            )
+        else:
+            freeze_bottom_causal_layers(
+                self.model.base_model, self.config.model.num_layers_unfrozen
+            )
 
         if config.model.tokenizer_path:
-            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.padding_side = "left"
+            if 't5' in config.model.tokenizer_path:
+                self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            else:
+                self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.padding_side = "left"
         else:
             self.tokenizer = None
 
@@ -264,6 +272,7 @@ class AccelerateRLModel(BaseRLModel):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
                     forward_time = time()
+                    
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
 

@@ -31,8 +31,13 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     for layer in hidden_layers_to_freeze:
         layer.requires_grad_(False)
 
-
-# HuggingFace utilities
+def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+    """Freezes the bottom transformer block layers of the specified model."""
+    encoder_blocks = model.encoder.block
+    decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
+    blocks_to_freeze = list(encoder_blocks) + list(decoder_blocks)
+    for block in blocks_to_freeze:
+        block.requires_grad_(False)
 
 
 def rhasattr(obj, attr):
@@ -83,6 +88,17 @@ def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Mod
     decoder_attrs = ("transformer", "model.decoder", "gpt_neox")
     return findattr(model, decoder_attrs)
 
+def hf_get_encoder_decoder_base(model: transformers.AutoModelForSeq2SeqLM) -> nn.Module:
+    """Returns the encoder-decoder backbone of the specified HuggingFace transformers
+    model.
+    NOTE: Different model configurations have different encoder-decoder attribute
+    names.
+        - model.encoder: (BartConfig)
+        - model: (MBartConfig)
+    """
+    decoder_attrs = ("shared", "encoder", "decoder")
+    return findattr(model, decoder_attrs)
+
 
 def hf_get_causal_final_norm(model: nn.Module) -> float:
     """Returns the final (layer) norm of the specified model.
@@ -110,6 +126,12 @@ def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
         "transformer.h",
         "model.decoder.layers",
         "gpt_neox.layers",
+    )
+    return findattr(model, hidden_layers_attrs)
+
+def hf_decoder_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
+    hidden_layers_attrs = (
+        "decoder.block"
     )
     return findattr(model, hidden_layers_attrs)
 

@@ -12,6 +12,7 @@ from trlx.model.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
     CausalLMHydraWithValueHead,
+    Seq2SeqLMHydraWithValueHead
 )
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.utils.modeling import logprobs_from_logits
@@ -45,14 +46,24 @@ class AcceleratePPOModel(AccelerateRLModel):
             )
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
-
-        self.generate_kwargs = dict(
-            config.method.gen_kwargs,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
+        if 't5' in config.model.model_path:    
+            self.generate_kwargs = dict(
+                config.method.gen_kwargs,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+        else:
+            self.generate_kwargs = dict(
+                config.method.gen_kwargs,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
 
     def get_arch(self, config: TRLConfig):
+        if 't5' in config.model.model_path:
+            return Seq2SeqLMHydraWithValueHead(
+                config.model.model_path, config.model.num_layers_unfrozen
+            )
         return CausalLMHydraWithValueHead(
             config.model.model_path, config.model.num_layers_unfrozen
         )
@@ -82,30 +93,42 @@ class AcceleratePPOModel(AccelerateRLModel):
         old_rewards = batch.rewards.to(self.accelerator.device)
 
         response_length = old_rewards.shape[1]
-
         advantages, returns = self.config.method.get_advantages_and_returns(
             old_values, old_rewards, response_length
         )
 
-        tokens, attention_mask, position_ids = self.get_model_inputs(
-            query_tensors, response_tensors
-        )
+        if 't5' in self.config.model.model_path:
+            input_ids = query_tensors
+            decoder_input_ids = response_tensors
+            attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                decoder_input_ids=decoder_input_ids,
+            )
+            logits = outputs.logits
+            values_pred = outputs.value
+            logprobs = logprobs_from_logits(logits, decoder_input_ids)
+            mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+        else:
+            tokens, attention_mask, position_ids = self.get_model_inputs(
+                query_tensors, response_tensors
+            )
+            logits, *_, values_pred = self.model(
+                tokens, attention_mask=attention_mask, position_ids=position_ids
+            )
+            values_pred = values_pred[:, :-1]
+            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            attention_mask = attention_mask[:, :-1]
 
-        logits, *_, values_pred = self.model(
-            tokens, attention_mask=attention_mask, position_ids=position_ids
-        )
-        values_pred = values_pred[:, :-1]
-        logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-        attention_mask = attention_mask[:, :-1]
-
-        # Only the response part of the values/logprobs is needed
-        start = query_tensors.shape[1] - 1
-        end = start + response_length
-        logprobs, values_pred, mask = (
-            logprobs[:, start:end],
-            values_pred[:, start:end],
-            attention_mask[:, start:end],
-        )
+            # Only the response part of the values/logprobs is needed
+            start = query_tensors.shape[1] - 1
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start:end],
+                attention_mask[:, start:end],
+            )
 
         loss, stats = self.config.method.loss(
             logprobs=logprobs,

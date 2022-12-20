@@ -17,6 +17,7 @@ from trlx.utils.modeling import (
     flatten_dict,
     hf_get_causal_base_model,
     hf_get_causal_final_norm,
+    hf_get_encoder_decoder_base,
     hf_get_causal_hidden_layers,
     hf_get_hidden_size,
     hf_get_lm_head,
@@ -402,6 +403,210 @@ class CausalLMHydraWithValueHead(nn.Module):
             value=value,
         )
 
+@dataclass
+class Seq2SeqLMOutput(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    value: Optional[torch.FloatTensor] = None
+
+class Seq2SeqLMHydraWithValueHead(nn.Module):
+    
+    def __init__(
+        self,
+        config: Union[transformers.PretrainedConfig, str],
+        num_layers_unfrozen: int = -1,
+    ):
+        super().__init__()
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
+        else:
+            self.config = config
+        self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
+            self.config.name_or_path
+        )
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+
+        self.num_layers_unfrozen = num_layers_unfrozen
+        if self.num_layers_unfrozen > 0:
+            self.frozen_head = T5Branch(self.config, self.base_model, self.num_layers_unfrozen)
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_args = inspect.getfullargspec(
+            self.base_model.forward
+        ).args
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_args
+        }
+
+    def generate(self, input_ids, **x):
+        return self.base_model.generate(input_ids, **x)
+
+    def forward_hydra(self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs):
+        forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
+        forward_kwargs['return_dict'] = True
+        output = self.forward(input_ids, attention_mask, decoder_input_ids, **forward_kwargs)
+        all_hidden_states = output.decoder_hidden_states
+        # Get output of last frozen hidden layer
+        # Select hidden state before first layer of branch.
+        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
+        encoder_hidden_states = output.encoder_last_hidden_state
+        # Get size of last hidden state
+        outputs = self.frozen_head(decoder_input_ids, input_hidden_state, encoder_hidden_states, attention_mask, False, False)
+        return outputs.logits
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.FloatTensor] = None,
+        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
+        past_key_values: Optional[Tuple[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        decoder_head_mask: Optional[torch.FloatTensor] = None,
+        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = True,
+        output_hidden_states: Optional[bool] = True,
+        return_dict: Optional[bool] = None,
+    ):
+        forward_kwargs = self._get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            encoder_outputs=encoder_outputs,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        t5_outputs = self.base_model(**forward_kwargs)
+        lm_logits = t5_outputs.logits
+        last_hidden_state = t5_outputs.decoder_hidden_states[-1]
+        value = self.v_head(last_hidden_state).squeeze(-1)
+
+        return Seq2SeqLMOutput(
+            loss=None,
+            logits=lm_logits,
+            decoder_hidden_states=t5_outputs.decoder_hidden_states,
+            decoder_attentions=t5_outputs.decoder_attentions,
+            cross_attentions=t5_outputs.cross_attentions,
+            encoder_last_hidden_state=t5_outputs.encoder_last_hidden_state,
+            encoder_hidden_states=t5_outputs.encoder_hidden_states,
+            encoder_attentions=t5_outputs.encoder_attentions,
+            past_key_values=t5_outputs.past_key_values,
+            value=value
+        )
+
+class T5Branch(transformers.PreTrainedModel):
+    # Decoder branch only
+    def __init__(
+        self,
+        config: transformers.PretrainedConfig,
+        base_model: transformers.PreTrainedModel,
+        num_layers_unfrozen: int,
+    ):
+        super().__init__(config)
+
+        # Defined by the main trunk
+        self.hidden_size = hf_get_hidden_size(config)
+        self.decoder = deepcopy(base_model.decoder)
+        self.decoder.block = nn.ModuleList(self.decoder.block[-num_layers_unfrozen:])
+        self.lm_head = deepcopy(base_model.lm_head)
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+        self.last_device = None
+        self.gradient_checkpointing = False
+        
+        for block in self.decoder.block:
+            for parameter in block.parameters():
+                parameter.requires_grad = False
+
+    def forward(
+        self, 
+        input_ids,
+        hidden_states,
+        encoder_hidden_states,
+        encoder_attention_mask,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+    ):
+
+        input_shape = input_ids.size()
+        batch_size, seq_length = input_shape
+        
+        attention_mask = torch.ones(batch_size, seq_length, device=hidden_states.device)
+        
+        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
+        encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
+        
+        encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
+        position_bias = None
+        encoder_decoder_position_bias = None
+        
+        for i, layer_module in enumerate(self.decoder.block):
+
+            layer_outputs = layer_module(
+                hidden_states, # size: (batch_size, seq_length, hidden_size)
+                attention_mask=extended_attention_mask, # size: (batch_size, 1, seq_length, seq_length)
+                position_bias=position_bias,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_extended_attention_mask,
+                encoder_decoder_position_bias=encoder_decoder_position_bias,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+            )
+
+            # layer_outputs is a tuple with:
+            # hidden-states, key-value-states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
+            if use_cache is False:
+                layer_outputs = layer_outputs[:1] + (None,) + layer_outputs[1:]
+
+            hidden_states, present_key_value_state = layer_outputs[:2]
+
+            # We share the position biases between the layers - the first layer store them
+            # layer_outputs = hidden-states, key-value-states (self-attention position bias), (self-attention weights),
+            # (cross-attention position bias), (cross-attention weights)
+            position_bias = layer_outputs[2]
+            encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
+            # append next layer key value states
+            if use_cache:
+                present_key_value_states = present_key_value_states + (present_key_value_state,)
+
+            if output_attentions:
+                all_attentions = all_attentions + (layer_outputs[3],)
+                all_cross_attentions = all_cross_attentions + (layer_outputs[5],)
+
+        hidden_states = self.decoder.final_layer_norm(hidden_states)
+        hidden_states = self.decoder.dropout(hidden_states)
+        lm_logits = self.lm_head(hidden_states)
+
+        return Seq2SeqLMOutput(
+            loss=None,
+            logits=lm_logits
+        )
+
+
 
 class GPTModelBranch(transformers.PreTrainedModel):
     """
@@ -619,6 +824,10 @@ class GPTModelBranch(transformers.PreTrainedModel):
             cross_attentions=all_cross_attentions,
             value=None,
         )
+
+
+
+
 
 
 class OPTModelBranch(transformers.PreTrainedModel):

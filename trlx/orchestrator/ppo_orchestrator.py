@@ -72,9 +72,11 @@ class PPOOrchestrator(Orchestrator):
             exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
-
-            query_tensors = batch.input_ids
-            response_tensors = samples[:, query_tensors.shape[1] :]
+            if 't5' in self.rl_model.config.model.model_path:
+                response_tensors = samples
+            else:
+                query_tensors = batch.input_ids
+                response_tensors = samples[:, query_tensors.shape[1] :]
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
@@ -103,53 +105,103 @@ class PPOOrchestrator(Orchestrator):
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
-            all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
-                query_tensors.to(response_tensors.device), response_tensors
-            )
-            with torch.no_grad():
-                logits, *_, values = self.rl_model.model(
-                    all_tokens, attention_mask=attention_mask, position_ids=position_ids
-                )
-                # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                if hasattr(self.rl_model.model, "frozen_head"):
-                    ref_logits = self.rl_model.model.forward_hydra(
-                        all_tokens,
+            if 't5' in self.rl_model.config.model.model_path:
+                response_tensors = response_tensors[:, 1:]
+                attention_mask = batch.attention_mask.to(response_tensors.device)
+                input_ids = batch.input_ids.to(response_tensors.device)
+                decoder_input_ids = response_tensors
+                query_tensors = input_ids
+                with torch.no_grad():
+                    outputs = self.rl_model.model(
+                        input_ids=input_ids,
                         attention_mask=attention_mask,
-                        position_ids=position_ids,
-                        return_dict=False,
+                        decoder_input_ids=decoder_input_ids,
                     )
-                else:
-                    ref_logits, _, *_ = self.ref_model(
-                        all_tokens.cpu(),
-                        attention_mask=attention_mask.cpu(),
-                        position_ids=position_ids.cpu(),
+                    logits = outputs.logits
+                    values = outputs.value
+                    if hasattr(self.rl_model.model, "frozen_head"):
+                        ref_logits = self.rl_model.model.forward_hydra(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=decoder_input_ids
+                        )
+                    else:
+                        ref_logits, _, *_ = self.ref_model(
+                            all_tokens.cpu(),
+                            attention_mask=attention_mask.cpu(),
+                            position_ids=position_ids.cpu(),
+                        )
+                        ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+            else:
+                all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
+                    query_tensors.to(response_tensors.device), response_tensors
+                )
+                with torch.no_grad():
+                    logits, *_, values = self.rl_model.model(
+                        all_tokens, attention_mask=attention_mask, 
                     )
-                    ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+                    # TODO(dahoas): When hydra model works need to also support generation on hydra head
+                    if hasattr(self.rl_model.model, "frozen_head"):
+                        ref_logits = self.rl_model.model.forward_hydra(
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            position_ids=position_ids,
+                            return_dict=False,
+                        )
+                    else:
+                        ref_logits, _, *_ = self.ref_model(
+                            all_tokens.cpu(),
+                            attention_mask=attention_mask.cpu(),
+                            position_ids=position_ids.cpu(),
+                        )
+                        ref_logits = ref_logits.to(self.rl_model.accelerator.device)
 
-            logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-            ref_logprobs = logprobs_from_logits(
-                ref_logits[:, :-1, :], all_tokens[:, 1:]
-            )
+            if 't5' in self.rl_model.config.model.model_path:
+                logprobs = logprobs_from_logits(logits, decoder_input_ids)
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits, decoder_input_ids
+                )
+                n = samples.shape[0]
+                values = values.cpu()
+                logprobs = logprobs.cpu()
+                ref_logprobs = ref_logprobs.cpu()
+                query_tensors = query_tensors.cpu()
+                response_tensors = response_tensors.cpu()
+            else:
+            
+                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits[:, :-1, :], all_tokens[:, 1:]
+                )
+                n = samples.shape[0]
+                values = values.cpu()[:, :-1]
+                logprobs = logprobs.cpu()
+                ref_logprobs = ref_logprobs.cpu()
+                query_tensors = query_tensors.cpu()
+                response_tensors = response_tensors.cpu()
 
-            n = samples.shape[0]
-            values = values.cpu()[:, :-1]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            query_tensors = query_tensors.cpu()
-            response_tensors = response_tensors.cpu()
-
-            start = query_tensors.shape[1] - 1
-            ends = start + attention_mask[:, start:].sum(1)
-            all_values = [values[ix, start : ends[ix]] for ix in range(n)]
-            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+            if 't5' in self.rl_model.config.model.model_path:
+                all_values = values
+                all_logprobs = logprobs
+            else:
+                start = query_tensors.shape[1] - 1
+                ends = start + attention_mask[:, start:].sum(1)
+                all_values = [values[ix, start : ends[ix]] for ix in range(n)]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
 
             # Compute rewards
             rewards = -self.rl_model.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
-            for ix in range(n):
-                rs = rewards[ix][start : ends[ix]]
-                rs[-1] = scores[ix]
-                all_rewards[ix] = rs
+            if 't5' in self.rl_model.config.model.model_path:
+                for ix in range(n):
+                    rs = rewards[ix]
+                    rs[-1] = scores[ix]
+                    all_rewards[ix] = rs
+            else:
+                for ix in range(n):
+                    rs = rewards[ix][start : ends[ix]]
+                    rs[-1] = scores[ix]
+                    all_rewards[ix] = rs
 
             new_ppo_rl_elements = [
                 PPORLElement(
