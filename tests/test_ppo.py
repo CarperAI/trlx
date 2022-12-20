@@ -1,6 +1,6 @@
 import unittest
 from trlx.data.configs import TRLConfig
-from trlx.model.nn.ppo_models import CausalLMHydraWithValueHead
+from trlx.trainer.nn.ppo_models import CausalLMHydraWithValueHead
 from trlx.utils.modeling import RunningMoments
 from transformers import AutoTokenizer
 import torch

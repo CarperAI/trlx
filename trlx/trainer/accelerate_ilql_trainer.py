@@ -4,17 +4,16 @@ import torch
 import torch.nn.functional as F
 
 
-from trlx.model import register_model
-from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
+from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+from trlx.trainer.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
 from trlx.utils import to_device
 
-from .accelerate_base_model import AccelerateRLModel
 
-
-@register_model
-class AccelerateILQLModel(AccelerateRLModel):
+@register_trainer
+class AccelerateILQLTrainer(AccelerateRLTrainer):
     def __init__(
         self,
         config: TRLConfig,
