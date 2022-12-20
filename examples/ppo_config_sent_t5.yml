@@ -1,14 +1,14 @@
 model:
-  model_path: "google/flan-t5-base"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf model to load
-  tokenizer_path: "google/flan-t5-base"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
+  model_path: "flan-t5-sentiment/checkpoint-5000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf model to load
+  tokenizer_path: "flan-t5-sentiment/checkpoint-5000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
-  num_layers_unfrozen: 8 #-1 # Number of bottom layers to freeze during training
+  num_layers_unfrozen: 4 #-1 # Number of bottom layers to freeze during training
 
 optimizer:
   name: "adamw"
   kwargs:
-    lr: 1.412e-4
-    betas: [0.9, 0.95]
+    lr: 5.e-5
+    betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 1.0e-6
 
@@ -16,7 +16,7 @@ scheduler:
   name: "cosine_annealing"
   kwargs:
     T_max: 80000 # train.total_steps
-    eta_min: 1.412e-4
+    eta_min: 5.e-5
 
 train:
   seq_length: 64  # Size of LM context
@@ -50,6 +50,7 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 64  # LM max sample gen length
+    do_sample: True  # sample
     # top_k: 0.0  # top k
     # top_k: 50
     # top_p: 0.95  # top p

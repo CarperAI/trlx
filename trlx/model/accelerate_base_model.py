@@ -156,6 +156,7 @@ class AccelerateRLModel(BaseRLModel):
         stats = {}
         all_samples = []
         prompts_sizes = []
+        lst_prompts = []
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
@@ -165,22 +166,30 @@ class AccelerateRLModel(BaseRLModel):
 
             if isinstance(samples, tuple):
                 samples, *_ = samples
-
-            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-            all_samples.append(
-                F.pad(
-                    samples,
-                    (0, self.max_length - samples.shape[1]),
-                    value=pad_token,
+            if 't5' in self.config.model.model_path:
+                pad_token = self.tokenizer.pad_token_id
+                all_samples.append(samples[:, 1:])
+                
+            else:
+                pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+                all_samples.append(
+                    F.pad(
+                        samples,
+                        (0, self.max_length - samples.shape[1]),
+                        value=pad_token,
+                    )
                 )
-            )
             sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
-                len(prompts.input_ids)
+                    len(prompts.input_ids)
             )
             prompts_sizes.append(sizes.to(samples.device))
-
+            lst_prompts.extend(prompts.input_ids)
+        import ipdb; ipdb.set_trace()
         stats["time/generate"] = time() - generate_time
 
+        # if 't5' in self.config.model.model_path:
+        #     lst_prompts = self.accelerator.gather(torch.vstack(lst_prompts))
+        
         samples = self.accelerator.gather(torch.vstack(all_samples))
         prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
@@ -189,12 +198,16 @@ class AccelerateRLModel(BaseRLModel):
                 str_samples = self.tokenizer.batch_decode(
                     samples, skip_special_tokens=True
                 )
-
                 prompts, responses = [], []
-                for sample, prompt_size in zip(samples, prompts_sizes):
-                    prompts.append(sample[:prompt_size])
-                    responses.append(sample[prompt_size:])
-
+                if 't5' in self.config.model.model_path:
+                    for sample, prompt in zip(samples, lst_prompts):
+                        prompts.append(prompt)
+                        responses.append(sample)
+                else:
+                    for sample, prompt_size in zip(samples, prompts_sizes):
+                        prompts.append(sample[:prompt_size])
+                        responses.append(sample[prompt_size:])
+                import ipdb; ipdb.set_trace()
                 str_prompts = self.tokenizer.batch_decode(
                     prompts, skip_special_tokens=True
                 )

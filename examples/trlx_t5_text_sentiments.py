@@ -6,7 +6,7 @@ from transformers import pipeline
 def get_positive_score(scores):
     "Extract value associated with a positive sentiment from pipeline's output"
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
-
+import os
 import trlx
 from trlx.data.configs import TRLConfig
 
