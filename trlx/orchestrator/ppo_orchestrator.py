@@ -16,7 +16,7 @@ import ray
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
     """
-    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into model's `store`
+    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
     """
 
     def __init__(
@@ -56,7 +56,7 @@ class PPOOrchestrator(Orchestrator):
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
         """
-        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
+        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to trainer's `store`
         """
         ppo_rl_elements = []
         stats = {}
@@ -171,5 +171,5 @@ class PPOOrchestrator(Orchestrator):
         if not ray.is_initialized():
             self.trainer.accelerator.log(stats, step=iter_count)
 
-        # Push samples and rewards to model's rollout storage
+        # Push samples and rewards to trainer's rollout storage
         self.trainer.push_to_store(ppo_rl_elements)
