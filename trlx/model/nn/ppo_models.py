@@ -644,11 +644,9 @@ class GPTModelBranch(transformers.PreTrainedModel):
         self.gradient_checkpointing = False
 
         # Turning off grad saves memory
-        for block in self.transformer_blocks:
-            for parameter in block.parameters():
-                parameter.requires_grad = False
-        for parameter in self.lm_head.parameters():
-            parameter.requires_grad = False
+
+        for parameter in self.parameters():
+            parameter.requires_grad_(False)
 
     def forward(
         self,
@@ -866,11 +864,8 @@ class OPTModelBranch(transformers.PreTrainedModel):
         self.gradient_checkpointing = False
 
         # Turning off grad saves memory
-        for block in self.transformer_blocks:
-            for parameter in block.parameters():
-                parameter.requires_grad = False
-        for parameter in lm_head.parameters():
-            parameter.requires_grad = False
+        for parameter in self.parameters():
+            parameter.requires_grad_(False)
 
     def forward(
         self,
@@ -1048,11 +1043,8 @@ class BloomModelBranch(transformers.PreTrainedModel):
         self.gradient_checkpointing = False
 
         # Turning off grad saves memory
-        for block in self.transformer_blocks:
-            for parameter in block.parameters():
-                parameter.requires_grad = False
-        for parameter in lm_head.parameters():
-            parameter.requires_grad = False
+        for parameter in self.parameters():
+            parameter.requires_grad_(False)
 
     def forward(
         self,
