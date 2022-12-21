@@ -34,7 +34,7 @@ if __name__ == "__main__":
     from datasets import load_dataset
 
     imdb = load_dataset("imdb", split="train+test")
-    prompts = ["Generate positive review for IMDB film start with: " + " ".join(review.split()[:4]) for review in imdb["text"]]
+    prompts = ["Complete this film review: " + " ".join(review.split()[:4]) for review in imdb["text"]]
 
 
     # prompts = val_openai_summ
@@ -44,6 +44,6 @@ if __name__ == "__main__":
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=prompts[0:200],
+        eval_prompts=prompts[0:100],
         config=config
     )

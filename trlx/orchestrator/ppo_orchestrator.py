@@ -200,6 +200,8 @@ class PPOOrchestrator(Orchestrator):
             else:
                 for ix in range(n):
                     rs = rewards[ix][start : ends[ix]]
+                    if len(rs) == 0:
+                        rs = torch.tensor([rewards[ix][start]])
                     rs[-1] = scores[ix]
                     all_rewards[ix] = rs
 

@@ -189,15 +189,15 @@ class AccelerateRLModel(BaseRLModel):
 
         # if 't5' in self.config.model.model_path:
         #     lst_prompts = self.accelerator.gather(torch.vstack(lst_prompts))
-        
-        samples = all_samples #self.accelerator.gather(torch.vstack(all_samples))
+        if 't5' in self.config.model.model_path:
+            samples = all_samples #self.accelerator.gather(torch.vstack(all_samples))
+        else:
+            samples = self.accelerator.gather(torch.vstack(all_samples))
         prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
         if self.accelerator.is_main_process:
             if self.tokenizer:
-                # str_samples = self.tokenizer.batch_decode(
-                #     samples, skip_special_tokens=True
-                # )
+                
                 prompts, responses = [], []
                 if 't5' in self.config.model.model_path:
                     for sample, prompt in zip(samples, lst_prompts):
@@ -219,7 +219,13 @@ class AccelerateRLModel(BaseRLModel):
                     str_responses = self.tokenizer.batch_decode(
                         responses, skip_special_tokens=True
                     )
-            str_samples = str_responses
+            if 't5' in self.config.model.model_path:
+                str_samples = str_responses
+            else:
+                str_samples = self.tokenizer.batch_decode(
+                    samples, skip_special_tokens=True
+                )
+                
             if isinstance(str_samples[0], str):
                 columns_data = [str_prompts, str_responses]
             else:

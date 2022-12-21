@@ -129,7 +129,7 @@ class AcceleratePPOModel(AccelerateRLModel):
                 values_pred[:, start:end],
                 attention_mask[:, start:end],
             )
-
+        
         loss, stats = self.config.method.loss(
             logprobs=logprobs,
             values=values_pred,

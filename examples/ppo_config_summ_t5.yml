@@ -1,6 +1,6 @@
 model:
   model_path: "google/flan-t5-xl" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf model to load
-  tokenizer_path: "google/flan-t5-large" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
+  tokenizer_path: "google/flan-t5-xl" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
   num_layers_unfrozen: 2 #-1 # Number of bottom layers to freeze during training
 
@@ -34,7 +34,7 @@ train:
 method:
   name: 'ppoconfig'  # Name of RL method config
   num_rollouts: 128 #128 # Number of rollouts to collect per epoch
-  chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
+  chunk_size: 16  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs: 4  # Number of ppo epochs
   init_kl_coef: 0.05  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef

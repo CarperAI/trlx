@@ -9,31 +9,29 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     DataCollatorForSeq2Seq
 )
+import os
+from summarize_dataset import get_dataset_from_jsonl
 
-MAX_LENGTH_INPUT = 32
+val_openai_summ, val_labels = get_dataset_from_jsonl(os.path.join("/fsx/home-duyphung/sandbox/trlx/openai_data/tldr_filtered", "valid.jsonl"), False)
+
+MAX_LENGTH_INPUT = 512
 MAX_LENGTH_OUTPUT = 64
 
-class IMDBDataset(dataset.Dataset):
+class TLDRDataset(dataset.Dataset):
 
     def __init__(self, tokenizer, type_data='train'):
         if type_data == 'train':
-            imdb = load_dataset("imdb", split="train")
+            self.prompts, self.outputs = get_dataset_from_jsonl(os.path.join("/fsx/home-duyphung/sandbox/trlx/openai_data/tldr_filtered", "train.jsonl"), False)
         else:
-            imdb = load_dataset("imdb", split="test").select(range(100))
-        print(len(imdb))
-        #self.prompts = ["Generate review for IMDB film start with: " + \
-        self.prompts = ["Film review: " + " ".join(review.split()[:8]) for review in imdb["text"]]
-        self.outputs = [" ".join(review.split()[8:]).replace("<br />", "") for review in imdb["text"]]
-        for i in range(10):
-            print('input: ', self.prompts[i])
-            print('output: ', self.outputs[i])
+            self.prompts, self.outputs = get_dataset_from_jsonl(os.path.join("/fsx/home-duyphung/sandbox/trlx/openai_data/tldr_filtered", "valid.jsonl"), False)
+        
         self.tokenizer = tokenizer
 
     def __len__(self):
         return len(self.prompts)
     
     def __getitem__(self, idx):
-        input_text = self.prompts[idx]
+        input_text = "Please summarize this document: " + self.prompts[idx]
         output_text = self.outputs[idx]
 
         model_input = self.tokenizer(
@@ -53,22 +51,22 @@ class IMDBDataset(dataset.Dataset):
             model_input['labels'] = [-100 if token == self.tokenizer.pad_token_id else token for token in model_input['labels']]
         return model_input
     
-import wandb
-wandb.init(name="flan-t5-sentiment", project="add_t5", entity="pvduy")
+import wandb 
+wandb.init(name="flan-t5-summarize", project="add_t5", entity="pvduy")
 
 
 
 if __name__=="__main__":
     config = {
         "logging_steps": 10,
-        "eval_steps": 1000,
-        "save_steps": 1000,
-        "batch_size": 32,
-        "batch_size_val": 16,
+        "eval_steps": 2000,
+        "save_steps": 4000,
+        "batch_size": 4,
+        "batch_size_val": 4,
         "warmup_steps": 100,
-        "accum_steps": 1,
-        "num_beams": 5,
-        "output_dir": "flan-t5-sentiment",
+        "accum_steps": 4,
+        "num_beams": 3,
+        "output_dir": "flan-t5-summarize",
     }
 
     def compute_metrics(pred):
@@ -80,20 +78,15 @@ if __name__=="__main__":
         label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
 
         rouge_output = rouge.compute(
-            predictions=pred_str, references=label_str, rouge_types=["rouge2"]
-        )["rouge2"].mid
+            predictions=pred_str, references=label_str,
+        )
 
-        # bleu_output = bleu.compute(predictions=pred_str, references=label_str).mid
-
-        return {
-            "rouge2_precision": round(rouge_output.precision, 4),
-            "rouge2_recall": round(rouge_output.recall, 4)
-        }
+        return rouge_output
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config["output_dir"],
         do_train=True,
-        num_train_epochs=10,
+        num_train_epochs=5,
         do_eval=True,
         predict_with_generate=True,
         evaluation_strategy="steps",
@@ -106,19 +99,19 @@ if __name__=="__main__":
         eval_steps=config["eval_steps"],
         save_steps=config["save_steps"],
         warmup_steps=config["warmup_steps"],
-        save_total_limit=2,
+        eval_accumulation_steps=1,
         fp16=True,
         lr_scheduler_type="linear",
         gradient_accumulation_steps=config["accum_steps"],
-        # deepspeed='ds_config_trlx_t5.json',
+        deepspeed='ds_config_trlx_t5.json',
     )
     
-    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
-    model = AutoModelForSeq2SeqLM.from_pretrained("flan-t5-review/checkpoint-3000/")
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-xl")
+    model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-xl")
     rouge = load_metric("rouge")
     
-    train_dataset = IMDBDataset(tokenizer, type_data='train')
-    val_dataset = IMDBDataset(tokenizer, type_data='test')
+    train_dataset = TLDRDataset(tokenizer, type_data='train')
+    val_dataset = TLDRDataset(tokenizer, type_data='test')
 
     train_dataset[0]
 
