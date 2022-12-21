@@ -34,17 +34,17 @@ train:
 method:
   name: 'ppoconfig'  # Name of RL method config
   num_rollouts: 128 #128 # Number of rollouts to collect per epoch
-  chunk_size: 16  # Number of rollouts to collect in one loop of orchestrator
+  chunk_size: 128  # Number of rollouts to collect in one loop of orchestrator
   ppo_epochs: 4  # Number of ppo epochs
-  init_kl_coef: 0.1  # init kl coefficient
+  init_kl_coef: 0.05  # init kl coefficient
   target: 6  # target kl coefficient, set None for fixed kl coef
   horizon: 10000  # PPO horizon
   gamma: 1 # PPO discount
   lam: 0.95  # PPO lambda
   cliprange: 0.2  # clip range
   cliprange_value: 0.2  # clip range
-  vf_coef: 0.2  # value term weight
-  scale_reward: 'running' # "ref" # "running" # False | "ref" | "running" estimate against which to scale rewards
+  vf_coef: 1  # value term weight
+  scale_reward: False # "ref" # "running" # False | "ref" | "running" estimate against which to scale rewards
   ref_mean: None #2.875
   ref_std: None #1.177 # rescale rewards with this deviation
   cliprange_reward: 10
