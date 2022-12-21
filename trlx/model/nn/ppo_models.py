@@ -540,6 +540,14 @@ class T5Branch(transformers.PreTrainedModel):
         for block in self.decoder.block:
             for parameter in block.parameters():
                 parameter.requires_grad = False
+        
+        for parameter in self.lm_head.parameters():
+            parameter.requires_grad = False
+        
+        self.decoder.embed_tokens.weight.requires_grad = False
+        self.decoder.final_layer_norm.weight.requires_grad = False
+        for parameter in self.parameters():
+            parameter.requires_grad = False
 
     def forward(
         self, 
@@ -639,7 +647,7 @@ class GPTModelBranch(transformers.PreTrainedModel):
         for block in self.transformer_blocks:
             for parameter in block.parameters():
                 parameter.requires_grad = False
-        for parameter in lm_head.parameters():
+        for parameter in self.lm_head.parameters():
             parameter.requires_grad = False
 
     def forward(
