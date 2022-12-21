@@ -23,7 +23,7 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 
 from trlx.data.configs import TRLConfig
-from trlx.model import BaseRLModel, register_model
+from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
     get_optimizer_class,
@@ -34,10 +34,10 @@ from trlx.utils import (
 from trlx.utils.modeling import freeze_bottom_causal_layers
 
 
-@register_model
-class AccelerateRLModel(BaseRLModel):
+@register_trainer
+class AccelerateRLTrainer(BaseRLTrainer):
     """
-    RL Model that uses accelerate for training
+    RL model trainer with an `accelerate` based backend
     """
 
     def __init__(self, config, train_mode=True):
