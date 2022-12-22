@@ -14,7 +14,6 @@ def train(
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable] = None,
     config: Optional[TRLConfig] = None,
-    split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
 ):
     """
@@ -28,7 +27,6 @@ def train(
         eval_prompts (List[str]): Prompts to periodically validate training on
         metric_fn (Optional[Callable[List[str], List[float]]]): Function to compute statistics on validation samples
         config (Optional[TRLConfig]): TRL configuration object to override default settings
-        split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
     if reward_fn is not None:
@@ -94,10 +92,8 @@ def train(
             eval_prompts, max_prompt_length, trainer.tokenizer
         )
 
-        orch = get_orchestrator(config.train.orchestrator)(
-            trainer, split_token=split_token
-        )
-        orch.make_experience(samples, rewards)
+        orch = get_orchestrator(config.train.orchestrator)(trainer)
+        orch.make_experience(samples, rewards, config.train.seq_length)
         trainer.add_eval_pipeline(eval_pipeline)
 
     else:
