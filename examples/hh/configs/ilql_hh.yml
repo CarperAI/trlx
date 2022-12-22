@@ -1,19 +1,19 @@
 train:
-  seq_length: 768
-  epochs: 1000
+  seq_length: 1024
+  epochs: 10
   total_steps: 10000
   batch_size: 16
 
   checkpoint_interval: 100000
-  eval_interval: 1000
+  eval_interval: 200
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
 
 model:
   model_type: "AccelerateILQLModel"
-  model_path: "gpt2-large"
-  tokenizer_path: "gpt2"
+  model_path: "EleutherAI/pythia-350m"
+  tokenizer_path: "EleutherAI/gpt-neox-20b"
   num_layers_unfrozen: 6
 
 optimizer:
@@ -42,5 +42,5 @@ method:
   gen_kwargs:
     max_new_tokens: 64
     top_k: 20
-    beta: 1
+    beta: 4
     temperature: 1.0
