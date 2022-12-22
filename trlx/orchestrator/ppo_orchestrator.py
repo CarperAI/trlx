@@ -50,16 +50,19 @@ class PPOOrchestrator(Orchestrator):
         self.ref_std = self.rl_model.config.method.ref_std
         self.rl_model.experience_fn = experience_fn if experience_fn is not None else self.default_experience_fn
          
-    def score(self, samples):
+    def score(self, trajectories):
         """
         Batched scoring function taking text and generating scalar
         """
+        # unpack trajectories (list of lists of strings) into a single list of strings
+        samples = [sample for trajectory in trajectories for sample in trajectory]
         return self.rl_model.reward_fn(samples)
 
     def generate_and_calc_logprobs(self, batch):
         stats = {}
         exp_generate_time = time()
         samples = self.rl_model.generate(**batch)
+        print("batch", batch)
         stats["exp_generate_time"] = time() - exp_generate_time
 
         query_tensors = batch.input_ids
@@ -102,10 +105,30 @@ class PPOOrchestrator(Orchestrator):
         return {'samples': samples, 'all_logprobs': all_logprobs, 'all_ref_logprobs': all_ref_logprobs, 'query_tensors': query_tensors, 'response_tensors': response_tensors, 'all_values': all_values}, stats
 
     def default_experience_fn(self, batch):
+        """
+        Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
+        This default_experience_fn is a wrapper around that function that returns the same data as generate_and_calc_logprobs.
+
+        :return: trajectories, 
+                data={'samples': samples, 'all_logprobs': all_logprobs, 'all_ref_logprobs': all_ref_logprobs, 'query_tensors': query_tensors, 'response_tensors': response_tensors, 'all_values': all_values}, 
+                stats
+        """
         data, stats = self.generate_and_calc_logprobs(batch)
         
+        # Trajectories are passed to the reward function in the List[List[str]] form, batch_size outer lists, arbitrary inner lists
+        # Here the inner lists will be of length 1, but this is to keep the same format as the other experience functions
+
+        #print("data['samples'].shape", data['samples'].shape) # (batch_size, max_length)
+        #print("data['samples']", data['samples']) # some tokens
+
+        texts = self.rl_model.tokenizer.batch_decode(
+            data['samples'], skip_special_tokens=True
+        )
+        trajectories = [[text] for text in texts]
+        #print("trajectories", trajectories)
+
         samples, all_logprobs, all_ref_logprobs, query_tensors, response_tensors, all_values = data['samples'], data['all_logprobs'], data['all_ref_logprobs'], data['query_tensors'], data['response_tensors'], data['all_values']
-        return {'samples': samples, 'all_logprobs': all_logprobs, 'all_ref_logprobs': all_ref_logprobs, 'all_values': all_values, 'query_tensors': query_tensors, 'response_tensors': response_tensors}, stats
+        return trajectories, {'samples': samples, 'all_logprobs': all_logprobs, 'all_ref_logprobs': all_ref_logprobs, 'all_values': all_values, 'query_tensors': query_tensors, 'response_tensors': response_tensors}, stats
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
         """
@@ -121,19 +144,14 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            data, stats = self.rl_model.experience_fn(batch)
+            trajectories, data, stats = self.rl_model.experience_fn(batch)
 
             kls = data['all_logprobs'] - data['all_ref_logprobs']
             non_score_rewards = -self.rl_model.kl_ctl.value * kls
             all_rewards = non_score_rewards.clone()
 
-            #print("all_rewards.shape", all_rewards.shape)
-
-            texts = self.rl_model.tokenizer.batch_decode(
-                data['samples'], skip_special_tokens=True
-            )
             exp_score_time = time()
-            scores = torch.as_tensor(self.score(texts), device=data['samples'].device)
+            scores = torch.as_tensor(self.score(trajectories), device=data['samples'].device)
             stats["exp_score_time"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
