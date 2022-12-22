@@ -4,7 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Any, Dict, Iterable, Sequence, Tuple, Union
+from typing import Dict, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -281,6 +281,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
+                    for i, lr in enumerate(self.scheduler.get_last_lr()):
+                        stats[f"learning_rate/group_{i}"] = lr                    
 
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
