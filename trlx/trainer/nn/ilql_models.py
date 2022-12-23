@@ -197,14 +197,14 @@ class CausalLMWithValueHeads(nn.Module):
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
                     config_path
                 )
+
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
         else:
             self.config = config
+            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
 
-        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path,
-        )
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
         freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
