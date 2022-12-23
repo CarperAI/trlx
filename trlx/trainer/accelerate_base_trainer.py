@@ -282,7 +282,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
                     for group_number, lr in enumerate(self.scheduler.get_last_lr()):
-                        stats[f"learning_rate/group_{group_number}"] = lr
+                        stats[f"learning_rate_group_{group_number}"] = lr
 
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
