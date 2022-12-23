@@ -20,6 +20,7 @@ def set_seed(seed: int):
     """
     Sets seeds across package dependencies for reproducibility.
     """
+    seed += int(os.environ.get("RANK", 0))
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -243,4 +244,5 @@ def get_git_tag() -> str:
     Returns commit's short hash and date
     """
     output = subprocess.check_output("git log --format='%h/%as' -n1".split())
-    return output.decode()[1:-2]
+    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
+    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}"

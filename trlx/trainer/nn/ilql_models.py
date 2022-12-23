@@ -47,8 +47,8 @@ class ILQLConfig(MethodConfig):
     awac_scale: float
     alpha: float
     steps_for_target_q_sync: float
-    betas: Sequence[float]
     two_qs: bool
+    gen_kwargs: dict
 
     def heads(self, hidden_size: int, vocab_size: int):
         return ILQLHeads(self, hidden_size, vocab_size)
@@ -145,7 +145,6 @@ class ILQLHeads(nn.Module):
         states_ixs: torch.Tensor = None,
         actions_ixs: torch.Tensor = None,
     ):
-
         if states_ixs is not None:
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
@@ -203,14 +202,14 @@ class CausalLMWithValueHeads(nn.Module):
                 _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
                     config_path
                 )
+
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
         else:
             self.config = config
+            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
 
-        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path,
-        )
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
         freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
@@ -265,7 +264,8 @@ class CausalLMWithValueHeads(nn.Module):
         position_ids=None,
         past_key_values=None,
         beta=1,
-        max_length=32,
+        max_new_tokens=32,
+        max_length=1024,
         temperature=1,
         top_k=20,
         logit_mask=None,
@@ -283,13 +283,12 @@ class CausalLMWithValueHeads(nn.Module):
             position_ids.masked_fill_(attention_mask.eq(0), 0)
 
         samples = input_ids.clone()
-        tensors = defaultdict(list)
-        n_new_tokens = max_length - input_ids.shape[1]
+        max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
 
         finished = torch.zeros(
             input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device
         )
-        for _ in range(n_new_tokens):
+        for _ in range(max_new_tokens):
             out = self.forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,

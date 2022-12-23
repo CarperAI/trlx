@@ -4,7 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Any, Dict, Iterable, Sequence, Tuple, Union
+from typing import Dict, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -23,7 +23,7 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 
 from trlx.data.configs import TRLConfig
-from trlx.model import BaseRLModel, register_model
+from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
     get_optimizer_class,
@@ -34,10 +34,10 @@ from trlx.utils import (
 from trlx.utils.modeling import freeze_bottom_causal_layers
 
 
-@register_model
-class AccelerateRLModel(BaseRLModel):
+@register_trainer
+class AccelerateRLTrainer(BaseRLTrainer):
     """
-    RL Model that uses accelerate for training
+    RL model trainer with an `accelerate` based backend
     """
 
     def __init__(self, config, train_mode=True):
@@ -147,6 +147,7 @@ class AccelerateRLModel(BaseRLModel):
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         all_samples = []
+        prompts_sizes = []
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
@@ -165,34 +166,54 @@ class AccelerateRLModel(BaseRLModel):
                     value=pad_token,
                 )
             )
-        stats["generate_time"] = time() - generate_time
+            sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
+                len(prompts.input_ids)
+            )
+            prompts_sizes.append(sizes.to(samples.device))
+
+        stats["time/generate"] = time() - generate_time
 
         samples = self.accelerator.gather(torch.vstack(all_samples))
+        prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
         if self.accelerator.is_main_process:
             if self.tokenizer:
-                samples = self.tokenizer.batch_decode(samples, skip_special_tokens=True)
+                str_samples = self.tokenizer.batch_decode(
+                    samples, skip_special_tokens=True
+                )
 
-            if isinstance(samples[0], str):
-                columns_data = [samples]
+                prompts, responses = [], []
+                for sample, prompt_size in zip(samples, prompts_sizes):
+                    prompts.append(sample[:prompt_size])
+                    responses.append(sample[prompt_size:])
+
+                str_prompts = self.tokenizer.batch_decode(
+                    prompts, skip_special_tokens=True
+                )
+                str_responses = self.tokenizer.batch_decode(
+                    responses, skip_special_tokens=True
+                )
+
+            if isinstance(str_samples[0], str):
+                columns_data = [str_prompts, str_responses]
             else:
                 columns_data = [samples.tolist()]
-            columns = ["samples"]
+            columns = ["prompt", "response"]
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                rewards = torch.as_tensor(self.reward_fn(samples), dtype=torch.float)
+                rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
-                stats["mean_reward"] = mean_reward
+                stats["reward/mean"] = mean_reward
                 print(f"{mean_reward=}")
 
             # additionally log any other metrics
             if self.metric_fn:
                 metric_time = time()
-                metrics = self.metric_fn(samples)
-                stats["metric_time"] = time() - metric_time
+                metrics = self.metric_fn(str_samples)
+                stats["time/metric"] = time() - metric_time
 
                 mean_metrics = {
                     f"metrics/{k}": torch.as_tensor(xs).mean(-1)
@@ -258,8 +279,10 @@ class AccelerateRLModel(BaseRLModel):
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
                         self.save()
 
-                    stats["forward_time"] = forward_time
-                    stats["backward_time"] = backward_time
+                    stats["time/forward"] = forward_time
+                    stats["time/backward"] = backward_time
+                    for group_number, lr in enumerate(self.scheduler.get_last_lr()):
+                        stats[f"learning_rate_group_{group_number}"] = lr
 
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()

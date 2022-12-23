@@ -59,12 +59,12 @@ def main(hparams={}):
     dataset = DSLDataset()
     train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
 
-    model = trlx.train(
+    trainer = trlx.train(
         reward_fn=reward_fn,
         prompts=train_prompts,
         config=config,
     )
-    model.save_pretrained("dataset/trained_model")
+    trainer.save_pretrained("dataset/trained_model")
 
 
 if __name__ == "__main__":

@@ -9,11 +9,11 @@ train:
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
+  trainer: "AccelerateILQLTrainer"
 
   seed: 1000
 
 model:
-  model_type: "AccelerateILQLModel"
   model_path: "CarperAI/randomwalks"
   tokenizer_path: "CarperAI/randomwalks"
   num_layers_unfrozen: -1
@@ -40,5 +40,9 @@ method:
   awac_scale: 1
   alpha: 0.1
   steps_for_target_q_sync: 5
-  betas: [100]
   two_qs: true
+  gen_kwargs:
+    max_new_tokens: 9
+    top_k: 1
+    beta: 100
+    temperature: 1.0

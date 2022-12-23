@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, List
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -12,13 +12,21 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
-    Tokenizes texts, and then pads them into batches
+    Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
     """
 
-    def __init__(self, prompts, tokenizer=None):
+    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
         super().__init__()
+
+        if tokenizer:
+            prompts = tokenizer(prompts).input_ids
+
         self.tokenizer = tokenizer
-        self.prompts = list(map(tokenizer if tokenizer else (lambda x: x), prompts))
+        self.prompts = [prompt[-max_prompt_length:] for prompt in prompts]
+        self.prompts = [
+            {"input_ids": prompt, "attention_mask": [1] * len(prompt)}
+            for prompt in self.prompts
+        ]
 
     def __getitem__(self, ix: int):
         return self.prompts[ix]

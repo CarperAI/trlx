@@ -31,6 +31,8 @@ def test_repo_trl_configs():
         assert os.path.isfile(file), f"Config file {file} does not exist."
         assert file.endswith(".yml"), f"Config file {file} is not a yaml file."
         try:
-            TRLConfig.load_yaml(file)
+            config = TRLConfig.load_yaml(file)
+            assert config.train.entity_name is None, \
+                f"Unexpected entity name in config file `{file}`. Remove before pushing to repo."
         except Exception as e:
             assert False, f"Failed to load config file `{file}` with error `{e}`"

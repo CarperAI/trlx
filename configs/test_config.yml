@@ -9,9 +9,9 @@ train:
 
   pipeline: "PromptPipeline" # prompt pipeline to load
   orchestrator: "PPOOrchestrator" # orchestrator to load
+  trainer: "AcceleratePPOTrainer" # Name of model trainer to load
 
 model:
-  model_type: "AcceleratePPOModel" # Name of accelerate model type to load
   model_path: "lvwerra/gpt2-imdb" # Name of hf model to load
   tokenizer_path: "gpt2" # Name of hf tokenizer to load
   num_layers_unfrozen: 2 # Number of bottom layers to freeze during training

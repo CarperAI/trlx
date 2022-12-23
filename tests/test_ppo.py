@@ -1,6 +1,6 @@
 import unittest
 from trlx.data.configs import TRLConfig
-from trlx.model.nn.ppo_models import CausalLMHydraWithValueHead
+from trlx.trainer.nn.ppo_models import CausalLMHydraWithValueHead
 from trlx.utils.modeling import RunningMoments
 from transformers import AutoTokenizer
 import torch
@@ -30,6 +30,11 @@ class TestHydraHead(unittest.TestCase):
             frozen_logits = TestHydraHead.hydra_model.frozen_head.lm_head(last_hidden_states)
             diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(diff, 0)
+
+    def test_frozen_head(self):
+        # Ensure that all parameters of the `hydra_model.frozen_head` are actually frozen
+        for parameter in TestHydraHead.hydra_model.frozen_head.parameters():
+            self.assertTrue(parameter.requires_grad == False)
 
     def test_forward(self):
         with torch.no_grad():

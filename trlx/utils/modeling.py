@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import transformers
 from typing import Tuple
+import numpy as np
 
 
 def make_head(n_embd: int, out: int) -> nn.Sequential:
@@ -214,15 +215,13 @@ def flatten_dict(
     return dict(items)
 
 
-def log_stat(stats: dict, name: str, xs: torch.Tensor, mask: torch.Tensor, n: int):
+def get_tensor_stats(xs: torch.Tensor, mask: torch.Tensor, n: int):
     mean = (xs * mask).sum() / n
-    stats.update(
-        {
-            f"{name}/mean": mean,
-            f"{name}/min": torch.where(mask.bool(), xs, np.inf).min(),
-            f"{name}/max": torch.where(mask.bool(), xs, -np.inf).max(),
-            f"{name}/std": torch.sqrt(((xs - mean) * mask).pow(2).sum() / n),
-        }
+    return dict(
+        mean=mean,
+        min=torch.where(mask.bool(), xs, np.inf).min(),
+        max=torch.where(mask.bool(), xs, -np.inf).max(),
+        std=torch.sqrt(((xs - mean) * mask).pow(2).sum() / n),
     )
 
 
