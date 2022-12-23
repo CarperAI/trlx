@@ -83,14 +83,14 @@ class OfflineOrchestrator(Orchestrator):
             print("[Sample example]")
             print("Prompt: ", prompt)
             print("Response: ", response)
+            print("Reward: ", rewards[0])
 
         lengths = list(map(len, all_input_ids))
-        print(f"[Mean length] {np.mean(lengths):.2f} [{min(lengths)}, {max(lengths)}]")
-        print(f"[Mean reward] {np.mean(rewards):.2f} [{min(rewards)}, {max(rewards)}]")
-
         returns = torch.as_tensor(rewards, dtype=torch.float)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
+        print(f"[Mean length] {np.mean(lengths):.2f} [{min(lengths)}, {max(lengths)}]")
+        print(f"[Mean return] {returns.mean():.2f} [{min(returns)}, {max(returns)}]")
 
+        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
         rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
         for rs, ret in zip(rewards, returns):
             rs[-1] = ret
