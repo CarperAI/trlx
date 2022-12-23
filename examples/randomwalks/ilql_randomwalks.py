@@ -15,6 +15,8 @@ def main(hparams={}):
 
     metric_fn, eval_prompts, walks, _ = generate_random_walks(seed=config.train.seed)
     rewards = metric_fn(walks)["optimality"]
+    # split each random walk into (starting state, rest of the walk)
+    walks = [[walk[:1], walk[1:]] for w in walks]
 
     trlx.train(
         GPT2Config(n_layer=6, n_embd=144, vocab_size=23),
