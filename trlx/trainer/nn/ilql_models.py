@@ -13,7 +13,9 @@ from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
     hf_get_causal_base_model,
     hf_get_hidden_size,
+    get_tensor_stats,
     hf_get_lm_head,
+    flatten_dict,
     make_head,
 )
 
@@ -41,6 +43,7 @@ class ILQLConfig(MethodConfig):
     cql_scale: float
     awac_scale: float
     alpha: float
+    beta: float
     steps_for_target_q_sync: float
     two_qs: bool
     gen_kwargs: dict
@@ -95,24 +98,45 @@ class ILQLConfig(MethodConfig):
 
         loss_cql = sum(cql_loss(q) for q in qs)
 
+        action_logits = logits.gather(
+            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, dsize)
+        )
+
+        cross_entropy = F.cross_entropy(
+            action_logits.reshape(-1, dsize),
+            actions.reshape(-1),
+            reduction="none",
+        ).reshape(bsize, ntokens - 1)
+
+        with torch.no_grad():
+            weight = torch.exp(self.beta * (targetQ - V))
+
         loss_awac = (
-            F.cross_entropy(
-                logits[:, :-1, :].reshape(-1, dsize),
-                labels.input_ids[:, 1:].reshape(-1),
-                reduction="none",
-            ).reshape(bsize, ntokens - 1)
-            * labels.attention_mask[:, 1:]
-        ).sum() / labels.attention_mask[:, 1:].sum()
+            torch.sum(cross_entropy * weight * labels.attention_mask[:, 1:])
+            / labels.attention_mask[:, 1:].sum()
+        )
 
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
 
-        stats = {
-            f"losses/{k}": v
-            for k, v in locals().items()
-            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
-        }
+        stats = dict(
+            losses=dict(
+                loss=loss.item(),
+                loss_q=loss_q.item(),
+                loss_v=loss_v.item(),
+                loss_cql=loss_cql.item(),
+                loss_awac=loss_awac.item(),
+            ),
+            values=get_tensor_stats(V, terminal_mask, n_nonterminal),
+            qvalues={
+                str(ix): get_tensor_stats(Q[ix], terminal_mask, n_nonterminal)
+                for ix in range(len(Q))
+            },
+            weight=get_tensor_stats(
+                weight, labels.attention_mask[:, 1:], labels.attention_mask[:, 1:].sum()
+            ),
+        )
 
-        return loss, stats
+        return loss, flatten_dict(stats)
 
 
 class ILQLHeads(nn.Module):
