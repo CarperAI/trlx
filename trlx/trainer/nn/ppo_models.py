@@ -422,7 +422,7 @@ class DeltaModelCausalLMHydraWithValueHead(CausalLMHydraWithValueHead):
             delta_modified_modules=delta_modified_modules,
             num_layers_unfrozen=num_layers_unfrozen,
         )
-        delta_model.visualize()
+        delta_model.log()
 
 
 class GPTModelBranch(transformers.PreTrainedModel):

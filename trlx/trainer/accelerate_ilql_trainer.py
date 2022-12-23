@@ -6,7 +6,11 @@ import torch.nn.functional as F
 
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
+from trlx.trainer.nn.ilql_models import (
+    ILQLConfig,
+    CausalLMWithValueHeads,
+    DeltModelCausalLMWithValueHeads,
+)
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
 from trlx.utils import to_device
@@ -40,6 +44,14 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
+        if config.model.delta_method is not None:
+            return DeltModelCausalLMWithValueHeads(
+                config=config.model.model_path,
+                params=config.method,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
+                delta_method=config.model.delta_method,
+                delta_modified_modules=config.model.delta_modified_modules,
+            )
         return CausalLMWithValueHeads(
             config.model.model_path,
             params=config.method,

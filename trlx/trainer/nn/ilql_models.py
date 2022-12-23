@@ -340,3 +340,23 @@ class CausalLMWithValueHeads(nn.Module):
     @property
     def device(self):
         return self.base_model.device
+
+
+class DeltModelCausalLMWithValueHeads(CausalLMWithValueHeads):
+    def __init__(
+        self,
+        config: Union[PretrainedConfig, str],
+        ilql_config: ILQLConfig,
+        num_layers_unfrozen=-1,
+        delta_method: str = "lora",
+        delta_modified_modules: str = "all",
+    ):
+
+        super().__init__(config, ilql_config, num_layers_unfrozen)
+        delta_model = construct_delta_model(
+            model=self.base_model,
+            delta_method=delta_method,
+            delta_modified_modules=delta_modified_modules,
+            num_layers_unfrozen=num_layers_unfrozen,
+        )
+        delta_model.log()
