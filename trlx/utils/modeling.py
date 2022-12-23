@@ -10,6 +10,22 @@ from typing import Tuple
 import numpy as np
 
 
+from typing import Union, List
+
+try:
+    from opendelta import (
+        BitFitModel,
+        AdapterModel,
+        PrefixModel,
+        LoraModel,
+        SoftPromptModel,
+    )
+
+    _opendelta_available = True
+except ModuleNotFoundError:
+    _opendelta_available = False
+
+
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
@@ -163,22 +179,6 @@ def get_global_statistics(xs: torch.Tensor) -> Tuple[float, float, int]:
     return global_mean, global_var, count
 
 
-from typing import Union, List
-
-try:
-    from opendelta import (
-        BitFitModel,
-        AdapterModel,
-        PrefixModel,
-        LoraModel,
-        SoftPromptModel,
-    )
-
-    _opendelta_available = True
-except ModuleNotFoundError:
-    _opendelta_available = False
-
-
 def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
     """Whitens values"""
     if distributed and dist.is_initialized():
@@ -249,7 +249,7 @@ class RunningMoments:
 
         new_sum = xs_var * xs_count
         # correct old_sum deviation accounting for the new mean
-        old_sum = self.var * self.count + delta ** 2 * self.count * xs_count / tot_count
+        old_sum = self.var * self.count + delta**2 * self.count * xs_count / tot_count
         tot_sum = old_sum + new_sum
 
         self.mean += delta * xs_count / tot_count
@@ -258,9 +258,6 @@ class RunningMoments:
         self.count = tot_count
 
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
-
-
-q
 
 
 def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
@@ -338,7 +335,7 @@ def construct_delta_model(
         modified_modules=delta_modified_modules,
         num_layers_unfrozen=num_layers_unfrozen,
     )
-    delta_model = delta_model_class(delta_method)(
+    delta_model = delta_model_class(
         backbone_model=backbone_model, modified_modules=modified_module_list
     )
     delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)

@@ -38,6 +38,8 @@ class ModelConfig:
     model_path: str
     tokenizer_path: str
     num_layers_unfrozen: int = -1
+    delta_method: str = None
+    delta_modified_modules: str = "all"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
