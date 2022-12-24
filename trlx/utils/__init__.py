@@ -26,6 +26,7 @@ def set_seed(seed: int):
 
 # Training utils
 
+
 def get_distributed_config(accelerator: Accelerator):
     """
     Return accelerator distributed config
