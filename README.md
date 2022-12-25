@@ -7,6 +7,8 @@ trlX allows you to fine-tune 🤗 Hugging Face supported language models (`gpt2`
 
 You can read more about trlX in our [documentation](https://trlX.readthedocs.io).
 
+Want to collect human annotations for your RL application? Check out [CHEESE!](https://github.com/carperai/cheese), our library for HiTL data collection.
+
 ## Installation
 ```bash
 git clone https://github.com/CarperAI/trlx.git
