@@ -163,12 +163,11 @@ class AccelerateRLModel(BaseRLModel):
                 samples = self.generate(prompts)
             else:
                 samples = self.generate(**prompts)
-
             if isinstance(samples, tuple):
                 samples, *_ = samples
             if 't5' in self.config.model.model_path:
                 pad_token = self.tokenizer.pad_token_id
-                all_samples.append(samples[:, 1:])
+                all_samples.extend(samples[:, 1:])
                 
             else:
                 pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
@@ -184,7 +183,6 @@ class AccelerateRLModel(BaseRLModel):
             )
             prompts_sizes.append(sizes.to(samples.device))
             lst_prompts.extend(prompts.input_ids)
-
         stats["time/generate"] = time() - generate_time
 
         # if 't5' in self.config.model.model_path:
@@ -200,9 +198,8 @@ class AccelerateRLModel(BaseRLModel):
                 
                 prompts, responses = [], []
                 if 't5' in self.config.model.model_path:
-                    for sample, prompt in zip(samples, lst_prompts):
-                        prompts.append(prompt)
-                        responses.append(sample)
+                    prompts = lst_prompts
+                    responses = all_samples
                 else:
                     for sample, prompt_size in zip(samples, prompts_sizes):
                         prompts.append(sample[:prompt_size])
@@ -210,22 +207,15 @@ class AccelerateRLModel(BaseRLModel):
                 str_prompts = self.tokenizer.batch_decode(
                     prompts, skip_special_tokens=True
                 )
-                if 't5' in self.config.model.model_path:
-                    str_responses = [
-                        self.tokenizer.batch_decode(response, skip_special_tokens=True)[0]
-                        for response in responses
-                    ]
-                else:
-                    str_responses = self.tokenizer.batch_decode(
-                        responses, skip_special_tokens=True
-                    )
+                str_responses = self.tokenizer.batch_decode(
+                    responses, skip_special_tokens=True
+                )
             if 't5' in self.config.model.model_path:
                 str_samples = str_responses
             else:
                 str_samples = self.tokenizer.batch_decode(
                     samples, skip_special_tokens=True
                 )
-                
             if isinstance(str_samples[0], str):
                 columns_data = [str_prompts, str_responses]
             else:
@@ -234,7 +224,12 @@ class AccelerateRLModel(BaseRLModel):
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
+                if 't5' in self.config.model.model_path:
+                    texts = [f"{article}<sep>{response}" for article, response in zip(str_prompts, str_samples)]
+                    rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)   
+                else:
+                    rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
+                
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)

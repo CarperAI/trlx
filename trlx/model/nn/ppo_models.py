@@ -610,7 +610,6 @@ class T5Branch(transformers.PreTrainedModel):
         lm_logits = self.lm_head(hidden_states)
 
         return Seq2SeqLMOutput(
-            loss=None,
             logits=lm_logits
         )
 

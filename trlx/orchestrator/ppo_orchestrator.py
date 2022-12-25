@@ -39,7 +39,10 @@ class PPOOrchestrator(Orchestrator):
 
         if not hasattr(self.rl_model.model, "frozen_head"):
             self.ref_model = self.rl_model.get_arch(self.rl_model.config)
-
+            for param in self.ref_model.parameters():
+                param.requires_grad = False
+            self.ref_model.to(self.rl_model.accelerator.device)
+            self.ref_model.half()
         self.rl_model.orch = self
         self.rl_model.reward_fn = reward_fn
         self.rl_model.metric_fn = metric_fn
@@ -68,18 +71,34 @@ class PPOOrchestrator(Orchestrator):
             except StopIteration:
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
-
+            
             exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
+
             stats["time/exp_generate"] = time() - exp_generate_time
             if 't5' in self.rl_model.config.model.model_path:
                 response_tensors = samples
             else:
                 query_tensors = batch.input_ids
                 response_tensors = samples[:, query_tensors.shape[1] :]
+                        
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
+
+            if 't5' in self.rl_model.config.model.model_path:
+                articles = self.rl_model.tokenizer.batch_decode(
+                    batch.input_ids, skip_special_tokens=True
+                )
+                texts = [f"{article}<sep>{response}" for article, response in zip(articles, texts)]
+                # batch2 = self.rl_model.tokenizer([articles[0]], max_length=896, truncation=True, padding='max_length', return_tensors='pt')
+                # for x in batch2:
+                #     batch2[x] = batch2[x].to(self.rl_model.accelerator.device)
+                # gens = self.rl_model.generate(**batch2)
+                # import ipdb; ipdb.set_trace()
+                # print(self.rl_model.tokenizer.batch_decode(gens, skip_special_tokens=True))
+                
+            
             exp_score_time = time()
             scores = torch.tensor(
                 self.score(texts), device=samples.device, dtype=torch.float
@@ -91,6 +110,7 @@ class PPOOrchestrator(Orchestrator):
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running.update(scores)
             stats["exp_scores/mean"] = all_scores_mean
+            print(f"mean: {all_scores_mean}, std: {all_scores_std}, running_mean: {self.running.mean}, running_std: {self.running.std}")
             stats["exp_scores/std"] = all_scores_std
             stats["exp_scores/running_mean"] = self.running.mean
             stats["exp_scores/running_std"] = self.running.std
@@ -126,19 +146,18 @@ class PPOOrchestrator(Orchestrator):
                             decoder_input_ids=decoder_input_ids
                         )
                     else:
-                        ref_logits, _, *_ = self.ref_model(
-                            all_tokens.cpu(),
-                            attention_mask=attention_mask.cpu(),
-                            position_ids=position_ids.cpu(),
-                        )
-                        ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+                        ref_logits = self.ref_model(
+                            input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=decoder_input_ids
+                        ).logits
             else:
                 all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
                     query_tensors.to(response_tensors.device), response_tensors
                 )
                 with torch.no_grad():
                     logits, *_, values = self.rl_model.model(
-                        all_tokens, attention_mask=attention_mask, 
+                        all_tokens, attention_mask=attention_mask,  position_ids=position_ids,
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
                     if hasattr(self.rl_model.model, "frozen_head"):
@@ -150,11 +169,13 @@ class PPOOrchestrator(Orchestrator):
                         )
                     else:
                         ref_logits, _, *_ = self.ref_model(
-                            all_tokens.cpu(),
-                            attention_mask=attention_mask.cpu(),
-                            position_ids=position_ids.cpu(),
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            position_ids=position_ids,
+                            return_dict=False,
                         )
-                        ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+                        
+                        #ref_logits = ref_logits.to(self.rl_model.accelerator.device)
 
             if 't5' in self.rl_model.config.model.model_path:
                 logprobs = logprobs_from_logits(logits, decoder_input_ids)
@@ -227,3 +248,5 @@ class PPOOrchestrator(Orchestrator):
 
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)
+        print("make orchestrator")
+        print(stats)

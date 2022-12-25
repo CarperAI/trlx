@@ -33,6 +33,8 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
 
 def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
+    if num_layers_unfrozen == -1:
+        return
     shared_embed = model.shared
     decoder_embed = model.decoder.embed_tokens
     encoder_blocks = model.encoder.block

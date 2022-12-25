@@ -42,7 +42,6 @@ def train(
         model = get_model(config.model.model_type)(config)
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [model.tokenizer.bos_token] * batch_size
-
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
@@ -56,6 +55,7 @@ def train(
             model, pipeline, reward_fn=reward_fn, chunk_size=config.method.chunk_size
         )
         orch.make_experience(config.method.num_rollouts)
+        
         eval_pipeline = get_pipeline(config.train.pipeline)(
             eval_prompts, max_prompt_length, model.tokenizer
         )
