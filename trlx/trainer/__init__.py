@@ -8,7 +8,6 @@ import torch
 from trlx.data import RLElement
 from trlx.data.configs import TRLConfig
 from trlx.pipeline import BaseRolloutStore
-from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
 _TRAINERS: Dict[str, Any] = {}  # registry

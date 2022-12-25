@@ -1,8 +1,8 @@
+import accelerate
 import pytest
 import torch
 import transformers
 
-import accelerate
 import trlx.utils as utils
 import trlx.utils.modeling as modeling_utils
 
@@ -11,7 +11,7 @@ import trlx.utils.modeling as modeling_utils
 
 @pytest.mark.parametrize(
     "optimizer_name",
-    [o.value for o in utils.OptimizerNames],
+    [o.value for o in utils.OptimizerName],
 )
 def test_optimizer_class_getters(optimizer_name: str):
     try:
@@ -26,7 +26,7 @@ def test_optimizer_class_getters(optimizer_name: str):
 
 @pytest.mark.parametrize(
     "scheduler_name",
-    [o.value for o in utils.SchedulerNames],
+    [o.value for o in utils.SchedulerName],
 )
 def test_scheduler_class_getters(scheduler_name: str):
     try:
