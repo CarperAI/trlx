@@ -8,10 +8,9 @@ from typing import Dict, Iterable
 
 import numpy as np
 import torch
+from accelerate import Accelerator
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 from torchtyping import TensorType
-
-from accelerate import Accelerator
 
 
 def set_seed(seed: int):
