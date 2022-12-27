@@ -39,6 +39,7 @@ if __name__ == "__main__":
     prompts = ["Generate a review film start with: " + " ".join(review.split()[:4]) for review in imdb["text"]]
     import random
     val_prompts = random.sample(prompts, 1000)
+    prompts = [x for x in prompts if x not in val_prompts]
     # prompts = val_openai_summ
     # print(len(prompts))
     config = TRLConfig.load_yaml("ppo_config_sent_t5.yml")

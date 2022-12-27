@@ -18,7 +18,7 @@ class PromptPipeline(BasePipeline):
     def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
         super().__init__()
         if tokenizer and 't5' in tokenizer.name_or_path:
-            model_inputs = tokenizer(prompts,truncation=True, padding="max_length", max_length=max_prompt_length)
+            model_inputs = tokenizer(prompts, truncation=True, padding="max_length", max_length=max_prompt_length)
             prompts = model_inputs["input_ids"]
             attention_mask = model_inputs["attention_mask"]
         else:

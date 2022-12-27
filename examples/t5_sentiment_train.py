@@ -10,8 +10,8 @@ from transformers import (
     DataCollatorForSeq2Seq
 )
 
-MAX_LENGTH_INPUT = 32
-MAX_LENGTH_OUTPUT = 64
+MAX_LENGTH_INPUT = 16
+MAX_LENGTH_OUTPUT = 48
 
 class IMDBDataset(dataset.Dataset):
 
@@ -22,8 +22,8 @@ class IMDBDataset(dataset.Dataset):
             imdb = load_dataset("imdb", split="test").select(range(100))
         print(len(imdb))
         #self.prompts = ["Generate review for IMDB film start with: " + \
-        self.prompts = ["Film review: " + " ".join(review.split()[:8]) for review in imdb["text"]]
-        self.outputs = [" ".join(review.split()[8:]).replace("<br />", "") for review in imdb["text"]]
+        self.prompts = ["Generate a review film start with: " + " ".join(review.split()[:4]) for review in imdb["text"]]
+        self.outputs = [" ".join(review.split()[4:]).replace("<br />", "") for review in imdb["text"]]
         for i in range(10):
             print('input: ', self.prompts[i])
             print('output: ', self.outputs[i])
@@ -62,13 +62,13 @@ if __name__=="__main__":
     config = {
         "logging_steps": 10,
         "eval_steps": 1000,
-        "save_steps": 1000,
-        "batch_size": 32,
-        "batch_size_val": 16,
+        "save_steps": 2000,
+        "batch_size": 32, 
+        "batch_size_val": 32,
         "warmup_steps": 100,
         "accum_steps": 1,
         "num_beams": 5,
-        "output_dir": "flan-t5-sentiment",
+        "output_dir": "flan-t5-sentiment-train-only",
     }
 
     def compute_metrics(pred):
@@ -93,12 +93,10 @@ if __name__=="__main__":
     training_args = Seq2SeqTrainingArguments(
         output_dir=config["output_dir"],
         do_train=True,
-        num_train_epochs=10,
+        num_train_epochs=3,
         do_eval=True,
         predict_with_generate=True,
         evaluation_strategy="steps",
-        adam_beta1=0.9,
-        adam_beta2=0.999,
         learning_rate=5e-5,
         per_device_train_batch_size=config["batch_size"],
         per_device_eval_batch_size=config["batch_size_val"],
@@ -107,14 +105,14 @@ if __name__=="__main__":
         save_steps=config["save_steps"],
         warmup_steps=config["warmup_steps"],
         save_total_limit=2,
-        fp16=True,
         lr_scheduler_type="linear",
         gradient_accumulation_steps=config["accum_steps"],
         # deepspeed='ds_config_trlx_t5.json',
     )
     
-    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
-    model = AutoModelForSeq2SeqLM.from_pretrained("flan-t5-review/checkpoint-3000/")
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+    #model = AutoModelForSeq2SeqLM.from_pretrained("flan-t5-review/checkpoint-3000/")
+    model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
     rouge = load_metric("rouge")
     
     train_dataset = IMDBDataset(tokenizer, type_data='train')

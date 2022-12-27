@@ -85,6 +85,7 @@ class PPOOrchestrator(Orchestrator):
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
+            #print(texts[0])
 
             if 't5' in self.rl_model.config.model.model_path:
                 articles = self.rl_model.tokenizer.batch_decode(
@@ -110,7 +111,6 @@ class PPOOrchestrator(Orchestrator):
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running.update(scores)
             stats["exp_scores/mean"] = all_scores_mean
-            print(f"mean: {all_scores_mean}, std: {all_scores_std}, running_mean: {self.running.mean}, running_std: {self.running.std}")
             stats["exp_scores/std"] = all_scores_std
             stats["exp_scores/running_mean"] = self.running.mean
             stats["exp_scores/running_std"] = self.running.std
@@ -245,8 +245,6 @@ class PPOOrchestrator(Orchestrator):
 
         if not ray.is_initialized():
             self.rl_model.accelerator.log(stats, step=iter_count)
-
+        print(stats)
         # Push samples and rewards to model's rollout storage
         self.rl_model.push_to_store(ppo_rl_elements)
-        print("make orchestrator")
-        print(stats)
