@@ -8,10 +8,10 @@ from typing import Dict, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+from accelerate import Accelerator  # type: ignore
 from transformers import AutoTokenizer
 
 import wandb
-from accelerate import Accelerator  # type: ignore
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -26,10 +26,10 @@ from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
-    get_optimizer_class,
-    get_scheduler_class,
     get_distributed_config,
     get_git_tag,
+    get_optimizer_class,
+    get_scheduler_class,
 )
 from trlx.utils.modeling import freeze_bottom_causal_layers
 

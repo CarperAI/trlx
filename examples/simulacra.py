@@ -1,10 +1,9 @@
 # Optimize prompts by training on prompts-ratings pairings dataset
 # taken from https://github.com/JD-P/simulacra-aesthetic-captions
 
-import sqlite3
-
-from urllib.request import urlretrieve
 import os
+import sqlite3
+from urllib.request import urlretrieve
 
 import trlx
 

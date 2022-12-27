@@ -3,7 +3,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
 from trlx.utils import set_seed
-from trlx.utils.loading import get_trainer, get_orchestrator, get_pipeline
+from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 
 def train(

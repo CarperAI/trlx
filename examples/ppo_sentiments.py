@@ -1,14 +1,15 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
 
-from datasets import load_dataset
-from transformers import pipeline
 import os
+from typing import List
+
+import torch
 import yaml
+from transformers import pipeline
 
 import trlx
-import torch
-from typing import List
+from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 

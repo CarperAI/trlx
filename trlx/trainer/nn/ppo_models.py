@@ -15,6 +15,7 @@ from transformers.models.opt import modeling_opt
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     flatten_dict,
+    get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_causal_final_norm,
     hf_get_causal_hidden_layers,
@@ -23,9 +24,7 @@ from trlx.utils.modeling import (
     hf_get_num_hidden_layers,
     make_head,
     whiten,
-    get_tensor_stats,
 )
-
 
 # KL Controllers
 

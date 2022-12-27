@@ -3,12 +3,11 @@ from typing import Iterable, Sequence, Union, cast
 import torch
 import torch.nn.functional as F
 
-
+from trlx.data.configs import TRLConfig
+from trlx.data.ilql_types import ILQLBatch
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
-from trlx.data.ilql_types import ILQLBatch
-from trlx.data.configs import TRLConfig
+from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
 from trlx.utils import to_device
 
 
