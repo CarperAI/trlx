@@ -2,10 +2,10 @@ import os
 from typing import Dict, List
 
 import yaml
+from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 
