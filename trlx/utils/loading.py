@@ -9,7 +9,7 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
 
-# Register load models via module import
+# Register load trainers via module import
 from trlx.trainer import _TRAINERS
 from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
