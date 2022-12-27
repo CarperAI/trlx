@@ -1,11 +1,8 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
-# This should be the _latest_ version of python supported by us
-default_language_version:
-  python: python3.9
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
+    rev: v4.4.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -14,4 +11,9 @@ repos:
     rev: 22.10.0
     hooks:
     -   id: black
-        files: ^(trlx|examples|unittests|setup.py)/
+        files: ^(trlx|examples|tests|setup.py)/
+-   repo: https://github.com/pycqa/isort
+    rev: 5.11.2
+    hooks:
+    -   id: isort
+        name: isort (python)
