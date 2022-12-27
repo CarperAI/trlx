@@ -27,6 +27,8 @@ if __name__ == "__main__":
     )
 
     def reward_fn(samples: List[str]) -> List[float]:
+        samples = [sample.replace("Generate a review film start with: ", "") for sample in samples]
+        samples = [sample.replace("<sep>", " ") for sample in samples]
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return sentiments
     
@@ -34,9 +36,9 @@ if __name__ == "__main__":
     from datasets import load_dataset
 
     imdb = load_dataset("imdb", split="train+test")
-    prompts = ["Complete this film review: " + " ".join(review.split()[:4]) for review in imdb["text"]]
-
-
+    prompts = ["Generate a review film start with: " + " ".join(review.split()[:4]) for review in imdb["text"]]
+    import random
+    val_prompts = random.sample(prompts, 1000)
     # prompts = val_openai_summ
     # print(len(prompts))
     config = TRLConfig.load_yaml("ppo_config_sent_t5.yml")
@@ -44,6 +46,6 @@ if __name__ == "__main__":
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=prompts[0:100],
+        eval_prompts=val_prompts,
         config=config
     )
