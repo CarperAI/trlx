@@ -1,8 +1,9 @@
 # Find the optimal hyperparameters to generates positive movie
 # reviews by tuning a pretrained on IMDB model with a sentiment reward function.
 
-import trlx
 from datasets import load_dataset
+
+import trlx
 from trlx.data.configs import TRLConfig
 
 
