@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Set
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
-import os
 
 
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:

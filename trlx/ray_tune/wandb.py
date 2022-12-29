@@ -1,10 +1,9 @@
 """Utility function to log the results of a Ray Tune experiment to W&B."""
 
-import os
 import json
-import pandas as pd
-from pathlib import Path
 import math
+import os
+from pathlib import Path
 
 import wandb
 

@@ -1,6 +1,7 @@
 # Toy example of optimizing textual interior designs to output the least number of rooms
 # Also see https://architext.design/
 import yaml
+
 import trlx
 from trlx.data.configs import TRLConfig
 

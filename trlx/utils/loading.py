@@ -1,10 +1,5 @@
 from typing import Callable
 
-# Register load models via module import
-from trlx.trainer import _TRAINERS
-from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
-from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
-
 # Register load orchestrators via module import
 from trlx.orchestrator import _ORCH
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
@@ -13,6 +8,11 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 # Register load pipelines via module import
 from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
+
+# Register load trainers via module import
+from trlx.trainer import _TRAINERS
+from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
+from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 
 
 def get_trainer(name: str) -> Callable:

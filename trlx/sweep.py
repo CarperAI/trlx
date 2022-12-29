@@ -1,21 +1,15 @@
 # python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
-import wandb
 import argparse
+import importlib
 from pathlib import Path
 
 import ray
-from ray.air import session
-from ray import tune
-import importlib
 import yaml
-
-import trlx
-from trlx.ray_tune import get_param_space
-from trlx.ray_tune import get_tune_config
-from trlx.ray_tune.wandb import log_trials, create_report
-
-from ray.tune.logger import JsonLoggerCallback
+from ray import tune
 from ray.tune.logger import CSVLoggerCallback
+
+from trlx.ray_tune import get_param_space, get_tune_config
+from trlx.ray_tune.wandb import create_report, log_trials
 
 
 def tune_function(

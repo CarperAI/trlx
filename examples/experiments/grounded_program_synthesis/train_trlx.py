@@ -1,10 +1,11 @@
-import trlx
-from trlx.data.configs import TRLConfig
-from lang import Interpreter
 import json
 import logging
-import yaml
 
+import yaml
+from lang import Interpreter
+
+import trlx
+from trlx.data.configs import TRLConfig
 
 logger = logging.getLogger(__name__)
 

@@ -1,16 +1,16 @@
+from time import time
 from typing import Callable
 
+import ray
 import torch
+
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
-from trlx.trainer import BaseRLTrainer
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
+from trlx.trainer import BaseRLTrainer
 from trlx.utils import Clock
-from trlx.utils.modeling import logprobs_from_logits, RunningMoments
-
-from time import time
-import ray
+from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 
 
 @register_orchestrator
