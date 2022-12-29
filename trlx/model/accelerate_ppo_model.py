@@ -101,10 +101,12 @@ class AcceleratePPOModel(AccelerateRLModel):
             input_ids = query_tensors
             decoder_input_ids = response_tensors
             attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+            decoder_attention_mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 decoder_input_ids=decoder_input_ids,
+                decoder_attention_mask=decoder_attention_mask,
             )
             logits = outputs.logits
             values_pred = outputs.value

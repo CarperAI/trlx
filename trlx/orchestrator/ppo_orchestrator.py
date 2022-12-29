@@ -130,12 +130,14 @@ class PPOOrchestrator(Orchestrator):
                 attention_mask = batch.attention_mask.to(response_tensors.device)
                 input_ids = batch.input_ids.to(response_tensors.device)
                 decoder_input_ids = response_tensors
+                decoder_attention_mask = decoder_input_ids != self.rl_model.tokenizer.pad_token_id
                 query_tensors = input_ids
                 with torch.no_grad():
                     outputs = self.rl_model.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         decoder_input_ids=decoder_input_ids,
+                        decoder_attention_mask=decoder_attention_mask
                     )
                     logits = outputs.logits
                     values = outputs.value
@@ -149,7 +151,8 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = self.ref_model(
                             input_ids=input_ids,
                             attention_mask=attention_mask,
-                            decoder_input_ids=decoder_input_ids
+                            decoder_input_ids=decoder_input_ids,
+                            decoder_attention_mask=decoder_attention_mask
                         ).logits
             else:
                 all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(

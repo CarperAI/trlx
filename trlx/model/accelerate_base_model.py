@@ -65,11 +65,12 @@ class AccelerateRLModel(BaseRLModel):
             if 't5' in config.model.tokenizer_path:
                 self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
                 self.tokenizer.padding_side = "left"
-                self.tokenizer.truncation_side = "right"
+                self.tokenizer.truncation_side = "left"
             else:
                 self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
                 self.tokenizer.pad_token = self.tokenizer.eos_token
                 self.tokenizer.padding_side = "left"
+                self.tokenizer.truncation_side = "left"
         else:
             self.tokenizer = None
 
