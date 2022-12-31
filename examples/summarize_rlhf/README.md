@@ -35,7 +35,8 @@ Download reward checkpoint:
 | SFT | 0.32 | 0.12 | 0.29 |
 | PPO | 0.34 | 0.13 | 0.31 |
 
-2. Reward model accuracy
+2. Reward model accuracy:
+
 ![image](https://user-images.githubusercontent.com/28798474/210157656-c5b20b9a-f6ef-4e88-a0ee-5596d5b28d58.png)
 
 3. Examples of generated summaries: [here](https://wandb.ai/pvduy/trlx/runs/1rpm40g8)
