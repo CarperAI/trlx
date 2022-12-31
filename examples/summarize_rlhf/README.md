@@ -15,7 +15,7 @@ Checkpoint: [SFT](https://huggingface.co/pvduy/openai_summarize_sft_gptj)
     cd reward_model/ && deepspeed train_reward_gptj.py
 ```
 
-Download reward checkpoint:
+Download reward model checkpoint:
 ```bash
     mkdir reward_model/rm_checkpoint
     wget https://huggingface.co/pvduy/openai_summarize_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
