@@ -4,13 +4,12 @@ from datasets import load_dataset
 from transformers import AutoTokenizer, TrainingArguments, Trainer
 from reward_model import GPTRewardModel
 from tqdm import tqdm
+import os
 
     
 def create_comparision_dataset(path="pvduy/openai_summarize_comparisions", split="train"):
     
     dataset = load_dataset(path, split=split)
-    if split == "test":
-        dataset = dataset["test"].select(range(5000))
         
     pairs = []
     for sample in tqdm(dataset):
@@ -63,8 +62,8 @@ class DataCollatorReward:
         return batch
     
 def compute_metrics(eval_preds):
-    chosen_end_scores = eval_preds.predictions[1]#['chosen_end_scores']
-    rejected_end_scores = eval_preds.predictions[2]#['rejected_end_scores']
+    chosen_end_scores = eval_preds.predictions[0] # chosen scores
+    rejected_end_scores = eval_preds.predictions[1]# rejected scores
     
     result = {}
     acc = sum(chosen_end_scores > rejected_end_scores) / len(rejected_end_scores)
@@ -73,17 +72,17 @@ def compute_metrics(eval_preds):
     return result
 
 
-dataset_name = "openai_comparison_summary"
-tokenizer = AutoTokenizer.from_pretrained("pvduy/openai_summarize_sft_gptj")
+tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 tokenizer.pad_token = tokenizer.eos_token
-tokenizer.padding_side = "left"
-tokenizer.truncation_side = "left"
 
 PAD_ID = tokenizer(tokenizer.pad_token)["input_ids"][0]
 
+if not os.path.exists("rm_checkpoint"):
+    os.mkdir("rm_checkpoint")
+
 training_args = TrainingArguments(
-    output_dir=f'ckpts/{dataset_name}/gpt-j', 
-    num_train_epochs=5, 
+    output_dir='rm_checkpoint/', 
+    num_train_epochs=5,
     logging_steps=10,
     gradient_accumulation_steps=4,
     save_strategy="steps",
@@ -91,8 +90,8 @@ training_args = TrainingArguments(
     per_device_train_batch_size=1, 
     per_device_eval_batch_size=1, 
     eval_accumulation_steps=1,
-    eval_steps=100,
-    save_steps=1700,
+    eval_steps=500,
+    save_steps=500,
     warmup_steps=100,
     logging_dir='./logs', 
     fp16=True, bf16=False, 

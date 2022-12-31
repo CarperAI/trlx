@@ -7,8 +7,7 @@ from typing import List
 from datasets import load_dataset
 
 
-
-REWARD_CHECKPOINT_PATH = "/admin/home-duyphung/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/reward_model_inspect/ckpts/openai_comparison_summary/gpt-j/checkpoint-1700/pytorch_model.bin"
+REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
 
 if __name__ == "__main__":
     
@@ -34,7 +33,7 @@ if __name__ == "__main__":
             encodings_dict = rw_tokenizer(
                     sub_samples, 
                     truncation=True, 
-                    max_length=550, 
+                    max_length=config.train.seq_length, 
                     padding="max_length",
                     return_tensors="pt"
             )
@@ -55,7 +54,7 @@ if __name__ == "__main__":
             encodings_dict = rw_tokenizer(
                     sub_samples, 
                     truncation=True, 
-                    max_length=550, 
+                    max_length=config.train.seq_length,
                     padding="max_length",
                     return_tensors="pt"
             )
@@ -67,7 +66,7 @@ if __name__ == "__main__":
                 sub_scores = rw_model(input_ids=input_ids, attention_mask=attn_masks)
             lst_scores.append(sub_scores['chosen_end_scores'])
         scores = torch.cat(lst_scores, dim=0)
-        norms_scores = scores  - ori_scores
+        norms_scores = scores - ori_scores
         return norms_scores
 
     config = TRLConfig.load_yaml("configs/ppo_config_summ_gptj.yml")

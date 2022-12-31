@@ -35,10 +35,8 @@ def main():
     random.seed(42)
     # Load the GPT tokenizer.
     from transformers import AutoTokenizer, AutoModelForCausalLM
-    # tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B", bos_token='<|startoftext|>', eos_token='<|endoftext|>', pad_token='<|pad|>')
-    # model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-2.7B", use_cache=False)
-    
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")#, bos_token='<|startoftext|>', eos_token='<|endoftext|>', pad_token='<|pad|>')
+ 
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B", use_cache=False)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
@@ -83,7 +81,7 @@ def main():
         save_steps=save_steps,
         load_best_model_at_end=True,
         logging_steps=50,
-        deepspeed='./ds_config_gpt_neo_27.json'
+        deepspeed='./ds_config_gptj.json'
     )
 
     trainer = Trainer(

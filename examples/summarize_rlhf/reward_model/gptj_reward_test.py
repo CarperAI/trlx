@@ -1,17 +1,11 @@
-import os
-
 import random
 import numpy as np
 import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset
 
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, GPT2Config
 from reward_model import GPTRewardModel
 from transformers import AutoTokenizer
-import json
 from tqdm import tqdm
-import argparse
 
 def set_seed(seed_val=42):
     random.seed(seed_val)
@@ -20,26 +14,24 @@ def set_seed(seed_val=42):
     torch.cuda.manual_seed_all(seed_val)
 
     
-def create_comparision_dataset(path):
+def create_comparision_dataset(path="pvduy/openai_summarize_comparisions", split="train"):
     
-    def make_text(post, summarize):
-        return f"SUBREDDIT: r/{post['subreddit']}\nTITLE: {post['title']}\nPOST: {post['post']}\nTL;DR: {summarize}"
-    
-    with open(path, 'r') as f:
-        dataset = [json.loads(line) for line in f]
+    dataset = load_dataset(path, split=split)
+    if split == "test":
+        dataset = dataset.select(range(5000))
         
     pairs = []
     for sample in tqdm(dataset):
         pair = {}
-        post = sample['info']
-        chosen_summary = sample['summaries'][sample['choice']]['text']
-        rejected_summary = sample['summaries'][1 - sample['choice']]['text']
+        prompt = sample['prompt']
+        chosen_summary = sample['chosen']
+        rejected_summary = sample['rejected']
         if chosen_summary == rejected_summary:
             continue
         if len(chosen_summary.split()) < 5 or len(rejected_summary.split()) < 5:
             continue
-        pair['chosen'] = make_text(post, chosen_summary)
-        pair['rejected'] = make_text(post, rejected_summary)
+        pair['chosen'] = prompt + "\n" + chosen_summary
+        pair['rejected'] = prompt + "\n" + rejected_summary
         pairs.append(pair)
     return pairs
 
@@ -82,15 +74,10 @@ if __name__ == "__main__":
     tokenizer.pad_token = tokenizer.eos_token
     PAD_ID = tokenizer(tokenizer.pad_token)["input_ids"][0]
 
-    model = GPTRewardModel("../gptneo-supervised-summarize-checkpoint/checkpoint-1000")
-    # layers = model.transformer.h
-    # num_layers = len(layers)
-    # num_unfrozen = int(0.75 * num_layers)
-    # for layer in layers[:-num_unfrozen]:
-    #     layer.requires_grad_(False)
-    model.load_state_dict(torch.load("ckpts/openai_comparison_summary/gpt-j/checkpoint-1700/pytorch_model.bin"))
+    model = GPTRewardModel("pvduy/openai_summarize_sft_gptj")
+    model.load_state_dict(torch.load("rm_checkpoint/pytorch_model.bin"))
     max_length = 550
-    val_pairs = create_comparision_dataset(os.path.join("../../../../openai_data/comparisons", "valid_comparisons.jsonl"))
+    val_pairs = create_comparision_dataset("pvduy/openai_summarize_comparisions", "test")
     dev_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
 
     from torch.utils.data import DataLoader
