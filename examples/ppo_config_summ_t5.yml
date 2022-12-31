@@ -1,6 +1,6 @@
 model:
-  model_path: "google/flan-t5-xl" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf model to load
-  tokenizer_path: "google/flan-t5-xl" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
+  model_path: "flan-t5-sentiment/checkpoint-2000" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf model to load
+  tokenizer_path: "google/flan-t5-large" # "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-15000"  #"lvwerra/gpt2-imdb" #"google/flan-t5-base"  # Name of hf tokenizer to load
   model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
   num_layers_unfrozen: 2 #-1 # Number of bottom layers to freeze during training
 

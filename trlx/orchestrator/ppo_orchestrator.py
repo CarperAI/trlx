@@ -71,7 +71,6 @@ class PPOOrchestrator(Orchestrator):
             except StopIteration:
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
-            
             exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
 
@@ -126,7 +125,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Precompute logprobs, values
             if 't5' in self.rl_model.config.model.model_path:
-                response_tensors = response_tensors[:, 1:]
+                response_tensors = response_tensors#[:, 1:]
                 attention_mask = batch.attention_mask.to(response_tensors.device)
                 input_ids = batch.input_ids.to(response_tensors.device)
                 decoder_input_ids = response_tensors
@@ -137,7 +136,7 @@ class PPOOrchestrator(Orchestrator):
                         input_ids=input_ids,
                         attention_mask=attention_mask,
                         decoder_input_ids=decoder_input_ids,
-                        decoder_attention_mask=decoder_attention_mask
+                        #decoder_attention_mask=decoder_attention_mask
                     )
                     logits = outputs.logits
                     values = outputs.value
@@ -152,7 +151,7 @@ class PPOOrchestrator(Orchestrator):
                             input_ids=input_ids,
                             attention_mask=attention_mask,
                             decoder_input_ids=decoder_input_ids,
-                            decoder_attention_mask=decoder_attention_mask
+                            #decoder_attention_mask=decoder_attention_mask
                         ).logits
             else:
                 all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
@@ -228,7 +227,7 @@ class PPOOrchestrator(Orchestrator):
                         rs = torch.tensor([rewards[ix][start]])
                     rs[-1] = scores[ix]
                     all_rewards[ix] = rs
-
+            
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i],

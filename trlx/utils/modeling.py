@@ -13,9 +13,9 @@ import numpy as np
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2),
+        nn.Linear(n_embd, n_embd * 2, bias=False),
         nn.ReLU(),
-        nn.Linear(n_embd * 2, out),
+        nn.Linear(n_embd * 2, out, bias=False),
     )
 
 

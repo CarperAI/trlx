@@ -92,7 +92,7 @@ if __name__=="__main__":
         evaluation_strategy="steps",
         adam_beta1=0.9,
         adam_beta2=0.999,
-        learning_rate=5e-5,
+        learning_rate=5e-6,
         per_device_train_batch_size=config["batch_size"],
         per_device_eval_batch_size=config["batch_size_val"],
         logging_steps=config["logging_steps"],

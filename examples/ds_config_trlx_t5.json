@@ -3,8 +3,7 @@
   "gradient_accumulation_steps": 4,
   "fp16": {
     "enabled": true,
-    "min_loss_scale": 0.125,
-    "fp16_scale_tolerance": 0.25,
+    "min_loss_scale": 0.5,
     "opt_level": "O2"
   },
   "zero_optimization": {

@@ -60,15 +60,14 @@ def inference(model, tokenizer, problem):
 
 def main():
     accelerator = Accelerator()
-    pretrained = "flan-t5-sentiment/checkpoint-5000"
+    pretrained = "flan-t5-sentiment/checkpoint-1500/"
     model, tokenizer = load_model_tokenizer(pretrained)
     model.to(device)
     
     imdb = load_dataset("imdb", split="test").select(range(100))
 
     start = time.time()
-    prompts = ["Generate review for IMDB film start with: " + \
-                        " ".join(review.split()[:4]) for review in imdb["text"]]
+    prompts = [" ".join(review.split()[:6]) for review in imdb["text"]]
     for i in range(10):
         sols = inference(model, tokenizer, prompts[i])
         

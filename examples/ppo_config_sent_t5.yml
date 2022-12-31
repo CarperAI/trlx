@@ -75,10 +75,10 @@ train:
   # trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path: "flan-t5-sentiment-train-only/checkpoint-2000/" # "flan-t5-sentiment/checkpoint-1500/" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
+  model_path: "lvwerra/gpt2-imdb" # "flan-t5-sentiment/checkpoint-1500/" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
   model_type: "AcceleratePPOModel"
-  tokenizer_path: "flan-t5-sentiment-train-only/checkpoint-2000/"  # "flan-t5-sentiment/checkpoint-1500/" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
-  num_layers_unfrozen: -1
+  tokenizer_path: "lvwerra/gpt2-imdb"  # "flan-t5-sentiment/checkpoint-1500/" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
+  num_layers_unfrozen: 8
 
 optimizer:
   name: "adamw"

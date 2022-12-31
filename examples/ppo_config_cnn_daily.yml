@@ -1,27 +1,27 @@
 train:
-  seq_length: 1024
+  seq_length: 612
   epochs: 100
-  total_steps: 10000
-  batch_size: 4
+  total_steps: 100000
+  batch_size: 8
 
   checkpoint_interval: 10000
-  eval_interval: 200
+  eval_interval: 500
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
   # trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path:  "flax-community/t5-base-cnn-dm" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
+  model_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
   model_type: "AcceleratePPOModel"
-  tokenizer_path:  "flax-community/t5-base-cnn-dm" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
-  num_layers_unfrozen: -1
+  tokenizer_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
+  num_layers_unfrozen: 2
 
 optimizer:
   name: "adamw"
   kwargs:
-    lr: 1.0e-5
-    betas: [0.9, 0.95]
+    lr:  2.e-5
+    betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 1.0e-6
 
@@ -29,7 +29,7 @@ scheduler:
   name: "cosine_annealing"
   kwargs:
     T_max: 10000 # train.total_steps
-    eta_min: 1.0e-5
+    eta_min: 2.e-6
 
 method:
   name: "ppoconfig"
@@ -37,21 +37,21 @@ method:
   chunk_size: 8
   ppo_epochs: 4
   init_kl_coef: 0.05
-  target: 6
+  target:  6
   horizon: 10000
-  gamma: 1
+  gamma: 0.99
   lam: 0.95
   cliprange: 0.2
   cliprange_value: 0.2
-  vf_coef: 1
+  vf_coef: 1.0
   scale_reward: False
   ref_mean: null
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 128
-    num_beams: 5
-    # top_k: 0
+    do_sample: True
+    max_new_tokens: 100
+    #top_k: 0
+    # temperature: 0.7
     # top_p: 1.0
-    # do_sample: True
-    # temperature: 0.5
+    top_k: 50

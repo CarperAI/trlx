@@ -296,7 +296,6 @@ class AccelerateRLModel(BaseRLModel):
                     
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
-
                     backward_time = time()
                     self.accelerator.backward(loss)
                     backward_time = time() - backward_time
