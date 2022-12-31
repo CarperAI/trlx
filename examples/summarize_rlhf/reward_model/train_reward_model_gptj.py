@@ -1,0 +1,125 @@
+import torch
+from torch.utils.data import Dataset
+from datasets import load_dataset
+from transformers import AutoTokenizer, TrainingArguments, Trainer
+from reward_model import GPTRewardModel
+from tqdm import tqdm
+
+    
+def create_comparision_dataset(path="pvduy/openai_summarize_comparisions", split="train"):
+    
+    dataset = load_dataset(path, split=split)
+    if split == "test":
+        dataset = dataset["test"].select(range(5000))
+        
+    pairs = []
+    for sample in tqdm(dataset):
+        pair = {}
+        prompt = sample['prompt']
+        chosen_summary = sample['chosen']
+        rejected_summary = sample['rejected']
+        if chosen_summary == rejected_summary:
+            continue
+        if len(chosen_summary.split()) < 5 or len(rejected_summary.split()) < 5:
+            continue
+        pair['chosen'] = prompt + "\n" + chosen_summary
+        pair['rejected'] = prompt + "\n" + rejected_summary
+        pairs.append(pair)
+    return pairs
+         
+
+
+class PairwiseDataset(Dataset):
+    def __init__(self, pairs, tokenizer, max_length):
+        self.chosen_input_ids = []
+        self.chosen_attn_masks = []
+        self.rejected_input_ids = []
+        self.rejected_attn_masks = []
+        for pair in tqdm(pairs):
+            chosen, rejected = pair["chosen"], pair["rejected"]
+            chosen_encodings_dict = tokenizer('<|startoftext|>' + chosen + '<|endoftext|>', truncation=True,
+                                       max_length=max_length, padding="max_length", return_tensors="pt")
+            rejected_encodings_dict = tokenizer('<|startoftext|>' + rejected + '<|endoftext|>', truncation=True,
+                                       max_length=max_length, padding="max_length", return_tensors="pt")
+            self.chosen_input_ids.append(chosen_encodings_dict['input_ids'])
+            self.chosen_attn_masks.append(chosen_encodings_dict['attention_mask'])
+            self.rejected_input_ids.append(rejected_encodings_dict['input_ids'])
+            self.rejected_attn_masks.append(rejected_encodings_dict['attention_mask'])
+
+    def __len__(self):
+        return len(self.chosen_input_ids)
+
+    def __getitem__(self, idx):
+        return self.chosen_input_ids[idx], self.chosen_attn_masks[idx], self.rejected_input_ids[idx], self.rejected_attn_masks[idx]
+
+
+class DataCollatorReward:
+    
+    def __call__(self, data):
+        batch = {}
+        batch['input_ids'] = torch.cat([f[0] for f in data] + [f[2] for f in data])
+        batch['attention_mask'] = torch.cat([f[1] for f in data] + [f[3] for f in data])
+        batch['labels'] = torch.tensor([0]*len(data) + [1] * len(data))
+        return batch
+    
+def compute_metrics(eval_preds):
+    chosen_end_scores = eval_preds.predictions[1]#['chosen_end_scores']
+    rejected_end_scores = eval_preds.predictions[2]#['rejected_end_scores']
+    
+    result = {}
+    acc = sum(chosen_end_scores > rejected_end_scores) / len(rejected_end_scores)
+    result['accuracy'] = acc
+    
+    return result
+
+
+dataset_name = "openai_comparison_summary"
+tokenizer = AutoTokenizer.from_pretrained("pvduy/openai_summarize_sft_gptj")
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "left"
+tokenizer.truncation_side = "left"
+
+PAD_ID = tokenizer(tokenizer.pad_token)["input_ids"][0]
+
+training_args = TrainingArguments(
+    output_dir=f'ckpts/{dataset_name}/gpt-j', 
+    num_train_epochs=5, 
+    logging_steps=10,
+    gradient_accumulation_steps=4,
+    save_strategy="steps",
+    evaluation_strategy="steps",
+    per_device_train_batch_size=1, 
+    per_device_eval_batch_size=1, 
+    eval_accumulation_steps=1,
+    eval_steps=100,
+    save_steps=1700,
+    warmup_steps=100,
+    logging_dir='./logs', 
+    fp16=True, bf16=False, 
+    learning_rate=1e-5, 
+    deepspeed='ds_config_gpt_j.json', 
+    save_total_limit=1
+)
+
+model = GPTRewardModel("pvduy/openai_summarize_sft_gptj")
+layers = model.transformer.h
+num_layers = len(layers)
+num_unfrozen = int(0.3 * num_layers)
+for layer in layers[:-num_unfrozen]:
+    layer.requires_grad_(False)
+
+
+max_length = 550
+train_pairs = create_comparision_dataset("pvduy/openai_summarize_comparisions", "train")
+train_dataset = PairwiseDataset(train_pairs, tokenizer, max_length=max_length)
+val_pairs = create_comparision_dataset("pvduy/openai_summarize_comparisions", "test")
+val_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
+
+data_collator = DataCollatorReward()
+
+Trainer(model=model, 
+        args=training_args, 
+        train_dataset=train_dataset,
+        compute_metrics=compute_metrics,
+        eval_dataset=val_dataset, 
+        data_collator=data_collator).train()
