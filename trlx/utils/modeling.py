@@ -1,13 +1,12 @@
+import functools
 from typing import MutableMapping, Tuple, Union
 
-import functools
+import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributed as dist
 import transformers
-from typing import Tuple
-import numpy as np
 
 
 def make_head(n_embd: int, out: int) -> nn.Sequential:

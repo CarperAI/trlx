@@ -1,25 +1,28 @@
+import json
+import os
+import uuid
 from typing import Tuple
-import uuid, os, json
 
 import torch
 from torchtyping import TensorType
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
-from trlx.model import register_model
-from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import (
+from trlx.pipeline.ppo_pipeline import PPORolloutStorage
+from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
     CausalLMHydraWithValueHead,
     Seq2SeqLMHydraWithValueHead
 )
-from trlx.pipeline.ppo_pipeline import PPORolloutStorage
+
 from trlx.utils.modeling import logprobs_from_logits
 
 
-@register_model
-class AcceleratePPOModel(AccelerateRLModel):
+@register_trainer
+class AcceleratePPOTrainer(AccelerateRLTrainer):
     def __init__(self, config):
         super().__init__(config)
 
@@ -46,7 +49,7 @@ class AcceleratePPOModel(AccelerateRLModel):
             )
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
-        if 't5' in config.model.model_path:    
+        if config.model.model_arch_type == "encoder_decoder":
             self.generate_kwargs = dict(
                 config.method.gen_kwargs,
                 eos_token_id=self.tokenizer.eos_token_id,
@@ -60,7 +63,7 @@ class AcceleratePPOModel(AccelerateRLModel):
             )
 
     def get_arch(self, config: TRLConfig):
-        if 't5' in config.model.model_path:
+        if config.model.model_arch_type == "encoder_decoder":
             return Seq2SeqLMHydraWithValueHead(
                 config.model.model_path, config.model.num_layers_unfrozen
             )
@@ -97,16 +100,14 @@ class AcceleratePPOModel(AccelerateRLModel):
             old_values, old_rewards, response_length
         )
 
-        if 't5' in self.config.model.model_path:
+        if self.config.model.model_arch_type == "encoder_decoder":
             input_ids = query_tensors
             decoder_input_ids = response_tensors
             attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            decoder_attention_mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 decoder_input_ids=decoder_input_ids,
-                #decoder_attention_mask=decoder_attention_mask,
             )
             logits = outputs.logits
             values_pred = outputs.value

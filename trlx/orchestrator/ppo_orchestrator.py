@@ -1,65 +1,62 @@
+from time import time
 from typing import Callable
 
+import ray
 import torch
+
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
-from trlx.model import BaseRLModel
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
+from trlx.trainer import BaseRLTrainer
 from trlx.utils import Clock
-from trlx.utils.modeling import logprobs_from_logits, RunningMoments
-
-from time import time
-import ray
+from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
     """
-    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into model's `store`
+    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
     """
 
     def __init__(
         self,
-        model: BaseRLModel,
+        trainer: BaseRLTrainer,
         pipeline: BasePipeline,
         reward_fn: Callable,
         metric_fn: Callable = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
-        self.rl_model = model
+        self.trainer = trainer
         self.chunk_size = chunk_size
 
         self.pipeline_loader = self.pipeline.create_loader(
             self.chunk_size, shuffle=True
         )
-        self.pipeline_loader = self.rl_model.accelerator.prepare(self.pipeline_loader)
+        self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        if not hasattr(self.rl_model.model, "frozen_head"):
-            self.ref_model = self.rl_model.get_arch(self.rl_model.config)
-            for param in self.ref_model.parameters():
-                param.requires_grad = False
-            self.ref_model.to(self.rl_model.accelerator.device)
-            self.ref_model.half()
-        self.rl_model.orch = self
-        self.rl_model.reward_fn = reward_fn
-        self.rl_model.metric_fn = metric_fn
+        if not hasattr(self.trainer.model, "frozen_head"):
+            self.ref_model = self.trainer.get_arch(self.trainer.config)
+
+        self.trainer.orch = self
+        self.trainer.reward_fn = reward_fn
+        self.trainer.metric_fn = metric_fn
 
         self.running = RunningMoments()
-        self.ref_mean = self.rl_model.config.method.ref_mean
-        self.ref_std = self.rl_model.config.method.ref_std
+        self.ref_mean = self.trainer.config.method.ref_mean
+        self.ref_std = self.trainer.config.method.ref_std
 
     def score(self, samples):
         """
         Batched scoring function taking text and generating scalar
         """
-        return self.rl_model.reward_fn(samples)
+        return self.trainer.reward_fn(samples)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
         """
-        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to model's `store`
+        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to trainer's `store`
         """
         ppo_rl_elements = []
         stats = {}
@@ -71,11 +68,12 @@ class PPOOrchestrator(Orchestrator):
             except StopIteration:
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
+            
             exp_generate_time = time()
             samples = self.rl_model.generate(**batch)
-
             stats["time/exp_generate"] = time() - exp_generate_time
-            if 't5' in self.rl_model.config.model.model_path:
+            
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
                 response_tensors = samples
             else:
                 query_tensors = batch.input_ids
@@ -84,21 +82,13 @@ class PPOOrchestrator(Orchestrator):
             texts = self.rl_model.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
-            #print(texts[0])
 
-            if 't5' in self.rl_model.config.model.model_path:
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
                 articles = self.rl_model.tokenizer.batch_decode(
                     batch.input_ids, skip_special_tokens=True
                 )
                 texts = [f"{article}<sep>{response}" for article, response in zip(articles, texts)]
-                # batch2 = self.rl_model.tokenizer([articles[0]], max_length=896, truncation=True, padding='max_length', return_tensors='pt')
-                # for x in batch2:
-                #     batch2[x] = batch2[x].to(self.rl_model.accelerator.device)
-                # gens = self.rl_model.generate(**batch2)
-                # import ipdb; ipdb.set_trace()
-                # print(self.rl_model.tokenizer.batch_decode(gens, skip_special_tokens=True))
-                
-            
+                        
             exp_score_time = time()
             scores = torch.tensor(
                 self.score(texts), device=samples.device, dtype=torch.float
@@ -114,44 +104,39 @@ class PPOOrchestrator(Orchestrator):
             stats["exp_scores/running_mean"] = self.running.mean
             stats["exp_scores/running_std"] = self.running.std
 
-            if self.rl_model.config.method.scale_reward == "running":
+            if self.trainer.config.method.scale_reward == "running":
                 scores /= self.running.std
-            elif self.rl_model.config.method.scale_reward == "ref":
+            elif self.trainer.config.method.scale_reward == "ref":
                 scores /= self.ref_std
 
-            clip_reward = self.rl_model.config.method.cliprange_reward
+            clip_reward = self.trainer.config.method.cliprange_reward
             if clip_reward:
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
-            if 't5' in self.rl_model.config.model.model_path:
-                response_tensors = response_tensors#[:, 1:]
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+                response_tensors = response_tensors
                 attention_mask = batch.attention_mask.to(response_tensors.device)
-                input_ids = batch.input_ids.to(response_tensors.device)
-                decoder_input_ids = response_tensors
-                decoder_attention_mask = decoder_input_ids != self.rl_model.tokenizer.pad_token_id
-                query_tensors = input_ids
+                query_tensors = batch.input_ids.to(response_tensors.device)
                 with torch.no_grad():
                     outputs = self.rl_model.model(
-                        input_ids=input_ids,
+                        input_ids=query_tensors,
                         attention_mask=attention_mask,
-                        decoder_input_ids=decoder_input_ids,
-                        #decoder_attention_mask=decoder_attention_mask
+                        decoder_input_ids=response_tensors
                     )
                     logits = outputs.logits
                     values = outputs.value
                     if hasattr(self.rl_model.model, "frozen_head"):
                         ref_logits = self.rl_model.model.forward_hydra(
-                            input_ids=input_ids,
+                            input_ids=query_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=decoder_input_ids
+                            decoder_input_ids=response_tensors
                         )
                     else:
                         ref_logits = self.ref_model(
-                            input_ids=input_ids,
+                            input_ids=query_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=decoder_input_ids,
-                            #decoder_attention_mask=decoder_attention_mask
+                            decoder_input_ids=response_tensors
                         ).logits
             else:
                 all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
@@ -176,34 +161,27 @@ class PPOOrchestrator(Orchestrator):
                             position_ids=position_ids,
                             return_dict=False,
                         )
-                        
-                        #ref_logits = ref_logits.to(self.rl_model.accelerator.device)
+                        ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
-            if 't5' in self.rl_model.config.model.model_path:
-                logprobs = logprobs_from_logits(logits, decoder_input_ids)
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+                logprobs = logprobs_from_logits(logits, response_tensors)
                 ref_logprobs = logprobs_from_logits(
-                    ref_logits, decoder_input_ids
+                    ref_logits, response_tensors
                 )
-                n = samples.shape[0]
-                values = values.cpu()
-                logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
-                query_tensors = query_tensors.cpu()
-                response_tensors = response_tensors.cpu()
             else:
             
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_from_logits(
                     ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
-                n = samples.shape[0]
-                values = values.cpu()[:, :-1]
-                logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
-                query_tensors = query_tensors.cpu()
-                response_tensors = response_tensors.cpu()
+            n = samples.shape[0]
+            values = values.cpu()[:, :-1]
+            logprobs = logprobs.cpu()
+            ref_logprobs = ref_logprobs.cpu()
+            query_tensors = query_tensors.cpu()
+            response_tensors = response_tensors.cpu()
 
-            if 't5' in self.rl_model.config.model.model_path:
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
                 all_values = values
                 all_logprobs = logprobs
             else:
@@ -213,9 +191,9 @@ class PPOOrchestrator(Orchestrator):
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
 
             # Compute rewards
-            rewards = -self.rl_model.kl_ctl.value * (logprobs - ref_logprobs)
+            rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
-            if 't5' in self.rl_model.config.model.model_path:
+            if self.trainer.config.model.model_arch_type == "encoder_decoder":
                 for ix in range(n):
                     rs = rewards[ix]
                     rs[-1] = scores[ix]
@@ -223,7 +201,7 @@ class PPOOrchestrator(Orchestrator):
             else:
                 for ix in range(n):
                     rs = rewards[ix][start : ends[ix]]
-                    if len(rs) == 0:
+                    if len(rs) == 0: # fix for empty responses
                         rs = torch.tensor([rewards[ix][start]])
                     rs[-1] = scores[ix]
                     all_rewards[ix] = rs
@@ -242,11 +220,11 @@ class PPOOrchestrator(Orchestrator):
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
 
-        stats["kl_ctl_value"] = self.rl_model.kl_ctl.value
+        stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time
 
         if not ray.is_initialized():
-            self.rl_model.accelerator.log(stats, step=iter_count)
-        print(stats)
-        # Push samples and rewards to model's rollout storage
-        self.rl_model.push_to_store(ppo_rl_elements)
+            self.trainer.accelerator.log(stats, step=iter_count)
+
+        # Push samples and rewards to trainer's rollout storage
+        self.trainer.push_to_store(ppo_rl_elements)

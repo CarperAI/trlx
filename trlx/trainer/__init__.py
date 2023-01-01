@@ -8,20 +8,19 @@ import torch
 from trlx.data import RLElement
 from trlx.data.configs import TRLConfig
 from trlx.pipeline import BaseRolloutStore
-from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
-_MODELS: Dict[str, Any] = {}  # registry
+_TRAINERS: Dict[str, Any] = {}  # registry
 
 
-def register_model(name):
-    """Decorator used register an architecture
+def register_trainer(name):
+    """Decorator used to register a trainer
     Args:
-        name: Name of the architecture
+        name: Name of the trainer type to register
     """
 
     def register_class(cls, name):
-        _MODELS[name] = cls
+        _TRAINERS[name] = cls
         setattr(sys.modules[__name__], name, cls)
         return cls
 
@@ -36,8 +35,8 @@ def register_model(name):
     return cls
 
 
-@register_model
-class BaseRLModel:
+@register_trainer
+class BaseRLTrainer:
     def __init__(self, config: TRLConfig, train_mode=False):
         self.store: BaseRolloutStore = None
         self.config = config
@@ -91,7 +90,7 @@ class BaseRLModel:
         :type save_fn: Callable[Dict[str, any]]
 
         :param eval_fn: Optional function to call during evaluation. Eval doesn't do anything without this.
-        :type eval_fn: Callable[BaseRLModel]
+        :type eval_fn: Callable[BaseRLTrainer]
         """
         pass
 

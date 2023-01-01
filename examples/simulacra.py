@@ -1,10 +1,9 @@
 # Optimize prompts by training on prompts-ratings pairings dataset
 # taken from https://github.com/JD-P/simulacra-aesthetic-captions
 
-import sqlite3
-
-from urllib.request import urlretrieve
 import os
+import sqlite3
+from urllib.request import urlretrieve
 
 import trlx
 
@@ -26,7 +25,7 @@ if __name__ == "__main__":
     )
 
     prompts, ratings = tuple(map(list, zip(*c.fetchall())))
-    model = trlx.train(
+    trlx.train(
         "gpt2",
         dataset=(prompts, ratings),
         eval_prompts=["Hatsune Miku, Red Dress"] * 64,

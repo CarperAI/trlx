@@ -14,6 +14,7 @@ train:
 model:
   model_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
   model_type: "AcceleratePPOModel"
+  model_arch_type: "encoder_decoder"
   tokenizer_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
   num_layers_unfrozen: 2
 

@@ -4,14 +4,13 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Any, Dict, Iterable, Sequence, Tuple, Union
+from typing import Dict, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoTokenizer
-
 import wandb
 from accelerate import Accelerator  # type: ignore
+from transformers import AutoTokenizer
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -23,21 +22,21 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 
 from trlx.data.configs import TRLConfig
-from trlx.model import BaseRLModel, register_model
+from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
-    get_optimizer_class,
-    get_scheduler_class,
     get_distributed_config,
     get_git_tag,
+    get_optimizer_class,
+    get_scheduler_class,
 )
 from trlx.utils.modeling import freeze_bottom_causal_layers, freeze_bottom_seq2seq_layers
 
 
-@register_model
-class AccelerateRLModel(BaseRLModel):
+@register_trainer
+class AccelerateRLTrainer(BaseRLTrainer):
     """
-    RL Model that uses accelerate for training
+    RL model trainer with an `accelerate` based backend
     """
 
     def __init__(self, config, train_mode=True):
@@ -52,7 +51,7 @@ class AccelerateRLModel(BaseRLModel):
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
-        if 't5' in self.config.model.model_path:
+        if self.config.model.model_arch_type == "encoder_decoder":
             freeze_bottom_seq2seq_layers(
                 self.model.base_model, self.config.model.num_layers_unfrozen
             )
@@ -62,15 +61,11 @@ class AccelerateRLModel(BaseRLModel):
             )
 
         if config.model.tokenizer_path:
-            if 't5' in config.model.tokenizer_path:
-                self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
-                self.tokenizer.padding_side = "left"
-                self.tokenizer.truncation_side = "left"
-            else:
-                self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+            self.tokenizer.padding_side = "left"
+            self.tokenizer.truncation_side = "left"
+            if config.model.model_arch_type != "encoder_decoder":
                 self.tokenizer.pad_token = self.tokenizer.eos_token
-                self.tokenizer.padding_side = "left"
-                self.tokenizer.truncation_side = "left"
         else:
             self.tokenizer = None
 
@@ -168,7 +163,7 @@ class AccelerateRLModel(BaseRLModel):
                 samples = self.generate(**prompts)
             if isinstance(samples, tuple):
                 samples, *_ = samples
-            if 't5' in self.config.model.model_path:
+            if self.config.model.model_arch_type == "encoder_decoder":
                 pad_token = self.tokenizer.pad_token_id
                 all_samples.extend(samples[:, 1:])
             else:
@@ -185,12 +180,11 @@ class AccelerateRLModel(BaseRLModel):
             )
             prompts_sizes.append(sizes.to(samples.device))
             lst_prompts.extend(prompts.input_ids)
-        stats["time/generate"] = time() - generate_time
 
-        # if 't5' in self.config.model.model_path:
-        #     lst_prompts = self.accelerator.gather(torch.vstack(lst_prompts))
-        if 't5' in self.config.model.model_path:
-            samples = all_samples #self.accelerator.gather(torch.vstack(all_samples))
+        stats["time/generate"] = time() - generate_time
+        
+        if self.config.model.model_arch_type == "encoder_decoder":
+            samples = all_samples
         else:
             samples = self.accelerator.gather(torch.vstack(all_samples))
         prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
@@ -199,7 +193,7 @@ class AccelerateRLModel(BaseRLModel):
             if self.tokenizer:
                 
                 prompts, responses = [], []
-                if 't5' in self.config.model.model_path:
+                if self.config.model.model_arch_type == "encoder_decoder":
                     prompts = lst_prompts
                     responses = all_samples
                 else:
@@ -212,7 +206,7 @@ class AccelerateRLModel(BaseRLModel):
                 str_responses = self.tokenizer.batch_decode(
                     responses, skip_special_tokens=True
                 )
-            if 't5' in self.config.model.model_path:
+            if self.config.model.model_arch_type == "encoder_decoder":
                 str_samples = str_responses
             else:
                 str_samples = self.tokenizer.batch_decode(
@@ -226,7 +220,7 @@ class AccelerateRLModel(BaseRLModel):
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                if 't5' in self.config.model.model_path:
+                if self.config.model.model_arch_type == "encoder_decoder":
                     texts = [f"{article}<sep>{response}" for article, response in zip(str_prompts, str_samples)]
                     rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)   
                 else:
@@ -310,6 +304,8 @@ class AccelerateRLModel(BaseRLModel):
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
+                    for group_number, lr in enumerate(self.scheduler.get_last_lr()):
+                        stats[f"learning_rate_group_{group_number}"] = lr
 
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()

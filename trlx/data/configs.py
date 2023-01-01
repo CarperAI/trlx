@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Set
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
-import os
 
 
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:
@@ -24,9 +23,6 @@ class ModelConfig:
     """
     Config for a model.
 
-    :param model_type: One of the registered RL models present in trlx.model
-    :type model_type: str
-
     :param model_path: Path or name of the model (local or on huggingface hub)
     :type model_path: str
 
@@ -38,7 +34,6 @@ class ModelConfig:
     :type num_layers_unfrozen: int
     """
 
-    model_type: str
     model_path: str
     tokenizer_path: str
     num_layers_unfrozen: int = -1
@@ -117,6 +112,8 @@ class TrainConfig:
     :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
     :type orchestrator: str
 
+    :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
+
     :param project_name: Project name for wandb
     :type project_name: str
 
@@ -126,7 +123,7 @@ class TrainConfig:
     :param checkpoint_dir: Directory to save checkpoints
     :type checkpoint_dir: str
 
-    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOModel.
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOTrainer.
     :type rollout_logging_dir: Optional[str]
 
     :param seed: Random seed
@@ -143,6 +140,7 @@ class TrainConfig:
 
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
+    trainer: str  # One of the trainers
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None

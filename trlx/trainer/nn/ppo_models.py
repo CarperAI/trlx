@@ -15,6 +15,7 @@ from transformers.models.opt import modeling_opt
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     flatten_dict,
+    get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_causal_final_norm,
     hf_get_encoder_decoder_base,
@@ -24,9 +25,7 @@ from trlx.utils.modeling import (
     hf_get_num_hidden_layers,
     make_head,
     whiten,
-    get_tensor_stats,
 )
-
 
 # KL Controllers
 
@@ -233,11 +232,11 @@ class CausalLMWithValueHead(nn.Module):
         super().__init__()
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path
-        )
+            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
@@ -305,13 +304,14 @@ class CausalLMHydraWithValueHead(nn.Module):
         num_layers_unfrozen: int = -1,
     ):
         super().__init__()
+
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
         else:
             self.config = config
-        self.base_model = transformers.AutoModelForCausalLM.from_pretrained(
-            self.config.name_or_path
-        )
+            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
         self.v_head = make_head(hf_get_hidden_size(self.config), 1)
