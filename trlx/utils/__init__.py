@@ -1,19 +1,16 @@
 import os
 import random
-import time
-from enum import Enum
-from functools import reduce
-from typing import Any, Iterable, List, Dict
-from dataclasses import is_dataclass
 import subprocess
+import time
+from dataclasses import is_dataclass
+from enum import Enum
+from typing import Dict, Iterable
 
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
-from torchtyping import TensorType
-
-import accelerate
 from accelerate import Accelerator
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
+from torchtyping import TensorType
 
 
 def set_seed(seed: int):
@@ -27,39 +24,7 @@ def set_seed(seed: int):
     torch.cuda.manual_seed(seed)
 
 
-def flatten(L: Iterable[Iterable[Any]]) -> Iterable[Any]:
-    """
-    Flatten a list of lists into a single list (i.e. [[1, 2], [3, 4]] -> [1,2,3,4])
-    """
-    return list(reduce(lambda acc, x: acc + x, L, []))
-
-
-def chunk(L: Iterable[Any], chunk_size: int) -> List[Iterable[Any]]:
-    """
-    Chunk iterable into list of iterables of given chunk size
-    """
-    return [L[i : i + chunk_size] for i in range(0, len(L), chunk_size)]
-
-
 # Training utils
-
-
-def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
-    return ChainedScheduler(
-        [
-            LinearLR(opt, decay_target, 1, total_iters=ramp_steps),
-            LinearLR(opt, 1, decay_target, total_iters=decay_steps),
-        ]
-    )
-
-
-def safe_mkdir(path: str):
-    """
-    Make directory if it doesn't exist, otherwise do nothing
-    """
-    if os.path.isdir(path):
-        return
-    os.mkdir(path)
 
 
 def get_distributed_config(accelerator: Accelerator):
@@ -88,44 +53,47 @@ def get_distributed_config(accelerator: Accelerator):
     return dist_config
 
 
-class OptimizerNames(Enum):
+class OptimizerName(str, Enum):
     """Supported optimizer names"""
 
-    ADAM: str = "adam"
-    ADAMW: str = "adamw"
-    SGD: str = "sgd"
+    ADAM = "adam"
+    ADAMW = "adamw"
+    SGD = "sgd"
 
 
-def get_optimizer_class(name: str):
+def get_optimizer_class(name: OptimizerName):
     """
     Returns the optimizer class with the given name
     """
-    if name == OptimizerNames.ADAM.value:
+    if name == OptimizerName.ADAM:
         return torch.optim.Adam
-    if name == OptimizerNames.ADAMW.value:
+    if name == OptimizerName.ADAMW:
         return torch.optim.AdamW
-    if name == OptimizerNames.SGD.value:
+    if name == OptimizerName.SGD:
         return torch.optim.SGD
-    supported_optimizers = [o.value for o in OptimizerNames]
+    supported_optimizers = [o.value for o in OptimizerName]
     raise ValueError(
         f"`{name}` is not a supported optimizer. "
         f"Supported optimizers are: {supported_optimizers}"
     )
 
 
-class SchedulerNames(Enum):
+class SchedulerName(str, Enum):
     """Supported scheduler names"""
 
-    COSINE_ANNEALING: str = "cosine_annealing"
+    COSINE_ANNEALING = "cosine_annealing"
+    LINEAR = "linear"
 
 
-def get_scheduler_class(name: str):
+def get_scheduler_class(name: SchedulerName):
     """
     Returns the scheduler class with the given name
     """
-    if name == SchedulerNames.COSINE_ANNEALING.value:
-        return torch.optim.lr_scheduler.CosineAnnealingLR
-    supported_schedulers = [s.value for s in SchedulerNames]
+    if name == SchedulerName.COSINE_ANNEALING:
+        return CosineAnnealingLR
+    if name == SchedulerName.LINEAR:
+        return LinearLR
+    supported_schedulers = [s.value for s in SchedulerName]
     raise ValueError(
         f"`{name}` is not a supported scheduler. "
         f"Supported schedulers are: {supported_schedulers}"
