@@ -3,7 +3,6 @@ from typing import Callable, Optional
 
 import ray
 import torch
-from tqdm import trange
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
