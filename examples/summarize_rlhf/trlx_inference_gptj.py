@@ -87,9 +87,6 @@ def inference(model, tokenizer):
     print(result)
     return df
 
-#SFT
-#Reward score pred:  2.457
-#Reward score truth:  2.863
 
 def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_size=16):
     model.to("cuda")

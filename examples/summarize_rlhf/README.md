@@ -28,12 +28,22 @@ Download reward model checkpoint:
 
 
 ### Results:
+On 1000 samples from CNN/DailyMail test dataset:
 1. SFT vs PPO 
+- Rouge scores
 
-| Model | Rouge-1 | Rouge-2 | Rouge-L |
-| --- | --- | --- | --- |
-| SFT | 0.32 | 0.12 | 0.29 |
-| PPO | 0.34 | 0.13 | 0.31 |
+| Model | Rouge-1 | Rouge-2 | Rouge-L | Average |
+| --- | --- | --- | --- |   --- |
+| SFT | 0.343 | 0.128 | 0.264 | 0.245 | 
+| PPO | 0.301 | 0.102 | 0.213 | 0.205 |
+
+- Reward scores
+
+| Model | Average Reward | Reward $\Delta$ |
+| --- | --- | --- |
+| SFT | 2.457 | -0.406 |
+| PPO | 3.248 | +0.385 |
+
 
 2. Reward model accuracy:
 
