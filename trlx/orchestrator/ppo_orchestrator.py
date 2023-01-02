@@ -66,6 +66,7 @@ class PPOOrchestrator(Orchestrator):
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+        trange_num_rollouts = trange(num_rollouts)
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
@@ -152,6 +153,9 @@ class PPOOrchestrator(Orchestrator):
             # Compute rewards
             rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
+            print(f"rewards: {rewards}")
+            print(f"start: {start}")
+            print(f"ends: {ends}")
             for ix in range(n):
                 rs = rewards[ix][start : ends[ix]]
                 rs[-1] = scores[ix]
@@ -170,6 +174,8 @@ class PPOOrchestrator(Orchestrator):
 
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
+            
+            trange_num_rollouts.update(n)
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time
