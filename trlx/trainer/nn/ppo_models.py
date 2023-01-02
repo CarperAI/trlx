@@ -29,7 +29,7 @@ from trlx.utils.modeling import (
 # KL Controllers
 
 TMODEL_PROVIDER = Callable[
-    [transformers.PretrainedConfig], transformer.AutoModelForCausalLM
+    [transformers.PretrainedConfig], transformers.AutoModelForCausalLM
 ]
 
 
