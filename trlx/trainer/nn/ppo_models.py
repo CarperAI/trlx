@@ -431,8 +431,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
         self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(
             self.config.name_or_path
         )
-        # self.v_head = make_head(hf_get_hidden_size(self.config), 1)
-        self.v_head = nn.Linear(hf_get_hidden_size(self.config), 1, bias=False)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:

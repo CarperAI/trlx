@@ -287,7 +287,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
                     forward_time = time()
-                    
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
                     backward_time = time()

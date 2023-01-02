@@ -70,7 +70,7 @@ class PPOOrchestrator(Orchestrator):
                 batch = next(self.pipeline_iterator)
             
             exp_generate_time = time()
-            samples = self.rl_model.generate(**batch)
+            samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
             
             if self.trainer.config.model.model_arch_type == "encoder_decoder":
@@ -79,12 +79,12 @@ class PPOOrchestrator(Orchestrator):
                 query_tensors = batch.input_ids
                 response_tensors = samples[:, query_tensors.shape[1] :]
                         
-            texts = self.rl_model.tokenizer.batch_decode(
+            texts = self.trainer.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
 
             if self.trainer.config.model.model_arch_type == "encoder_decoder":
-                articles = self.rl_model.tokenizer.batch_decode(
+                articles = self.trainer.tokenizer.batch_decode(
                     batch.input_ids, skip_special_tokens=True
                 )
                 texts = [f"{article}<sep>{response}" for article, response in zip(articles, texts)]
@@ -119,15 +119,15 @@ class PPOOrchestrator(Orchestrator):
                 attention_mask = batch.attention_mask.to(response_tensors.device)
                 query_tensors = batch.input_ids.to(response_tensors.device)
                 with torch.no_grad():
-                    outputs = self.rl_model.model(
+                    outputs = self.trainer.model(
                         input_ids=query_tensors,
                         attention_mask=attention_mask,
                         decoder_input_ids=response_tensors
                     )
                     logits = outputs.logits
                     values = outputs.value
-                    if hasattr(self.rl_model.model, "frozen_head"):
-                        ref_logits = self.rl_model.model.forward_hydra(
+                    if hasattr(self.trainer.model, "frozen_head"):
+                        ref_logits = self.trainer.model.forward_hydra(
                             input_ids=query_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=response_tensors
@@ -139,16 +139,16 @@ class PPOOrchestrator(Orchestrator):
                             decoder_input_ids=response_tensors
                         ).logits
             else:
-                all_tokens, attention_mask, position_ids = self.rl_model.get_model_inputs(
+                all_tokens, attention_mask, position_ids = self.trainer.get_model_inputs(
                     query_tensors.to(response_tensors.device), response_tensors
                 )
                 with torch.no_grad():
-                    logits, *_, values = self.rl_model.model(
+                    logits, *_, values = self.trainer.model(
                         all_tokens, attention_mask=attention_mask,  position_ids=position_ids,
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.rl_model.model, "frozen_head"):
-                        ref_logits = self.rl_model.model.forward_hydra(
+                    if hasattr(self.trainer.model, "frozen_head"):
+                        ref_logits = self.trainer.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
                             position_ids=position_ids,
@@ -168,14 +168,15 @@ class PPOOrchestrator(Orchestrator):
                 ref_logprobs = logprobs_from_logits(
                     ref_logits, response_tensors
                 )
+                values = values.cpu()
             else:
             
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_from_logits(
                     ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
+                values = values.cpu()[:, :-1]
             n = samples.shape[0]
-            values = values.cpu()[:, :-1]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
@@ -205,7 +206,6 @@ class PPOOrchestrator(Orchestrator):
                         rs = torch.tensor([rewards[ix][start]])
                     rs[-1] = scores[ix]
                     all_rewards[ix] = rs
-            
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i],

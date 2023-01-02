@@ -36,6 +36,7 @@ class ModelConfig:
 
     model_path: str
     tokenizer_path: str
+    model_arch_type: str = "decoder"
     num_layers_unfrozen: int = -1
 
     @classmethod
