@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union, Callable
+from typing import Any, Callable, Dict, Optional, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -307,8 +307,7 @@ class CausalLMHydraWithValueHead(nn.Module):
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
         base_model_provider: Optional[TMODEL_PROVIDER] = None,
-        pre_seq_len: int = 0,
-        tuning_mode: str = "",
+        base_model_transformer_args: Optional[List[str]] = None,
     ):
         super().__init__()
 
@@ -318,7 +317,6 @@ class CausalLMHydraWithValueHead(nn.Module):
         else:
             self.config = config
             self.base_model = transformers.AutoModelForCausalLM.from_config(config)
-
 
         if base_model_provider is not None:
             self.base_model = base_model_provider(config)
@@ -330,9 +328,8 @@ class CausalLMHydraWithValueHead(nn.Module):
         if not hasattr(self.base_model, "lm_head"):
             self.base_model.lm_head = hf_get_lm_head(self.base_model)
 
-        self.v_head = make_head(
-            hf_get_hidden_size(self.config), 1, type=self.config.torch_dtype
-        )
+        torch_dtype = getattr(self.config, "torch_dtype", None)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1, type=torch_dtype)
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
 
         self.num_layers_unfrozen = num_layers_unfrozen
@@ -346,8 +343,8 @@ class CausalLMHydraWithValueHead(nn.Module):
                 lm_head=self.base_model.lm_head,
             )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        if self.config.name_or_path.find("petals") != -1:
-            self.base_model_transformer_args = ["input_ids"]
+        if base_model_transformer_args is not None:
+            self.base_model_transformer_args = base_model_transformer_args
         else:
             self.base_model_transformer_args = inspect.getfullargspec(
                 self.base_model.transformer.forward

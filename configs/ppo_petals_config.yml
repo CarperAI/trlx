@@ -1,49 +1,55 @@
-model:
-  model_path: "bigscience/bloom-petals"  # Name of hf model to load
-  tokenizer_path: "bigscience/bloom-petals"  # Name of hf tokenizer to load
-  model_type: "AcceleratePPOModel"  # Name of accelerate model type to load
-  num_layers_unfrozen: 0
-  pre_seq_len: 1
-  tuning_mode: "ptune"
-
 train:
-  seq_length: 16  # Size of LM context
-  epochs: 100 # Train for max(epochs, total_steps)
-  total_steps: 10000  # Train for max(epochs, total_steps)
-  batch_size: 16  # batch size
+  seq_length: 48
+  epochs: 100
+  total_steps: 10000
+  batch_size: 16
 
-  lr_init: 1.0e-4  # init learning rate
-  lr_target: 1.0e-4  # target final learning rate
-  opt_betas: [0.9, 0.95] # adam betas
-  opt_eps: 1.0e-8  # adam eps
-  weight_decay: 1.0e-6  # weight decay param
+  checkpoint_interval: 10000
+  eval_interval: 100
 
-  checkpoint_interval: 10000  # checkpoint interval
-  eval_interval: 100  # eval interval
+  pipeline: "PromptPipeline"
+  orchestrator: "PPOOrchestrator"
+  trainer: "AcceleratePPOTrainer"
 
-  pipeline: "PromptPipeline"  # prompt pipeline to load
-  orchestrator: "PPOOrchestrator"  # orchestrator to load
+model:
+  model_path: "bigscience/bloom-petals"
+  tokenizer_path: "bigscience/bloom-petals"
+  num_layers_unfrozen: 0
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 1.0e-4
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 80000
+    eta_min: 1.412e-4
 
 method:
-  name: 'ppoconfig'  # Name of RL method config
-  num_rollouts: 64  # Number of rollouts to collect per epoch
-  chunk_size: 4  # Number of rollouts to collect in one loop of orchestrator
-  ppo_epochs: 4  # Number of ppo epochs
-  init_kl_coef: 0.05  # init kl coefficient
-  target: 6  # target kl coefficient, set None for fixed kl coef
-  horizon: 10000  # PPO horizon
-  gamma: 1  # PPO discount
-  lam: 0.95  # PPO lambda
-  cliprange: 0.2  # clip range
-  cliprange_value: 0.2  # clip range
-  vf_coef: 1  # value term weight
-  scale_reward: False # False | "ref" | "running" estimate against which to scale rewards
+  name: 'ppoconfig'
+  num_rollouts: 64
+  chunk_size: 4
+  ppo_epochs: 4
+  init_kl_coef: 0.05
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 1
+  scale_reward: False
   ref_mean: null
-  ref_std: null # rescale rewards with this deviation
+  ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_length: 16  # LM max sample gen length
-    min_length: 16  # LM min sample gen length
-    top_k: null  # top k
-    top_p: 1.0  # top p
-    do_sample: True  # sample
+    max_length: 48
+    top_k: 0.0
+    top_p: 1.0
+    do_sample: True
+    temperature: 0.5

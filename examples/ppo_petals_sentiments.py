@@ -22,11 +22,11 @@ def get_positive_score(scores):
 default_config = yaml.safe_load(open("configs/ppo_petals_config.yml"))
 
 
-def provide_model(config: PretrainedConfig):
+def model_provider(config: PretrainedConfig, pre_seq_len: int = 16, tuning_mode: str = "shallow_ptune"):
     model = DistributedBloomForCausalLM.from_pretrained(
-        self.config.name_or_path,
-        pre_seq_len=self.config.pre_seq_len,
-        tuning_mode=self.config.tuning_mode,
+        config.name_or_path,
+        pre_seq_len=pre_seq_len,
+        tuning_mode=tuning_mode,
     )
     return model
 
@@ -61,6 +61,8 @@ def main(hparams={}):
         prompts=prompts,
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         config=config,
+        base_model_provider=model_provider,
+        base_model_transformer_args=["input_ids"],
     )
 
 

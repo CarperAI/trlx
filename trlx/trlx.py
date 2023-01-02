@@ -16,6 +16,7 @@ def train(
     config: Optional[TRLConfig] = None,
     split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
+    **kwargs,
 ):
     """
     Dispatches online or offline reinforcement training
@@ -40,7 +41,7 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        trainer = get_trainer(config.train.trainer)(config)
+        trainer = get_trainer(config.train.trainer)(config, **kwargs)
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [trainer.tokenizer.bos_token] * batch_size
