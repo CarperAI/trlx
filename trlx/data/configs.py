@@ -37,8 +37,6 @@ class ModelConfig:
     model_path: str
     tokenizer_path: str
     num_layers_unfrozen: int = -1
-    pre_seq_len: int = 0
-    tuning_mode: str = ""
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
