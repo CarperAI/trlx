@@ -1,6 +1,7 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
 
+import logging
 import os
 from typing import List
 
@@ -24,11 +25,17 @@ default_config = yaml.safe_load(open("configs/ppo_petals_config.yml"))
 
 def model_provider(config: PretrainedConfig, pre_seq_len: int = 16, tuning_mode: str = "shallow_ptune"):
     model = DistributedBloomForCausalLM.from_pretrained(
-        config.name_or_path,
+        config._name_or_path,
         pre_seq_len=pre_seq_len,
         tuning_mode=tuning_mode,
     )
     return model
+
+
+def ref_model_provider(config: PretrainedConfig):
+    return DistributedBloomForCausalLM.from_pretrained(
+        config._name_or_path
+    )
 
 
 def main(hparams={}):
@@ -63,6 +70,7 @@ def main(hparams={}):
         config=config,
         base_model_provider=model_provider,
         base_model_transformer_args=["input_ids"],
+        ref_model_provider=ref_model_provider,
     )
 
 

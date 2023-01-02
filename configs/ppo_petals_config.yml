@@ -2,7 +2,7 @@ train:
   seq_length: 48
   epochs: 100
   total_steps: 10000
-  batch_size: 16
+  batch_size: 64
 
   checkpoint_interval: 10000
   eval_interval: 100
@@ -33,7 +33,7 @@ scheduler:
 method:
   name: 'ppoconfig'
   num_rollouts: 64
-  chunk_size: 4
+  chunk_size: 16
   ppo_epochs: 4
   init_kl_coef: 0.05
   target: 6
@@ -48,8 +48,8 @@ method:
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_length: 48
-    top_k: 0.0
+    max_new_tokens: 48
+    top_k: null
     top_p: 1.0
     do_sample: True
     temperature: 0.5

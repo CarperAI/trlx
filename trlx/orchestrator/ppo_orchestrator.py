@@ -27,6 +27,7 @@ class PPOOrchestrator(Orchestrator):
         reward_fn: Callable,
         metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
+        ref_model_provider: Callable = None,
     ):
         self.pipeline = pipeline
         self.trainer = trainer
@@ -38,7 +39,9 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        if not hasattr(self.trainer.model, "frozen_head"):
+        if ref_model_provider is not None:
+            self.ref_model = ref_model_provider(self.trainer.model.config)
+        elif not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
 
         self.trainer.orch = self
@@ -63,6 +66,7 @@ class PPOOrchestrator(Orchestrator):
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+        trange_num_rollouts = trange(num_rollouts)
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
@@ -121,11 +125,12 @@ class PPOOrchestrator(Orchestrator):
                         return_dict=False,
                     )
                 else:
-                    ref_logits, _, *_ = self.ref_model(
-                        all_tokens.cpu(),
+                    forward_kwargs = self.trainer.model._get_compatible_forward_kwargs(
+                        input_ids=all_tokens.cpu(),
                         attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),
                     )
+                    ref_logits = self.ref_model(**forward_kwargs)[0]
                     ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
@@ -148,6 +153,9 @@ class PPOOrchestrator(Orchestrator):
             # Compute rewards
             rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
+            print(f"rewards: {rewards}")
+            print(f"start: {start}")
+            print(f"ends: {ends}")
             for ix in range(n):
                 rs = rewards[ix][start : ends[ix]]
                 rs[-1] = scores[ix]
@@ -166,6 +174,8 @@ class PPOOrchestrator(Orchestrator):
 
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
+            
+            trange_num_rollouts.update(n)
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time
