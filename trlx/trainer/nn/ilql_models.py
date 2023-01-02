@@ -16,12 +16,12 @@ from torch import nn
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
+    flatten_dict,
     freeze_bottom_causal_layers,
+    get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_hidden_size,
-    get_tensor_stats,
     hf_get_lm_head,
-    flatten_dict,
     make_head,
 )
 

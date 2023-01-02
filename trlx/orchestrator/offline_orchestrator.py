@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
