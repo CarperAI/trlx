@@ -1,15 +1,14 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
 
-import logging
 import os
 from typing import List
 
 import torch
 import yaml
 from datasets import load_dataset
-from transformers import pipeline, PretrainedConfig
 from petals.client import DistributedBloomForCausalLM
+from transformers import pipeline
 
 import trlx
 from trlx.data.configs import TRLConfig
@@ -23,19 +22,19 @@ def get_positive_score(scores):
 default_config = yaml.safe_load(open("configs/ppo_petals_config.yml"))
 
 
-def model_provider(config: PretrainedConfig, pre_seq_len: int = 16, tuning_mode: str = "shallow_ptune"):
+def model_provider(
+    config: str, pre_seq_len: int = 16, tuning_mode: str = "shallow_ptune"
+):
     model = DistributedBloomForCausalLM.from_pretrained(
-        config._name_or_path,
+        config,
         pre_seq_len=pre_seq_len,
         tuning_mode=tuning_mode,
     )
     return model
 
 
-def ref_model_provider(config: PretrainedConfig):
-    return DistributedBloomForCausalLM.from_pretrained(
-        config._name_or_path
-    )
+def ref_model_provider(config: str):
+    return DistributedBloomForCausalLM.from_pretrained(config)
 
 
 def main(hparams={}):
@@ -63,7 +62,7 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
-    model = trlx.train(
+    return trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=["I don't know much about Hungarian underground"] * 64,

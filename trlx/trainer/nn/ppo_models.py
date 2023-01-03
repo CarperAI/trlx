@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -313,15 +313,14 @@ class CausalLMHydraWithValueHead(nn.Module):
 
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
+            if base_model_provider is None:
+                base_model_provider = transformers.AutoModelForCausalLM.from_pretrained
+            self.base_model = base_model_provider(config)
         else:
             self.config = config
-
-        if base_model_provider is not None:
-            self.base_model = base_model_provider(self.config)
-        else:
-            self.base_model = transformers.AutoModelForCausalLM.from_config(
-                self.config
-            )
+            if base_model_provider is None:
+                base_model_provider = transformers.AutoModelForCausalLM.from_config
+            self.base_model = base_model_provider(config)
 
         if not hasattr(self.base_model, "lm_head"):
             self.base_model.lm_head = hf_get_lm_head(self.base_model)
