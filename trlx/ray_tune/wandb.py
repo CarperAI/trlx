@@ -8,7 +8,7 @@ from pathlib import Path
 import wandb
 
 wandb.require("report-editing")
-import wandb.apis.reports as wb
+import wandb.apis.reports as wb  # noqa: E402
 
 ray_info = [
     "done",

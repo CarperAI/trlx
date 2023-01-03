@@ -1,7 +1,6 @@
-from typing import Iterable, Sequence, Union, cast
+from typing import Sequence, Union, cast
 
 import torch
-import torch.nn.functional as F
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch
