@@ -340,6 +340,7 @@ class CausalLMHydraWithValueHead(nn.Module):
                 final_norm=hf_get_causal_final_norm(self.base_model),
                 lm_head=self.base_model.lm_head,
             )
+
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
         if base_model_transformer_args is not None:
             self.base_model_transformer_args = base_model_transformer_args

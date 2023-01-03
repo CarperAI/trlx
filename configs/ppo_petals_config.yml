@@ -33,7 +33,7 @@ scheduler:
 method:
   name: 'ppoconfig'
   num_rollouts: 64
-  chunk_size: 16
+  chunk_size: 64
   ppo_epochs: 4
   init_kl_coef: 0.05
   target: 6
