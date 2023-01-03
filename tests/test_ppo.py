@@ -48,7 +48,7 @@ class TestHydraHead(unittest.TestCase):
     def test_frozen_head(self):
         # Ensure that all parameters of the `hydra_model.frozen_head` are actually frozen
         for parameter in TestHydraHead.hydra_model.frozen_head.parameters():
-            self.assertTrue(parameter.requires_grad == False)
+            self.assertTrue(parameter.requires_grad is False)
 
     def test_forward(self):
         with torch.no_grad():

@@ -10,7 +10,7 @@ def randexclude(rng: np.random.RandomState, n: int, exclude: int) -> int:
             return x
 
 
-def generate_random_walks(
+def generate_random_walks(  # noqa: max-complexity
     n_nodes=21, max_length=10, n_walks=1000, p_edge=0.1, seed=1002, gpt2_tokenizer=False
 ):
     rng = np.random.RandomState(seed)
@@ -30,6 +30,8 @@ def generate_random_walks(
 
     goal = 0
     sample_walks = []
+    delimiter = "|" if gpt2_tokenizer else ""
+
     for _ in range(n_walks):
         node = randexclude(rng, n_nodes, goal)
         walk = [node]
@@ -43,7 +45,6 @@ def generate_random_walks(
         # code each node by a letter
         # for bpe tokenizer join them over | for a guaranteed split
         walk = [node_to_char[ix] for ix in walk]
-        delimiter = "|" if gpt2_tokenizer else ""
 
         sample_walks.append(delimiter.join(walk))
 
