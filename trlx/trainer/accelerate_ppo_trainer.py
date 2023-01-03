@@ -21,8 +21,8 @@ from trlx.utils.modeling import logprobs_from_logits
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, **kwargs):
+        super().__init__(config, **kwargs)
 
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True
@@ -54,9 +54,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             pad_token_id=self.tokenizer.eos_token_id,
         )
 
-    def get_arch(self, config: TRLConfig):
+    def get_arch(self, config: TRLConfig, **kwargs):
         return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen
+            config.model.model_path, config.model.num_layers_unfrozen, **kwargs
         )
 
     def get_model_inputs(

@@ -27,6 +27,7 @@ class PPOOrchestrator(Orchestrator):
         reward_fn: Callable,
         metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
+        ref_model_provider: Callable = None,
     ):
         self.pipeline = pipeline
         self.trainer = trainer
@@ -38,7 +39,9 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        if not hasattr(self.trainer.model, "frozen_head"):
+        if ref_model_provider is not None:
+            self.ref_model = ref_model_provider(self.trainer.config.model.model_path)
+        elif not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
 
         self.trainer.orch = self
@@ -121,11 +124,12 @@ class PPOOrchestrator(Orchestrator):
                         return_dict=False,
                     )
                 else:
-                    ref_logits, _, *_ = self.ref_model(
-                        all_tokens.cpu(),
+                    forward_kwargs = self.trainer.model._get_compatible_forward_kwargs(
+                        input_ids=all_tokens.cpu(),
                         attention_mask=attention_mask.cpu(),
                         position_ids=position_ids.cpu(),
                     )
+                    ref_logits = self.ref_model(**forward_kwargs)[0]
                     ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
             logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])

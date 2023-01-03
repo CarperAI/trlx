@@ -18,8 +18,9 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         logit_mask=None,
         metric_fn=None,
         train_mode=True,
+        **kwargs,
     ):
-        super().__init__(config, train_mode)
+        super().__init__(config, train_mode, **kwargs)
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None
@@ -42,6 +43,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             config.model.model_path,
             ilql_config=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            **kwargs,
         )
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
