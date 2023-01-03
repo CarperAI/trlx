@@ -51,18 +51,20 @@ class ILQLConfig(MethodConfig):
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
+        terminal_mask = labels.dones[:, :-1]
+        n_nonterminal = max(1, terminal_mask.sum())
+
         actions = (
             labels.input_ids[:, 1:]
             .gather(dim=1, index=labels.actions_ixs)
             .unsqueeze(-1)
         )
-        bsize, ntokens, dsize = logits.shape
+        nactions = actions.shape[1]
+        bsize, _, dsize = logits.shape
 
         Q = [q.gather(-1, actions).squeeze(-1) for q in qs]
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
-        terminal_mask = labels.dones[:, :-1]
-        n_nonterminal = max(1, terminal_mask.sum())
 
         # values of current states
         V = vs[:, :-1].squeeze()
@@ -84,8 +86,6 @@ class ILQLConfig(MethodConfig):
             * terminal_mask
         ).sum() / n_nonterminal
 
-        nactions = qs[0].shape[1]
-
         def cql_loss(q):
             loss = F.cross_entropy(
                 q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
@@ -96,24 +96,22 @@ class ILQLConfig(MethodConfig):
 
         loss_cql = sum(cql_loss(q) for q in qs)
 
+        # select logits from continuations
         action_logits = logits.gather(
             dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, dsize)
         )
-
         cross_entropy = F.cross_entropy(
             action_logits.reshape(-1, dsize),
             actions.reshape(-1),
             reduction="none",
-        ).reshape(bsize, ntokens - 1)
+        ).reshape(bsize, nactions)
 
         with torch.no_grad():
-            weight = torch.exp(self.beta * (targetQ - V))
+            awac_weight = torch.exp(self.beta * (targetQ - V))
 
         loss_awac = (
-            torch.sum(cross_entropy * weight * labels.attention_mask[:, 1:])
-            / labels.attention_mask[:, 1:].sum()
+            torch.sum(cross_entropy * awac_weight * terminal_mask) / n_nonterminal
         )
-
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
 
         stats = dict(
@@ -129,9 +127,7 @@ class ILQLConfig(MethodConfig):
                 str(ix): get_tensor_stats(Q[ix], terminal_mask, n_nonterminal)
                 for ix in range(len(Q))
             },
-            weight=get_tensor_stats(
-                weight, labels.attention_mask[:, 1:], labels.attention_mask[:, 1:].sum()
-            ),
+            awac_weight=get_tensor_stats(awac_weight, terminal_mask, n_nonterminal),
         )
 
         return loss, flatten_dict(stats)
