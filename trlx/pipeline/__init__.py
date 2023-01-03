@@ -3,7 +3,6 @@ import sys
 from abc import abstractmethod, abstractstaticmethod
 from typing import Any, Callable, Dict, Iterable
 
-from datasets import load_from_disk
 from torch.utils.data import DataLoader, Dataset
 
 from trlx.data import GeneralElement, RLElement

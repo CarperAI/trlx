@@ -7,6 +7,8 @@ trlX allows you to fine-tune 🤗 Hugging Face supported language models (`gpt2`
 
 You can read more about trlX in our [documentation](https://trlX.readthedocs.io).
 
+Want to collect human annotations for your RL application? Check out [CHEESE!](https://github.com/carperai/cheese), our library for HiTL data collection.
+
 ## Installation
 ```bash
 git clone https://github.com/CarperAI/trlx.git
@@ -20,16 +22,16 @@ You can train a model using a reward function or a reward-labeled dataset.
 
 #### Using a reward function
 ```python
-model = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for sample in samples])
+trainer = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for sample in samples])
 ```
 #### Using a reward-labeled dataset
 ```python
-model = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
+trainer = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
 #### Trained model is a wrapper over a given autoregressive model
 ```python
-model.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
+trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
 #### Use 🤗 Accelerate to launch distributed training

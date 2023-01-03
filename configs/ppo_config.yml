@@ -9,9 +9,9 @@ train:
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
+  trainer: "AcceleratePPOTrainer"
 
 model:
-  model_type: "AcceleratePPOModel"
   model_path: "lvwerra/gpt2-imdb"
   tokenizer_path: "gpt2"
   num_layers_unfrozen: 2
