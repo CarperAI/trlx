@@ -40,7 +40,7 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_iterator = iter(self.pipeline_loader)
 
         if ref_model_provider is not None:
-            self.ref_model = ref_model_provider(self.trainer.config.model_path)
+            self.ref_model = ref_model_provider(self.trainer.config.model.model_path)
         elif not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
 
