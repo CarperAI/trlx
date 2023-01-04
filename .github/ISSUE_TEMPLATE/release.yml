@@ -1,0 +1,109 @@
+---
+name: 🚀 Release Checklist
+description: >
+     The release checklist is the document that outlines the steps and tasks that
+     need to be completed before a software release.
+     It serves as a guide for the development team to ensure that all necessary tasks
+     are completed and all necessary stakeholders are informed before the release is made.
+     The checklist typically includes tasks related to code review, testing, documentation, and communication.
+     By using a release checklist, teams can ensure that releases are smooth, efficient, and successful.
+labels:
+- release
+
+body:
+- type: markdown
+  attributes:
+    value: >
+     # Release Process
+
+     - [ ] Change the version in __init__.py and setup.py
+
+          ```bash
+          export VERSION=0.0.0
+          ```
+
+     - [ ] Commit these changes with the message: "Release: VERSION"
+
+          ```bash
+          git commit -m "Release: ${VERSION}"
+          ```
+
+     - [ ] Add a tag in git to mark the release:
+
+          ```bash
+          "git tag VERSION -m 'Adds tag VERSION for pypi'
+          ```
+
+     - [ ] Push the tag to git
+
+          ```bash
+          git push --tags origin main
+          ```
+
+     - [ ] Run the following commands in the top-level directory:
+
+          ```bash
+          python setup.py bdist_wheel
+          python setup.py sdist
+          ```
+
+     - [ ] Upload the package to the pypi __test__ server __first__:
+
+          ```bash
+          twine upload dist/* -r pypitest
+          twine upload dist/* -r pypitest --repository-url=https://test.pypi.org/legacy/
+          ```
+
+     - [ ] Check that you can install it in a virtualenv by running:
+
+          ```bash
+          pip install -i https://testpypi.python.org/pypi trlx
+          trlx env
+          trlx test
+          ```
+
+     - [ ] Upload the final version to actual pypi:
+
+          ```bash
+          twine upload dist/* -r pypi
+          ```
+
+     - [ ] Add release notes to the tag in github
+
+          ```markdown
+          # [0.0.0](https://github.com/CarperAI/trlx/compare/v0.0.0...v0.0.1) (2023-01-01)
+
+          > Description
+
+          ### Upgrade Steps
+          * [ACTION REQUIRED]
+          *
+
+          ### Breaking Changes
+          *
+          *
+
+          ### New Features
+          *
+          *
+
+          ### Bug Fixes
+          *
+          *
+
+          ### Performance Improvements
+          *
+          *
+
+          ### Other Changes
+          *
+          *
+
+          # Release checklist
+          ```
+
+     - [ ] Update the version in __init__.py, setup.py to the new version "-dev" and push to master
+
+          ```bash
+
+          ```
