@@ -38,7 +38,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, train_mode=True):
+    def __init__(self, config, train_mode=True, **kwargs):
         super().__init__(config, train_mode)
 
         self.accelerator = Accelerator(log_with=config.train.trackers)
@@ -49,7 +49,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.max_length = config.train.seq_length
 
         # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
+        self.model = self.get_arch(self.config, **kwargs)
         freeze_bottom_causal_layers(
             self.model.base_model, self.config.model.num_layers_unfrozen
         )
