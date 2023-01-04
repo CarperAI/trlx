@@ -6,6 +6,14 @@ import transformers
 import trlx.utils as utils
 import trlx.utils.modeling as modeling_utils
 
+try:
+    import bitsandbytes
+
+    HAS_BNB = True
+except ImportError:
+    HAS_BNB = False
+
+
 # Test general utils
 
 
@@ -22,6 +30,9 @@ def test_optimizer_class_getters(optimizer_name: str):
     # Hard-check for one of the optimizers
     _class = utils.get_optimizer_class("adamw")
     assert _class == torch.optim.AdamW
+    if HAS_BNB:
+        _bnb_class = utils.get_optimizer_class("adamw_8bit_bnb")
+        assert _bnb_class == bitsandbytes.optim.AdamW8bit
 
 
 @pytest.mark.parametrize(

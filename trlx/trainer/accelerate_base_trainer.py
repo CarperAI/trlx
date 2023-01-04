@@ -86,15 +86,40 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 init_kwargs=init_trackers_kwargs,
             )
 
-        self.opt = get_optimizer_class(config.optimizer.name)(
+        self.opt = self.setup_optimizer()
+        self.scheduler = self.setup_scheduler()
+
+    def setup_optimizer(self):
+        """
+        Returns an optimizer derived from an instance's TRLConfig
+        """
+        optimizer_class = get_optimizer_class(self.config.optimizer.name)
+        optimizer = optimizer_class(
             self.model.parameters(),
-            **config.optimizer.kwargs,
+            **self.config.optimizer.kwargs,
         )
 
-        self.scheduler = get_scheduler_class(config.scheduler.name)(
-            self.opt,
-            **config.scheduler.kwargs,
-        )
+        if "bitsandbytes" in optimizer.__class__.__module__:
+            # Force 32-bit `nn.Embedding` weights for stability. See discussion:
+            # https://github.com/huggingface/transformers/issues/14819#issuecomment-1016017746
+            from bitsandbytes.optim import GlobalOptimManager
+
+            manager = GlobalOptimManager.get_instance()
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Embedding):
+                    manager.register_module_override(
+                        module, "weight", {"optim_bits": 32}
+                    )
+
+        return optimizer
+
+    def setup_scheduler(self):
+        """
+        Returns a learning rate scheduler derived from an instance's TRLConfig
+        """
+        scheduler_class = get_scheduler_class(self.config.scheduler.name)
+        scheduler = scheduler_class(self.opt, **self.config.scheduler.kwargs)
+        return scheduler
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
