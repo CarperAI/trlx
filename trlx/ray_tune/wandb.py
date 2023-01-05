@@ -7,7 +7,27 @@ from pathlib import Path
 
 import wandb
 
-wandb.require("report-editing")
+
+def check_wandb_version():
+    import logging
+
+    from pkg_resources import parse_version
+
+    logger = logging.getLogger(__name__)
+
+    if parse_version(wandb.__version__) >= parse_version("0.12.21") and parse_version(
+        wandb.__version__
+    ) <= parse_version("0.13.5"):
+        wandb.require("report-editing")
+    elif parse_version(wandb.__version__) < parse_version("0.12.21"):
+        logger.info(
+            "Programmatic Reports are not supported in wandb version < 0.12.21, "
+            "please upgrade wandb to 0.12.21 or higher."
+        )
+    else:
+        pass
+
+
 import wandb.apis.reports as wb  # noqa: E402
 
 ray_info = [
