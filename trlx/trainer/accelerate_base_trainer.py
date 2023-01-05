@@ -11,8 +11,6 @@ import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
 from transformers import AutoTokenizer
 
-import wandb
-
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
 else:

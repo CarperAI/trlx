@@ -73,7 +73,7 @@ class OfflineOrchestrator(Orchestrator):
             length = 0
             all_input_ids.append(torch.tensor(sum(sample, [])))
             isoutput = False
-            actions_ixs, states_ixs, dones = [], [], []
+            actions_ixs, states_ixs = [], []
             for phrase in sample:
                 if isoutput:
                     actions_ixs.append(
