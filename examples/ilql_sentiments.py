@@ -34,10 +34,9 @@ def main(hparams={}):
         return {"sentiments": sentiments}
 
     imdb = load_dataset("imdb", split="train+test")
-    first_sentences = [review.split(".")[0] for review in imdb["text"]]
 
     trlx.train(
-        dataset=(first_sentences, imdb["label"]),
+        dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
         config=config,
