@@ -1,3 +1,5 @@
+from typing import List, Union
+
 import numpy as np
 import torch
 
@@ -5,26 +7,40 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 
 
-def tokenize_dialogue(dialogue, tokenizer, max_length=2048):
+def tokenize_dialogue(
+    dialogue: Union[str, List[str]], tokenizer, max_length=2048, truncation_side="left"
+) -> List[int]:
+    """
+    Tokenize sample with the interleaved form of (question_1, answer_1, question_2, answer_2...)
+    """
     if isinstance(dialogue, str):
         dialogue = [tokenizer.bos_token, dialogue]
-
     dialogue[-1] += tokenizer.eos_token
 
     out = []
     ctx_length = max_length
-    for phrase in reversed(dialogue):
-        tokens = tokenizer(phrase).input_ids[-ctx_length:]
-        ctx_length -= len(tokens)
-        out.insert(0, tokens)
-        if ctx_length == 0:
-            break
+    if truncation_side == "left":
+        for phrase in reversed(dialogue):
+            tokens = tokenizer(phrase).input_ids[-ctx_length:]
+            ctx_length -= len(tokens)
+            out.insert(0, tokens)
+            if ctx_length == 0:
+                break
 
-    if len(out) & 1:
-        if sum(map(len, out)) == max_length:
-            out[0].pop(0)
-        out.insert(0, [tokenizer.bos_token_id])
+        # in case of odd number of phrases (possibly due to truncation)
+        # since the first phrase always has to be a prompt, force it to be <bos>
+        if len(out) & 1:
+            if sum(map(len, out)) == max_length:
+                out[0].pop(0)
+            out.insert(0, [tokenizer.bos_token_id])
 
+    elif truncation_side == "right":
+        for phrase in dialogue:
+            tokens = tokenizer(phrase).input_ids[:ctx_length]
+            ctx_length -= len(tokens)
+            out.append(tokens)
+            if ctx_length == 0:
+                break
     return out
 
 
@@ -43,7 +59,9 @@ class OfflineOrchestrator(Orchestrator):
         """
         if self.trainer.tokenizer:
             samples = [
-                tokenize_dialogue(s, self.trainer.tokenizer, max_length)
+                tokenize_dialogue(
+                    s, self.trainer.tokenizer, max_length, truncation_side="right"
+                )
                 for s in samples
             ]
 
