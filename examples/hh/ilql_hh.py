@@ -10,6 +10,7 @@ import torch
 import tritonclient.grpc as client_util
 from tritonclient.utils import np_to_triton_dtype
 import numpy as np
+from datasets import load_dataset
 
 config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_hh.yml")
 default_config = yaml.safe_load(open(config_path))
@@ -29,9 +30,13 @@ def main(hparams={}):
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenizer.pad_token = tokenizer.eos_token
 
+    dataset = load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base")
+    hhh_prompt = "".join(dataset["test"][-5:]["chosen"])
+
     client = client_util.InferenceServerClient(url=triton_host, verbose=False)
 
     def metric_fn(samples):
+        samples = [s[len(hhh_prompt) :] for s in samples]
         input = tokenizer(samples, padding=True)
         input_ids = np.array(input.input_ids, dtype=np.int32)
         attention_mask = np.array(input.attention_mask, dtype=np.int8)
@@ -47,21 +52,17 @@ def main(hparams={}):
             raise RuntimeError("No output data")
         return {"rewards": output_data[:, -1]}
 
-    fpath = "datasets/hh-rlhf/helpful-base/train.jsonl"
-    dialogues = [json.loads(line) for line in open(fpath).read().splitlines()]
-    dialogues = sum([[x["chosen"], x["rejected"]] for x in dialogues], [])
+    dialogues = sum([[x["chosen"], x["rejected"]] for x in dataset["train"]], [])
     dialogues = [re.split(r"(\n\nHuman: |\n\nAssistant: )", x)[1:] for x in dialogues]
-    dataset = [["".join(x[:-1]), x[-1]] for x in dialogues]
+    prompts_responses = [[hhh_prompt + "".join(x[:-1]), x[-1]] for x in dialogues]
     rewards = [1, 0] * (len(dialogues) // 2)
 
-    fpath = "datasets/hh-rlhf/helpful-base/test.jsonl"
-    dialogues = [json.loads(line) for line in open(fpath).read().splitlines()]
-    dialogues = sum([[x["chosen"], x["rejected"]] for x in dialogues], [])
+    dialogues = sum([[x["chosen"], x["rejected"]] for x in dataset["test"]], [])
     dialogues = [re.split(r"(\n\nHuman: |\n\nAssistant: )", x)[1:] for x in dialogues]
-    eval_prompts = ["".join(x[:-1]) for x in dialogues][:64]
+    eval_prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues][:64]
 
     trlx.train(
-        dataset=(dataset, rewards),
+        dataset=(prompts_responses, rewards),
         config=config,
         eval_prompts=eval_prompts,
         metric_fn=metric_fn,
