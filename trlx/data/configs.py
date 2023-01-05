@@ -99,7 +99,7 @@ class TrainConfig:
     :param entity_name: Entity name for wandb
     :type entity_name: str
 
-    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOModel.
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOModel. Either absolute or relative to top level trlx library (ie to log to trlx/examples/rollouts use the path "./examples/rollouts" )
     :type rollout_logging_dir: Optional[str]
     """
 
