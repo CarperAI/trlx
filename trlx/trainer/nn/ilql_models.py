@@ -1,22 +1,10 @@
 import inspect
 import os
-from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, Dict, Union, List, Sequence
-
-from trlx.data.ilql_types import ILQLBatch
-from trlx.data.method_configs import register_method, MethodConfig
-from trlx.utils.modeling import (
-    freeze_bottom_causal_layers,
-    hf_get_causal_base_model,
-    hf_get_hidden_size,
-    hf_get_lm_head,
-    make_head,
-)
-
+from typing import Any, Dict, Union
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -24,9 +12,16 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
-from transformers import AutoModelForCausalLM, PretrainedConfig
 
-import wandb
+from trlx.data.ilql_types import ILQLBatch
+from trlx.data.method_configs import MethodConfig, register_method
+from trlx.utils.modeling import (
+    freeze_bottom_causal_layers,
+    hf_get_causal_base_model,
+    hf_get_hidden_size,
+    hf_get_lm_head,
+    make_head,
+)
 
 
 def topk_mask(xs: torch.FloatTensor, k: int):
@@ -271,7 +266,9 @@ class CausalLMWithValueHeads(nn.Module):
         eos_token_id=None,
     ):
         """
-        Generates samples akin to hf's `.generate` but with custom logp prepossessing: changing token probabilities as to how advantageous they would be according to value functions estimations.
+        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        changing token probabilities as to how advantageous they would be
+        according to value functions estimations.
         """
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)

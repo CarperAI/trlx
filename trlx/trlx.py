@@ -3,7 +3,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
 from trlx.utils import set_seed
-from trlx.utils.loading import get_trainer, get_orchestrator, get_pipeline
+from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 
 def train(
@@ -18,7 +18,8 @@ def train(
     logit_mask: Optional[List[List[bool]]] = None,
 ):
     """
-    Dispatches online or offline reinforcement training depending on whether a reward function or a list of samples & rewards is given
+    Dispatches online or offline reinforcement training
+    depending on whether a reward function or a list of samples & rewards is given
 
     Args:
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory

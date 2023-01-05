@@ -1,5 +1,7 @@
+import json
+import os
+import uuid
 from typing import Tuple
-import uuid, os, json
 
 import torch
 from torchtyping import TensorType
@@ -7,16 +9,14 @@ from torchtyping import TensorType
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
-from trlx.utils.modeling import logprobs_from_logits
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
-    FixedKLController,
     CausalLMHydraWithValueHead,
+    FixedKLController,
 )
-
-from trlx.utils.modeling import construct_delta_model
+from trlx.utils.modeling import construct_delta_model, logprobs_from_logits
 
 
 @register_trainer

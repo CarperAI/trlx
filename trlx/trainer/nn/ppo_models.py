@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union, List
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -15,6 +15,7 @@ from transformers.models.opt import modeling_opt
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     flatten_dict,
+    get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_causal_final_norm,
     hf_get_causal_hidden_layers,
@@ -23,11 +24,7 @@ from trlx.utils.modeling import (
     hf_get_num_hidden_layers,
     make_head,
     whiten,
-    get_tensor_stats,
 )
-
-from trlx.utils.modeling import construct_delta_model
-
 
 # KL Controllers
 
@@ -100,7 +97,8 @@ class PPOConfig(MethodConfig):
     :param cliprange: Clipping range for PPO policy loss (1 - cliprange, 1 + cliprange)
     :type cliprange: float
 
-    :param cliprange_value: Clipping range for predicted values (observed values - cliprange_value, observed values + cliprange_value)
+    :param cliprange_value: Clipping range for predicted values
+                            (observed values - cliprange_value, observed values + cliprange_value)
     :type cliprange_value: float
 
     :param vf_coef: Value loss scale w.r.t policy loss
@@ -437,7 +435,7 @@ class GPTModelBranch(transformers.PreTrainedModel):
         for parameter in self.parameters():
             parameter.requires_grad_(False)
 
-    def forward(
+    def forward(  # noqa: max-complexity
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -652,7 +650,7 @@ class OPTModelBranch(transformers.PreTrainedModel):
         for parameter in self.parameters():
             parameter.requires_grad_(False)
 
-    def forward(
+    def forward(  # noqa: max-complexity
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -760,7 +758,8 @@ class OPTModelBranch(transformers.PreTrainedModel):
         if self.final_norm is not None:
             hidden_states = self.final_norm(hidden_states)
 
-        # TODO: Add output projection support https://github.com/huggingface/transformers/blob/699e90437f984d69ad3c9b891dd2e9d0fc2cffe4/src/transformers/models/opt/modeling_opt.py#L499
+        # TODO: Add output projection support
+        # https://github.com/huggingface/transformers/blob/699e90437f984d69ad3c9b891dd2e9d0fc2cffe4/src/transformers/models/opt/modeling_opt.py#L499  # noqa: E501
         # if self.project_out is not None:
         #     hidden_states = self.project_out(hidden_states)
 
@@ -831,7 +830,7 @@ class BloomModelBranch(transformers.PreTrainedModel):
         for parameter in self.parameters():
             parameter.requires_grad_(False)
 
-    def forward(
+    def forward(  # noqa: C901
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -1014,5 +1013,5 @@ def hf_get_causal_lm_branch_class(
         )
         raise ValueError(
             f"Unsupported architecture: `{arch}`. The following architectures are "
-            "available for model branching:\n{all_supported_archs}"
+            f"available for model branching:\n{all_supported_archs}"
         )

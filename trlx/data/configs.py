@@ -1,10 +1,9 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Set
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
-import os
 
 
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:
@@ -59,7 +58,7 @@ class OptimizerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = None
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -79,7 +78,7 @@ class SchedulerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = None
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -102,6 +101,9 @@ class TrainConfig:
 
     :param batch_size: Batch size for training
     :type batch_size: int
+
+    :param trackers: Tuple of trackers to use for logging. Default: ("wandb",)
+    :type trackers: Tuple[str]
 
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
@@ -126,7 +128,8 @@ class TrainConfig:
     :param checkpoint_dir: Directory to save checkpoints
     :type checkpoint_dir: str
 
-    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOTrainer.
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation.
+                                Only used by AcceleratePPOTrainer.
     :type rollout_logging_dir: Optional[str]
 
     :param seed: Random seed
@@ -151,6 +154,7 @@ class TrainConfig:
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
 
+    trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
 
     @classmethod

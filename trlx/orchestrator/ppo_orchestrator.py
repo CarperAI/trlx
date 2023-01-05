@@ -1,22 +1,23 @@
-from typing import Callable
+from time import time
+from typing import Callable, Optional
 
+import ray
 import torch
+
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
-from trlx.trainer import BaseRLTrainer
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
+from trlx.trainer import BaseRLTrainer
 from trlx.utils import Clock
-from trlx.utils.modeling import logprobs_from_logits, RunningMoments
-
-from time import time
-import ray
+from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
     """
-    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
+    Orchestrator prepares data for PPO training.
+    Transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
     """
 
     def __init__(
@@ -24,7 +25,7 @@ class PPOOrchestrator(Orchestrator):
         trainer: BaseRLTrainer,
         pipeline: BasePipeline,
         reward_fn: Callable,
-        metric_fn: Callable = None,
+        metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
@@ -54,9 +55,10 @@ class PPOOrchestrator(Orchestrator):
         """
         return self.trainer.reward_fn(samples)
 
-    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
+    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """
-        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to trainer's `store`
+        Takes `num_rollouts` prompts from `pipeline`, samples model and computes the
+        KL againts a reference model. It then appends PPOElements to trainer's `store`
         """
         ppo_rl_elements = []
         stats = {}

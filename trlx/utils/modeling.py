@@ -1,23 +1,19 @@
-from typing import MutableMapping, Tuple, Union
-
 import functools
+from typing import List, MutableMapping, Tuple, Union
+
+import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributed as dist
 import transformers
-from typing import Tuple
-import numpy as np
-
-
-from typing import Union, List
 
 try:
     from opendelta import (
-        BitFitModel,
         AdapterModel,
-        PrefixModel,
+        BitFitModel,
         LoraModel,
+        PrefixModel,
         SoftPromptModel,
     )
 
@@ -311,7 +307,7 @@ def get_delta_modified_modules(
 def get_delta_model_class(model_type: str):
     if not _opendelta_available:
         raise ValueError(
-            "OpenDelta package required to train with delta models. You can obtain it from https://github.com/thunlp/OpenDelta."
+            "OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta."
         )
     delta_models = {
         "bitfit": BitFitModel,
@@ -328,7 +324,7 @@ def construct_delta_model(
     delta_method: str,
     delta_modified_modules: Union[List[str], str],
     num_layers_unfrozen: int = -1,
-):  # -> DeltaModel:
+):
     delta_model_class = get_delta_model_class(delta_method)
     modified_module_list = get_delta_modified_modules(
         config=backbone_model.config,
