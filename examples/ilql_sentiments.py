@@ -1,10 +1,11 @@
-from datasets import load_dataset
+import os
+from typing import Dict, List
+
+import yaml
 from transformers import pipeline
 
 import trlx
-import yaml
-from typing import List, Dict
-import os
+from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 
@@ -35,7 +36,6 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
 
     trlx.train(
-        "gpt2",
         dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,

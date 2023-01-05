@@ -1,7 +1,9 @@
 # Toy example of optimizing textual interior designs to output the least number of rooms
 # Also see https://architext.design/
+import yaml
 
 import trlx
+from trlx.data.configs import TRLConfig
 
 
 def reward_fn(samples):
@@ -32,7 +34,7 @@ default_config = yaml.safe_load(open("configs/ppo_config.yml"))
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    model = trlx.train(
+    trlx.train(
         "architext/gptj-162M", reward_fn=reward_fn, prompts=prompts, config=config
     )
 

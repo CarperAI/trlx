@@ -1,10 +1,11 @@
-import trlx
-from trlx.data.configs import TRLConfig
-from lang import Interpreter
 import json
 import logging
-import yaml
 
+import yaml
+from lang import Interpreter
+
+import trlx
+from trlx.data.configs import TRLConfig
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,12 @@ def main(hparams={}):
     dataset = DSLDataset()
     train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
 
-    model = trlx.train(
+    trainer = trlx.train(
         reward_fn=reward_fn,
         prompts=train_prompts,
         config=config,
     )
-    model.save_pretrained("dataset/trained_model")
+    trainer.save_pretrained("dataset/trained_model")
 
 
 if __name__ == "__main__":

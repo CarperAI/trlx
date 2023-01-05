@@ -1,24 +1,26 @@
+import json
+import os
+import uuid
 from typing import Tuple
-import uuid, os, json
 
 import torch
 from torchtyping import TensorType
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
-from trlx.model import register_model
-from trlx.model.accelerate_base_model import AccelerateRLModel
-from trlx.model.nn.ppo_models import (
-    AdaptiveKLController,
-    FixedKLController,
-    CausalLMHydraWithValueHead,
-)
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
+from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+from trlx.trainer.nn.ppo_models import (
+    AdaptiveKLController,
+    CausalLMHydraWithValueHead,
+    FixedKLController,
+)
 from trlx.utils.modeling import logprobs_from_logits
 
 
-@register_model
-class AcceleratePPOModel(AccelerateRLModel):
+@register_trainer
+class AcceleratePPOTrainer(AccelerateRLTrainer):
     def __init__(self, config):
         super().__init__(config)
 

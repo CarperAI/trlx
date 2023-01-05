@@ -1,9 +1,10 @@
-from examples.randomwalks import generate_random_walks
+import os
 
 import yaml
+
 import trlx
+from examples.randomwalks import generate_random_walks
 from trlx.data.configs import TRLConfig
-import os
 
 config_path = os.path.join(os.path.dirname(__file__), "configs/ppo_randomwalks.yml")
 default_config = yaml.safe_load(open(config_path))
