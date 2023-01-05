@@ -27,6 +27,7 @@ def check_wandb_version():
     else:
         pass
 
+check_wandb_version()
 
 import wandb.apis.reports as wb  # noqa: E402
 
