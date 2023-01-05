@@ -43,7 +43,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
 
-        self.accelerator = Accelerator(log_with="wandb")
+        self.accelerator = Accelerator(log_with=config.train.trackers)
 
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
@@ -74,30 +74,54 @@ class AccelerateRLTrainer(BaseRLTrainer):
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
+            init_trackers_kwargs = {}
+            if "wandb" in config.train.trackers:
+                init_trackers_kwargs["wandb"] = {
+                    "name": run_name,
+                    "entity": self.config.train.entity_name,
+                    "tags": [get_git_tag()],
+                    "mode": "disabled" if os.environ.get("debug", False) else "online",
+                }
             self.accelerator.init_trackers(
                 project_name=self.config.train.project_name,
                 config=config_dict,
-                init_kwargs={
-                    "wandb": {
-                        "name": run_name,
-                        "entity": self.config.train.entity_name,
-                        "tags": [get_git_tag()],
-                        "mode": "disabled"
-                        if os.environ.get("debug", False)
-                        else "online",
-                    }
-                },
+                init_kwargs=init_trackers_kwargs,
             )
 
-        self.opt = get_optimizer_class(config.optimizer.name)(
+        self.opt = self.setup_optimizer()
+        self.scheduler = self.setup_scheduler()
+
+    def setup_optimizer(self):
+        """
+        Returns an optimizer derived from an instance's TRLConfig
+        """
+        optimizer_class = get_optimizer_class(self.config.optimizer.name)
+        optimizer = optimizer_class(
             self.model.parameters(),
-            **config.optimizer.kwargs,
+            **self.config.optimizer.kwargs,
         )
 
-        self.scheduler = get_scheduler_class(config.scheduler.name)(
-            self.opt,
-            **config.scheduler.kwargs,
-        )
+        if "bitsandbytes" in optimizer.__class__.__module__:
+            # Force 32-bit `nn.Embedding` weights for stability. See discussion:
+            # https://github.com/huggingface/transformers/issues/14819#issuecomment-1016017746
+            from bitsandbytes.optim import GlobalOptimManager
+
+            manager = GlobalOptimManager.get_instance()
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Embedding):
+                    manager.register_module_override(
+                        module, "weight", {"optim_bits": 32}
+                    )
+
+        return optimizer
+
+    def setup_scheduler(self):
+        """
+        Returns a learning rate scheduler derived from an instance's TRLConfig
+        """
+        scheduler_class = get_scheduler_class(self.config.scheduler.name)
+        scheduler = scheduler_class(self.opt, **self.config.scheduler.kwargs)
+        return scheduler
 
     def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
         """
@@ -143,7 +167,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Adds pipeline from with validation prompts"""
         self.eval_pipeline = eval_pipeline
 
-    def evaluate(self):
+    def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         all_samples = []
@@ -229,11 +253,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
             rows = list(zip(*columns_data))
             print(rows[0])
             if not ray.is_initialized():
-                stats["samples"] = wandb.Table(columns=columns, rows=rows)
+                if "wandb" in self.config.train.trackers:
+                    import wandb
+
+                    stats["samples"] = wandb.Table(columns=columns, rows=rows)
 
         return stats
 
-    def learn(self):
+    def learn(self):  # noqa: C901
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
