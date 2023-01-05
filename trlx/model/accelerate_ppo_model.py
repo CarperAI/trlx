@@ -1,5 +1,6 @@
 from typing import Tuple
 import uuid, os, json
+from pathlib import Path
 
 import torch
 from torchtyping import TensorType
@@ -112,14 +113,18 @@ class AcceleratePPOModel(AccelerateRLModel):
 
     def setup_rollout_logging(self, config):
         # Make rollout logging dir for this run and store config
-        exists = os.path.exists(config.train.rollout_logging_dir)
-        isdir = os.path.isdir(config.train.rollout_logging_dir)
-        assert exists and isdir
+        p = Path(config.train.rollout_logging_dir)
+        if not p.is_absolute():
+            # resolve relative paths relative to the trlx top level repo
+            root = Path(__file__).parent / '..' / '..'
+            p = (root / p)
+        p = p.resolve() # remove symlinks etc
+        
+        assert p.exists(), f'Path {p} does not exist'
+        assert p.is_dir(), f'Path {p} is not a directory'
 
         self.run_id = f"run-{uuid.uuid4()}"
-        self.rollout_logging_dir = os.path.join(
-            config.train.rollout_logging_dir, self.run_id
-        )
+        self.rollout_logging_dir = p / self.run_id
         os.mkdir(self.rollout_logging_dir)
 
         with open(os.path.join(self.rollout_logging_dir, "config.json"), "w") as f:
