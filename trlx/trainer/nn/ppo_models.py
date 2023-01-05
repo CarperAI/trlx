@@ -406,25 +406,6 @@ class CausalLMHydraWithValueHead(nn.Module):
         )
 
 
-class DeltaModelCausalLMHydraWithValueHead(CausalLMHydraWithValueHead):
-    def __init__(
-        self,
-        config: Union[transformers.PretrainedConfig, str],
-        num_layers_unfrozen: int = -1,
-        delta_method: str = "lora",
-        delta_modified_modules: str = "all",
-    ):
-        super().__init__(config, num_layers_unfrozen)
-
-        delta_model = construct_delta_model(
-            model=self.base_model,
-            delta_method=delta_method,
-            delta_modified_modules=delta_modified_modules,
-            num_layers_unfrozen=num_layers_unfrozen,
-        )
-        delta_model.log()
-
-
 class GPTModelBranch(transformers.PreTrainedModel):
     """
     GPTModelBranch implements the frozen upper trunk of the reference model

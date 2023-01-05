@@ -14,8 +14,9 @@ from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
     FixedKLController,
     CausalLMHydraWithValueHead,
-    DeltaModelCausalLMHydraWithValueHead,
 )
+
+from trlx.utils.modeling import construct_delta_model
 
 
 @register_trainer
@@ -54,16 +55,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config: TRLConfig):
-        if config.model.delta_method is not None:
-            return DeltaModelCausalLMHydraWithValueHead(
-                config=config.model.model_path,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,
-                delta_method=config.model.delta_method,
-                delta_modified_modules=config.model.delta_modified_modules,
-            )
-        return CausalLMHydraWithValueHead(
+
+        model = CausalLMHydraWithValueHead(
             config.model.model_path, config.model.num_layers_unfrozen
         )
+        if config.model.delta_method is not None:
+            delta_model = construct_delta_model(
+                model=model.base_model,
+                delta_method=config.model.delta_method,
+                delta_modified_modules=config.model.delta_modified_modules,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
+            )
+            delta_model.log()
+        return model
 
     def get_model_inputs(
         self,

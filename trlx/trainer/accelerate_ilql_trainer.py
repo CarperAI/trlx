@@ -9,11 +9,11 @@ from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.trainer.nn.ilql_models import (
     ILQLConfig,
     CausalLMWithValueHeads,
-    DeltModelCausalLMWithValueHeads,
 )
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
 from trlx.utils import to_device
+from trlx.utils.modeling import construct_delta_model
 
 
 @register_trainer
@@ -44,19 +44,20 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        if config.model.delta_method is not None:
-            return DeltModelCausalLMWithValueHeads(
-                config=config.model.model_path,
-                params=config.method,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,
-                delta_method=config.model.delta_method,
-                delta_modified_modules=config.model.delta_modified_modules,
-            )
-        return CausalLMWithValueHeads(
+        model = CausalLMWithValueHeads(
             config.model.model_path,
             params=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
+        if config.model.delta_method is not None:
+            delta_model = construct_delta_model(
+                model=model.base_model,
+                delta_method=config.model.delta_method,
+                delta_modified_modules=config.model.delta_modified_modules,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
+            )
+            delta_model.log()
+        return model
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
