@@ -1,7 +1,7 @@
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -302,19 +302,29 @@ class CausalLMHydraWithValueHead(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
+        model_provider: Optional[Callable] = None,
     ):
         super().__init__()
 
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
-            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
+            if model_provider is None:
+                self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
+            else:
+                self.base_model = model_provider(config, adapters=True)
         else:
             self.config = config
-            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+            if model_provider is None:
+                self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+            else:
+                self.base_model = model_provider(config, adapters=True)
 
+        if not hasattr(self.base_model, "lm_head"):
+            self.base_model.lm_head = hf_get_lm_head(self.base_model)
+
+        torch_dtype = getattr(self.config, "torch_dtype", None)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype=torch_dtype)
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
-        self.base_model.lm_head = hf_get_lm_head(self.base_model)
-        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:

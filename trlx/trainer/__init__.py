@@ -37,7 +37,7 @@ def register_trainer(name):
 
 @register_trainer
 class BaseRLTrainer:
-    def __init__(self, config: TRLConfig, train_mode=False):
+    def __init__(self, config: TRLConfig, train_mode=False, **kwargs):
         self.store: BaseRolloutStore = None
         self.config = config
         self.train_mode = train_mode

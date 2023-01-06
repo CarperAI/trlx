@@ -4,7 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, Sequence, Tuple, Union
+from typing import Callable, Dict, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -38,7 +38,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, train_mode=True):
+    def __init__(self, config, train_mode=True, model_provider: Optional[Callable] = None):
         super().__init__(config, train_mode)
 
         self.accelerator = Accelerator(log_with=config.train.trackers)
@@ -47,6 +47,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
         self.max_length = config.train.seq_length
+        self.model_provider = model_provider
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
