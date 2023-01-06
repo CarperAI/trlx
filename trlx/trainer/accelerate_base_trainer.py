@@ -31,8 +31,8 @@ from trlx.utils import (
     get_scheduler_class,
 )
 from trlx.utils.modeling import (
-    freeze_bottom_causal_layers, 
-    freeze_bottom_seq2seq_layers
+    freeze_bottom_causal_layers,
+    freeze_bottom_seq2seq_layers,
 )
 
 
@@ -140,7 +140,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             return self.accelerator.unwrap_model(self.model).generate(
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
-    
+
     def generate_eval(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
@@ -199,7 +199,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             lst_prompts.extend(prompts.input_ids)
 
         stats["time/generate"] = time() - generate_time
-        
+
         if self.config.model.model_arch_type == "seq2seq":
             samples = all_samples
         else:
@@ -208,7 +208,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         if self.accelerator.is_main_process:
             if self.tokenizer:
-                
                 prompts, responses = [], []
                 if self.config.model.model_arch_type == "seq2seq":
                     prompts = lst_prompts
@@ -240,10 +239,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.config.model.model_arch_type == "seq2seq":
                     sep_token = self.tokenizer.sep_token
                     texts = [
-                        f"{article}{sep_token}{response}" 
+                        f"{article}{sep_token}{response}"
                         for article, response in zip(str_prompts, str_samples)
                     ]
-                    rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)   
+                    rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)
                 else:
                     rewards = torch.tensor(
                         self.reward_fn(str_samples), dtype=torch.float

@@ -15,7 +15,7 @@ from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
     CausalLMHydraWithValueHead,
     FixedKLController,
-    Seq2SeqLMHydraWithValueHead
+    Seq2SeqLMHydraWithValueHead,
 )
 
 from trlx.utils.modeling import logprobs_from_logits
@@ -58,11 +58,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             
             if config.method.gen_inference_kwargs is None:
                 config.method.gen_inference_kwargs = self.generate_kwargs
-                
+
             self.generate_inference_kwargs = dict(
                 config.method.gen_inference_kwargs,
                 eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id
+                pad_token_id=self.tokenizer.pad_token_id,
             )
         else:
             self.generate_kwargs = dict(
@@ -148,7 +148,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 values_pred[:, start:end],
                 attention_mask[:, start:end],
             )
-        
+
         loss, stats = self.config.method.loss(
             logprobs=logprobs,
             values=values_pred,

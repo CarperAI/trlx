@@ -28,7 +28,7 @@ class ModelConfig:
 
     :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
     :type tokenizer_path: str
-    
+
     :param model_arch_type: Type of model architecture. Either "causal" or "seq2seq"
     :type model_arch_type: str
 

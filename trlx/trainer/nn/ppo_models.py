@@ -403,6 +403,7 @@ class CausalLMHydraWithValueHead(nn.Module):
             value=value,
         )
 
+
 @dataclass
 class Seq2SeqLMOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
@@ -415,6 +416,7 @@ class Seq2SeqLMOutput(ModelOutput):
     encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
     value: Optional[torch.FloatTensor] = None
+
 
 class Seq2SeqLMHydraWithValueHead(nn.Module):
     
@@ -443,9 +445,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        return {
-            k: v for k, v in kwargs.items() if k in self.base_model_args
-        }
+        return {k: v for k, v in kwargs.items() if k in self.base_model_args}
 
     def generate(self, input_ids, **x):
         return self.base_model.generate(input_ids, **x)
@@ -454,7 +454,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
         self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs
     ):
         forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
-        forward_kwargs['return_dict'] = True
+        forward_kwargs["return_dict"] = True
         output = self.forward(
             input_ids, attention_mask, decoder_input_ids, **forward_kwargs
         )
@@ -470,7 +470,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
             encoder_hidden_states,
             attention_mask,
             False,
-            False
+            False,
         )
         return outputs.logits
 
@@ -577,7 +577,7 @@ class T5Branch(transformers.PreTrainedModel):
         )
         position_bias = None
         encoder_decoder_position_bias = None
-        
+
         for i, layer_module in enumerate(self.decoder.block):
 
             layer_outputs = layer_module(
@@ -618,7 +618,6 @@ class T5Branch(transformers.PreTrainedModel):
         lm_logits = self.lm_head(hidden_states)
 
         return Seq2SeqLMOutput(logits=lm_logits)
-
 
 
 class GPTModelBranch(transformers.PreTrainedModel):
@@ -835,10 +834,6 @@ class GPTModelBranch(transformers.PreTrainedModel):
             cross_attentions=all_cross_attentions,
             value=None,
         )
-
-
-
-
 
 
 class OPTModelBranch(transformers.PreTrainedModel):

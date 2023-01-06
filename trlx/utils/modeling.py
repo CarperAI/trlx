@@ -12,9 +12,7 @@ import transformers
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2),
-        nn.ReLU(),
-        nn.Linear(n_embd * 2, out)
+        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
 
 
@@ -30,6 +28,7 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     for layer in hidden_layers_to_freeze:
         layer.requires_grad_(False)
 
+
 def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
     if num_layers_unfrozen == -1:
@@ -41,11 +40,11 @@ def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0)
     decoder_norm_layer = model.decoder.final_layer_norm
     decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
     blocks_to_freeze = (
-        list(encoder_blocks) 
-        + list(decoder_blocks) 
-        + [shared_embed] 
-        + [encoder_norm_layer] 
-        + [decoder_norm_layer] 
+        list(encoder_blocks)
+        + list(decoder_blocks)
+        + [shared_embed]
+        + [encoder_norm_layer]
+        + [decoder_norm_layer]
         + [decoder_embed]
     )
     for block in blocks_to_freeze:
@@ -99,6 +98,7 @@ def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Mod
     """
     decoder_attrs = ("transformer", "model.decoder", "gpt_neox")
     return findattr(model, decoder_attrs)
+
 
 def hf_get_encoder_decoder_base(model: transformers.AutoModelForSeq2SeqLM) -> nn.Module:
     """Returns the encoder-decoder backbone of the specified HuggingFace transformers

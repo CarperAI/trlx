@@ -1,17 +1,17 @@
-import trlx
+from typing import List
+
 import evaluate
 from datasets import load_dataset
-
-from typing import List
-from transformers import AutoTokenizer
-from trlx.data.configs import TRLConfig
-
 from tqdm import tqdm
+from transformers import AutoTokenizer
+
+import trlx
+from trlx.data.configs import TRLConfig
 
 meteor = evaluate.load("meteor")
 
 if __name__ == "__main__":
-    
+
     def reward_fn(samples: List[str]):
         
         sep_token = tokenizer.sep_token
@@ -29,7 +29,9 @@ if __name__ == "__main__":
 
     config = TRLConfig.load_yaml("configs/ppo_config_cnn_daily.yml")
 
-    dataset = load_dataset("cnn_dailymail", "3.0.0", split="train", cache_dir="data")
+    dataset = load_dataset(
+        "cnn_dailymail", "3.0.0", split="train", cache_dir="data"
+    )
     prompts = dataset["article"][0:10000]
     summaries = dataset["highlights"][0:10000]
     prompts = ["Summarize: " + prompt for prompt in prompts]
@@ -42,28 +44,22 @@ if __name__ == "__main__":
     tokenizer.truncation_side = "left"
     tokenizer.sep_token = "<sep>"
     prompt_label = {}
-    max_length = (
-        config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
-    )
-    
+    max_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+
     for i in tqdm(range(len(prompts))):
         key = tokenizer.decode(
-            tokenizer(prompts[i], truncation=True, max_length=max_length)[
-                "input_ids"
-            ],
+            tokenizer(prompts[i], truncation=True, max_length=max_length)["input_ids"],
             skip_special_tokens=True, 
         )
         prompt_label[key.strip()] = summaries[i]
     
     for i in tqdm(range(len(val_prompts))):
         key = tokenizer.decode(
-            tokenizer(val_prompts[i], truncation=True, max_length=max_length)[
-                'input_ids'
-            ],
-            skip_special_tokens=True, 
+            tokenizer(val_prompts[i], truncation=True, max_length=max_length)["input_ids"],
+            skip_special_tokens=True,
         )
         prompt_label[key.strip()] = val_summaries[i]
-        
+
     model = trlx.train(
         config.model.model_path,
         reward_fn=reward_fn,
