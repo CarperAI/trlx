@@ -93,7 +93,7 @@ class PPOOrchestrator(Orchestrator):
                     f"{article}{sep_token}{response}"
                     for article, response in zip(articles, texts)
                 ]
-                        
+
             exp_score_time = time()
             scores = torch.tensor(
                 self.score(texts), device=samples.device, dtype=torch.float
@@ -181,8 +181,7 @@ class PPOOrchestrator(Orchestrator):
             else:
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :],
-                    all_tokens[:, 1:]
+                    ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
                 values = values.cpu()[:, :-1]
 

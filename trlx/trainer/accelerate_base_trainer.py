@@ -247,7 +247,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     rewards = torch.tensor(
                         self.reward_fn(str_samples), dtype=torch.float
                     )
-                
+
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)

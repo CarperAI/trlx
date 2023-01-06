@@ -419,7 +419,6 @@ class Seq2SeqLMOutput(ModelOutput):
 
 
 class Seq2SeqLMHydraWithValueHead(nn.Module):
-    
     def __init__(
         self,
         config: Union[transformers.PretrainedConfig, str],
@@ -527,6 +526,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
             value=value,
         )
 
+
 class T5Branch(transformers.PreTrainedModel):
     # Decoder branch only
     def __init__(
@@ -547,12 +547,12 @@ class T5Branch(transformers.PreTrainedModel):
         self.device_map = None
         self.last_device = None
         self.gradient_checkpointing = False
-        
+
         for parameter in self.parameters():
             parameter.requires_grad = False
 
     def forward(
-        self, 
+        self,
         input_ids,
         hidden_states,
         encoder_hidden_states,
@@ -563,15 +563,15 @@ class T5Branch(transformers.PreTrainedModel):
 
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
-        
+
         attention_mask = torch.ones(batch_size, seq_length, device=hidden_states.device)
-        
+
         extended_attention_mask = self.get_extended_attention_mask(
             attention_mask, input_shape
         )
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
         encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
-        
+
         encoder_extended_attention_mask = self.invert_attention_mask(
             encoder_attention_mask
         )
