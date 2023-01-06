@@ -18,10 +18,11 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+# default_config = yaml.safe_load(open("configs/ppo_config.yml"))
 
 
 def main(hparams={}):
+    default_config = hparams.pop("default_config")
     config = TRLConfig.update(default_config, hparams)
 
     if torch.cuda.is_available():

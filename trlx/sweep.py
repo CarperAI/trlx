@@ -1,23 +1,47 @@
 # python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 import argparse
+import os
 import importlib
 from pathlib import Path
 
 import ray
 import yaml
 from ray import tune
+from ray.air import ScalingConfig, session
+from ray.train.torch import TorchTrainer
 from ray.tune.logger import CSVLoggerCallback
 
 from trlx.ray_tune import get_param_space, get_tune_config
-from trlx.ray_tune.wandb import create_report, log_trials
+
+# from trlx.ray_tune.wandb import create_report, log_trials
 
 
 def tune_function(
     train_function, param_space: dict, tune_config: dict, resources: dict
 ):
+    default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+    param_space["default_config"] = default_config
+
+    def train_function_wrapper(config):
+        os.environ["WORLD_RANK"] = str(session.get_world_rank())
+        os.environ["LOCAL_RANK"] = str(session.get_local_rank())
+        os.environ["WORLD_SIZE"] = str(session.get_world_size())
+        os.environ["LOCAL_WORLD_SIZE"] = str(session.get_local_world_size())
+
+        return train_function(config)
+
+    param_space_train = {"train_loop_config": param_space}
     tuner = tune.Tuner(
-        tune.with_resources(train_function, resources=resources),
-        param_space=param_space,
+        TorchTrainer(
+            train_function_wrapper,
+            scaling_config=ScalingConfig(
+                trainer_resources={"CPU": 0},
+                num_workers=2,
+                use_gpu=bool(resources["gpu"]),
+                resources_per_worker={"CPU": resources["cpu"], "GPU": resources["gpu"]},
+            ),
+        ),
+        param_space=param_space_train,
         tune_config=tune.TuneConfig(**tune_config),
         run_config=ray.air.RunConfig(
             local_dir="ray_results", callbacks=[CSVLoggerCallback()]
@@ -27,18 +51,18 @@ def tune_function(
     results = tuner.fit()
     project_name = tune_config.get("project_name", "sweep")
 
-    log_trials(
-        tuner._local_tuner.get_experiment_checkpoint_dir(),
-        project_name,
-    )
+    # log_trials(
+    #     tuner._local_tuner.get_experiment_checkpoint_dir(),
+    #     project_name,
+    # )
 
-    create_report(
-        project_name,
-        param_space,
-        tune_config,
-        Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
-        results.get_best_result().config,
-    )
+    # create_report(
+    #     project_name,
+    #     param_space,
+    #     tune_config,
+    #     Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
+    #     results.get_best_result().config,
+    # )
 
     print("Best hyperparameters found were: ", results.get_best_result().config)
 
@@ -77,12 +101,6 @@ if __name__ == "__main__":
     tune_config = get_tune_config(config.pop("tune_config"))
     param_space = get_param_space(config)
 
-    # Initialize Ray.
-    if args.server_address:
-        ray.init(address=f"ray://{args.server_address}")
-    else:
-        ray.init()
-
     resources = {
         "cpu": args.num_cpus,
         "gpu": args.num_gpus,
@@ -100,7 +118,7 @@ if __name__ == "__main__":
     script_path = args.script.replace(".py", "").replace("/", ".")
     script = importlib.import_module(script_path)
     # Register the training function that will be used for training the model.
-    tune.register_trainable("train_function", script.main)
+    # tune.register_trainable("train_function", script.main)
     tune_function(script.main, param_space, tune_config, resources)
 
     # Shut down Ray.
