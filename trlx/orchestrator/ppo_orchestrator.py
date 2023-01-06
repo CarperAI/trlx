@@ -27,7 +27,7 @@ class PPOOrchestrator(Orchestrator):
         reward_fn: Callable,
         metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
-        ref_model_provider: Callable = None,
+        model_provider: Callable = None,
     ):
         self.pipeline = pipeline
         self.trainer = trainer
@@ -39,8 +39,8 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
-        if ref_model_provider is not None:
-            self.ref_model = ref_model_provider(self.trainer.config.model.model_path)
+        if model_provider is not None:
+            self.ref_model = model_provider(self.trainer.config, adapters=False)
         elif not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
 

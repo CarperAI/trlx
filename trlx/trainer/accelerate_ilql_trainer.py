@@ -1,4 +1,4 @@
-from typing import Sequence, Union, cast
+from typing import Callable, Optional, Sequence, Union, cast
 
 import torch
 
@@ -18,9 +18,9 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         logit_mask=None,
         metric_fn=None,
         train_mode=True,
-        **kwargs,
+        model_provider: Optional[Callable] = None,
     ):
-        super().__init__(config, train_mode, **kwargs)
+        super().__init__(config, train_mode, model_provider)
         self.logit_mask = logit_mask
         self.metric_fn = metric_fn
         self.reward_fn = None

@@ -16,8 +16,7 @@ def train(
     config: Optional[TRLConfig] = None,
     split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
-    ref_model_provider: Optional[Callable] = None,
-    **kwargs,
+    model_provider: Optional[Callable] = None,
 ):
     """
     Dispatches online or offline reinforcement training
@@ -33,7 +32,7 @@ def train(
         config (Optional[TRLConfig]): TRL configuration object to override default settings
         split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
-        ref_model_provider (Optional[Callable]): Function that create a reference model
+        model_provider (Optional[Callable]): Function that create a reference/base model based on parameters
     """
     if reward_fn is not None:
         if config is None:
@@ -43,7 +42,7 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        trainer = get_trainer(config.train.trainer)(config, **kwargs)
+        trainer = get_trainer(config.train.trainer)(config, model_provider)
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [trainer.tokenizer.bos_token] * batch_size
@@ -62,7 +61,7 @@ def train(
             pipeline,
             reward_fn=reward_fn,
             chunk_size=config.method.chunk_size,
-            ref_model_provider=ref_model_provider,
+            model_provider=model_provider,
         )
         orch.make_experience(config.method.num_rollouts)
         eval_pipeline = get_pipeline(config.train.pipeline)(

@@ -26,10 +26,6 @@ from trlx.utils.modeling import (
     whiten,
 )
 
-TMODEL_PROVIDER = Callable[
-    [transformers.PretrainedConfig], transformers.AutoModelForCausalLM
-]
-
 # KL Controllers
 
 
@@ -306,21 +302,22 @@ class CausalLMHydraWithValueHead(nn.Module):
         self,
         config: Union[transformers.PretrainedConfig, str],
         num_layers_unfrozen: int = -1,
-        base_model_provider: Optional[TMODEL_PROVIDER] = None,
-        base_model_transformer_args: Optional[List[str]] = None,
+        model_provider: Optional[Callable] = None,
     ):
         super().__init__()
 
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
-            if base_model_provider is None:
-                base_model_provider = transformers.AutoModelForCausalLM.from_pretrained
-            self.base_model = base_model_provider(config)
+            if model_provider is None:
+                self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
+            else:
+                self.base_model = model_provider(config, adapters=True)
         else:
             self.config = config
-            if base_model_provider is None:
-                base_model_provider = transformers.AutoModelForCausalLM.from_config
-            self.base_model = base_model_provider(config)
+            if model_provider is None:
+                self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+            else:
+                self.base_model = model_provider(config, adapters=True)
 
         if not hasattr(self.base_model, "lm_head"):
             self.base_model.lm_head = hf_get_lm_head(self.base_model)
@@ -340,12 +337,9 @@ class CausalLMHydraWithValueHead(nn.Module):
                 lm_head=self.base_model.lm_head,
             )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        if base_model_transformer_args is not None:
-            self.base_model_transformer_args = base_model_transformer_args
-        else:
-            self.base_model_transformer_args = inspect.getfullargspec(
-                self.base_model.transformer.forward
-            ).args
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""

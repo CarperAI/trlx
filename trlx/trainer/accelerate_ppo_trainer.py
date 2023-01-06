@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -21,8 +21,8 @@ from trlx.utils.modeling import logprobs_from_logits
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
-    def __init__(self, config, **kwargs):
-        super().__init__(config, **kwargs)
+    def __init__(self, config, model_provider: Optional[Callable] = None):
+        super().__init__(config, model_provider)
 
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True
@@ -54,9 +54,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             pad_token_id=self.tokenizer.eos_token_id,
         )
 
-    def get_arch(self, config: TRLConfig, **kwargs):
+    def get_arch(self, config: TRLConfig):
         return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen, **kwargs
+            config.model.model_path, config.model.num_layers_unfrozen, model_provider=self.model_provider
         )
 
     def get_model_inputs(
