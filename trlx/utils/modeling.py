@@ -344,7 +344,7 @@ def construct_delta_model(
     return delta_model
 
 
-def regex_for_range(min_, max_):
+def regex_for_range(min_, max_):  # noqa
     """Returns a regex that matches all numbers in the given range.
     Copyright (c) 2013, Dmitry Voronin. All rights reserved.
     Reference: https://github.com/voronind/range-regex
