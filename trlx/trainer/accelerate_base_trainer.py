@@ -29,7 +29,7 @@ from trlx.utils import (
     get_optimizer_class,
     get_scheduler_class,
 )
-from trlx.utils.modeling import freeze_bottom_causal_layers
+from trlx.utils.modeling import construct_delta_model, freeze_bottom_causal_layers
 
 
 @register_trainer
@@ -40,19 +40,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
-
+        self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.trackers)
-
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
-        self.max_length = config.train.seq_length
-
-        # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
-        freeze_bottom_causal_layers(
-            self.model.base_model, self.config.model.num_layers_unfrozen
-        )
+        self.model = self.setup_model()
+        self.opt = self.setup_optimizer()
+        self.scheduler = self.setup_scheduler()
 
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
@@ -86,8 +81,27 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 init_kwargs=init_trackers_kwargs,
             )
 
-        self.opt = self.setup_optimizer()
-        self.scheduler = self.setup_scheduler()
+    def setup_model(self):
+        """
+        Returns a model derived from an instance's TRLConfig
+        """
+        # Retrieves model equipped for ppo, ilql, etc
+        model = self.get_arch(self.config)
+
+        # Set the fine-tuning strategy for learnable parameters
+        freeze_bottom_causal_layers(
+            model.base_model, self.config.model.num_layers_unfrozen
+        )
+        if self.config.model.delta_method is not None:
+            delta_model = construct_delta_model(
+                base_model=model.base_model,
+                delta_method=self.config.model.delta_method,
+                delta_modified_modules=self.config.model.delta_modified_modules,
+                num_layers_unfrozen=self.config.model.num_layers_unfrozen,
+            )
+            if self.accelerator.is_main_process:
+                delta_model.log()
+        return model
 
     def setup_optimizer(self):
         """

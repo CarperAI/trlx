@@ -17,9 +17,9 @@ try:
         SoftPromptModel,
     )
 
-    _opendelta_available = True
+    HAS_OPENDELTA = True
 except ModuleNotFoundError:
-    _opendelta_available = False
+    HAS_OPENDELTA = False
 
 
 def make_head(n_embd: int, out: int) -> nn.Sequential:
@@ -256,16 +256,7 @@ class RunningMoments:
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
 
 
-def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
-    if num_layers_unfrozen == -1:
-        return "(\d)+"
-    n_layers = config.n_layer
-    start_layer = n_layers - num_layers_unfrozen
-    if start_layer < 0:
-        raise Exception(
-            "Number of layers unfrozen cannot be greater than number of layers in the model"
-        )
-    return "[r][{}-{}]\.".format(start_layer, n_layers - 1)
+# OpenDelta utilities
 
 
 MODIFIED_MODULES_DICT = {
@@ -282,7 +273,7 @@ MODIFIED_MODULES_DICT = {
             "mlp.fc_out",
         ],
     },
-    "gptneox": {
+    "gpt_neox": {
         "attention": ["attention.query_key_value"],
         "mlp": ["mlp.dense_h_to_4h", "mlp.dense_4h_to_h"],
         "all": [
@@ -295,6 +286,19 @@ MODIFIED_MODULES_DICT = {
 }
 
 
+def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
+    if num_layers_unfrozen == -1:
+        return "(\d)+"
+    num_hidden_layers = hf_get_num_hidden_layers(config)
+    start_layer = num_hidden_layers - num_layers_unfrozen
+    if start_layer < 0:
+        raise Exception(
+            "Number of layers unfrozen cannot be greater than number of layers in the model"
+        )
+    pattern = f"(?:{regex_for_range(start_layer, num_hidden_layers - 1)})."
+    return f"[r]{pattern}"
+
+
 def get_delta_modified_modules(
     config, modified_modules: str, num_layers_unfrozen: int = -1
 ) -> List[str]:
@@ -305,7 +309,7 @@ def get_delta_modified_modules(
 
 
 def get_delta_model_class(model_type: str):
-    if not _opendelta_available:
+    if not HAS_OPENDELTA:
         raise ValueError(
             "OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta."
         )
@@ -320,19 +324,103 @@ def get_delta_model_class(model_type: str):
 
 
 def construct_delta_model(
-    backbone_model,
+    base_model: nn.Module,
     delta_method: str,
     delta_modified_modules: Union[List[str], str],
     num_layers_unfrozen: int = -1,
 ):
     delta_model_class = get_delta_model_class(delta_method)
     modified_module_list = get_delta_modified_modules(
-        config=backbone_model.config,
+        config=base_model.config,
         modified_modules=delta_modified_modules,
         num_layers_unfrozen=num_layers_unfrozen,
     )
     delta_model = delta_model_class(
-        backbone_model=backbone_model, modified_modules=modified_module_list
+        backbone_model=base_model,
+        modified_modules=modified_module_list,
+        # TODO: Add kwargs for the reset of params
     )
     delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
     return delta_model
+
+
+def regex_for_range(min_, max_):
+    """Returns a regex that matches all numbers in the given range.
+    Copyright (c) 2013, Dmitry Voronin. All rights reserved.
+    Reference: https://github.com/voronind/range-regex
+    """
+
+    def split_to_patterns(min_, max_):
+        subpatterns = []
+        start = min_
+        for stop in split_to_ranges(min_, max_):
+            subpatterns.append(range_to_pattern(start, stop))
+            start = stop + 1
+        return subpatterns
+
+    def split_to_ranges(min_, max_):
+        stops = {max_}
+        nines_count = 1
+        stop = fill_by_nines(min_, nines_count)
+        while min_ <= stop < max_:
+            stops.add(stop)
+            nines_count += 1
+            stop = fill_by_nines(min_, nines_count)
+        zeros_count = 1
+        stop = fill_by_zeros(max_ + 1, zeros_count) - 1
+        while min_ < stop <= max_:
+            stops.add(stop)
+            zeros_count += 1
+            stop = fill_by_zeros(max_ + 1, zeros_count) - 1
+        stops = list(stops)
+        stops.sort()
+        return stops
+
+    def fill_by_nines(integer, nines_count):
+        return int(str(integer)[:-nines_count] + "9" * nines_count)
+
+    def fill_by_zeros(integer, zeros_count):
+        return integer - integer % 10**zeros_count
+
+    def range_to_pattern(start, stop):
+        pattern = ""
+        any_digit_count = 0
+        for start_digit, stop_digit in zip(str(start), str(stop)):
+            if start_digit == stop_digit:
+                pattern += start_digit
+            elif start_digit != "0" or stop_digit != "9":
+                pattern += "[{}-{}]".format(start_digit, stop_digit)
+            else:
+                any_digit_count += 1
+        if any_digit_count:
+            pattern += r"\d"
+        if any_digit_count > 1:
+            pattern += "{{{}}}".format(any_digit_count)
+        return pattern
+
+    positive_subpatterns = []
+    negative_subpatterns = []
+
+    if min_ < 0:
+        min__ = 1
+        if max_ < 0:
+            min__ = abs(max_)
+        max__ = abs(min_)
+        negative_subpatterns = split_to_patterns(min__, max__)
+        min_ = 0
+    if max_ >= 0:
+        positive_subpatterns = split_to_patterns(min_, max_)
+
+    negative_only_subpatterns = [
+        "-" + val for val in negative_subpatterns if val not in positive_subpatterns
+    ]
+    positive_only_subpatterns = [
+        val for val in positive_subpatterns if val not in negative_subpatterns
+    ]
+    intersected_subpatterns = [
+        "-?" + val for val in negative_subpatterns if val in positive_subpatterns
+    ]
+    subpatterns = (
+        negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
+    )
+    return "|".join(subpatterns)

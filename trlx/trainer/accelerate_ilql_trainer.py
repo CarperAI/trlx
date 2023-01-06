@@ -8,7 +8,6 @@ from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
 from trlx.utils import to_device
-from trlx.utils.modeling import construct_delta_model
 
 
 @register_trainer
@@ -39,20 +38,11 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        model = CausalLMWithValueHeads(
+        return CausalLMWithValueHeads(
             config.model.model_path,
-            params=config.method,
+            ilql_config=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
-        if config.model.delta_method is not None:
-            delta_model = construct_delta_model(
-                model=model.base_model,
-                delta_method=config.model.delta_method,
-                delta_modified_modules=config.model.delta_modified_modules,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,
-            )
-            delta_model.log()
-        return model
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):

@@ -182,7 +182,7 @@ class CausalLMWithValueHeads(nn.Module):
 
     def __init__(
         self,
-        config: Union[PretrainedConfig, str],
+        config: Union[transformers.PretrainedConfig, str],
         ilql_config: ILQLConfig,
         num_layers_unfrozen=-1,
     ):
