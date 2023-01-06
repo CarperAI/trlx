@@ -17,26 +17,15 @@ class PromptPipeline(BasePipeline):
 
     def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
         super().__init__()
-        if tokenizer and 't5' in tokenizer.name_or_path:
-            model_inputs = tokenizer(prompts, truncation=True, padding="max_length", max_length=max_prompt_length)
-            prompts = model_inputs["input_ids"]
-            attention_mask = model_inputs["attention_mask"]
-        else:
-            prompts = tokenizer(prompts).input_ids
-            self.prompts = [prompt[-max_prompt_length:] for prompt in prompts]
-            
+        model_inputs = tokenizer(prompts, truncation=True, padding="max_length", max_length=max_prompt_length)
+        prompts = model_inputs["input_ids"]
+        attention_mask = model_inputs["attention_mask"]
         self.tokenizer = tokenizer
-        if 't5' in self.tokenizer.name_or_path:
-            self.prompts = [
-                {"input_ids": prompt, "attention_mask": mask}
-                for prompt, mask in zip(prompts, attention_mask)
-            ]
-        else:
-            self.prompts = [
-                {"input_ids": prompt, "attention_mask": [1] * len(prompt)}
-                for prompt in prompts
-            ]
-
+        self.prompts = [
+            {"input_ids": prompt, "attention_mask": mask}
+            for prompt, mask in zip(prompts, attention_mask)
+        ]
+        
     def __getitem__(self, ix: int):
         return self.prompts[ix]
 

@@ -1,10 +1,8 @@
 {
   "train_micro_batch_size_per_gpu": 4,
   "gradient_accumulation_steps": 4,
-  "fp16": {
-    "enabled": true,
-    "min_loss_scale": 0.5,
-    "opt_level": "O2"
+  "bp16": {
+    "enabled": true
   },
   "zero_optimization": {
     "stage": 2,

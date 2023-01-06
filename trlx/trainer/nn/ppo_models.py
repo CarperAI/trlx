@@ -18,7 +18,6 @@ from trlx.utils.modeling import (
     get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_causal_final_norm,
-    hf_get_encoder_decoder_base,
     hf_get_causal_hidden_layers,
     hf_get_hidden_size,
     hf_get_lm_head,
@@ -124,6 +123,7 @@ class PPOConfig(MethodConfig):
     ref_std: Optional[float]
     cliprange_reward: float
     gen_kwargs: dict
+    gen_inference_kwargs: Optional[dict] = None
 
     def get_advantages_and_returns(
         self,
@@ -435,11 +435,11 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
-            self.frozen_head = T5Branch(self.config, self.base_model, self.num_layers_unfrozen)
+            self.frozen_head = T5Branch(
+                self.config, self.base_model, self.num_layers_unfrozen
+            )
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_args = inspect.getfullargspec(
-            self.base_model.forward
-        ).args
+        self.base_model_args = inspect.getfullargspec(self.base_model.forward).args
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
@@ -450,17 +450,28 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
     def generate(self, input_ids, **x):
         return self.base_model.generate(input_ids, **x)
 
-    def forward_hydra(self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs):
+    def forward_hydra(
+        self, input_ids, attention_mask, decoder_input_ids, **forward_kwargs
+    ):
         forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
         forward_kwargs['return_dict'] = True
-        output = self.forward(input_ids, attention_mask, decoder_input_ids, **forward_kwargs)
+        output = self.forward(
+            input_ids, attention_mask, decoder_input_ids, **forward_kwargs
+        )
         all_hidden_states = output.decoder_hidden_states
         # Get output of last frozen hidden layer
         # Select hidden state before first layer of branch.
         input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
         encoder_hidden_states = output.encoder_last_hidden_state
         # Get size of last hidden state
-        outputs = self.frozen_head(decoder_input_ids, input_hidden_state, encoder_hidden_states, attention_mask, False, False)
+        outputs = self.frozen_head(
+            decoder_input_ids,
+            input_hidden_state,
+            encoder_hidden_states,
+            attention_mask,
+            False,
+            False
+        )
         return outputs.logits
 
     def forward(
@@ -513,7 +524,7 @@ class Seq2SeqLMHydraWithValueHead(nn.Module):
             encoder_hidden_states=t5_outputs.encoder_hidden_states,
             encoder_attentions=t5_outputs.encoder_attentions,
             past_key_values=t5_outputs.past_key_values,
-            value=value
+            value=value,
         )
 
 class T5Branch(transformers.PreTrainedModel):
@@ -537,15 +548,6 @@ class T5Branch(transformers.PreTrainedModel):
         self.last_device = None
         self.gradient_checkpointing = False
         
-        for block in self.decoder.block:
-            for parameter in block.parameters():
-                parameter.requires_grad = False
-        
-        for parameter in self.lm_head.parameters():
-            parameter.requires_grad = False
-        
-        self.decoder.embed_tokens.weight.requires_grad = False
-        self.decoder.final_layer_norm.weight.requires_grad = False
         for parameter in self.parameters():
             parameter.requires_grad = False
 
@@ -564,19 +566,23 @@ class T5Branch(transformers.PreTrainedModel):
         
         attention_mask = torch.ones(batch_size, seq_length, device=hidden_states.device)
         
-        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+        extended_attention_mask = self.get_extended_attention_mask(
+            attention_mask, input_shape
+        )
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
         encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
         
-        encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
+        encoder_extended_attention_mask = self.invert_attention_mask(
+            encoder_attention_mask
+        )
         position_bias = None
         encoder_decoder_position_bias = None
         
         for i, layer_module in enumerate(self.decoder.block):
 
             layer_outputs = layer_module(
-                hidden_states, # size: (batch_size, seq_length, hidden_size)
-                attention_mask=extended_attention_mask, # size: (batch_size, 1, seq_length, seq_length)
+                hidden_states,  # size: (batch_size, seq_length, hidden_size)
+                attention_mask=extended_attention_mask,  # size: (batch_size, 1, seq_length, seq_length)
                 position_bias=position_bias,
                 encoder_hidden_states=encoder_hidden_states,
                 encoder_attention_mask=encoder_extended_attention_mask,
@@ -599,7 +605,9 @@ class T5Branch(transformers.PreTrainedModel):
             encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
             # append next layer key value states
             if use_cache:
-                present_key_value_states = present_key_value_states + (present_key_value_state,)
+                present_key_value_states = present_key_value_states + (
+                    present_key_value_state,
+                )
 
             if output_attentions:
                 all_attentions = all_attentions + (layer_outputs[3],)
@@ -609,9 +617,7 @@ class T5Branch(transformers.PreTrainedModel):
         hidden_states = self.decoder.dropout(hidden_states)
         lm_logits = self.lm_head(hidden_states)
 
-        return Seq2SeqLMOutput(
-            logits=lm_logits
-        )
+        return Seq2SeqLMOutput(logits=lm_logits)
 
 
 

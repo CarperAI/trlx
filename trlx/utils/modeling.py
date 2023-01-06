@@ -12,9 +12,9 @@ import transformers
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2, bias=False),
+        nn.Linear(n_embd, n_embd * 2),
         nn.ReLU(),
-        nn.Linear(n_embd * 2, out, bias=False),
+        nn.Linear(n_embd * 2, out)
     )
 
 
@@ -40,8 +40,14 @@ def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0)
     encoder_norm_layer = model.encoder.final_layer_norm
     decoder_norm_layer = model.decoder.final_layer_norm
     decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
-    blocks_to_freeze = list(encoder_blocks) + list(decoder_blocks) \
-        + [shared_embed] + [encoder_norm_layer] + [decoder_norm_layer] + [decoder_embed]
+    blocks_to_freeze = (
+        list(encoder_blocks) 
+        + list(decoder_blocks) 
+        + [shared_embed] 
+        + [encoder_norm_layer] 
+        + [decoder_norm_layer] 
+        + [decoder_embed]
+    )
     for block in blocks_to_freeze:
         block.requires_grad_(False)
 
@@ -135,10 +141,9 @@ def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
     )
     return findattr(model, hidden_layers_attrs)
 
+
 def hf_decoder_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
-    hidden_layers_attrs = (
-        "decoder.block"
-    )
+    hidden_layers_attrs = "decoder.block"
     return findattr(model, hidden_layers_attrs)
 
 

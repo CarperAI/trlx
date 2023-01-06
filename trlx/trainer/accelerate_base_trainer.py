@@ -30,7 +30,10 @@ from trlx.utils import (
     get_optimizer_class,
     get_scheduler_class,
 )
-from trlx.utils.modeling import freeze_bottom_causal_layers, freeze_bottom_seq2seq_layers
+from trlx.utils.modeling import (
+    freeze_bottom_causal_layers, 
+    freeze_bottom_seq2seq_layers
+)
 
 
 @register_trainer
@@ -51,7 +54,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # Retrieves model equipped for ppo, ilql, etc
         self.model = self.get_arch(self.config)
-        if self.config.model.model_arch_type == "encoder_decoder":
+        if self.config.model.model_arch_type == "seq2seq":
             freeze_bottom_seq2seq_layers(
                 self.model.base_model, self.config.model.num_layers_unfrozen
             )
@@ -64,7 +67,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.padding_side = "left"
             self.tokenizer.truncation_side = "left"
-            if config.model.model_arch_type != "encoder_decoder":
+            self.tokenizer.sep_token = "<sep>"
+            if config.model.model_arch_type != "seq2seq":
                 self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
             self.tokenizer = None
@@ -136,6 +140,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
             return self.accelerator.unwrap_model(self.model).generate(
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
+    
+    def generate_eval(self, input_ids, attention_mask=None, **kwargs):
+        """Wraps hf's `generate` adding some specific method's defaults"""
+        input_ids = input_ids.to(self.accelerator.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.accelerator.device)
+
+        kwargs = dict(self.generate_inference_kwargs, **kwargs)
+
+        with torch.no_grad():
+            return self.accelerator.unwrap_model(self.model).generate(
+                input_ids=input_ids, attention_mask=attention_mask, **kwargs
+            )
 
     def save(self, directory=None):
         """Creates checkpoint of optimizer, scheduler and a model"""
@@ -158,12 +175,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
-                samples = self.generate(prompts)
+                samples = self.generate_eval(prompts)
             else:
-                samples = self.generate(**prompts)
+                samples = self.generate_eval(**prompts)
             if isinstance(samples, tuple):
                 samples, *_ = samples
-            if self.config.model.model_arch_type == "encoder_decoder":
+            if self.config.model.model_arch_type == "seq2seq":
                 pad_token = self.tokenizer.pad_token_id
                 all_samples.extend(samples[:, 1:])
             else:
@@ -176,14 +193,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     )
                 )
             sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
-                    len(prompts.input_ids)
+                len(prompts.input_ids)
             )
             prompts_sizes.append(sizes.to(samples.device))
             lst_prompts.extend(prompts.input_ids)
 
         stats["time/generate"] = time() - generate_time
         
-        if self.config.model.model_arch_type == "encoder_decoder":
+        if self.config.model.model_arch_type == "seq2seq":
             samples = all_samples
         else:
             samples = self.accelerator.gather(torch.vstack(all_samples))
@@ -193,7 +210,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             if self.tokenizer:
                 
                 prompts, responses = [], []
-                if self.config.model.model_arch_type == "encoder_decoder":
+                if self.config.model.model_arch_type == "seq2seq":
                     prompts = lst_prompts
                     responses = all_samples
                 else:
@@ -206,7 +223,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 str_responses = self.tokenizer.batch_decode(
                     responses, skip_special_tokens=True
                 )
-            if self.config.model.model_arch_type == "encoder_decoder":
+            if self.config.model.model_arch_type == "seq2seq":
                 str_samples = str_responses
             else:
                 str_samples = self.tokenizer.batch_decode(
@@ -220,11 +237,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                if self.config.model.model_arch_type == "encoder_decoder":
-                    texts = [f"{article}<sep>{response}" for article, response in zip(str_prompts, str_samples)]
+                if self.config.model.model_arch_type == "seq2seq":
+                    sep_token = self.tokenizer.sep_token
+                    texts = [
+                        f"{article}{sep_token}{response}" 
+                        for article, response in zip(str_prompts, str_samples)
+                    ]
                     rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)   
                 else:
-                    rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
+                    rewards = torch.tensor(
+                        self.reward_fn(str_samples), dtype=torch.float
+                    )
                 
                 mean_reward = rewards.mean()
                 columns.append("reward")
@@ -333,7 +356,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                     if self.iter_count >= self.total_steps:
                         self.save()
-                        return self.evaluate()
+                        return self.generate_eval()
 
                 self.post_backward_callback()
 

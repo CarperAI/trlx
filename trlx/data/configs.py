@@ -28,6 +28,9 @@ class ModelConfig:
 
     :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
     :type tokenizer_path: str
+    
+    :param model_arch_type: Type of model architecture. Either "causal" or "seq2seq"
+    :type model_arch_type: str
 
     :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
         -1 means all layers are unfrozen.
@@ -36,7 +39,7 @@ class ModelConfig:
 
     model_path: str
     tokenizer_path: str
-    model_arch_type: str = "decoder"
+    model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
 
     @classmethod

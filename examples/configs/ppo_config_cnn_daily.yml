@@ -12,9 +12,9 @@ train:
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"lvwerra/gpt2-imdb"
-  model_arch_type: "encoder_decoder"
-  tokenizer_path:  "google/flan-t5-large" #  "lvwerra/gpt2-imdb" #"google/flan-t5-large" # "lvwerra/gpt2-imdb"
+  model_path:  "google/flan-t5-large"
+  model_arch_type: "seq2seq"
+  tokenizer_path:  "google/flan-t5-large"
   num_layers_unfrozen: 2
 
 optimizer:
@@ -28,7 +28,7 @@ optimizer:
 scheduler:
   name: "cosine_annealing"
   kwargs:
-    T_max: 10000 # train.total_steps
+    T_max: 10000
     eta_min: 1.0e-6
 
 method:
@@ -49,9 +49,4 @@ method:
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-          #do_sample: True
     max_new_tokens: 100
-    #top_k: 0
-    # temperature: 0.7
-    # top_p: 1.0
-    #top_k: 50

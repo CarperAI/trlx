@@ -39,6 +39,7 @@ class PPOOrchestrator(Orchestrator):
 
         if not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
+            self.ref_model.to(self.trainer.accelerator.device)
 
         self.trainer.orch = self
         self.trainer.reward_fn = reward_fn
@@ -73,7 +74,7 @@ class PPOOrchestrator(Orchestrator):
             samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
             
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 response_tensors = samples
             else:
                 query_tensors = batch.input_ids
@@ -83,11 +84,15 @@ class PPOOrchestrator(Orchestrator):
                 samples, skip_special_tokens=True
             )
 
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 articles = self.trainer.tokenizer.batch_decode(
                     batch.input_ids, skip_special_tokens=True
                 )
-                texts = [f"{article}<sep>{response}" for article, response in zip(articles, texts)]
+                sep_token = self.trainer.tokenizer.sep_token
+                texts = [
+                    f"{article}{sep_token}{response}" 
+                    for article, response in zip(articles, texts)
+                ]
                         
             exp_score_time = time()
             scores = torch.tensor(
@@ -114,7 +119,7 @@ class PPOOrchestrator(Orchestrator):
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 response_tensors = response_tensors
                 attention_mask = batch.attention_mask.to(response_tensors.device)
                 query_tensors = batch.input_ids.to(response_tensors.device)
@@ -139,7 +144,11 @@ class PPOOrchestrator(Orchestrator):
                             decoder_input_ids=response_tensors
                         ).logits
             else:
-                all_tokens, attention_mask, position_ids = self.trainer.get_model_inputs(
+                (
+                    all_tokens, 
+                    attention_mask, 
+                    position_ids
+                ) = self.trainer.get_model_inputs(
                     query_tensors.to(response_tensors.device), response_tensors
                 )
                 with torch.no_grad():
@@ -163,7 +172,7 @@ class PPOOrchestrator(Orchestrator):
                         )
                         ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_from_logits(logits, response_tensors)
                 ref_logprobs = logprobs_from_logits(
                     ref_logits, response_tensors
@@ -172,17 +181,16 @@ class PPOOrchestrator(Orchestrator):
             else:
             
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
+                ref_logprobs = logprobs_from_logits(ref_logits[:, :-1, :], all_tokens[:, 1:])
                 values = values.cpu()[:, :-1]
+
             n = samples.shape[0]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
 
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 all_values = values
                 all_logprobs = logprobs
             else:
@@ -194,7 +202,7 @@ class PPOOrchestrator(Orchestrator):
             # Compute rewards
             rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
-            if self.trainer.config.model.model_arch_type == "encoder_decoder":
+            if self.trainer.config.model.model_arch_type == "seq2seq":
                 for ix in range(n):
                     rs = rewards[ix]
                     rs[-1] = scores[ix]
