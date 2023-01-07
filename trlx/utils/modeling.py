@@ -260,7 +260,11 @@ class RunningMoments:
 
 
 MODIFIED_MODULES_DICT = {
-    "gpt2": {},
+    "gpt2": {
+        "attention": ["attn.c_attn", "attn.c_proj"],
+        "mlp": ["mlp.c_fc", "mlp.c_proj"],
+        "all": ["attn.c_attn", "attn.c_proj", "mlp.c_fc", "mlp.c_proj"],
+    },
     "gptj": {
         "attention": ["attn.q_proj", "attn.k_proj", "attn.v_proj"],
         "mlp": ["mlp.fc_in", "mlp.fc_out"],
@@ -283,6 +287,33 @@ MODIFIED_MODULES_DICT = {
             "mlp.dense_4h_to_h",
         ],
     },
+    "opt": {
+        "attention": [
+            "self_attn.k_proj",
+            "self_attn.v_proj",
+            "self_attn.q_proj",
+            "self_attn.out_proj",
+        ],
+        "mlp": ["fc1", "fc2"],
+        "all": [
+            "self_attn.k_proj",
+            "self_attn.v_proj",
+            "self_attn.q_proj",
+            "self_attn.out_proj",
+            "fc1",
+            "fc2",
+        ],
+    },
+    "bloom": {
+        "attention": ["self_attention.query_key_value", "self_attention.dense"],
+        "mlp": ["mlp.dense_h_to_4h", "mlp.dense_4h_to_h"],
+        "all": [
+            "self_attention.query_key_value",
+            "self_attention.dense",
+            "mlp.dense_h_to_4h",
+            "mlp.dense_4h_to_h",
+        ],
+    }
 }
 
 
@@ -344,8 +375,11 @@ def construct_delta_model(
     return delta_model
 
 
-def regex_for_range(min_, max_):  # noqa
+def regex_for_range(min_: int, max_: int) -> str:  # noqa
     """Returns a regex that matches all numbers in the given range.
+    
+    Example: regex_for_range(12, 34) -> "1[2-9]|2\d|3[0-4]"
+
     Copyright (c) 2013, Dmitry Voronin. All rights reserved.
     Reference: https://github.com/voronind/range-regex
     """
