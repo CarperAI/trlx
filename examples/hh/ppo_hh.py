@@ -1,15 +1,15 @@
 import os
-import json
-import yaml
-import trlx
-from typing import List, Dict
-from trlx.data.configs import TRLConfig
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from torch import nn
-import torch
-import tritonclient.grpc as client_util
-from tritonclient.utils import np_to_triton_dtype
+import re
+
 import numpy as np
+import tritonclient.grpc as client_util
+import yaml
+from transformers import AutoTokenizer
+from tritonclient.utils import np_to_triton_dtype
+
+import trlx
+from datasets import load_dataset
+from trlx.data.configs import TRLConfig
 
 config_path = os.path.join(os.path.dirname(__file__), "configs/ppo_hh.yml")
 default_config = yaml.safe_load(open(config_path))
@@ -47,25 +47,16 @@ def main(hparams={}):
 
         return output_data[:, -1]
 
-    fpath = "datasets/hh-rlhf/helpful-base/train.jsonl"
-    dataset = [json.loads(line) for line in open(fpath).read().splitlines()]
-    split_phrase = "\n\nAssistant:"
-    prompts = [
-        split_phrase.join(x["chosen"].split(split_phrase)[:-1]) + split_phrase
-        for x in dataset
-    ]
+    dataset = load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base")
+    hhh_prompt = "".join(dataset["test"][-5:]["chosen"])
 
-    fpath = "datasets/hh-rlhf/helpful-base/test.jsonl"
-    dataset = [json.loads(line) for line in open(fpath).read().splitlines()]
-    split_phrase = "\n\nAssistant: "
-    eval_prompts = [
-        split_phrase.join(x["chosen"].split(split_phrase)[:-1]) + split_phrase
-        for x in dataset
-    ]
+    dialogues = sum([[x["chosen"], x["rejected"]] for x in dataset["train"]], [])
+    dialogues = [re.split(r"(\n\nHuman: |\n\nAssistant: )", x)[1:] for x in dialogues]
 
-    eval_prompts = eval_prompts[:64]
+    prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues]
 
-    print(f"training... {len(prompts)}")
+    eval_prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues][:64]
+
     trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,

@@ -60,7 +60,7 @@ class OfflineOrchestrator(Orchestrator):
         if self.trainer.tokenizer:
             samples = [
                 tokenize_dialogue(
-                    s, self.trainer.tokenizer, max_length, truncation_side="right"
+                    s, self.trainer.tokenizer, max_length, truncation_side="left"
                 )
                 for s in samples
             ]

@@ -1,20 +1,20 @@
 train:
   seq_length: 1024
   epochs: 1000
-  total_steps: 10000
-  batch_size: 8
+  total_steps: 50000
+  batch_size: 2
 
   checkpoint_interval: 100000
   eval_interval: 1000
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
+  trainer: "AcceleratePPOTrainer"
 
 model:
-  model_type: "AcceleratePPOModel"
   model_path: "EleutherAI/gpt-j-6B"
   tokenizer_path: "gpt2"
-  num_layers_unfrozen: 2
+  num_layers_unfrozen: 4
 
 optimizer:
   name: "adamw"
@@ -28,7 +28,7 @@ scheduler:
   name: "cosine_annealing"
   kwargs:
     T_max: 10000 # train.total_steps
-    eta_min: 8.0e-7
+    eta_min: 8.0e-6
 
 method:
   name: "ppoconfig"
