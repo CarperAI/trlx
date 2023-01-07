@@ -313,7 +313,7 @@ MODIFIED_MODULES_DICT = {
             "mlp.dense_h_to_4h",
             "mlp.dense_4h_to_h",
         ],
-    }
+    },
 }
 
 
@@ -377,7 +377,7 @@ def construct_delta_model(
 
 def regex_for_range(min_: int, max_: int) -> str:  # noqa
     """Returns a regex that matches all numbers in the given range.
-    
+
     Example: regex_for_range(12, 34) -> "1[2-9]|2\d|3[0-4]"
 
     Copyright (c) 2013, Dmitry Voronin. All rights reserved.
