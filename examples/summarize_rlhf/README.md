@@ -28,7 +28,7 @@ Download reward model checkpoint:
 
 
 ### Results:
-On 1000 samples from CNN/DailyMail test dataset:
+On 1000 samples from TL;DR test dataset:
 1. SFT vs PPO
 - Rouge scores
 
