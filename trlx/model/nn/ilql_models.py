@@ -78,6 +78,7 @@ class ILQLConfig(MethodConfig):
         # values of next states
         Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
+        print(f"{labels.rewards.shape=}, {Vnext.shape=}")
         Q_ = labels.rewards + self.gamma * Vnext.detach()
 
         loss_qs = [((Qi - Q_) * terminal_mask).pow(2).sum() / n_nonterminal for Qi in Q]
@@ -110,7 +111,7 @@ class ILQLConfig(MethodConfig):
             f"{logits.shape=} {labels.input_ids.shape=} {labels.actions_ixs.shape=} {labels.states_ixs.shape=}"
         )
 
-        print(f"{labels.states_ixs.shape=}")
+        print(f"{labels.states_ixs.shape=} {logits.shape=}")
         print(f"{labels.states_ixs=}")
         states_logits = logits.gather(
             1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, logits.shape[-1])
@@ -173,6 +174,10 @@ class ILQLHeads(nn.Module):
         # )
 
         if states_ixs is not None:
+
+            print(
+                f"{hs.shape=} {states_ixs.max() if states_ixs.numel() > 0 else states_ixs.shape=}"
+            )
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
             ).contiguous()

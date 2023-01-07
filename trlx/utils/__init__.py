@@ -1,7 +1,7 @@
 import os
 import time
 from functools import reduce
-from typing import Any, Iterable, List, Dict
+from typing import Any, Iterable, List, Dict, Union
 from dataclasses import is_dataclass
 
 import numpy as np
@@ -107,17 +107,7 @@ def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
 # Sentiment/scores
 
 
-def sentiment_score(sentiments: Iterable[float]):
-    """
-    Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
-    """
-    sentiments = torch.tensor(
-        [-s["score"] if s["label"] == "NEGATIVE" else s["score"] for s in sentiments]
-    )
-    return sentiments
-
-
-def tree_map(f, tree):
+def tree_map(f, tree: Any) -> Any:
     """
     Apply function f to all leaves in tree
     """

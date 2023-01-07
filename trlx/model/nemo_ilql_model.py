@@ -37,7 +37,7 @@ from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from trlx.model.nemo.gpt import ILQLGPT
 
 
-def train_megatron(ilql_config, cfg) -> None:
+def train_megatron(ilql_config, cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
@@ -127,6 +127,7 @@ class NeMoILQLModel(BaseRLModel):
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
         megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/40b.yaml")
         self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
+        self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
@@ -148,10 +149,20 @@ class NeMoILQLModel(BaseRLModel):
             self.accelerator.unwrap_model(self.model).sync_target_q_heads()
 
     def learn(self):
-        train_dataloader = self.store.create_loader(self.config.train.batch_size)
+        train_dataloader = self.store.create_loader(self.batch_size)
         print(f"{len(train_dataloader)=}")
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
         train_dataloder = (ILQLBatch(**x) for x in train_dataloader)
+
+        def log_and_pass(x):
+            # print(f"{x.actions_ixs.max()=}")
+            # print(f"{x.actions_ixs.max()=} {x.states_ixs.max()=}")
+            # print(f"{x.actions_ixs[:, x.actions_ixs.max() - 5:x.actions_ixs.max() + 5]=}")
+            # print(f"{x.states_ixs[:, x.states_ixs.max() - 5:x.states_ixs.max() + 5]=}")
+            # print(f"{x.states_ixs.shape=}")
+            return x
+
+        train_dataloader = map(log_and_pass, train_dataloader)
         # print(next(iter(eval_dataloader)).keys())
         # eval_dataloader = (ILQLBatch(**x) for x in eval_dataloader)
         train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)

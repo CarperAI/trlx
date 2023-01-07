@@ -2,6 +2,8 @@
 from typing import Optional, Mapping, Tuple, Union
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
+
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
 from trlx.utils import to_device, tree_map
 
@@ -197,13 +199,109 @@ class ILQLGPT(MegatronGPTModel):
                 )
 
                 print(
-                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=}"
+                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=} {batch.states_ixs.shape}"
                 )
 
+                print(f"{parallel_state.get_tensor_model_parallel_rank()=}")
+                print(f"{parallel_state.get_tensor_model_parallel_world_size()=}")
+                mp_rank = parallel_state.get_tensor_model_parallel_rank()
+                mp_size = parallel_state.get_tensor_model_parallel_world_size()
+                sequence_parallel = self.cfg.get("sequence_parallel", False)
+                if sequence_parallel and mp_size > 1:
+                    chunk_size = self.cfg.encoder_seq_length // mp_size
+                    min_ix, max_ix = mp_rank * chunk_size, (mp_rank + 1) * chunk_size
+                    # partition the states, actions, dones and ilql attention mask for this rank
+                    batch_size = batch.states_ixs.shape[0]
+                    chunked = []
+                    for (states_ixs, actions_ixs, dones, awac_mask, rewards) in zip(
+                        batch.states_ixs,
+                        batch.actions_ixs,
+                        batch.dones,
+                        batch.attention_mask,
+                        batch.rewards,
+                    ):
+                        states_for_samples = (min_ix <= states_ixs) & (
+                            states_ixs < max_ix
+                        )
+                        actions_for_samples = (min_ix <= actions_ixs) & (
+                            actions_ixs < max_ix
+                        )
+                        states_ixs = states_ixs[states_for_samples] - min_ix
+                        actions_ixs = actions_ixs[actions_for_samples] - min_ix
+                        dones = dones[states_for_samples]
+                        awac_mask = awac_mask[states_for_samples]
+                        print(
+                            f"{rewards.shape=} {states_for_samples.shape=} {rewards[states_for_samples[1:]].shape=} {actions_for_samples.shape=}"
+                        )
+                        rewards = rewards[
+                            (min_ix <= states_ixs[1:]) & (states_ixs[1:] < max_ix)
+                        ]
+                        chunked.append(
+                            (states_ixs, actions_ixs, dones, awac_mask, rewards)
+                        )
+
+                    (
+                        batch.states_ixs,
+                        batch.actions_ixs,
+                        batch.dones,
+                        batch.attention_mask,
+                        batch.rewards,
+                    ) = [
+                        pad_sequence(
+                            t,
+                            batch_first=True,
+                            padding_value=0.0 if torch.is_floating_point(t[0]) else 0,
+                        )
+                        for t in zip(*chunked)
+                    ]
+
+                    # states_for_samples = (min_ix <= batch.states_ixs) & (batch.states_ixs < max_ix)
+                    # states_for_batch = torch.any(states_for_samples, dim=0) #.repeat([batch_size, 1])
+
+                    # actions_for_samples = (min_ix <= batch.actions_ixs) & (batch.actions_ixs < max_ix)
+                    # actions_for_batch = torch.any(actions_for_samples, dim=0) #, keepdim=True).repeat([batch_size, 1])
+                    # print(f"{states_for_batch.shape=} {actions_for_batch.shape=}")
+                    # print(f"{states_for_batch.shape=} {batch.states_ixs.max()=} {batch.states_ixs.device=} {mp_rank=}")
+                    # mid = batch.states_ixs.max().cpu().numpy().item()
+                    # print(f"{batch.states_ixs[:, mid-5:mid+5]}, {mid=}")
+                    # actions_mid = batch.actions_ixs.max().cpu().numpy().item()
+                    # print(f"{batch.actions_ixs[:, actions_mid-5:actions_mid+5]}, {actions_mid=} {mp_rank=}")
+
+                    # states_ixs = batch.states_ixs[:, states_for_batch]
+                    # actions_ixs = batch.actions_ixs[:, actions_for_batch]
+                    # print(f"{states_ixs.shape=} {actions_ixs.shape=}")
+
+                    # # shift the states and actions to be relative to this rank
+                    # states_ixs -= min_ix
+                    # actions_ixs -= min_ix
+
+                    # dones = batch.dones[:, states_for_batch]
+
+                    # batch.states_ixs = states_ixs
+                    # batch.actions_ixs = actions_ixs
+                    # batch.dones = dones
+                    # # reward is for next states
+                    # batch.rewards = batch.rewards[:, states_for_batch[1:]]
+                    # batch.attention_mask = batch.attention_mask[:, states_for_batch]
+                    if (
+                        batch.states_ixs.numel() > 0
+                        and batch.states_ixs.max().cpu().numpy().item() >= chunk_size
+                    ):
+                        raise ValueError(
+                            f"{batch.states_ixs.max().cpu().numpy().item()=} {chunk_size=}"
+                        )
+
+                    print(f"{batch.dones.shape=}")
+                    print(f"{batch.dones=}")
+                    print(f"{batch.states_ixs.shape=}")
+                    print(f"{batch.attention_mask.shape=}")
+                    print(f"{batch.attention_mask=}")
+
+                splits = 1
                 extra_args = {}
                 # Only the last pipeline stage GPT layers are wrapped with LMHeads
                 # so we pass them the heads kwargs
-                if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+                if parallel_state.is_pipeline_last_stage():
                     extra_args = dict(
                         heads_kwargs=dict(
                             states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs

@@ -27,11 +27,13 @@ class OfflineOrchestrator(Orchestrator):
 
         states_ixs, actions_ixs = [], []
         dones = []
-        for s, s_tok in zip(samples, input_ids):
+        for sample, s_tok in zip(samples, input_ids):
             # split samples on (prompts, continuations) on a given substring `split_token`
             if self.split_token:
-                prompt_str_len = s.index(self.split_token) + len(self.split_token)
-                prompt_tok_len = len(self.model.tokenizer(s[:prompt_str_len]).input_ids)
+                prompt_str_len = sample.index(self.split_token) + len(self.split_token)
+                prompt_tok_len = len(
+                    self.model.tokenizer(sample[:prompt_str_len]).input_ids
+                )
             # else assume that the prompt is a bos token
             else:
                 prompt_tok_len = 1
