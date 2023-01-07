@@ -273,7 +273,7 @@ MODIFIED_MODULES_DICT = {
             "attn.k_proj",
             "attn.v_proj",
             "attn.out_proj",
-            "lp.fc_in",
+            "mlp.fc_in",
             "mlp.fc_out",
         ],
     },
