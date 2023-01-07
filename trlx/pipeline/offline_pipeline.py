@@ -19,10 +19,12 @@ class PromptPipeline(BasePipeline):
         super().__init__()
 
         if tokenizer:
-            prompts = tokenizer(prompts).input_ids
+            prompts = tokenizer(
+                prompts, truncation=True, padding=False, max_length=max_prompt_length
+            ).input_ids
 
         self.tokenizer = tokenizer
-        self.prompts = [prompt[-max_prompt_length:] for prompt in prompts]
+        self.prompts = prompts
         self.prompts = [
             {"input_ids": prompt, "attention_mask": [1] * len(prompt)}
             for prompt in self.prompts

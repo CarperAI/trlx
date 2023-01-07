@@ -4,15 +4,15 @@ train:
   total_steps: 100000
   batch_size: 4
 
-  checkpoint_interval: 10000
-  eval_interval: 400
+  checkpoint_interval: 1000
+  eval_interval: 200
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path: "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/gptneo-supervised-summarize-checkpoint/checkpoint-1000"
+  model_path: "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf_31Dec/gptj-supervised-summarize-checkpoint/checkpoint-1000"
   tokenizer_path: "EleutherAI/gpt-j-6B"
   num_layers_unfrozen: 8
 

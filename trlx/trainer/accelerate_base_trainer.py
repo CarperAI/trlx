@@ -30,7 +30,7 @@ from trlx.utils import (
     get_optimizer_class,
     get_scheduler_class,
 )
-from trlx.utils.modeling import freeze_bottom_causal_layers
+from trlx.utils.modeling import best_of_n, freeze_bottom_causal_layers
 
 
 @register_trainer
@@ -117,6 +117,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             add_special_tokens=False,
         )
 
+    def generate_best_of_n(self, input_ids, attenion_mask):
+        generated_samples = []
+        for i in range(input_ids.shape[0]):
+            generated_samples.append(self.best_of_n(input_ids[i], attenion_mask[i]))
+
     def generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
@@ -148,7 +153,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         all_samples = []
         prompts_sizes = []
         generate_time = time()
-        for prompts in self.eval_dataloader:
+        for prompts in tqdm(self.eval_dataloader, desc="Eval generation"):
             if isinstance(prompts, torch.Tensor):
                 samples = self.generate(prompts)
             else:

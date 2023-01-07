@@ -62,6 +62,7 @@ class PPOOrchestrator(Orchestrator):
         stats = {}
         clock = Clock()
         while len(ppo_rl_elements) < num_rollouts:
+            print(f"Making experience {len(ppo_rl_elements)}/{num_rollouts}")
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -101,28 +102,34 @@ class PPOOrchestrator(Orchestrator):
             clip_reward = self.trainer.config.method.cliprange_reward
             if clip_reward:
                 scores = torch.clip(scores, -clip_reward, clip_reward)
-
             # Precompute logprobs, values
-            all_tokens, attention_mask, position_ids = self.trainer.get_model_inputs(
-                query_tensors.to(response_tensors.device), response_tensors
+            # all_tokens, attention_mask, position_ids = self.trainer.get_model_inputs(
+            #     query_tensors.to(response_tensors.device), response_tensors
+            # )
+            all_tokens = torch.cat(
+                (query_tensors.to(response_tensors.device), response_tensors), dim=1
             )
+            attention_mask = (
+                all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
+                .long()
+                .to(all_tokens.device)
+            )
+
             with torch.no_grad():
                 logits, *_, values = self.trainer.model(
-                    all_tokens, attention_mask=attention_mask, position_ids=position_ids
+                    all_tokens,
+                    attention_mask=attention_mask,
                 )
                 # TODO(dahoas): When hydra model works need to also support generation on hydra head
                 if hasattr(self.trainer.model, "frozen_head"):
                     ref_logits = self.trainer.model.forward_hydra(
                         all_tokens,
                         attention_mask=attention_mask,
-                        position_ids=position_ids,
                         return_dict=False,
                     )
                 else:
                     ref_logits, _, *_ = self.ref_model(
-                        all_tokens.cpu(),
-                        attention_mask=attention_mask.cpu(),
-                        position_ids=position_ids.cpu(),
+                        all_tokens.cpu(), attention_mask=attention_mask.cpu()
                     )
                     ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
@@ -130,27 +137,53 @@ class PPOOrchestrator(Orchestrator):
             ref_logprobs = logprobs_from_logits(
                 ref_logits[:, :-1, :], all_tokens[:, 1:]
             )
-
-            n = samples.shape[0]
-            values = values.cpu()[:, :-1]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            query_tensors = query_tensors.cpu()
-            response_tensors = response_tensors.cpu()
-
-            start = query_tensors.shape[1] - 1
-            ends = start + attention_mask[:, start:].sum(1)
-            all_values = [values[ix, start : ends[ix]] for ix in range(n)]
-            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+            new = True
+            if new:
+                import ipdb; ipdb.set_trace()
+                n = samples.shape[0]
+                values = values.cpu()
+                logprobs = logprobs.cpu()
+                ref_logprobs = ref_logprobs.cpu()
+                query_tensors = query_tensors.cpu()
+                response_tensors = response_tensors.cpu()
+                start = query_tensors.shape[1]
+                ends = start + attention_mask[:, start:].sum(1)
+                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                # not work below
+                # n = samples.shape[0]
+                # values = values.cpu()[:, 1:]
+                # logprobs = logprobs.cpu()
+                # ref_logprobs = ref_logprobs.cpu()
+                # query_tensors = query_tensors.cpu()
+                # response_tensors = response_tensors.cpu()
+                # start = query_tensors.shape[1] - 1
+                # ends = start + attention_mask[:, start:].sum(1)
+                # all_values = [values[ix, start : ends[ix]] for ix in range(n)]
+                # all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+            else:
+                n = samples.shape[0]
+                values = values.cpu()[:, :-1]
+                logprobs = logprobs.cpu()
+                ref_logprobs = ref_logprobs.cpu()
+                query_tensors = query_tensors.cpu()
+                response_tensors = response_tensors.cpu()
+                start = query_tensors.shape[1] - 1
+                ends = start + attention_mask[:, start:].sum(1)
+                all_values = [values[ix, start : ends[ix]] for ix in range(n)]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
 
             # Compute rewards
             rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
+            
             all_rewards = [None] * n
             for ix in range(n):
                 rs = rewards[ix][start : ends[ix]]
+                if len(rs) == 0:  # fix for empty responses
+                    rs = torch.tensor([rewards[ix][start]])
                 rs[-1] = scores[ix]
                 all_rewards[ix] = rs
-
+                
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i],

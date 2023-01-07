@@ -84,30 +84,57 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_rewards = batch.rewards.to(self.accelerator.device)
 
         response_length = old_rewards.shape[1]
-
         advantages, returns = self.config.method.get_advantages_and_returns(
             old_values, old_rewards, response_length
         )
 
-        tokens, attention_mask, position_ids = self.get_model_inputs(
-            query_tensors, response_tensors
+        tokens = torch.cat((query_tensors, response_tensors), dim=1)
+        attention_mask = (
+            tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
         )
-
         logits, *_, values_pred = self.model(
-            tokens, attention_mask=attention_mask, position_ids=position_ids
+            tokens,
+            attention_mask=attention_mask,
         )
-        values_pred = values_pred[:, :-1]
-        logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-        attention_mask = attention_mask[:, :-1]
 
-        # Only the response part of the values/logprobs is needed
-        start = query_tensors.shape[1] - 1
-        end = start + response_length
-        logprobs, values_pred, mask = (
-            logprobs[:, start:end],
-            values_pred[:, start:end],
-            attention_mask[:, start:end],
-        )
+        new = True
+        if new:
+            values_pred = values_pred
+            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            attention_mask = attention_mask
+            # Only the response part of the values/logprobs is needed
+            start = query_tensors.shape[1]
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start - 1 : end - 1],
+                attention_mask[:, start:end],
+            )
+            # not work below
+            # values_pred = values_pred[:, 1:]
+            # logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            # attention_mask = attention_mask
+            # # Only the response part of the values/logprobs is needed
+            # start = query_tensors.shape[1] - 1
+            # end = start + response_length
+            # logprobs, values_pred, mask = (
+            #     logprobs[:, start:end],
+            #     values_pred[:, start: end],
+            #     attention_mask[:, start:end],
+            # )
+        else:
+            values_pred = values_pred[:, :-1]
+            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            attention_mask = attention_mask[:, :-1]
+
+            # Only the response part of the values/logprobs is needed
+            start = query_tensors.shape[1] - 1
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start:end],
+                attention_mask[:, start:end],
+            )
 
         loss, stats = self.config.method.loss(
             logprobs=logprobs,

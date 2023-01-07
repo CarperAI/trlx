@@ -203,6 +203,7 @@ class PPOConfig(MethodConfig):
             policy=dict(approx_kl=approx_kl.item(), clipfrac=pg_clipfrac.item()),
             ratio=(ratio * mask).sum() / n,
             padding_percentage=n / mask.numel(),
+            returns_raw=dict(mean=torch.mean(returns), var=torch.var(returns)),
         )
 
         return loss, flatten_dict(stats)
