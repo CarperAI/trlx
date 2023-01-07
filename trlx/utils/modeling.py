@@ -288,7 +288,7 @@ MODIFIED_MODULES_DICT = {
 
 def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
     if num_layers_unfrozen == -1:
-        return "(\d)+"
+        return "[r](\d)+."
     num_hidden_layers = hf_get_num_hidden_layers(config)
     start_layer = num_hidden_layers - num_layers_unfrozen
     if start_layer < 0:
