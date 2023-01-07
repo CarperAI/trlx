@@ -69,6 +69,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
+            if config.method.gen_inference_kwargs is None:
+                config.method.gen_inference_kwargs = self.generate_kwargs
+
+            self.generate_inference_kwargs = dict(
+                config.method.gen_inference_kwargs,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
 
     def get_arch(self, config: TRLConfig):
         if config.model.model_arch_type == "seq2seq":
@@ -103,6 +111,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_values = batch.values.to(self.accelerator.device)
         old_rewards = batch.rewards.to(self.accelerator.device)
         response_length = old_rewards.shape[1]
+
         advantages, returns = self.config.method.get_advantages_and_returns(
             old_values, old_rewards, response_length
         )
@@ -122,11 +131,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_from_logits(logits, decoder_input_ids)
+            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = (
                 decoder_input_ids.ne(self.tokenizer.pad_token_id)
                 .long()
                 .to(self.accelerator.device)
+            )
+            start = 1
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start - 1 : end - 1],
+                mask[:, start:end],
             )
         else:
             tokens, attention_mask, position_ids = self.get_model_inputs(

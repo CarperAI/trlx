@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(config.model.model_path)
     tokenizer.padding_side = "left"
-    tokenizer.truncation_side = "left"
+    tokenizer.truncation_side = "right"
     tokenizer.sep_token = "<sep>"
     prompt_label = {}
     max_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
@@ -63,6 +63,6 @@ if __name__ == "__main__":
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=val_prompts[0:1000],
+        eval_prompts=val_prompts[0:100],
         config=config,
     )

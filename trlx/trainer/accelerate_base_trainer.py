@@ -66,7 +66,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.padding_side = "left"
-            self.tokenizer.truncation_side = "left"
+            self.tokenizer.truncation_side = "right"
             self.tokenizer.sep_token = "<sep>"
             if config.model.model_arch_type != "seq2seq":
                 self.tokenizer.pad_token = self.tokenizer.eos_token

@@ -16,7 +16,8 @@ from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
     """
-    Orchestrator that prepares data for PPO training: transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
+    Orchestrator that prepares data for PPO training:
+    transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
     """
 
     def __init__(
@@ -57,7 +58,8 @@ class PPOOrchestrator(Orchestrator):
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
         """
-        Takes `num_rollouts` prompts from `pipeline`, samples model, computes KL againts a reference model appends PPOElements to trainer's `store`
+        Takes `num_rollouts` prompts from `pipeline`, samples model,
+        computes KL againts a reference model appends PPOElements to trainer's `store`
         """
         ppo_rl_elements = []
         stats = {}
@@ -175,9 +177,12 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_from_logits(logits, response_tensors)
-                ref_logprobs = logprobs_from_logits(ref_logits, response_tensors)
-                values = values.cpu()
+                logprobs = logprobs_from_logits(
+                    logits[:, :-1, :], response_tensors[:, 1:]
+                )
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits[:, :-1, :], response_tensors[:, 1:]
+                )
             else:
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_from_logits(
@@ -190,18 +195,27 @@ class PPOOrchestrator(Orchestrator):
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
-
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                all_values = values
-                all_logprobs = logprobs
+                start = 1  # skip the <s> token
+                ends = (response_tensors[:, start:] != 0).sum(1)
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                rewards = [
+                    -self.trainer.kl_ctl.value
+                    * (
+                        logprobs[ix, start : ends[ix]]
+                        - ref_logprobs[ix, start : ends[ix]]
+                    )
+                    for ix in range(n)
+                ]
             else:
                 start = query_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
                 all_values = [values[ix, start : ends[ix]] for ix in range(n)]
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
 
             # Compute rewards
-            rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 for ix in range(n):
@@ -225,6 +239,11 @@ class PPOOrchestrator(Orchestrator):
                 )
                 for i in range(n)
             ]
+            for element in new_ppo_rl_elements:
+                if len(element.rewards) != len(element.values):
+                    import ipdb
+
+                    ipdb.set_trace()
 
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()

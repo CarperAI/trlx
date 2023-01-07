@@ -2,11 +2,22 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.2.0
+    rev: v4.1.0
     hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
+        - id: check-case-conflict
+        - id: check-json
+        - id: check-symlinks
+        - id: check-yaml
+        - id: destroyed-symlinks
+        - id: end-of-file-fixer
+          exclude: docs/CNAME
+        - id: fix-byte-order-marker
+        - id: fix-encoding-pragma
+          args: [--remove]
+        - id: mixed-line-ending
+          args: [--fix=lf]
+        - id: requirements-txt-fixer
+        - id: trailing-whitespace
 -   repo: https://github.com/psf/black
     rev: 22.10.0
     hooks:
@@ -17,3 +28,8 @@ repos:
     hooks:
     -   id: isort
         name: isort (python)
+# -   repo: https://github.com/pycqa/flake8
+#     rev: 6.0.0
+#     hooks:
+#     -   id: flake8
+#         args: [--max-line-length=127]
