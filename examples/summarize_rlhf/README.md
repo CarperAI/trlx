@@ -35,14 +35,14 @@ On 1000 samples from TL;DR test dataset:
 | Model | Rouge-1 | Rouge-2 | Rouge-L | Average |
 | --- | --- | --- | --- |   --- |
 | SFT | 0.343 | 0.128 | 0.264 | 0.245 |
-| PPO | 0.301 | 0.102 | 0.213 | 0.205 |
+| PPO | 0.323 | 0.108 | 0.239 | 0.223 |
 
 - Reward scores
 
 | Model | Average Reward | Reward $\Delta$ |
 | --- | --- | --- |
 | SFT | 2.457 | -0.406 |
-| PPO | 3.248 | +0.385 |
+| PPO | 3.307 | +0.443 |
 
 
 2. Reward model accuracy:
