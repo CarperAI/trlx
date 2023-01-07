@@ -28,16 +28,16 @@ if __name__ == "__main__":
 
     # samples 10000 samples from the training set as prompts for training
     dataset = load_dataset("cnn_dailymail", "3.0.0", split="train", cache_dir="data")
-    prompts = dataset["article"][0:10000]
-    summaries = dataset["highlights"][0:10000]
+    prompts = dataset["article"][0:20000]
+    summaries = dataset["highlights"][0:20000]
     prompts = ["Summarize: " + prompt for prompt in prompts]
 
     # samples 100 samples from the validation set as prompts for evaluation
     val_dataset = load_dataset(
         "cnn_dailymail", "3.0.0", split="validation", cache_dir="data"
     )
-    val_prompts = ["Summarize: " + prompt for prompt in val_dataset["article"][0:100]]
-    val_summaries = val_dataset["highlights"][0:100]
+    val_prompts = ["Summarize: " + prompt for prompt in val_dataset["article"][0:1000]]
+    val_summaries = val_dataset["highlights"][0:1000]
 
     # make dictionary of prompts and labels to use for reward function
     tokenizer = AutoTokenizer.from_pretrained(config.model.model_path)

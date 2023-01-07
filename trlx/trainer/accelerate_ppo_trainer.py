@@ -145,22 +145,20 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 mask[:, start:end],
             )
         else:
-            tokens, attention_mask, position_ids = self.get_model_inputs(
-                query_tensors, response_tensors
+            tokens = torch.cat((query_tensors, response_tensors), dim=1)
+            attention_mask = (
+                tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
             )
             logits, *_, values_pred = self.model(
-                tokens, attention_mask=attention_mask, position_ids=position_ids
+                tokens,
+                attention_mask=attention_mask,
             )
-            values_pred = values_pred[:, :-1]
             logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-            attention_mask = attention_mask[:, :-1]
-
-            # Only the response part of the values/logprobs is needed
-            start = query_tensors.shape[1] - 1
+            start = query_tensors.shape[1]
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start:end],
+                values_pred[:, start - 1 : end - 1],
                 attention_mask[:, start:end],
             )
 

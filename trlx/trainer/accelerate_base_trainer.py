@@ -30,6 +30,7 @@ from trlx.utils import (
     get_scheduler_class,
 )
 from trlx.utils.modeling import (
+    best_of_n_sampling,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
 )
@@ -151,6 +152,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
             add_special_tokens=False,
         )
 
+    def generate_best_of_n(self, input_ids, attenion_mask):
+        """Wrap's best of n sampling for a batch of inputs"""
+        generated_samples = []
+        for i in range(input_ids.shape[0]):
+            generated_samples.append(
+                best_of_n_sampling(
+                    self.model, self.tokenizer, input_ids[i], attention_mask[i]
+                )
+            )
+        return generated_samples
+
     def generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
@@ -180,6 +192,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def save(self, directory=None):
         """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+        self.model.base_model.save_pretrained(
+            f"hf_model_{directory}" or f"hf_model_{self.config.train.checkpoint_dir}"
+        )
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""
@@ -196,7 +211,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts_sizes = []
         lst_prompts = []
         generate_time = time()
-        for prompts in self.eval_dataloader:
+        for prompts in tqdm(self.eval_dataloader, desc="Generating samples"):
             if isinstance(prompts, torch.Tensor):
                 samples = self.generate_eval(prompts)
             else:
@@ -331,6 +346,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             disable=not self.accelerator.is_local_main_process,
         )
 
+        best_reward = -float("inf")
+
         for _ in range(self.config.train.epochs):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
@@ -357,6 +374,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+
+                        if self.config.train.save_best:
+                            if (
+                                "reward/mean" in stats
+                                and stats["reward/mean"] > best_reward
+                            ):
+                                best_reward = stats["reward/mean"]
+                                self.save("best_checkpoint")
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():

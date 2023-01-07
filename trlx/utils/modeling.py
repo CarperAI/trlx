@@ -275,3 +275,87 @@ class RunningMoments:
         self.count = tot_count
 
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
+
+
+def best_of_n_sampling(
+    model,
+    tokenizer,
+    input_ids,  # [seq_len]
+    attention_mask,  # [seq_len]
+    max_new_tokens=50,
+    n=64,
+    mbs=16,
+):
+
+    # and stack n times
+    input_ids = input_ids.repeat(mbs, 1)
+    attention_mask = attention_mask.repeat(mbs, 1)
+
+    # save a giant list of output_ids
+    output_ids = []
+    output_scores = []
+
+    iterator = range(n // mbs)
+
+    # now generate. make sure that we utilize our mbs
+    for i in iterator:
+        # generate
+        kwargs = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": True,
+            "top_p": 0.95,
+            "top_k": 60,
+            "return_dict_in_generate": True,
+            "output_scores": True,
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+        }
+        out_temp = model.generate(input_ids, attention_mask=attention_mask, **kwargs)
+        # get the length of input_ids
+        start_idx = input_ids.shape[1]
+
+        # compute perplexity
+        log_probs = []
+        lengths = [0] * mbs
+        for i, t in enumerate(out_temp.scores):
+            # log softmax
+            t = -torch.log_softmax(t, dim=-1)[:, out_temp.sequences[:, start_idx + i]][
+                0
+            ]
+
+            # compute lengths
+            for j, t_j in enumerate(t):
+                if not (t_j == float("inf")):
+                    lengths[j] += 1
+
+            # replace inf with 0
+            t[t == float("inf")] = 0
+
+            log_probs.append(t)
+
+        # save input_ids
+        output_ids += out_temp.sequences.tolist()
+
+        # stack log probs
+        log_probs = torch.stack(log_probs, dim=1).sum(dim=1)
+        # divide by length
+        log_probs = log_probs / torch.tensor(lengths).to(log_probs.device)
+
+        output_scores += log_probs.tolist()
+
+    # zip for sorting
+    zipped = zip(output_ids, output_scores)
+    # sort by score in ascending order
+    zipped = sorted(zipped, key=lambda x: x[1], reverse=True)
+
+    # unzip
+    output_ids, output_scores = zip(*zipped)
+
+    # and return the best one
+    outputs = []
+    top_n = 1
+    for output_ids in output_ids[:top_n]:
+        outputs.append(
+            tokenizer.decode(torch.tensor(output_ids), skip_special_tokens=True)
+        )
+    return outputs

@@ -6,6 +6,7 @@ train:
 
   checkpoint_interval: 10000
   eval_interval: 500
+  save_best: False
 
   pipeline: "PromptPipeline"
   orchestrator: "PPOOrchestrator"

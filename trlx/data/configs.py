@@ -155,6 +155,7 @@ class TrainConfig:
 
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
+    save_best: bool = True
 
     trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
