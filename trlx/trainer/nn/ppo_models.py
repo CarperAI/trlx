@@ -571,7 +571,6 @@ class T5Branch(transformers.PreTrainedModel):
             attention_mask, input_shape
         )
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
-        encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
 
         encoder_extended_attention_mask = self.invert_attention_mask(
             encoder_attention_mask
@@ -593,7 +592,8 @@ class T5Branch(transformers.PreTrainedModel):
             )
 
             # layer_outputs is a tuple with:
-            # hidden-states, key-value-states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
+            # hidden-states, key-value-states, (self-attention position bias), (self-attention weights),
+            # (cross-attention position bias), (cross-attention weights)
             if use_cache is False:
                 layer_outputs = layer_outputs[:1] + (None,) + layer_outputs[1:]
 
@@ -605,14 +605,6 @@ class T5Branch(transformers.PreTrainedModel):
             position_bias = layer_outputs[2]
             encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
             # append next layer key value states
-            if use_cache:
-                present_key_value_states = present_key_value_states + (
-                    present_key_value_state,
-                )
-
-            if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[3],)
-                all_cross_attentions = all_cross_attentions + (layer_outputs[5],)
 
         hidden_states = self.decoder.final_layer_norm(hidden_states)
         hidden_states = self.decoder.dropout(hidden_states)
