@@ -29,7 +29,11 @@ from trlx.utils import (
     get_optimizer_class,
     get_scheduler_class,
 )
-from trlx.utils.modeling import construct_delta_model, freeze_bottom_causal_layers
+from trlx.utils.modeling import (
+    freeze_bottom_causal_layers,
+    get_delta_model_class,
+    parse_delta_kwargs,
+)
 
 
 @register_trainer
@@ -88,17 +92,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
 
-        # Set the fine-tuning strategy for learnable parameters
+        # Set the delta tuning strategies
         freeze_bottom_causal_layers(
             model.base_model, self.config.model.num_layers_unfrozen
         )
-        if self.config.model.delta_method is not None:
-            delta_model = construct_delta_model(
-                base_model=model.base_model,
-                delta_method=self.config.model.delta_method,
-                delta_modified_modules=self.config.model.delta_modified_modules,
-                num_layers_unfrozen=self.config.model.num_layers_unfrozen,
+        if self.config.model.delta_kwargs is not None:
+            delta_type, delta_kwargs = parse_delta_kwargs(
+                model.base_model.config,
+                self.config.model.delta_kwargs,
+                self.config.model.num_layers_unfrozen,
             )
+            delta_model_class = get_delta_model_class(delta_type)
+            delta_model = delta_model_class(model.base_model, **delta_kwargs)
+            delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
             if self.accelerator.is_main_process:
                 delta_model.log()
         return model

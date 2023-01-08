@@ -1,5 +1,5 @@
 import functools
-from typing import List, MutableMapping, Tuple, Union
+from typing import Any, List, Dict, MutableMapping, Tuple, Union
 
 import numpy as np
 import torch
@@ -317,7 +317,10 @@ MODIFIED_MODULES_DICT = {
 }
 
 
-def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
+def generate_layer_regex(
+    config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1
+) -> str:
+    """Generates a regex range for the specified number of learnable layers."""
     if num_layers_unfrozen == -1:
         return "[r](\d)+."
     num_hidden_layers = hf_get_num_hidden_layers(config)
@@ -331,11 +334,14 @@ def generate_layer_regex(config, num_layers_unfrozen: int = -1) -> str:
 
 
 def get_delta_modified_modules(
-    config, modified_modules: str, num_layers_unfrozen: int = -1
+    config: transformers.PretrainedConfig,
+    modified_modules: str,
+    num_layers_unfrozen: int = -1,
 ) -> List[str]:
-    module_list = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
+    """Returns a list of module names to be modified for a given delta method with
+    the specified number of learnable layers."""
     prefix = generate_layer_regex(config, num_layers_unfrozen)
-    module_list = [prefix + module for module in module_list]
+    module_list = [prefix + module for module in modified_modules]
     return module_list
 
 
@@ -354,25 +360,32 @@ def get_delta_model_class(model_type: str):
     return delta_models[model_type]
 
 
-def construct_delta_model(
-    base_model: nn.Module,
-    delta_method: str,
-    delta_modified_modules: Union[List[str], str],
+def parse_delta_kwargs(
+    config: transformers.PretrainedConfig,
+    delta_kwargs: Dict[str, Any],
     num_layers_unfrozen: int = -1,
-):
-    delta_model_class = get_delta_model_class(delta_method)
-    modified_module_list = get_delta_modified_modules(
-        config=base_model.config,
-        modified_modules=delta_modified_modules,
-        num_layers_unfrozen=num_layers_unfrozen,
-    )
-    delta_model = delta_model_class(
-        backbone_model=base_model,
-        modified_modules=modified_module_list,
-        # TODO: Add kwargs for the reset of params
-    )
-    delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
-    return delta_model
+) -> Tuple[str, Dict[str, any]]:
+    """Parses through delta kwargs to get delta type and proper modified modules."""
+    # This is function is needed to parse through the `delta_kwargs` to:
+    # 1) Get the `delta_type` method name to access the correct `delta_model_class`
+    # 2a) Accept user specified `modified_modules` and if not provided use the `trlx` default mapping
+    # 2b) Convert the list of `modified_modules` to a range of layers that fit within the range
+    #    of learnable layers as specified by `num_layers_unfrozen`
+
+    # Pop `delta_type` to allow passing the kwargs to the model constructor since
+    # `delta_type` is not a valid argument of the constructor
+    delta_type = delta_kwargs.pop("delta_type")
+    assert delta_type in ["lora"], "Only `LoRA` based delta models are supported"
+
+    # Use `trlx` default modified modules if none are specified
+    modified_modules = delta_kwargs.get("modified_modules", "all")
+    if modified_modules in ["all", "attention", "mlp"]:
+        modified_modules = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
+    # Update the `modified_modules` with the correct layer ranges
+    delta_kwargs["modified_modules"] = get_delta_modified_modules(
+        config, modified_modules, num_layers_unfrozen=num_layers_unfrozen)
+
+    return delta_type, delta_kwargs
 
 
 def regex_for_range(min_: int, max_: int) -> str:  # noqa
