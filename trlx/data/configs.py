@@ -32,11 +32,23 @@ class ModelConfig:
     :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
         -1 means all layers are unfrozen.
     :type num_layers_unfrozen: int
+
+    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
+        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
+            {"delta_type": "lora", "lora_a": 0.5}
+        or in YAML format:
+            delta_kwargs:
+                delta_type: lora
+                lora_a: 0.5
+        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
+    :type delta_kwargs: Dict[str, Any]
     """
 
     model_path: str
     tokenizer_path: str
     num_layers_unfrozen: int = -1
+    delta_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

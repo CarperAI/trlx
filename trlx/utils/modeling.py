@@ -1,5 +1,5 @@
 import functools
-from typing import MutableMapping, Tuple, Union
+from typing import Any, Dict, List, MutableMapping, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,6 +7,19 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
+
+try:
+    from opendelta import (
+        AdapterModel,
+        BitFitModel,
+        LoraModel,
+        PrefixModel,
+        SoftPromptModel,
+    )
+
+    HAS_OPENDELTA = True
+except ModuleNotFoundError:
+    HAS_OPENDELTA = False
 
 
 def make_head(n_embd: int, out: int) -> nn.Sequential:
@@ -241,3 +254,221 @@ class RunningMoments:
         self.count = tot_count
 
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
+
+
+# OpenDelta utilities
+
+
+MODIFIED_MODULES_DICT = {
+    "gpt2": {
+        "attention": ["attn.c_attn", "attn.c_proj"],
+        "mlp": ["mlp.c_fc", "mlp.c_proj"],
+        "all": ["attn.c_attn", "attn.c_proj", "mlp.c_fc", "mlp.c_proj"],
+    },
+    "gptj": {
+        "attention": ["attn.q_proj", "attn.k_proj", "attn.v_proj"],
+        "mlp": ["mlp.fc_in", "mlp.fc_out"],
+        "all": [
+            "attn.q_proj",
+            "attn.k_proj",
+            "attn.v_proj",
+            "attn.out_proj",
+            "mlp.fc_in",
+            "mlp.fc_out",
+        ],
+    },
+    "gpt_neox": {
+        "attention": ["attention.query_key_value"],
+        "mlp": ["mlp.dense_h_to_4h", "mlp.dense_4h_to_h"],
+        "all": [
+            "attention.query_key_value",
+            "attention.dense",
+            "mlp.dense_h_to_4h",
+            "mlp.dense_4h_to_h",
+        ],
+    },
+    "opt": {
+        "attention": [
+            "self_attn.k_proj",
+            "self_attn.v_proj",
+            "self_attn.q_proj",
+            "self_attn.out_proj",
+        ],
+        "mlp": ["fc1", "fc2"],
+        "all": [
+            "self_attn.k_proj",
+            "self_attn.v_proj",
+            "self_attn.q_proj",
+            "self_attn.out_proj",
+            "fc1",
+            "fc2",
+        ],
+    },
+    "bloom": {
+        "attention": ["self_attention.query_key_value", "self_attention.dense"],
+        "mlp": ["mlp.dense_h_to_4h", "mlp.dense_4h_to_h"],
+        "all": [
+            "self_attention.query_key_value",
+            "self_attention.dense",
+            "mlp.dense_h_to_4h",
+            "mlp.dense_4h_to_h",
+        ],
+    },
+}
+
+
+def generate_layer_regex(
+    config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1
+) -> str:
+    """Generates a regex range for the specified number of learnable layers."""
+    if num_layers_unfrozen == -1:
+        return "[r](\d)+."
+    num_hidden_layers = hf_get_num_hidden_layers(config)
+    start_layer = num_hidden_layers - num_layers_unfrozen
+    if start_layer < 0:
+        raise Exception(
+            "Number of layers unfrozen cannot be greater than number of layers in the model"
+        )
+    pattern = f"(?:{regex_for_range(start_layer, num_hidden_layers - 1)})."
+    return f"[r]{pattern}"
+
+
+def get_delta_modified_modules(
+    config: transformers.PretrainedConfig,
+    modified_modules: str,
+    num_layers_unfrozen: int = -1,
+) -> List[str]:
+    """Returns a list of module names to be modified for a given delta method with
+    the specified number of learnable layers."""
+    prefix = generate_layer_regex(config, num_layers_unfrozen)
+    module_list = [prefix + module for module in modified_modules]
+    return module_list
+
+
+def get_delta_model_class(model_type: str):
+    if not HAS_OPENDELTA:
+        raise ValueError(
+            "OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta."
+        )
+    delta_models = {
+        "bitfit": BitFitModel,
+        "adapter": AdapterModel,
+        "prefix": PrefixModel,
+        "lora": LoraModel,
+        "softprompt": SoftPromptModel,
+    }
+    return delta_models[model_type]
+
+
+def parse_delta_kwargs(
+    config: transformers.PretrainedConfig,
+    delta_kwargs: Dict[str, Any],
+    num_layers_unfrozen: int = -1,
+) -> Tuple[str, Dict[str, any]]:
+    """Parses through delta kwargs to get delta type and proper modified modules."""
+    # This is function is needed to parse through the `delta_kwargs` to:
+    # 1) Get the `delta_type` method name to access the correct `delta_model_class`
+    # 2a) Accept user specified `modified_modules` and if not provided use the `trlx` default mapping
+    # 2b) Convert the list of `modified_modules` to a range of layers that fit within the range
+    #    of learnable layers as specified by `num_layers_unfrozen`
+
+    # Pop `delta_type` to allow passing the kwargs to the model constructor since
+    # `delta_type` is not a valid argument of the constructor
+    delta_type = delta_kwargs.pop("delta_type")
+    assert delta_type in ["lora"], "Only `LoRA` based delta models are supported"
+
+    # Use `trlx` default modified modules if none are specified
+    modified_modules = delta_kwargs.get("modified_modules", "all")
+    if modified_modules in ["all", "attention", "mlp"]:
+        modified_modules = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
+    # Update the `modified_modules` with the correct layer ranges
+    delta_kwargs["modified_modules"] = get_delta_modified_modules(
+        config, modified_modules, num_layers_unfrozen=num_layers_unfrozen
+    )
+
+    return delta_type, delta_kwargs
+
+
+def regex_for_range(min_: int, max_: int) -> str:  # noqa
+    """Returns a regex that matches all numbers in the given range.
+
+    Example: regex_for_range(12, 34) -> "1[2-9]|2\d|3[0-4]"
+
+    Copyright (c) 2013, Dmitry Voronin. All rights reserved.
+    Reference: https://github.com/voronind/range-regex
+    """
+
+    def split_to_patterns(min_, max_):
+        subpatterns = []
+        start = min_
+        for stop in split_to_ranges(min_, max_):
+            subpatterns.append(range_to_pattern(start, stop))
+            start = stop + 1
+        return subpatterns
+
+    def split_to_ranges(min_, max_):
+        stops = {max_}
+        nines_count = 1
+        stop = fill_by_nines(min_, nines_count)
+        while min_ <= stop < max_:
+            stops.add(stop)
+            nines_count += 1
+            stop = fill_by_nines(min_, nines_count)
+        zeros_count = 1
+        stop = fill_by_zeros(max_ + 1, zeros_count) - 1
+        while min_ < stop <= max_:
+            stops.add(stop)
+            zeros_count += 1
+            stop = fill_by_zeros(max_ + 1, zeros_count) - 1
+        stops = list(stops)
+        stops.sort()
+        return stops
+
+    def fill_by_nines(integer, nines_count):
+        return int(str(integer)[:-nines_count] + "9" * nines_count)
+
+    def fill_by_zeros(integer, zeros_count):
+        return integer - integer % 10**zeros_count
+
+    def range_to_pattern(start, stop):
+        pattern = ""
+        any_digit_count = 0
+        for start_digit, stop_digit in zip(str(start), str(stop)):
+            if start_digit == stop_digit:
+                pattern += start_digit
+            elif start_digit != "0" or stop_digit != "9":
+                pattern += "[{}-{}]".format(start_digit, stop_digit)
+            else:
+                any_digit_count += 1
+        if any_digit_count:
+            pattern += r"\d"
+        if any_digit_count > 1:
+            pattern += "{{{}}}".format(any_digit_count)
+        return pattern
+
+    positive_subpatterns = []
+    negative_subpatterns = []
+
+    if min_ < 0:
+        min__ = 1
+        if max_ < 0:
+            min__ = abs(max_)
+        max__ = abs(min_)
+        negative_subpatterns = split_to_patterns(min__, max__)
+        min_ = 0
+    if max_ >= 0:
+        positive_subpatterns = split_to_patterns(min_, max_)
+
+    negative_only_subpatterns = [
+        "-" + val for val in negative_subpatterns if val not in positive_subpatterns
+    ]
+    positive_only_subpatterns = [
+        val for val in positive_subpatterns if val not in negative_subpatterns
+    ]
+    intersected_subpatterns = [
+        "-?" + val for val in negative_subpatterns if val in positive_subpatterns
+    ]
+    subpatterns = (
+        negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
+    )
+    return "|".join(subpatterns)
