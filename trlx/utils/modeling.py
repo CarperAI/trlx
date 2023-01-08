@@ -1,5 +1,5 @@
 import functools
-from typing import Any, List, Dict, MutableMapping, Tuple, Union
+from typing import Any, Dict, List, MutableMapping, Tuple, Union
 
 import numpy as np
 import torch
@@ -383,7 +383,8 @@ def parse_delta_kwargs(
         modified_modules = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
     # Update the `modified_modules` with the correct layer ranges
     delta_kwargs["modified_modules"] = get_delta_modified_modules(
-        config, modified_modules, num_layers_unfrozen=num_layers_unfrozen)
+        config, modified_modules, num_layers_unfrozen=num_layers_unfrozen
+    )
 
     return delta_type, delta_kwargs
 
