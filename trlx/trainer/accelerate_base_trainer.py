@@ -33,6 +33,8 @@ from trlx.utils.modeling import (
     best_of_n_sampling,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
+    get_delta_model_class,
+    parse_delta_kwargs,
 )
 
 
@@ -44,24 +46,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def __init__(self, config, train_mode=True):
         super().__init__(config, train_mode)
-
+        self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.trackers)
-
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
-        self.max_length = config.train.seq_length
-
-        # Retrieves model equipped for ppo, ilql, etc
-        self.model = self.get_arch(self.config)
-        if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(
-                self.model.base_model, self.config.model.num_layers_unfrozen
-            )
-        else:
-            freeze_bottom_causal_layers(
-                self.model.base_model, self.config.model.num_layers_unfrozen
-            )
+        self.model = self.setup_model()
+        self.opt = self.setup_optimizer()
+        self.scheduler = self.setup_scheduler()
 
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
@@ -98,8 +90,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 init_kwargs=init_trackers_kwargs,
             )
 
-        self.opt = self.setup_optimizer()
-        self.scheduler = self.setup_scheduler()
+    def setup_model(self):
+        """
+        Returns a model derived from an instance's TRLConfig
+        """
+        # Retrieves model equipped for ppo, ilql, etc
+        model = self.get_arch(self.config)
+
+        # Set the delta tuning strategies
+        freeze_bottom_causal_layers(
+            model.base_model, self.config.model.num_layers_unfrozen
+        )
+        if self.config.model.delta_kwargs is not None:
+            delta_type, delta_kwargs = parse_delta_kwargs(
+                model.base_model.config,
+                self.config.model.delta_kwargs,
+                self.config.model.num_layers_unfrozen,
+            )
+            delta_model_class = get_delta_model_class(delta_type)
+            delta_model = delta_model_class(model.base_model, **delta_kwargs)
+            delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
+            if self.accelerator.is_main_process:
+                delta_model.log()
+        return model
 
     def setup_optimizer(self):
         """
