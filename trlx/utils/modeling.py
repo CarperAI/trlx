@@ -352,10 +352,5 @@ def best_of_n_sampling(
     output_ids, output_scores = zip(*zipped)
 
     # and return the best one
-    outputs = []
     top_n = 1
-    for output_ids in output_ids[:top_n]:
-        outputs.append(
-            tokenizer.decode(torch.tensor(output_ids), skip_special_tokens=True)
-        )
-    return outputs
+    return outputs_ids[:top_n]

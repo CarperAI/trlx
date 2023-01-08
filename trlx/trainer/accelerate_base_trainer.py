@@ -406,7 +406,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                     if self.iter_count >= self.total_steps:
                         self.save()
-                        return self.generate_eval()
+                        return self.evaluate()
 
                 self.post_backward_callback()
 

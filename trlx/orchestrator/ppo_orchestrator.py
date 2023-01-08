@@ -212,8 +212,10 @@ class PPOOrchestrator(Orchestrator):
                 ref_logprobs = ref_logprobs.cpu()
                 query_tensors = query_tensors.cpu()
                 response_tensors = response_tensors.cpu()
-                start = query_tensors.shape[1]
-                ends = start + attention_mask[:, start:].sum(1)
+                start = (
+                    query_tensors.shape[1] - 1
+                )  # left shift by 1 ref: https://github.com/lvwerra/trl/blob/main/trl/trainer/ppo_trainer.py#L425
+                ends = start + attention_mask[:, start:].sum(1) - 1
                 for ix in range(n):
                     if ends[ix] == all_tokens.shape[1]:
                         ends[ix] = ends[ix] - 1
@@ -223,18 +225,14 @@ class PPOOrchestrator(Orchestrator):
 
             # Compute rewards
             all_rewards = [None] * n
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                for ix in range(n):
-                    rs = rewards[ix]
-                    rs[-1] = scores[ix]
-                    all_rewards[ix] = rs
-            else:
-                for ix in range(n):
-                    rs = rewards[ix][start : ends[ix]]
-                    if len(rs) == 0:  # fix for empty responses
-                        rs = torch.tensor([0.0])
-                    rs[-1] = scores[ix]
-                    all_rewards[ix] = rs
+
+            for ix in range(n):
+                rs = rewards[ix]
+                if len(rs) == 0:
+                    rs = torch.tensor([0.0])
+                rs[-1] += scores[ix].cpu()
+                all_rewards[ix] = rs
+
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i],
