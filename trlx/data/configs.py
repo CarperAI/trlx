@@ -52,7 +52,7 @@ class ModelConfig:
     tokenizer_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
-    delta_kwargs: Dict[str, Any] = field(default_factory=dict)
+    delta_kwargs: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

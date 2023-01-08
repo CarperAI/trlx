@@ -222,6 +222,7 @@ class PPOOrchestrator(Orchestrator):
                 all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
                 rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
+                rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
             # Compute rewards
             all_rewards = [None] * n

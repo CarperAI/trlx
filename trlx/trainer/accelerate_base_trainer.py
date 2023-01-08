@@ -30,7 +30,6 @@ from trlx.utils import (
     get_scheduler_class,
 )
 from trlx.utils.modeling import (
-    best_of_n_sampling,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
@@ -96,11 +95,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
-
+        if self.config.model.model_arch_type == "seq2seq":
+            freeze_bottom_seq2seq_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
+        else:
+            freeze_bottom_causal_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
         # Set the delta tuning strategies
-        freeze_bottom_causal_layers(
-            model.base_model, self.config.model.num_layers_unfrozen
-        )
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(
                 model.base_model.config,
@@ -164,17 +167,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
             # adding them twice more.
             add_special_tokens=False,
         )
-
-    def generate_best_of_n(self, input_ids, attenion_mask):
-        """Wrap's best of n sampling for a batch of inputs"""
-        generated_samples = []
-        for i in range(input_ids.shape[0]):
-            generated_samples.append(
-                best_of_n_sampling(
-                    self.model, self.tokenizer, input_ids[i], attention_mask[i]
-                )
-            )
-        return generated_samples
 
     def generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
