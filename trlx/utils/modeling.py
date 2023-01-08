@@ -290,7 +290,6 @@ class RunningMoments:
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
 
 
-
 # OpenDelta utilities
 
 
