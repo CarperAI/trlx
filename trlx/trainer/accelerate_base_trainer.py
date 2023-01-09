@@ -197,9 +197,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def save(self, directory=None):
         """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
-        self.model.base_model.save_pretrained(
-            f"hf_model_{directory}" or f"hf_model_{self.config.train.checkpoint_dir}"
-        )
+        if directory:
+            self.model.base_model.save_pretrained(f"hf_model_{directory}")
+        else:
+            self.model.base_model.save_pretrained(
+                f"hf_model_{self.config.train.checkpoint_dir}"
+            )
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""

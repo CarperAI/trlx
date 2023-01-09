@@ -113,18 +113,6 @@ def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Mod
     return findattr(model, decoder_attrs)
 
 
-def hf_get_encoder_decoder_base(model: transformers.AutoModelForSeq2SeqLM) -> nn.Module:
-    """Returns the encoder-decoder backbone of the specified HuggingFace transformers
-    model.
-    NOTE: Different model configurations have different encoder-decoder attribute
-    names.
-        - model.encoder: (BartConfig)
-        - model: (MBartConfig)
-    """
-    decoder_attrs = ("shared", "encoder", "decoder")
-    return findattr(model, decoder_attrs)
-
-
 def hf_get_causal_final_norm(model: nn.Module) -> float:
     """Returns the final (layer) norm of the specified model.
     NOTE: Different model configurations have different final norm attribute names.
@@ -152,11 +140,6 @@ def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
         "model.decoder.layers",
         "gpt_neox.layers",
     )
-    return findattr(model, hidden_layers_attrs)
-
-
-def hf_decoder_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
-    hidden_layers_attrs = "decoder.block"
     return findattr(model, hidden_layers_attrs)
 
 

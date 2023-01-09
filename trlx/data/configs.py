@@ -146,6 +146,8 @@ class TrainConfig:
                                 Only used by AcceleratePPOTrainer.
     :type rollout_logging_dir: Optional[str]
 
+    :param save_best: Save best model based on mean reward
+
     :param seed: Random seed
     :type seed: int
     """
