@@ -188,93 +188,109 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
-        all_samples = []
-        prompts_sizes = []
-        generate_time = time()
-        for prompts in self.eval_dataloader:
-            if isinstance(prompts, torch.Tensor):
-                samples = self.generate(prompts)
+
+        if self.generate_sweep_kwarg is not None:
+            sweep_arg, sweep_values = self.generate_sweep_kwarg
+        else:
+            sweep_values = [None]
+
+        for sweep_value in sweep_values:
+            if sweep_value is not None:
+                suffix = f"/{sweep_arg}={sweep_value}"
             else:
-                samples = self.generate(**prompts)
+                suffix = ""
 
-            if isinstance(samples, tuple):
-                samples, *_ = samples
+            all_samples = []
+            prompts_sizes = []
+            generate_time = time()
+            for prompts in self.eval_dataloader:
+                if isinstance(prompts, torch.Tensor):
+                    samples = self.generate(prompts)
+                else:
+                    samples = self.generate(**prompts, **{sweep_arg: sweep_value})
 
-            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-            all_samples.append(
-                F.pad(
-                    samples,
-                    (0, self.max_length - samples.shape[1]),
-                    value=pad_token,
+                if isinstance(samples, tuple):
+                    samples, *_ = samples
+
+                pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+                all_samples.append(
+                    F.pad(
+                        samples,
+                        (0, self.max_length - samples.shape[1]),
+                        value=pad_token,
+                    )
                 )
-            )
-            sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
-                len(prompts.input_ids)
-            )
-            prompts_sizes.append(sizes.to(samples.device))
-
-        stats["time/generate"] = time() - generate_time
-
-        samples = self.accelerator.gather(torch.vstack(all_samples))
-        prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
-
-        if self.accelerator.is_main_process:
-            if self.tokenizer:
-                str_samples = self.tokenizer.batch_decode(
-                    samples, skip_special_tokens=True
+                sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
+                    len(prompts.input_ids)
                 )
+                prompts_sizes.append(sizes.to(samples.device))
 
-                prompts, responses = [], []
-                for sample, prompt_size in zip(samples, prompts_sizes):
-                    prompts.append(sample[:prompt_size])
-                    responses.append(sample[prompt_size:])
+            stats["time/generate"] = time() - generate_time
 
-                str_prompts = self.tokenizer.batch_decode(
-                    prompts, skip_special_tokens=True
-                )
-                str_responses = self.tokenizer.batch_decode(
-                    responses, skip_special_tokens=True
-                )
+            samples = self.accelerator.gather(torch.vstack(all_samples))
+            prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
-            if isinstance(str_samples[0], str):
-                columns_data = [str_prompts, str_responses]
-            else:
-                columns_data = [samples.tolist()]
-            columns = ["prompt", "response"]
+            if self.accelerator.is_main_process:
+                if self.tokenizer:
+                    str_samples = self.tokenizer.batch_decode(
+                        samples, skip_special_tokens=True
+                    )
 
-            # in online setting, compute the reward for validation
-            if self.reward_fn:
-                rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
-                mean_reward = rewards.mean()
-                columns.append("reward")
-                columns_data.append(rewards)
-                stats["reward/mean"] = mean_reward
-                print(f"{mean_reward=}")
+                    prompts, responses = [], []
+                    for sample, prompt_size in zip(samples, prompts_sizes):
+                        prompts.append(sample[:prompt_size])
+                        responses.append(sample[prompt_size:])
 
-            # additionally log any other metrics
-            if self.metric_fn:
-                metric_time = time()
-                metrics = self.metric_fn(str_samples)
-                stats["time/metric"] = time() - metric_time
+                    str_prompts = self.tokenizer.batch_decode(
+                        prompts, skip_special_tokens=True
+                    )
+                    str_responses = self.tokenizer.batch_decode(
+                        responses, skip_special_tokens=True
+                    )
 
-                mean_metrics = {
-                    f"metrics/{k}": torch.as_tensor(xs).mean(-1)
-                    for k, xs in metrics.items()
-                }
+                if isinstance(str_samples[0], str):
+                    columns_data = [str_prompts, str_responses]
+                else:
+                    columns_data = [samples.tolist()]
+                columns = ["prompt", "response"]
 
-                stats.update(mean_metrics)
+                # in online setting, compute the reward for validation
+                if self.reward_fn:
+                    rewards = torch.tensor(
+                        self.reward_fn(str_samples), dtype=torch.float
+                    )
+                    mean_reward = rewards.mean()
+                    columns.append("reward")
+                    columns_data.append(rewards)
+                    stats[f"reward/mean{suffix}"] = mean_reward
+                    print(f"{mean_reward=}")
 
-                for metric, values in metrics.items():
-                    columns.append(metric)
-                    columns_data.append(values)
+                # additionally log any other metrics
+                if self.metric_fn:
+                    metric_time = time()
+                    metrics = self.metric_fn(str_samples)
+                    stats["time/metric"] = time() - metric_time
 
-            rows = list(zip(*columns_data))
-            print(rows[0])
-            if not ray.is_initialized():
-                if "wandb" in self.config.train.trackers:
-                    import wandb
+                    mean_metrics = {
+                        f"metrics/{k}{suffix}": torch.as_tensor(xs).mean(-1)
+                        for k, xs in metrics.items()
+                    }
 
-                    stats["samples"] = wandb.Table(columns=columns, rows=rows)
+                    stats.update(mean_metrics)
+
+                    for metric, values in metrics.items():
+                        columns.append(metric)
+                        columns_data.append(values)
+
+                rows = list(zip(*columns_data))
+                print(rows[0])
+                if not ray.is_initialized():
+                    if "wandb" in self.config.train.trackers:
+                        import wandb
+
+                        stats[f"samples{suffix}"] = wandb.Table(
+                            columns=columns, rows=rows
+                        )
 
         return stats
 
@@ -282,6 +298,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
+        self.generate_sweep_kwarg = None
+        for k, v in self.config.method.gen_kwargs.items():
+            if isinstance(v, list):
+                if self.generate_sweep_kwarg is not None:
+                    print(
+                        "Only a single sweep value is allowed, {k} is going to be set to {v[0]}"
+                    )
+                    self.generate_kwargs[k] = v[0]
+                else:
+                    self.generate_sweep_kwarg = (k, v)
 
         self.prepare_learning()
         self.iter_count = 0
