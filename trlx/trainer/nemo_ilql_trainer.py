@@ -2,35 +2,28 @@ from typing import Iterable, Sequence, Union, cast
 
 import torch
 import torch.nn.functional as F
-from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
-    MegatronGPTModel,
-)
+
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
     NLPDDPStrategy,
     PipelineMixedPrecisionPlugin,
 )
-from nemo.core.config import hydra_runner
 from nemo.utils import logging
-from nemo.utils.exp_manager import StatelessTimer, exp_manager
+from nemo.utils.exp_manager import StatelessTimer
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.timer import Timer
-from pytorch_lightning.plugins.environments.torchelastic_environment import (
-    TorchElasticEnvironment,
-)
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
-from trlx.model import register_model
-from trlx.model.nemo.gpt import ILQLGPT
-from trlx.model.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
+from trlx.trainer import register_trainer
+from trlx.trainer.nemo.gpt import ILQLGPT
+from trlx.trainer.nn.ilql_models import ILQLConfig
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
-from trlx.utils import set_seed, to_device
 
 from . import BaseRLTrainer
 
@@ -69,12 +62,8 @@ def train_megatron(ilql_config, cfg):
                 )
             )
 
-    if cfg.get("cluster_type", None) == "BCP":
-        plugins.append(TorchElasticEnvironment())
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
-
-    # exp_manager(trainer, cfg.exp_manager)
 
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
@@ -105,8 +94,8 @@ def train_megatron(ilql_config, cfg):
     return trainer, model
 
 
-@register_model
-class NemoILQLTrainer(BaseRLModel):
+@register_trainer
+class NemoILQLTrainer(BaseRLTrainer):
     store: ILQLRolloutStorage
 
     def __init__(
@@ -125,7 +114,7 @@ class NemoILQLTrainer(BaseRLModel):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/40b.yaml")
+        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
         self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
@@ -151,21 +140,8 @@ class NemoILQLTrainer(BaseRLModel):
     def learn(self):
         train_dataloader = self.store.create_loader(self.batch_size)
         print(f"{len(train_dataloader)=}")
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-        train_dataloder = (ILQLBatch(**x) for x in train_dataloader)
 
-        def log_and_pass(x):
-            # print(f"{x.actions_ixs.max()=}")
-            # print(f"{x.actions_ixs.max()=} {x.states_ixs.max()=}")
-            # print(f"{x.actions_ixs[:, x.actions_ixs.max() - 5:x.actions_ixs.max() + 5]=}")
-            # print(f"{x.states_ixs[:, x.states_ixs.max() - 5:x.states_ixs.max() + 5]=}")
-            # print(f"{x.states_ixs.shape=}")
-            return x
-
-        train_dataloader = map(log_and_pass, train_dataloader)
-        # print(next(iter(eval_dataloader)).keys())
-        # eval_dataloader = (ILQLBatch(**x) for x in eval_dataloader)
-        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
-        # eval_dataloader = map(flatten_dataclass(ILQLBatch), eval_dataloader)
-
+        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)  
+        self.model.generate(["hello world"], dict(max_length=200, min_length=10), 
+        dict(use_greedy=False, compute_logprob=False))      
         self.trainer.fit(self.model, train_dataloader)

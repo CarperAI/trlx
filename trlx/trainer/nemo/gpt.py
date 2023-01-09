@@ -1,7 +1,10 @@
 # Extensible version of the GPT model
+import os
 from typing import Mapping, Optional, Tuple, Union
+from functools import reduce
 
 import torch
+import torch.nn.functional as F
 from apex.transformer import parallel_state
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
@@ -23,7 +26,7 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
 from torch.nn.utils.rnn import pad_sequence
 
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
-from trlx.utils import to_device, tree_map
+from trlx.utils import to_device, tree_map, set_seed
 
 
 class LogGPT(MegatronModule):
@@ -102,6 +105,49 @@ class LMHeads(MegatronModule):
         return logits, heads_output
 
 
+class HydraWithValueHeads(MegatronModule):
+    def __init__(self, language_models):
+        super().__init__()
+        self.language_models = language_models
+
+    def set_input_tensor(self, input_tensor):
+        for model in self.language_models:
+            model.set_input_tensor(input_tensor)
+
+    def word_embeddings_weight(self):
+        return self.language_models[0].word_embeddings_weight()
+
+    def forward(
+        self,
+        *args,
+        get_key_value=False,
+        forward_method_parallel_output=None,
+        heads_kwargs={},
+        **kwargs,
+    ):
+        # print("LMHeads forward")
+        lm_outputs = []
+        logits = []
+        for model in self.language_models:
+            lm_output = model(*args, get_key_value=get_key_value, **kwargs)
+            model_logits = post_language_model_processing(
+                lm_output,
+                labels=None,
+                logit_weights=model.word_embeddings_weight(),
+                get_key_value=get_key_value,
+                parallel_output=False,  # self.language_model.parallel_output,
+                forward_method_parallel_output=forward_method_parallel_output,
+                fp16_lm_cross_entropy=model.fp16_lm_cross_entropy,
+                return_logits=True,
+                sequence_parallel=model.sequence_parallel,
+                gradient_accumulation_fusion=model.gradient_accumulation_fusion,
+            )
+            lm_outputs.append(lm_output)
+            logits.append(model_logits)
+
+        return lm_outputs, logits
+
+
 class ILQLGPT(MegatronGPTModel):
     def __init__(self, ilql_config, **kwargs):
         self.ilql_config = ilql_config
@@ -121,6 +167,11 @@ class ILQLGPT(MegatronGPTModel):
         pass
         #    self._train_ds =
 
+    def setup(self, stage=None):
+        """ PTL hook that is executed after DDP spawns """
+        set_seed(self.cfg.seed + int(os.environ.get("GLOBAL_RANK", 0)))
+        super().setup(stage)
+
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """Model construction for Apex Pipeline Parallelism.
         every rank will construct the model but inside the model,
@@ -128,7 +179,6 @@ class ILQLGPT(MegatronGPTModel):
         On the first rank, pre_process will be True
         On the last rank, post_process will be True
         """
-        print("model_provider_func", pre_process, post_process)
         # This disables post-processing the lm output to the vocab
         gpt = super().model_provider_func(pre_process, post_process=False)
         # This enables the final layernorm in the GPT model if there is one
@@ -201,7 +251,6 @@ class ILQLGPT(MegatronGPTModel):
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
                     labels=labels,
-                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
@@ -306,38 +355,75 @@ class ILQLGPT(MegatronGPTModel):
         checkpoint_activations_all_layers=None,
     ):
         def fwd_output_only_func(
-            batch: ILQLBatch,
+            input_ids: torch.Tensor,
             model,
         ):
-            batch = unflatten_dataclass(ILQLBatch)(batch)
-            batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
+            if input_ids is not None:
+                
+                input_ids = to_device(input_ids, torch.cuda.current_device(), non_blocking=True)
 
-            inputs = batch.input_ids[:, :-1].long()
-            labels = batch.input_ids[:, 1:].long()
+                attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+                    data=input_ids,
+                    eod_token=self.tokenizer.eos_id,
+                    reset_position_ids=False,
+                    reset_attention_mask=False,
+                    eod_mask_loss=False,
+                )
 
-            attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                data=inputs,
-                eod_token=self.tokenizer.eos_id,
-                reset_position_ids=False,
-                reset_attention_mask=False,
-                eod_mask_loss=False,
-            )
+                model_output = model(
+                    input_ids=input_ids,
+                    position_ids=position_ids.long(),
+                    attention_mask=attention_mask,
+                    set_inference_key_value_memory=set_inference_key_value_memory,
+                    inference_max_sequence_len=None,
+                )
+            else:
+                model_output = model(
+                    input_ids=None, position_ids=None, attention_mask=None
+                )
+                    
 
-            output_tensor = model(
-                input_ids=inputs,
-                position_ids=position_ids.long(),
-                attention_mask=attention_mask,
-                labels=labels,
-                set_inference_key_value_memory=set_inference_key_value_memory,
-                inference_max_sequence_len=None,
-                heads_kwargs=dict(
-                    states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
-                ),
-            )
+            def ilql_postprocess_func(model_output):
+                logits, (qs, target_qs, vs) = model_output
+                target_q = reduce(torch.minimum, target_qs)
+                advantage = target_q - vs
+                pi_beta = F.log_softmax(logits, -1)
+                beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
+                pi_adjusted = pi_beta + advantage * beta
 
-            def id_func(output_tensor):
-                return output_tensor, {"logits": output_tensor}
+                return model_output, {"logits": pi_adjusted}
 
-            return output_tensor, id_func
+            return model_output, ilql_postprocess_func
 
         return fwd_output_only_func
+
+class HydraWithValueHeadGPT(MegatronGPTModel):
+    def __init__(self, ppo_config, **kwargs):
+        self.ilql_config = ppo_config
+        super().__init__(**kwargs)
+        if len(list(self.parameters())) == 0:
+            raise ValueError("No parameters in model")
+        params = list(self.parameters())
+
+    @classmethod
+    def list_available_models(cls) -> Optional[Mapping[str, str]]:
+        return None
+
+    def process_global_batch(self, batch: ILQLBatch, global_batch_size=None):
+        return batch
+
+    def build_train_valid_test_datasets(self):
+        pass
+        #    self._train_ds =
+
+    def model_provider_func(self, pre_process: bool, post_process: bool):
+        """Model construction for Apex Pipeline Parallelism.
+        every rank will construct the model but inside the model,
+        only the relevant layers for that rank should be constructed.
+        On the first rank, pre_process will be True
+        On the last rank, post_process will be True
+        """
+        # Currently the Hydra head can only be as large as one pipeline parallelism stage
+        if post_process:
+            raise NotImplementedError
+

@@ -9,7 +9,7 @@ train:
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
-  trainer: "AccelerateILQLTrainer"
+  trainer: "NemoILQLTrainer"
 
   seed: 1000
 
