@@ -1,0 +1,55 @@
+train:
+  seq_length: 550
+  epochs: 50
+  total_steps: 100000
+  batch_size: 4
+
+  checkpoint_interval: 10000
+  eval_interval: 200
+
+  pipeline: "PromptPipeline"
+  orchestrator: "PPOOrchestrator"
+  trainer: "AcceleratePPOTrainer"
+
+model:
+  model_path: "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/gptneo-supervised-summarize-checkpoint/checkpoint-1000"
+  tokenizer_path: "EleutherAI/gpt-j-6B"
+  num_layers_unfrozen: 8
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 5.0e-6
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.01
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 100000
+    eta_min: 5.0e-6
+
+method:
+  name: "ppoconfig"
+  num_rollouts: 128
+  chunk_size: 16
+  ppo_epochs: 4
+  init_kl_coef: 0.1
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 0.2
+  scale_reward: False
+  ref_mean: null
+  ref_std: null
+  cliprange_reward: 10
+  gen_kwargs:
+    max_new_tokens: 50
+    # top_k: 0.0
+    # top_p: 0.7
+    # do_sample: True
+    # temperature: 0.5
