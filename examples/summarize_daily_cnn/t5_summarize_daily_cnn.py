@@ -1,12 +1,25 @@
+import os
 from typing import List
 
-import evaluate
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
 from trlx.data.configs import TRLConfig
+
+try:
+    import evaluate
+except ImportError:
+    raise ImportError(
+        "To run this example, please install the `evaluate` and `nltk` packages"
+        "by running `pip install evaluate`"
+    )
+
+config_path = os.path.join(
+    os.path.dirname(__file__), "configs/ppo_config_cnn_daily.yml"
+)
+config = TRLConfig.load_yaml(config_path)
 
 meteor = evaluate.load("meteor")  # use meteor as the reward function
 
@@ -24,20 +37,18 @@ if __name__ == "__main__":
         scores = [score["meteor"] for score in scores]
         return scores
 
-    config = TRLConfig.load_yaml("configs/ppo_config_cnn_daily.yml")
+    dataset = load_dataset("cnn_dailymail", "3.0.0", cache_dir="data")
 
-    # samples 10000 samples from the training set as prompts for training
-    dataset = load_dataset("cnn_dailymail", "3.0.0", split="train", cache_dir="data")
-    prompts = dataset["article"][0:20000]
-    summaries = dataset["highlights"][0:20000]
+    # take 20,000 samples from the training set as prompts for training
+    prompts = dataset["train"]["article"][0:20000]
+    summaries = dataset["train"]["highlights"][0:20000]
     prompts = ["Summarize: " + prompt for prompt in prompts]
 
-    # samples 100 samples from the validation set as prompts for evaluation
-    val_dataset = load_dataset(
-        "cnn_dailymail", "3.0.0", split="validation", cache_dir="data"
-    )
-    val_prompts = ["Summarize: " + prompt for prompt in val_dataset["article"][0:1000]]
-    val_summaries = val_dataset["highlights"][0:1000]
+    # take 1,000 samples from the validation set as prompts for evaluation
+    val_prompts = [
+        "Summarize: " + prompt for prompt in dataset["validation"]["article"][0:1000]
+    ]
+    val_summaries = dataset["validation"]["highlights"][0:1000]
 
     # make dictionary of prompts and labels to use for reward function
     tokenizer = AutoTokenizer.from_pretrained(config.model.model_path)

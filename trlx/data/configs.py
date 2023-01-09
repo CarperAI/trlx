@@ -147,6 +147,7 @@ class TrainConfig:
     :type rollout_logging_dir: Optional[str]
 
     :param save_best: Save best model based on mean reward
+    :type save_best: bool
 
     :param seed: Random seed
     :type seed: int

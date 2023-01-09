@@ -13,15 +13,15 @@ train:
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path:  "google/flan-t5-large"
+  model_path: "google/flan-t5-large"
   model_arch_type: "seq2seq"
-  tokenizer_path:  "google/flan-t5-large"
+  tokenizer_path: "google/flan-t5-large"
   num_layers_unfrozen: 2
 
 optimizer:
   name: "adamw"
   kwargs:
-    lr:  1.0e-5
+    lr: 1.0e-5
     betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 1.0e-6
@@ -38,7 +38,7 @@ method:
   chunk_size: 12
   ppo_epochs: 4
   init_kl_coef: 0.05
-  target:  6
+  target: 6
   horizon: 10000
   gamma: 0.99
   lam: 0.95
@@ -51,9 +51,3 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 100
-
-    #  gen_experience_kwargs:
-    # max_new_tokens: 100
-    #top_k: 50
-    #top_p: 0.95
-    #do_sample: True
