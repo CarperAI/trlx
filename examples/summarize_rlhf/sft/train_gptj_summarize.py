@@ -1,27 +1,23 @@
-import os
 import random
 
 import evaluate
 import numpy as np
 import torch
-from datasets import load_metric
-
-import wandb
-
-wandb.init(project="gpt2-supervised-summarize", entity="pvduy")
 from summarize_dataset import TLDRDataset
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+)
 
 
-# deepspeed train_gptneo_summarize.py --config ds_config_gpt_neo_27.json
 def set_seed(seed_val=42):
     random.seed(seed_val)
     np.random.seed(seed_val)
     torch.manual_seed(seed_val)
     torch.cuda.manual_seed_all(seed_val)
-
-
-from transformers import Trainer, TrainingArguments, default_data_collator
 
 
 def main():
@@ -35,8 +31,6 @@ def main():
     save_steps = 1000
     num_train_epochs = 5
     random.seed(42)
-    # Load the GPT tokenizer.
-    from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B", use_cache=False)

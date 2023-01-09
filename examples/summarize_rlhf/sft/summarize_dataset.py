@@ -20,7 +20,7 @@ def get_dataset_from_jsonl(jsonl_file, return_summary=True):
             post = f"SUBREDDIT: r/{d['subreddit']}\nTITLE: {d['title']}\nPOST: {d['post']}\nTL;DR: "
             summ_list.append(d["summary"])
         post_list.append(post)
-    if return_summary == False:
+    if not return_summary:
         return post_list, summ_list
     return post_list
 
@@ -81,7 +81,6 @@ class ComparisionDataset(Dataset):
                 self.lst_summaries_1.append(
                     make_text(sample["info"], sample["summaries"][1]["text"])
                 )
-                count_zero += 1
             else:
                 self.lst_summaries_0.append(
                     make_text(sample["info"], sample["summaries"][1]["text"])
@@ -89,7 +88,6 @@ class ComparisionDataset(Dataset):
                 self.lst_summaries_1.append(
                     make_text(sample["info"], sample["summaries"][0]["text"])
                 )
-                count_one += 1
             self.labels.append(0)
 
     def __len__(self):

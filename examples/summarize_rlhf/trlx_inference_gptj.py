@@ -7,27 +7,19 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_model(path="pvduy/openai_summarize_sft_gptj"):
+def load_model(path):
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     model = AutoModelForCausalLM.from_pretrained(path)
-    model.load_state_dict(
-        torch.load(
-            "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf_31Dec/trlx/examples/summarize_rlhf/train_eval_checkpoints/gpt.bin"
-        )
-    )
     model.config.pad_token_id = tokenizer.bos_token_id
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.bos_token_id
     tokenizer.padding_side = "left"
-    #    tokenizer.truncation_side = "left"
     return model, tokenizer
 
 
 rw_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 rw_tokenizer.pad_token = rw_tokenizer.eos_token
-rw_model = GPTRewardModel(
-    "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/gptneo-supervised-summarize-checkpoint/checkpoint-1000"
-)
+rw_model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
 rw_model.load_state_dict(torch.load("reward_model/rm_checkpoint/pytorch_model.bin"))
 rw_model.half()
 rw_model.eval()
@@ -155,9 +147,7 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
 
 if __name__ == "__main__":
 
-    model, tokenizer = load_model(
-        "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/gptneo-supervised-summarize-checkpoint/checkpoint-1000"
-    )
+    model, tokenizer = load_model("pvduy/openai_summarize_sft_gptj_full_data")
 
     test_post_list = [
         sample["prompt"]
