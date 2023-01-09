@@ -192,7 +192,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.generate_sweep_kwarg is not None:
             gen_sweep_arg, gen_sweep_values = self.generate_sweep_kwarg
         else:
-            gen_sweep_values = [None]
+            gen_sweep_arg, gen_sweep_values = "_", [None]
 
         for gen_sweep_value in gen_sweep_values:
             if gen_sweep_value is not None:
