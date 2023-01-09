@@ -259,7 +259,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     rewards = torch.tensor(
-                        self.reward_fn(str_samples), dtype=torch.float
+                        self.reward_fn(
+                            samples=str_samples,
+                            prompts=str_prompts,
+                            responses=str_responses,
+                        ),
+                        dtype=float,
                     )
                     mean_reward = rewards.mean()
                     columns.append("reward")
@@ -270,7 +275,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # additionally log any other metrics
                 if self.metric_fn:
                     metric_time = time()
-                    metrics = self.metric_fn(str_samples)
+                    metrics = self.metric_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        responses=str_responses,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {

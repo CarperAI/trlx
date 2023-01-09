@@ -17,7 +17,7 @@ def main(hparams={}):
 
     trlx.train(
         "CarperAI/randomwalks",
-        reward_fn=lambda walks: metric_fn(walks)["optimality"],
+        reward_fn=lambda samples, **kwargs: metric_fn(samples)["optimality"],
         prompts=prompts,
         eval_prompts=prompts,
         metric_fn=metric_fn,

@@ -82,7 +82,16 @@ class PPOOrchestrator(Orchestrator):
             )
             exp_score_time = time()
             scores = torch.tensor(
-                self.score(texts), device=samples.device, dtype=torch.float
+                self.trainer.reward_fn(
+                    samples=texts,
+                    prompts=self.trainer.tokenizer.batch_decode(
+                        query_tensors, skip_special_tokens=True
+                    ),
+                    outputs=self.trainer.tokenizer.batch_decode(
+                        response_tensors, skip_special_tokens=True
+                    ),
+                ),
+                dtype=float,
             )
             stats["time/exp_score"] = time() - exp_score_time
 
