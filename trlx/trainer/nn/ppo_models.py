@@ -107,8 +107,8 @@ class PPOConfig(MethodConfig):
     :param gen_kwargs: Additioanl kwargs for the generation
     :type gen_kwargs: Dict[str, Any]
 
-    :param gen_inference_kwargs: kwargs for the generation during inference, it will be set to gen_kwargs if not provided
-    :type gen_inference_kwargs: Dict[str, Any]
+    :param gen_experience_kwargs: if this is not None, then the experience is generated using this
+    :type gen_experience_kwargs: Dict[str, Any]
     """
 
     ppo_epochs: int
@@ -127,7 +127,7 @@ class PPOConfig(MethodConfig):
     ref_std: Optional[float]
     cliprange_reward: float
     gen_kwargs: dict
-    gen_inference_kwargs: Optional[dict] = None
+    gen_experience_kwargs: Optional[dict] = None
 
     def get_advantages_and_returns(
         self,

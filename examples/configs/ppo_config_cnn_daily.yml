@@ -51,8 +51,9 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 100
-    # top_k: 50
-    # top_p: 0.95
-    # do_sample: True
-  gen_inference_kwargs:
-    max_new_tokens: 100
+
+    #  gen_experience_kwargs:
+    # max_new_tokens: 100
+    #top_k: 50
+    #top_p: 0.95
+    #do_sample: True

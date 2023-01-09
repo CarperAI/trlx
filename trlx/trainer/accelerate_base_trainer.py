@@ -173,8 +173,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
-
-        kwargs = dict(self.generate_kwargs, **kwargs)
+        if self.generate_experience_kwargs is not None:
+            kwargs = dict(self.generate_experience_kwargs, **kwargs)
+        else:
+            kwargs = dict(self.generate_kwargs, **kwargs)
 
         with torch.no_grad():
             return self.accelerator.unwrap_model(self.model).generate(
@@ -187,7 +189,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
 
-        kwargs = dict(self.generate_inference_kwargs, **kwargs)
+        kwargs = dict(self.generate_kwargs, **kwargs)
 
         with torch.no_grad():
             return self.accelerator.unwrap_model(self.model).generate(

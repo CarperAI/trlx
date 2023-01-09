@@ -54,29 +54,28 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.pad_token_id,
             )
-
-            if config.method.gen_inference_kwargs is None:
-                config.method.gen_inference_kwargs = self.generate_kwargs
-
-            self.generate_inference_kwargs = dict(
-                config.method.gen_inference_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
+            if config.method.gen_experience_kwargs is not None:
+                self.generate_experience_kwargs = dict(
+                    config.method.gen_experience_kwargs,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+            else:
+                self.generate_experience_kwargs = None
         else:
             self.generate_kwargs = dict(
                 config.method.gen_kwargs,
                 eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
-            if config.method.gen_inference_kwargs is None:
-                config.method.gen_inference_kwargs = self.generate_kwargs
-
-            self.generate_inference_kwargs = dict(
-                config.method.gen_inference_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
+            if config.method.gen_experience_kwargs is not None:
+                self.generate_experience_kwargs = dict(
+                    config.method.gen_experience_kwargs,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            else:
+                self.generate_experience_kwargs = None
 
     def get_arch(self, config: TRLConfig):
         if config.model.model_arch_type == "seq2seq":
