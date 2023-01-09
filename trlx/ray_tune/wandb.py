@@ -5,9 +5,9 @@ import math
 import os
 from pathlib import Path
 
+import wandb
 import wandb.apis.reports as wb  # noqa: E402
 
-import wandb
 
 ray_info = [
     "done",
