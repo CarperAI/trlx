@@ -58,8 +58,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.padding_side = "left"
+            print(f"setting up tokenizer&&&&&&&&&&&&&&&&&&&&:{config.model.tokenizer_path}")
         else:
             self.tokenizer = None
+            print(f"None tokenizer &&&&&&&&&&&&&&&&&&&&&&&&&&&&&")
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
