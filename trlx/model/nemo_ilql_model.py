@@ -3,6 +3,7 @@ from typing import Iterable, Sequence, Union, cast
 import torch
 import torch.nn.functional as F
 
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 from trlx.model import register_model
 from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
@@ -20,6 +21,7 @@ from pytorch_lightning.plugins.environments.torchelastic_environment import (
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
+
 
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
@@ -109,6 +111,8 @@ def train_megatron(ilql_config, cfg):
 
 @register_model
 class NeMoILQLModel(BaseRLModel):
+    store: ILQLRolloutStorage
+
     def __init__(
         self,
         config: TRLConfig,

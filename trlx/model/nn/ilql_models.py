@@ -24,7 +24,6 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
     get_params_for_weight_decay_optimization,
 )
 
-
 import wandb
 
 
@@ -57,8 +56,6 @@ class ILQLConfig(MethodConfig):
         return ILQLHeads(self, hidden_size, vocab_size)
 
     def loss(self, outputs, labels: ILQLBatch):
-        # print("ILQL LOSS")
-        # print(f"{outputs=}, {labels=}")
         logits, (qs, target_qs, vs) = outputs
         actions = (
             labels.input_ids[:, 1:]
@@ -78,7 +75,6 @@ class ILQLConfig(MethodConfig):
         # values of next states
         Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
         # target to fit Q
-        print(f"{labels.rewards.shape=}, {Vnext.shape=}")
         Q_ = labels.rewards + self.gamma * Vnext.detach()
 
         loss_qs = [((Qi - Q_) * terminal_mask).pow(2).sum() / n_nonterminal for Qi in Q]
@@ -97,7 +93,6 @@ class ILQLConfig(MethodConfig):
         nactions = qs[0].shape[1]
 
         def cql_loss(q):
-            print(f"{q.shape=} {actions.shape=} {bsize=} {nactions=} {dsize=}")
             loss = F.cross_entropy(
                 q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
             )
@@ -107,23 +102,15 @@ class ILQLConfig(MethodConfig):
 
         loss_cql = sum(cql_loss(q) for q in qs)
 
-        print(
-            f"{logits.shape=} {labels.input_ids.shape=} {labels.actions_ixs.shape=} {labels.states_ixs.shape=}"
-        )
-
-        print(f"{labels.states_ixs.shape=} {logits.shape=}")
-        print(f"{labels.states_ixs=}")
         states_logits = logits.gather(
             1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, logits.shape[-1])
         )
-        actual_states = labels.input_ids.gather(1, index=labels.states_ixs)
-
-        print(f"{states_logits.shape=} {actual_states.shape=}")
+        input_states = labels.input_ids.gather(1, index=labels.states_ixs)
 
         loss_awac = (
             F.cross_entropy(
                 states_logits[:, :-1, :].reshape(-1, dsize),
-                actual_states[:, 1:].reshape(-1),
+                input_states[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
             * labels.attention_mask[:, 1:]
@@ -136,7 +123,6 @@ class ILQLConfig(MethodConfig):
             for k, v in locals().items()
             if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
         }
-        # print(f"{stats=}")
 
         return loss, stats
 
@@ -167,17 +153,7 @@ class ILQLHeads(nn.Module):
         actions_ixs: torch.Tensor = None,
         **kwargs,
     ):
-        # print("ILQL HEADS")
-        # print(f"{hs.shape=}, {states_ixs.shape=}, {actions_ixs.shape=}")
-        # print(
-        #    f"{states_ixs.max()=} {states_ixs.min()}, {actions_ixs.max()=} {actions_ixs.min()=}"
-        # )
-
         if states_ixs is not None:
-
-            print(
-                f"{hs.shape=} {states_ixs.max() if states_ixs.numel() > 0 else states_ixs.shape=}"
-            )
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
             ).contiguous()

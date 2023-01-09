@@ -8,6 +8,10 @@ from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_datacla
 from trlx.utils import to_device, tree_map
 
 from apex.transformer import parallel_state
+from apex.transformer.tensor_parallel.mappings import (
+    gather_from_sequence_parallel_region,
+)
+
 from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
 from nemo.collections.nlp.modules.common.megatron.utils import (
     get_ltor_masks_and_position_ids,
@@ -80,7 +84,6 @@ class LMHeads(MegatronModule):
     ):
         # print("LMHeads forward")
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
-        print(f"{lm_output.shape=} {kwargs['input_ids'].shape=}")
         logits = post_language_model_processing(
             lm_output,
             labels=None,
@@ -93,7 +96,6 @@ class LMHeads(MegatronModule):
             sequence_parallel=self.language_model.sequence_parallel,
             gradient_accumulation_fusion=self.language_model.gradient_accumulation_fusion,
         )
-        print(f"{logits.shape=}")
 
         if get_key_value:
             logits, logits_presents = logits
@@ -102,7 +104,6 @@ class LMHeads(MegatronModule):
         heads_output = self.other_heads(
             rearrange(lm_output, "T N C -> N T C"), **heads_kwargs
         )
-        # print(f"{heads_output=}")
         return logits, heads_output
 
 
@@ -144,6 +145,7 @@ class ILQLGPT(MegatronGPTModel):
                 self.ilql_config.heads(self.cfg.hidden_size, self.padded_vocab_size),
             )
         else:
+            return gpt
             old_fwd = gpt.forward
 
             def log_forward(*args, **kwargs):
@@ -153,7 +155,6 @@ class ILQLGPT(MegatronGPTModel):
                 elif gpt.language_model.encoder.input_tensor is not None:
                     input_shape = gpt.language_model.encoder.input_tensor.shape
                 lm_output = old_fwd(*args, **kwargs)
-                print(f"gpt {lm_output.shape=} {input_shape=}")
                 return lm_output
 
             gpt.forward = log_forward
@@ -184,7 +185,6 @@ class ILQLGPT(MegatronGPTModel):
                 labels = torch.nn.functional.pad(
                     labels, (0, pad_by), value=self.tokenizer.eos_id
                 )
-                print(f"{inputs.shape=} {labels.shape=}, {stage=}")
 
                 (
                     attention_mask,
@@ -198,123 +198,15 @@ class ILQLGPT(MegatronGPTModel):
                     eod_mask_loss=False,
                 )
 
-                print(
-                    f"{inputs.shape=}, {labels.shape=}, {position_ids.shape=}, {attention_mask.shape=} {batch.states_ixs.shape}"
-                )
-
-                print(f"{parallel_state.get_tensor_model_parallel_rank()=}")
-                print(f"{parallel_state.get_tensor_model_parallel_world_size()=}")
                 mp_rank = parallel_state.get_tensor_model_parallel_rank()
                 mp_size = parallel_state.get_tensor_model_parallel_world_size()
-                sequence_parallel = self.cfg.get("sequence_parallel", False)
-                if sequence_parallel and mp_size > 1:
-                    chunk_size = self.cfg.encoder_seq_length // mp_size
-                    min_ix, max_ix = mp_rank * chunk_size, (mp_rank + 1) * chunk_size
-                    # partition the states, actions, dones and ilql attention mask for this rank
-                    batch_size = batch.states_ixs.shape[0]
-                    chunked = []
-                    for (states_ixs, actions_ixs, dones, awac_mask, rewards) in zip(
-                        batch.states_ixs,
-                        batch.actions_ixs,
-                        batch.dones,
-                        batch.attention_mask,
-                        batch.rewards,
-                    ):
-                        states_for_samples = (min_ix <= states_ixs) & (
-                            states_ixs < max_ix
-                        )
-                        actions_for_samples = (min_ix <= actions_ixs) & (
-                            actions_ixs < max_ix
-                        )
-                        states_ixs = states_ixs[states_for_samples] - min_ix
-                        actions_ixs = actions_ixs[actions_for_samples] - min_ix
-                        dones = dones[states_for_samples]
-                        awac_mask = awac_mask[states_for_samples]
-                        print(
-                            f"{rewards.shape=} {states_for_samples.shape=} {rewards[states_for_samples[1:]].shape=} {actions_for_samples.shape=}"
-                        )
-                        rewards = rewards[
-                            (min_ix <= states_ixs[1:]) & (states_ixs[1:] < max_ix)
-                        ]
-                        chunked.append(
-                            (states_ixs, actions_ixs, dones, awac_mask, rewards)
-                        )
-
-                    (
-                        batch.states_ixs,
-                        batch.actions_ixs,
-                        batch.dones,
-                        batch.attention_mask,
-                        batch.rewards,
-                    ) = [
-                        pad_sequence(
-                            t,
-                            batch_first=True,
-                            padding_value=0.0 if torch.is_floating_point(t[0]) else 0,
-                        )
-                        for t in zip(*chunked)
-                    ]
-
-                    # states_for_samples = (min_ix <= batch.states_ixs) & (batch.states_ixs < max_ix)
-                    # states_for_batch = torch.any(states_for_samples, dim=0) #.repeat([batch_size, 1])
-
-                    # actions_for_samples = (min_ix <= batch.actions_ixs) & (batch.actions_ixs < max_ix)
-                    # actions_for_batch = torch.any(actions_for_samples, dim=0) #, keepdim=True).repeat([batch_size, 1])
-                    # print(f"{states_for_batch.shape=} {actions_for_batch.shape=}")
-                    # print(f"{states_for_batch.shape=} {batch.states_ixs.max()=} {batch.states_ixs.device=} {mp_rank=}")
-                    # mid = batch.states_ixs.max().cpu().numpy().item()
-                    # print(f"{batch.states_ixs[:, mid-5:mid+5]}, {mid=}")
-                    # actions_mid = batch.actions_ixs.max().cpu().numpy().item()
-                    # print(f"{batch.actions_ixs[:, actions_mid-5:actions_mid+5]}, {actions_mid=} {mp_rank=}")
-
-                    # states_ixs = batch.states_ixs[:, states_for_batch]
-                    # actions_ixs = batch.actions_ixs[:, actions_for_batch]
-                    # print(f"{states_ixs.shape=} {actions_ixs.shape=}")
-
-                    # # shift the states and actions to be relative to this rank
-                    # states_ixs -= min_ix
-                    # actions_ixs -= min_ix
-
-                    # dones = batch.dones[:, states_for_batch]
-
-                    # batch.states_ixs = states_ixs
-                    # batch.actions_ixs = actions_ixs
-                    # batch.dones = dones
-                    # # reward is for next states
-                    # batch.rewards = batch.rewards[:, states_for_batch[1:]]
-                    # batch.attention_mask = batch.attention_mask[:, states_for_batch]
-                    if (
-                        batch.states_ixs.numel() > 0
-                        and batch.states_ixs.max().cpu().numpy().item() >= chunk_size
-                    ):
-                        raise ValueError(
-                            f"{batch.states_ixs.max().cpu().numpy().item()=} {chunk_size=}"
-                        )
-
-                    print(f"{batch.dones.shape=}")
-                    print(f"{batch.dones=}")
-                    print(f"{batch.states_ixs.shape=}")
-                    print(f"{batch.attention_mask.shape=}")
-                    print(f"{batch.attention_mask=}")
-
-                splits = 1
-                extra_args = {}
-                # Only the last pipeline stage GPT layers are wrapped with LMHeads
-                # so we pass them the heads kwargs
-                if parallel_state.is_pipeline_last_stage():
-                    extra_args = dict(
-                        heads_kwargs=dict(
-                            states_ixs=batch.states_ixs, actions_ixs=batch.actions_ixs
-                        )
-                    )
 
                 model_output = model(
                     input_ids=inputs,
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
                     labels=labels,
-                    # checkpoint_activations_all_layers=checkpoint_activations_all_layers,
-                    **extra_args,
+                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
@@ -324,8 +216,52 @@ class ILQLGPT(MegatronGPTModel):
                 )
 
             def loss_func(model_output):
-                # print("model_output", model_output)
-                loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+
+                # TODO: implement this in a sequence parallel way
+                model_output = tree_map(
+                    lambda t: rearrange(t, "N T C -> T N C"), model_output
+                )
+                model_output = tree_map(
+                    lambda t: gather_from_sequence_parallel_region(
+                        t, to_model_parallel=False
+                    ),
+                    model_output,
+                )
+                model_output = tree_map(
+                    lambda t: rearrange(t, "T N C -> N T C"), model_output
+                )
+                logits, (qs, target_qs, vs) = model_output
+                qs = tree_map(
+                    lambda t: t.gather(
+                        dim=1,
+                        index=batch.actions_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
+                    ).contiguous(),
+                    qs,
+                )
+                target_qs = tree_map(
+                    lambda t: t.gather(
+                        dim=1,
+                        index=batch.actions_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
+                    ).contiguous(),
+                    target_qs,
+                )
+                vs = tree_map(
+                    lambda t: t.gather(
+                        dim=1,
+                        index=batch.states_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
+                    ).contiguous(),
+                    vs,
+                )
+
+                model_output = (logits, (qs, target_qs, vs))
+
+                if mp_rank == 0:
+                    loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                else:
+                    loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                    loss_for_mb *= 0
+                    stats = {}
+
                 stats = tree_map(lambda v: v.detach().item(), stats)
 
                 if validation_step and not self.cfg.data.get(
@@ -349,7 +285,7 @@ class ILQLGPT(MegatronGPTModel):
                         loss_sum_and_mb_size_all_gpu,
                         group=parallel_state.get_data_parallel_group(),
                     )
-                    print(f"{loss_sum_and_mb_size_all_gpu=}")
+
                     return loss_for_mb, {
                         "loss_sum_and_mb_size": loss_sum_and_mb_size_all_gpu,
                         **stats,
@@ -358,12 +294,10 @@ class ILQLGPT(MegatronGPTModel):
                     reduced_loss = average_losses_across_data_parallel_group(
                         [loss_for_mb]
                     )
-                    # print(f"{loss_for_mb=}, {reduced_loss=}")
                     return loss_for_mb, {"avg": reduced_loss, **stats}
 
             def contiguous_loss(x):
                 loss, stats = loss_func(x)
-                print(f"{loss=}, {stats=}")
                 return tree_map(lambda t: t.contiguous(), loss), stats
 
             return tree_map(lambda t: t.contiguous(), model_output), contiguous_loss
