@@ -13,6 +13,14 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 from torchtyping import TensorType
 
 
+def print_rank_0(*message):
+    """
+    Print only once from the main rank
+    """
+    if os.environ.get("RANK", "0") == "0":
+        print(*message)
+
+
 def set_seed(seed: int):
     """
     Sets seeds across package dependencies for reproducibility.

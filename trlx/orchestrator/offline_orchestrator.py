@@ -5,6 +5,7 @@ import torch
 
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
+from trlx.utils import print_rank_0
 
 
 def tokenize_dialogue(  # noqa: C901
@@ -100,15 +101,23 @@ class OfflineOrchestrator(Orchestrator):
             response = self.trainer.tokenizer.decode(
                 all_input_ids[0][all_states_ixs[0][1] :]
             )
-            print("[Sample example]")
-            print("Prompt: ", prompt)
-            print("Response: ", response)
-            print("Reward: ", rewards[0])
+            print_rank_0("[Sample example]")
+            print_rank_0("Prompt: ", prompt)
+            print_rank_0("Response: ", response)
+            print_rank_0("Reward: ", rewards[0])
 
-        lengths = list(map(len, all_input_ids))
-        returns = torch.as_tensor(rewards, dtype=torch.float)
-        print(f"[Mean length] {np.mean(lengths):.2f} [{min(lengths)}, {max(lengths)}]")
-        print(f"[Mean return] {returns.mean():.2f} [{min(returns)}, {max(returns)}]")
+        sample_lengths = np.array(list(map(len, all_input_ids)))
+        output_lengths = np.array(list(map(len, all_actions_ixs)))
+        prompt_lengths = sample_lengths - output_lengths
+        returns = torch.tensor(rewards, dtype=float)
+
+        def string_stats(name: str, xs: np.array):
+            return f"[Mean {name}] {xs.mean():.2f} ∈ [{min(xs)}, {max(xs)}]"
+
+        print_rank_0(string_stats("prompt length", prompt_lengths))
+        print_rank_0(string_stats("output length", output_lengths))
+        print_rank_0(string_stats("sample length", sample_lengths))
+        print_rank_0(string_stats("return", returns))
 
         returns = (returns - returns.mean()) / (returns.std() + 1e-30)
         rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
