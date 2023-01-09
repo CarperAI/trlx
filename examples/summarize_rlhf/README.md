@@ -1,6 +1,5 @@
 ## Learning to summarize from Human Feedback using trlx
 
-
 ### Training setup:
 
 1. Train SFT:
