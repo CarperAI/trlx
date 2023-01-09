@@ -84,17 +84,21 @@ if __name__ == "__main__":
     max_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
     train_openai_summ = [
-        sample['prompt'] for sample in load_dataset("pvduy/openai_summarize_tldr", split="train_rl")
+        sample["prompt"]
+        for sample in load_dataset("pvduy/openai_summarize_tldr", split="train_rl")
     ]
     train_labels = [
-        sample['label'] for sample in load_dataset("pvduy/openai_summarize_tldr", split="train_rl")
+        sample["label"]
+        for sample in load_dataset("pvduy/openai_summarize_tldr", split="train_rl")
     ]
 
     val_openai_summ = [
-        sample['prompt'] for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
+        sample["prompt"]
+        for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
     ]
     val_labels = [
-        sample['label'] for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
+        sample["label"]
+        for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
     ]
 
     train_post_summ = {}
@@ -133,7 +137,7 @@ if __name__ == "__main__":
         ).strip()
         train_post_summ[tmp] = val_labels[i]
         val_prompts.append(tmp)
-        
+
     model = trlx.train(
         config.model.model_path,
         reward_fn=reward_fn,

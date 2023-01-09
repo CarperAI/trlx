@@ -4,8 +4,9 @@ import random
 import evaluate
 import numpy as np
 import torch
-import wandb
 from datasets import load_metric
+
+import wandb
 
 wandb.init(project="gpt2-supervised-summarize", entity="pvduy")
 from summarize_dataset import TLDRDataset
