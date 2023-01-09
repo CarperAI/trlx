@@ -56,20 +56,45 @@ def get_distributed_config(accelerator: Accelerator):
 class OptimizerName(str, Enum):
     """Supported optimizer names"""
 
-    ADAM = "adam"
-    ADAMW = "adamw"
-    SGD = "sgd"
+    ADAM: str = "adam"
+    ADAMW: str = "adamw"
+    ADAM_8BIT_BNB: str = "adam_8bit_bnb"
+    ADAMW_8BIT_BNB: str = "adamw_8bit_bnb"
+    SGD: str = "sgd"
 
 
 def get_optimizer_class(name: OptimizerName):
     """
     Returns the optimizer class with the given name
+
+    Args:
+        name (str): Name of the optimizer as found in `OptimizerNames`
     """
     if name == OptimizerName.ADAM:
         return torch.optim.Adam
     if name == OptimizerName.ADAMW:
         return torch.optim.AdamW
-    if name == OptimizerName.SGD:
+    if name == OptimizerName.ADAM_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import Adam8bit
+
+            return Adam8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use the 8-bit Adam. "
+                "Install with: `pip install bitsandbytes`"
+            )
+    if name == OptimizerName.ADAMW_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import AdamW8bit
+
+            return AdamW8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use 8-bit AdamW. "
+                "Install with: `pip install bitsandbytes`"
+            )
+    if name == OptimizerName.SGD.value:
         return torch.optim.SGD
     supported_optimizers = [o.value for o in OptimizerName]
     raise ValueError(

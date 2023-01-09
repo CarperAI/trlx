@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 
@@ -32,11 +32,24 @@ class ModelConfig:
     :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
         -1 means all layers are unfrozen.
     :type num_layers_unfrozen: int
+
+    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
+        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
+            {"delta_type": "lora", "modified_modules": "all", "lora_a": 0.5}
+        or in YAML format:
+            delta_kwargs:
+                delta_type: lora
+                modified_modules: "all"
+                lora_a: 0.5
+        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
+    :type delta_kwargs: Optional[Dict[str, Any]]
     """
 
     model_path: str
     tokenizer_path: str
     num_layers_unfrozen: int = -1
+    delta_kwargs: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -56,7 +69,7 @@ class OptimizerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = None
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -76,7 +89,7 @@ class SchedulerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = None
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -100,6 +113,9 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
+    :param trackers: Tuple of trackers to use for logging. Default: ("wandb",)
+    :type trackers: Tuple[str]
+
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
 
@@ -113,6 +129,7 @@ class TrainConfig:
     :type orchestrator: str
 
     :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
+    :type trainer: str
 
     :param project_name: Project name for wandb
     :type project_name: str
@@ -123,7 +140,8 @@ class TrainConfig:
     :param checkpoint_dir: Directory to save checkpoints
     :type checkpoint_dir: str
 
-    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation. Only used by AcceleratePPOTrainer.
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation.
+                                Only used by AcceleratePPOTrainer.
     :type rollout_logging_dir: Optional[str]
 
     :param seed: Random seed
@@ -148,6 +166,7 @@ class TrainConfig:
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
 
+    trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
 
     @classmethod
