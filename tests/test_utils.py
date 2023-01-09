@@ -95,8 +95,8 @@ def test_hf_attr_getters(model_name: str):
     [
         "EleutherAI/gpt-j-6B",
         "EleutherAI/gpt-neox-20b",
-        "gpt2",
         "facebook/opt-1.3b",
+        "bigscience/bloom-560m",
     ],
 )
 def test_parse_delta_kwargs(model_name):
