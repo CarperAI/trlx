@@ -1,5 +1,5 @@
 train:
-  seq_length: 48
+  seq_length: 256
   epochs: 10
   total_steps: 80000
   batch_size: 8
@@ -12,8 +12,8 @@ train:
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path: "EleutherAI/gpt-j-6B"
-  tokenizer_path: "gpt2"
+  model_path: "reshinthadith/codegen_350M_list_manip_5_len"
+  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"
   num_layers_unfrozen: 2
 
 optimizer:
@@ -44,12 +44,12 @@ method:
   cliprange_value: 0.2
   vf_coef: 0.2
   scale_reward: False
+  cliprange_reward: 10
   ref_mean: null
   ref_std: null
-  cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 48
-    top_k: 0.0
+    max_new_tokens: 256
+    top_k: 0
     top_p: 0.7
     do_sample: True
     temperature: 0.5

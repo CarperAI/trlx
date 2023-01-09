@@ -1,8 +1,10 @@
+import json
+import os
+import time
 from typing import Iterable
 
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from torchtyping import TensorType
 
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
 from trlx.pipeline import BaseRolloutStore
@@ -24,6 +26,18 @@ class PPORolloutStorage(BaseRolloutStore):
 
     def clear_history(self):
         self.history = []
+
+    def export_history(self, location: str):
+        assert os.path.exists(location)
+
+        fpath = os.path.join(location, f"epoch-{str(time.time())}.json")
+
+        def exp_to_dict(exp):
+            {k: v.cpu().tolist() for k, v in exp.__dict__.items()}
+
+        data = [exp_to_dict(exp) for exp in self.history]
+        with open(fpath, "w") as f:
+            f.write(json.dumps(data, indent=2))
 
     def __getitem__(self, index: int) -> PPORLElement:
         return self.history[index]

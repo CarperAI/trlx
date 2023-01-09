@@ -1,11 +1,5 @@
 from typing import Callable
 
-# Register load models via module import
-from trlx.model import _MODELS
-from trlx.model.accelerate_ilql_model import AccelerateILQLModel
-from trlx.model.accelerate_ppo_model import AcceleratePPOModel
-from trlx.model.nemo_ilql_model import NeMoILQLModel
-
 # Register load orchestrators via module import
 from trlx.orchestrator import _ORCH
 from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
@@ -15,16 +9,23 @@ from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
 
+# Register load trainers via module import
+from trlx.trainer import _TRAINERS
+from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
+from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
+from trlx.trainer.nemo_ilql_trainer import NemoILQLTrainer
 
-def get_model(name: str) -> Callable:
+def get_trainer(name: str) -> Callable:
     """
-    Return constructor for specified model
+    Return constructor for specified RL model trainer
     """
     name = name.lower()
-    if name in _MODELS:
-        return _MODELS[name]
+    if name in _TRAINERS:
+        return _TRAINERS[name]
     else:
-        raise Exception("Error: Trying to access a model that has not been registered")
+        raise Exception(
+            "Error: Trying to access a trainer that has not been registered"
+        )
 
 
 def get_pipeline(name: str) -> Callable:

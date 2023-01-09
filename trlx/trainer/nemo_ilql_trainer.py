@@ -8,9 +8,9 @@ from trlx.model import register_model
 from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
 from trlx.data.configs import TRLConfig
-from trlx.utils import to_device
+from trlx.utils import to_device, set_seed
 
-from . import BaseRLModel
+from . import BaseRLTrainer
 
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
@@ -110,7 +110,7 @@ def train_megatron(ilql_config, cfg):
 
 
 @register_model
-class NeMoILQLModel(BaseRLModel):
+class NemoILQLTrainer(BaseRLModel):
     store: ILQLRolloutStorage
 
     def __init__(

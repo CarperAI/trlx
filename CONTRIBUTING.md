@@ -49,11 +49,11 @@ Follow these steps to start contributing code:
 
 Finally ... 🥁 ... Create a [pull request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request) to the `trlX` repository! Make sure to include a description of your changes and link to any relevant issues.
 
-> __Tip__: If you're looking to introduce an experimental feature, we suggest testing the behavior of your proposed feature on some of the existing [examples](https://github.com/CarperAI/trlx/tree/master/examples), such as [random walks](https://github.com/CarperAI/trlx/blob/master/examples/randomwalks.py). This will help you get a better sense of how the feature would work in practice and will also help you identify any potential flaws in the implementation.
+> __Tip__: If you're looking to introduce an experimental feature, we suggest testing the behavior of your proposed feature on some of the existing [examples](https://github.com/CarperAI/trlx/tree/master/examples), such as [random walks](https://github.com/CarperAI/trlx/blob/master/examples/randomwalks). This will help you get a better sense of how the feature would work in practice and will also help you identify any potential flaws in the implementation.
 
 ## Asking questions
 
-Have a question? Rather than opening an issue, you can readily chat with the core team on our [Discord server](https://discord.gg/X2gHZMRP6m).
+Have a question? Rather than opening an issue, you can readily chat with the core team on our [Discord server](https://discord.gg/canadagoose).
 
 ## Code of conduct
 

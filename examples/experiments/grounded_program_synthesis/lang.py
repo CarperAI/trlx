@@ -1,8 +1,11 @@
-import random
+# flake8: noqa
 import copy
-from pprint import pprint
-from tqdm import tqdm
 import json
+import random
+from pathlib import Path
+from pprint import pprint
+
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 
@@ -388,5 +391,6 @@ if __name__ == "__main__":
     test_data = create_synthetic_dataset(2_000)
     print(f"Train data size: {len(train_data)}")
     print(f"Test data size: {len(test_data)}")
+    Path("dataset").mkdir(parents=True, exist_ok=True)
     write_to_json(train_data, "dataset/train.json")
     write_to_json(test_data, "dataset/test.json")

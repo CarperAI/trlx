@@ -10,16 +10,16 @@ class OfflineOrchestrator(Orchestrator):
     Orchestrator that creates a static dataset for offline training
     """
 
-    def __init__(self, model, split_token=None):
-        self.model = model
+    def __init__(self, trainer, split_token=None):
+        self.trainer = trainer
         self.split_token = split_token
 
     def make_experience(self, samples, rewards):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the model
         """
-        if self.model.tokenizer:
-            input_ids = self.model.tokenize(samples)
+        if self.trainer.tokenizer:
+            input_ids = self.trainer.tokenize(samples)
         else:
             input_ids = samples
 
@@ -50,9 +50,9 @@ class OfflineOrchestrator(Orchestrator):
             states_ixs.append(s_ixs)
             dones.append(terminals)
 
-        if self.model.tokenizer:
-            prompt = self.model.tokenizer.decode(input_ids[0][: states_ixs[0][1]])
-            response = self.model.tokenizer.decode(input_ids[0][states_ixs[0][1] :])
+        if self.trainer.tokenizer:
+            prompt = self.trainer.tokenizer.decode(input_ids[0][: states_ixs[0][1]])
+            response = self.trainer.tokenizer.decode(input_ids[0][states_ixs[0][1] :])
             print("[Sample example]")
             print("Prompt: ", prompt)
             print("Response: ", response)
@@ -71,6 +71,6 @@ class OfflineOrchestrator(Orchestrator):
 
         attention_mask = [torch.ones(x.shape[0], dtype=int) for x in input_ids]
 
-        self.model.store = ILQLRolloutStorage(
+        self.trainer.store = ILQLRolloutStorage(
             input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
         )

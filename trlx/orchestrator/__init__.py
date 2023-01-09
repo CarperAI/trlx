@@ -2,8 +2,8 @@ import sys
 from abc import abstractmethod
 from typing import Dict
 
-from trlx.model import BaseRLModel
 from trlx.pipeline import BasePipeline
+from trlx.trainer import BaseRLTrainer
 
 # specifies a dictionary of architectures
 _ORCH: Dict[str, any] = {}  # registry
@@ -33,9 +33,9 @@ def register_orchestrator(name):
 
 @register_orchestrator
 class Orchestrator:
-    def __init__(self, pipeline: BasePipeline, rl_model: BaseRLModel):
+    def __init__(self, pipeline: BasePipeline, trainer: BaseRLTrainer):
         self.pipeline = pipeline
-        self.rl_model = rl_model
+        self.trainer = trainer
 
     @abstractmethod
     def make_experience(self):

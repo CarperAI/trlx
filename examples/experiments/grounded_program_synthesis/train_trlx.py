@@ -1,10 +1,11 @@
-import trlx
-from trlx.data.configs import TRLConfig
-from lang import Interpreter
 import json
 import logging
-import yaml
 
+import yaml
+from lang import Interpreter
+
+import trlx
+from trlx.data.configs import TRLConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def reward_fn(samples):
     return reward_list
 
 
-default_config = yaml.safe_load(open("config/trlx_ppo_config.yml"))
+default_config = yaml.safe_load(open("configs/trlx_ppo_config.yml"))
 
 
 def main(hparams={}):
@@ -59,13 +60,12 @@ def main(hparams={}):
     dataset = DSLDataset()
     train_prompts = list(dataset.load_datapoints(split="train"))[:1000]
 
-    model = trlx.train(
-        "reshinthadith/codegen_350M_list_manip_5_len",
+    trainer = trlx.train(
         reward_fn=reward_fn,
         prompts=train_prompts,
         config=config,
     )
-    model.save_pretrained("dataset/trained_model")
+    trainer.save_pretrained("dataset/trained_model")
 
 
 if __name__ == "__main__":

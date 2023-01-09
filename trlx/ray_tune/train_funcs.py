@@ -23,7 +23,7 @@ def ppo_sentiments_train(config: dict):
     imdb = load_dataset("imdb", split="train+test")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
-    model = trlx.train(
+    trlx.train(
         "lvwerra/gpt2-imdb",
         reward_fn=reward_fn,
         prompts=prompts,

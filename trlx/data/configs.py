@@ -1,10 +1,9 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Set
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
-import os
 
 
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:
@@ -12,11 +11,9 @@ def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     for k, v in base.items():
         if isinstance(v, dict):
             base[k] = merge(v, update, updated)
-
-        for kk, vv in update.items():
-            if k == kk:
-                base[k] = vv
-                updated.add(k)
+        elif k in update:
+            base[k] = update[k]
+            updated.add(k)
 
     return base
 
@@ -26,20 +23,72 @@ class ModelConfig:
     """
     Config for a model.
 
-    :param model_path: Path to the model (local or on huggingface hub)
+    :param model_path: Path or name of the model (local or on huggingface hub)
     :type model_path: str
 
-    :param tokenizer_path: Path to the tokenizer (local or on huggingface hub)
+    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
     :type tokenizer_path: str
 
-    :param model_type: One of the registered RL models present in trlx.model
-    :type model_type: str
+    :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
+        -1 means all layers are unfrozen.
+    :type num_layers_unfrozen: int
+
+    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
+        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
+            {"delta_type": "lora", "lora_a": 0.5}
+        or in YAML format:
+            delta_kwargs:
+                delta_type: lora
+                lora_a: 0.5
+        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
+    :type delta_kwargs: Dict[str, Any]
     """
 
     model_path: str
     tokenizer_path: str
-    model_type: str
     num_layers_unfrozen: int = -1
+    delta_kwargs: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class OptimizerConfig:
+    """
+    Config for an optimizer.
+
+    :param name: Name of the optimizer
+    :type name: str
+
+    :param kwargs: Keyword arguments for the optimizer (e.g. lr, betas, eps, weight_decay)
+    :type kwargs: Dict[str, Any]
+    """
+
+    name: str
+    kwargs: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class SchedulerConfig:
+    """
+    Config for a learning rate scheduler.
+
+    :param name: Name of the scheduler
+    :type name: str
+
+    :param kwargs: Keyword arguments for the scheduler instance (e.g. warmup_steps, T_max)
+    :type kwargs: Dict[str, Any]
+    """
+
+    name: str
+    kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -63,20 +112,8 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param lr_init: Initial learning rate value
-    :type lr_init: float
-
-    :param lr_target: Target learning rate after decay
-    :type lr_target: float
-
-    :param opt_betas: Beta parameters for Adam optimizer
-    :type opt_betas: Tuple[float]
-
-    :param opt_eps: Epsilon for optimizer
-    :type opt_eps: float
-
-    :param weight_decay: Weight decay for optimizer
-    :type weight_decay: float
+    :param trackers: Tuple of trackers to use for logging. Default: ("wandb",)
+    :type trackers: Tuple[str]
 
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
@@ -90,14 +127,23 @@ class TrainConfig:
     :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
     :type orchestrator: str
 
-    :param checkpoint_dir: Directory to save checkpoints
-    :type checkpoint_dir: str
+    :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
 
     :param project_name: Project name for wandb
     :type project_name: str
 
     :param entity_name: Entity name for wandb
     :type entity_name: str
+
+    :param checkpoint_dir: Directory to save checkpoints
+    :type checkpoint_dir: str
+
+    :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation.
+                                Only used by AcceleratePPOTrainer.
+    :type rollout_logging_dir: Optional[str]
+
+    :param seed: Random seed
+    :type seed: int
     """
 
     total_steps: int
@@ -105,21 +151,20 @@ class TrainConfig:
     epochs: int
     batch_size: int
 
-    lr_init: float
-    lr_target: float
-    opt_betas: Tuple[float]
-    opt_eps: float
-    weight_decay: float
-
     checkpoint_interval: int
     eval_interval: int
 
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
+    trainer: str  # One of the trainers
 
-    checkpoint_dir: str = "ckpts"
     project_name: str = "trlx"
     entity_name: Optional[str] = None
+
+    checkpoint_dir: str = "ckpts"
+    rollout_logging_dir: Optional[str] = None
+
+    trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
 
     @classmethod
@@ -133,9 +178,11 @@ class TRLConfig:
     Top level config for trlX. Loads configs and can be converted to dictionary.
     """
 
-    model: ModelConfig
-    train: TrainConfig
     method: MethodConfig
+    model: ModelConfig
+    optimizer: OptimizerConfig
+    scheduler: SchedulerConfig
+    train: TrainConfig
 
     @classmethod
     def load_yaml(cls, yml_fp: str):
@@ -147,37 +194,37 @@ class TRLConfig:
         """
         with open(yml_fp, mode="r") as file:
             config = yaml.safe_load(file)
-        return cls(
-            ModelConfig.from_dict(config["model"]),
-            TrainConfig.from_dict(config["train"]),
-            get_method(config["method"]["name"]).from_dict(config["method"]),
-        )
+        return cls.from_dict(config)
 
     def to_dict(self):
         """
         Convert TRLConfig to dictionary.
         """
         data = {
-            "model": self.model.__dict__,
-            "train": self.train.__dict__,
             "method": self.method.__dict__,
+            "model": self.model.__dict__,
+            "optimizer": self.optimizer.__dict__,
+            "scheduler": self.scheduler.__dict__,
+            "train": self.train.__dict__,
         }
 
         return data
 
     @classmethod
-    def from_dict(cls, config_dict: dict):
+    def from_dict(cls, config: Dict):
         """
         Convert dictionary to TRLConfig.
         """
         return cls(
-            ModelConfig.from_dict(config_dict["model"]),
-            TrainConfig.from_dict(config_dict["train"]),
-            get_method(config_dict["method"]["name"]).from_dict(config_dict["method"]),
+            method=get_method(config["method"]["name"]).from_dict(config["method"]),
+            model=ModelConfig.from_dict(config["model"]),
+            optimizer=OptimizerConfig.from_dict(config["optimizer"]),
+            scheduler=SchedulerConfig.from_dict(config["scheduler"]),
+            train=TrainConfig.from_dict(config["train"]),
         )
 
     @classmethod
-    def update(cls, baseconfig, config):
+    def update(cls, baseconfig: Dict, config: Dict):
         updates = set()
         merged = merge(baseconfig, config, updates)
 
@@ -188,3 +235,9 @@ class TRLConfig:
                 )
 
         return cls.from_dict(merged)
+
+    def __str__(self):
+        """Returns a human-readable string representation of the config."""
+        import json
+
+        return json.dumps(self.to_dict(), indent=4)

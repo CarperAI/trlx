@@ -8,20 +8,19 @@ import torch
 from trlx.data import RLElement
 from trlx.data.configs import TRLConfig
 from trlx.pipeline import BaseRolloutStore
-from trlx.utils import safe_mkdir
 
 # specifies a dictionary of architectures
-_MODELS: Dict[str, Any] = {}  # registry
+_TRAINERS: Dict[str, Any] = {}  # registry
 
 
-def register_model(name):
-    """Decorator used register an architecture
+def register_trainer(name):
+    """Decorator used to register a trainer
     Args:
-        name: Name of the architecture
+        name: Name of the trainer type to register
     """
 
     def register_class(cls, name):
-        _MODELS[name] = cls
+        _TRAINERS[name] = cls
         setattr(sys.modules[__name__], name, cls)
         return cls
 
@@ -36,8 +35,8 @@ def register_model(name):
     return cls
 
 
-@register_model
-class BaseRLModel:
+@register_trainer
+class BaseRLTrainer:
     def __init__(self, config: TRLConfig, train_mode=False):
         self.store: BaseRolloutStore = None
         self.config = config
@@ -91,46 +90,19 @@ class BaseRLModel:
         :type save_fn: Callable[Dict[str, any]]
 
         :param eval_fn: Optional function to call during evaluation. Eval doesn't do anything without this.
-        :type eval_fn: Callable[BaseRLModel]
+        :type eval_fn: Callable[BaseRLTrainer]
         """
         pass
 
     @abstractmethod
-    def get_components(self) -> Dict[str, Any]:
-        """
-        Get pytorch components (mainly for saving/loading)
-        """
+    def save(self, directory=None):
+        """Creates a checkpoint of training states"""
         pass
 
-    def save(self, fp: str, title: str = "OUT"):
-        """
-        Try to save all components to specified path under a folder with given title
-        """
-        path = os.path.join(fp, title)
-        safe_mkdir(path)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                torch.save(components[name], os.path.join(path, name) + ".pt")
-            except:
-                print(f"Failed to save component: {name}, continuing.")
-
-    def load(self, fp: str, title: str = "OUT"):
-        """
-        Try to load all components from specified path under a folder with given title
-        """
-
-        path = os.path.join(fp, title)
-
-        components = self.get_components()
-        for name in components:
-            try:
-                components[name] = torch.load(
-                    os.path.join(path, name) + ".pt", map_location="cpu"
-                )
-            except:
-                print(f"Failed to load component: {name}, continuing.")
+    @abstractmethod
+    def load(self, directory=None):
+        """Loads a checkpoint created from `save`"""
+        pass
 
     def intervals(self, steps: int) -> Dict[str, bool]:
         """

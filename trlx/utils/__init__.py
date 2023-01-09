@@ -1,48 +1,130 @@
 import os
+import random
+import subprocess
 import time
 from functools import reduce
 from typing import Any, Iterable, List, Dict, Union
 from dataclasses import is_dataclass
+from enum import Enum
+from typing import Dict, Iterable
 
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import ChainedScheduler, LinearLR
+from accelerate import Accelerator
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 from torchtyping import TensorType
 
 
-def flatten(L: Iterable[Iterable[Any]]) -> Iterable[Any]:
+def set_seed(seed: int):
     """
-    Flatten a list of lists into a single list (i.e. [[1, 2], [3, 4]] -> [1,2,3,4])
+    Sets seeds across package dependencies for reproducibility.
     """
-    return list(reduce(lambda acc, x: acc + x, L, []))
-
-
-def chunk(L: Iterable[Any], chunk_size: int) -> List[Iterable[Any]]:
-    """
-    Chunk iterable into list of iterables of given chunk size
-    """
-    return [L[i : i + chunk_size] for i in range(0, len(L), chunk_size)]
+    seed += int(os.environ.get("RANK", 0))
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
 
 # Training utils
 
 
-def rampup_decay(ramp_steps, decay_steps, decay_target, opt):
-    return ChainedScheduler(
-        [
-            LinearLR(opt, decay_target, 1, total_iters=ramp_steps),
-            LinearLR(opt, 1, decay_target, total_iters=decay_steps),
-        ]
+def get_distributed_config(accelerator: Accelerator):
+    """
+    Return accelerator distributed config
+    """
+
+    accelerate_config = accelerator.state
+    dist_config = {
+        "mixed_precision": accelerate_config.mixed_precision,
+        "num_gpus": accelerate_config.num_processes,
+    }
+
+    if accelerator.state.deepspeed_plugin is not None:
+        ds_plugin = accelerator.state.deepspeed_plugin
+        dist_config.update(
+            {
+                "gradient_accumulation_steps": ds_plugin.gradient_accumulation_steps,
+                "gradient_clipping": ds_plugin.gradient_clipping,
+                "zero_stage": ds_plugin.zero_stage,
+                "offload_optimizer_device": ds_plugin.offload_optimizer_device,
+                "offload_param_device": ds_plugin.offload_param_device,
+            }
+        )
+
+    return dist_config
+
+
+class OptimizerName(str, Enum):
+    """Supported optimizer names"""
+
+    ADAM: str = "adam"
+    ADAMW: str = "adamw"
+    ADAM_8BIT_BNB: str = "adam_8bit_bnb"
+    ADAMW_8BIT_BNB: str = "adamw_8bit_bnb"
+    SGD: str = "sgd"
+
+
+def get_optimizer_class(name: OptimizerName):
+    """
+    Returns the optimizer class with the given name
+
+    Args:
+        name (str): Name of the optimizer as found in `OptimizerNames`
+    """
+    if name == OptimizerName.ADAM:
+        return torch.optim.Adam
+    if name == OptimizerName.ADAMW:
+        return torch.optim.AdamW
+    if name == OptimizerName.ADAM_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import Adam8bit
+
+            return Adam8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use the 8-bit Adam. "
+                "Install with: `pip install bitsandbytes`"
+            )
+    if name == OptimizerName.ADAMW_8BIT_BNB.value:
+        try:
+            from bitsandbytes.optim import AdamW8bit
+
+            return AdamW8bit
+        except ImportError:
+            raise ImportError(
+                "You must install the `bitsandbytes` package to use 8-bit AdamW. "
+                "Install with: `pip install bitsandbytes`"
+            )
+    if name == OptimizerName.SGD.value:
+        return torch.optim.SGD
+    supported_optimizers = [o.value for o in OptimizerName]
+    raise ValueError(
+        f"`{name}` is not a supported optimizer. "
+        f"Supported optimizers are: {supported_optimizers}"
     )
 
 
-def safe_mkdir(path: str):
+class SchedulerName(str, Enum):
+    """Supported scheduler names"""
+
+    COSINE_ANNEALING = "cosine_annealing"
+    LINEAR = "linear"
+
+
+def get_scheduler_class(name: SchedulerName):
     """
-    Make directory if it doesn't exist, otherwise do nothing
+    Returns the scheduler class with the given name
     """
-    if os.path.isdir(path):
-        return
-    os.mkdir(path)
+    if name == SchedulerName.COSINE_ANNEALING:
+        return CosineAnnealingLR
+    if name == SchedulerName.LINEAR:
+        return LinearLR
+    supported_schedulers = [s.value for s in SchedulerName]
+    raise ValueError(
+        f"`{name}` is not a supported scheduler. "
+        f"Supported schedulers are: {supported_schedulers}"
+    )
 
 
 # Stats
@@ -140,3 +222,12 @@ def filter_non_scalars(xs: Dict) -> Dict:
             continue
 
     return ys
+
+
+def get_git_tag() -> str:
+    """
+    Returns commit's short hash and date
+    """
+    output = subprocess.check_output("git log --format='%h/%as' -n1".split())
+    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
+    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}"

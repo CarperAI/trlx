@@ -1,20 +1,17 @@
-from typing import Iterable, Sequence, Union, cast
+from typing import Sequence, Union, cast
 
 import torch
-import torch.nn.functional as F
 
-
-from trlx.model import register_model
-from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
-from trlx.data.ilql_types import ILQLBatch
 from trlx.data.configs import TRLConfig
+from trlx.data.ilql_types import ILQLBatch
+from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
 from trlx.utils import to_device
 
-from .accelerate_base_model import AccelerateRLModel
 
-
-@register_model
-class AccelerateILQLModel(AccelerateRLModel):
+@register_trainer
+class AccelerateILQLTrainer(AccelerateRLTrainer):
     def __init__(
         self,
         config: TRLConfig,
@@ -32,6 +29,14 @@ class AccelerateILQLModel(AccelerateRLModel):
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
 
+        self.generate_kwargs = dict(
+            config.method.gen_kwargs,
+            max_length=self.max_length,
+            logit_mask=self.logit_mask,
+            eos_token_id=self.tokenizer.eos_token_id if self.tokenizer else 0,
+            pad_token_id=self.tokenizer.pad_token_id if self.tokenizer else 0,
+        )
+
     def get_arch(self, config):
         return CausalLMWithValueHeads(
             config.model.model_path,
@@ -47,6 +52,10 @@ class AccelerateILQLModel(AccelerateRLModel):
             [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
             max_length=self.max_length,
             truncation=True,
+            # NOTE: We manually add special tokens (bos) above so we set this False
+            # to avoid models that automatically add special tokens (e.g. OPT)
+            # adding them twice more.
+            add_special_tokens=False,
         )
         input_ids = list(map(torch.as_tensor, tokenized.input_ids))
         return input_ids
@@ -83,11 +92,3 @@ class AccelerateILQLModel(AccelerateRLModel):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-        self.generate_kwargs = {
-            "beta": self.config.method.betas[0],
-            "max_length": self.max_length,
-            "logit_mask": self.logit_mask,
-            "eos_token_id": self.tokenizer.eos_token_id if self.tokenizer else 0,
-            "pad_token_id": self.tokenizer.pad_token_id if self.tokenizer else 0,
-        }
