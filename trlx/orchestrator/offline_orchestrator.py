@@ -32,7 +32,7 @@ def tokenize_dialogue(  # noqa: C901
 
         # in case of odd number of phrases (possibly due to truncation)
         # since the first phrase always has to be a prompt, force it to be <bos>
-        if len(out) & 1:
+        if len(out) % 2 == 1:
             if sum(map(len, out)) == max_length:
                 out[0].pop(0)
             out.insert(0, [tokenizer.bos_token_id])
