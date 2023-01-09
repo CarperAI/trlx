@@ -2,23 +2,28 @@ from collections.abc import Iterable
 
 import torch
 import torch.nn.functional as F
-
-from nemo.collections.common.tokenizers.tabular_tokenizer import TabularTokenizer
-from nemo.collections.nlp.modules.common.megatron.utils import get_ltor_masks_and_position_ids
-from nemo.collections.nlp.modules.common.text_generation_strategy import model_inference_strategy_dispatcher
-from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam, OutputType, SamplingParam
-from nemo.collections.nlp.modules.common.text_generation_utils import (
-    send_generate_info, 
-    receive_generate_info,
-    switch,
-    repetition_penalty,
-    top_k_logits
-)
-
-from nemo.utils import AppState
-
 from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
+from nemo.collections.common.tokenizers.tabular_tokenizer import TabularTokenizer
+from nemo.collections.nlp.modules.common.megatron.utils import (
+    get_ltor_masks_and_position_ids,
+)
+from nemo.collections.nlp.modules.common.text_generation_strategy import (
+    model_inference_strategy_dispatcher,
+)
+from nemo.collections.nlp.modules.common.text_generation_utils import (
+    receive_generate_info,
+    repetition_penalty,
+    send_generate_info,
+    switch,
+    top_k_logits,
+)
+from nemo.collections.nlp.modules.common.transformer.text_generation import (
+    LengthParam,
+    OutputType,
+    SamplingParam,
+)
+from nemo.utils import AppState
 
 
 def generate(
@@ -58,8 +63,8 @@ def generate(
             token_ids: List[Tensor], output sentence token ids
             offsets: List[List[int]]  # list of tokens start positions in text
     """
-    if 'strategy' in strategy_args:
-        inference_strategy = strategy_args['strategy']
+    if "strategy" in strategy_args:
+        inference_strategy = strategy_args["strategy"]
     else:
         inference_strategy = model_inference_strategy_dispatcher(model, **strategy_args)
     tokenizer = model.tokenizer
@@ -67,9 +72,10 @@ def generate(
         if isinstance(inputs, tuple):
             context_tokens_tensor, context_length_tensor = inputs
         else:
-            context_tokens_tensor, context_length_tensor = inference_strategy.tokenize_batch(
-                inputs, tokens_to_generate, add_BOS
-            )
+            (
+                context_tokens_tensor,
+                context_length_tensor,
+            ) = inference_strategy.tokenize_batch(inputs, tokens_to_generate, add_BOS)
 
         send_generate_info(
             context_tokens_tensor,
@@ -112,19 +118,19 @@ def generate(
         min_tokens_to_generate=min_tokens_to_generate,
     )
     special_tokens = set()
-    if hasattr(tokenizer, 'pad_token') and tokenizer.pad_token is not None:
+    if hasattr(tokenizer, "pad_token") and tokenizer.pad_token is not None:
         special_tokens.add(tokenizer.pad_token)
-    if hasattr(tokenizer, 'eos_token') and tokenizer.eos_token is not None:
+    if hasattr(tokenizer, "eos_token") and tokenizer.eos_token is not None:
         special_tokens.add(tokenizer.eos_token)
-    if hasattr(tokenizer, 'bos_token') and tokenizer.bos_token is not None:
+    if hasattr(tokenizer, "bos_token") and tokenizer.bos_token is not None:
         special_tokens.add(tokenizer.bos_token)
-    if hasattr(tokenizer, 'cls_token') and tokenizer.cls_token is not None:
+    if hasattr(tokenizer, "cls_token") and tokenizer.cls_token is not None:
         special_tokens.add(tokenizer.cls_token)
-    if hasattr(tokenizer, 'unk_token') and tokenizer.unk_token is not None:
+    if hasattr(tokenizer, "unk_token") and tokenizer.unk_token is not None:
         special_tokens.add(tokenizer.unk_token)
-    if hasattr(tokenizer, 'sep_token') and tokenizer.sep_token is not None:
+    if hasattr(tokenizer, "sep_token") and tokenizer.sep_token is not None:
         special_tokens.add(tokenizer.sep_token)
-    if hasattr(tokenizer, 'mask_token') and tokenizer.mask_token is not None:
+    if hasattr(tokenizer, "mask_token") and tokenizer.mask_token is not None:
         special_tokens.add(tokenizer.mask_token)
     if output is not None:
         decode_tokens, output_logits, full_logits = output
@@ -143,10 +149,10 @@ def generate(
                     word = tokenizer.ids_to_tokens(token)
                     if isinstance(word, Iterable):
                         word = word[0]
-                    if hasattr(tokenizer.tokenizer, 'byte_decoder'):
-                        word = bytearray([tokenizer.tokenizer.byte_decoder[c] for c in word]).decode(
-                            'utf-8', errors='replace'
-                        )
+                    if hasattr(tokenizer.tokenizer, "byte_decoder"):
+                        word = bytearray(
+                            [tokenizer.tokenizer.byte_decoder[c] for c in word]
+                        ).decode("utf-8", errors="replace")
                     words.append(word)
                 resp_sentences_seg.append(words)
             else:
@@ -166,12 +172,12 @@ def generate(
             all_offsets.append(offsets)
 
         output = {}
-        output['sentences'] = resp_sentences
-        output['tokens'] = resp_sentences_seg
-        output['logprob'] = output_logits
-        output['full_logprob'] = full_logits
-        output['token_ids'] = decode_tokens
-        output['offsets'] = all_offsets
+        output["sentences"] = resp_sentences
+        output["tokens"] = resp_sentences_seg
+        output["logprob"] = output_logits
+        output["full_logprob"] = full_logits
+        output["token_ids"] = decode_tokens
+        output["offsets"] = all_offsets
         return output
 
 
@@ -192,20 +198,20 @@ def synced_generate(
     context_length = context_length_tensor.min().item()
     tokenizer = model.tokenizer
     batch_token_iterator = sample_sequence_batch(
-            model,
-            inference_strategy,
-            context_tokens_tensor,
-            context_length_tensor,
-            tokens_to_generate,
-            all_probs,
-            temperature=temperature,
-            extra={
-                "top_p": top_p,
-                "top_k": top_k,
-                "greedy": greedy,
-                "repetition_penalty": repetition_penalty,
-                "min_tokens_to_generate": min_tokens_to_generate,
-            },
+        model,
+        inference_strategy,
+        context_tokens_tensor,
+        context_length_tensor,
+        tokens_to_generate,
+        all_probs,
+        temperature=temperature,
+        extra={
+            "top_p": top_p,
+            "top_k": top_k,
+            "greedy": greedy,
+            "repetition_penalty": repetition_penalty,
+            "min_tokens_to_generate": min_tokens_to_generate,
+        },
     )
 
     for tokens, lengths, output_logits, full_logits in batch_token_iterator:
@@ -225,7 +231,10 @@ def synced_generate(
             src = parallel_state.get_pipeline_model_parallel_last_rank()
             group = parallel_state.get_embedding_group()
             output_logits = torch.empty(
-                tokens.size(0), context_length - 1, dtype=torch.float32, device=torch.device("cuda")
+                tokens.size(0),
+                context_length - 1,
+                dtype=torch.float32,
+                device=torch.device("cuda"),
             )
             torch.distributed.broadcast(output_logits, src, group)
 
@@ -267,14 +276,14 @@ def sample_sequence_batch(
         data_parallel_size=1,
     )
     assert (
-        model.cfg.get('sequence_parallel', False) == False
-    ), 'sequence_parallel should be False during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint'
+        model.cfg.get("sequence_parallel", False) == False
+    ), "sequence_parallel should be False during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint"
     assert (
-        model.cfg.get('activations_checkpoint_granularity', None) is None
-    ), 'activations_checkpoint_granularity should be None during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint'
+        model.cfg.get("activations_checkpoint_granularity", None) is None
+    ), "activations_checkpoint_granularity should be None during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint"
     assert (
-        model.cfg.get('activations_checkpoint_method', None) is None
-    ), 'activations_checkpoint_method should be None during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint'
+        model.cfg.get("activations_checkpoint_method", None) is None
+    ), "activations_checkpoint_method should be None during inference. Disable it in the model config if restoring from nemo or in hparams.yaml if restoring from PTL checkpoint"
 
     tokenizer = model.tokenizer
     # initialize the batch
@@ -304,29 +313,39 @@ def sample_sequence_batch(
             output = inference_strategy.forward_step(batch, tensor_shape)
 
             if parallel_state.is_pipeline_last_stage():
-                output = output[0]['logits'].float()
-                output = tensor_parallel.gather_from_tensor_model_parallel_region(output)
+                output = output[0]["logits"].float()
+                output = tensor_parallel.gather_from_tensor_model_parallel_region(
+                    output
+                )
                 assert output is not None
                 output = output.float()
                 logits = output[:, -1].view(batch_size, -1).contiguous()
 
                 # make sure it will generate at least min_length
-                min_length = extra.get('min_tokens_to_generate', 0)
+                min_length = extra.get("min_tokens_to_generate", 0)
                 if min_length > 0:
                     within_min_length = (context_length - context_lengths) < min_length
-                    logits[within_min_length, eod_id] = -float('Inf')
+                    logits[within_min_length, eod_id] = -float("Inf")
 
                 # make sure it won't sample outside the vocab_size range
-                logits[:, tokenizer.vocab_size :] = -float('Inf')
+                logits[:, tokenizer.vocab_size :] = -float("Inf")
 
-                if extra.get('greedy', False):
+                if extra.get("greedy", False):
                     prev = torch.argmax(logits, dim=-1).view(-1)
                 else:
                     logits = logits.float()
                     logits /= temperature
                     # handle repetition penality
-                    logits = repetition_penalty(logits, extra.get('repetition_penalty', 1.2), all_generated_indices)
-                    logits = top_k_logits(logits, top_k=extra.get('top_k', 0), top_p=extra.get('top_p', 0.9))
+                    logits = repetition_penalty(
+                        logits,
+                        extra.get("repetition_penalty", 1.2),
+                        all_generated_indices,
+                    )
+                    logits = top_k_logits(
+                        logits,
+                        top_k=extra.get("top_k", 0),
+                        top_p=extra.get("top_p", 0.9),
+                    )
                     log_probs = F.softmax(logits, dim=-1)
                     prev = torch.multinomial(log_probs, num_samples=1).view(-1)
                 started = context_lengths <= context_length
@@ -358,7 +377,9 @@ def sample_sequence_batch(
 
                     # TODO(rprenger) we're copying output_logits every time.  Should pre-allocate
                     output_logits = torch.cat([output_logits, new_output_logits], 1)
-                    all_generated_indices = torch.cat([all_generated_indices, indices[:, :, 0]], 1)
+                    all_generated_indices = torch.cat(
+                        [all_generated_indices, indices[:, :, 0]], 1
+                    )
                     if all_probs:
                         full_logits = torch.cat([full_logits, output], 1)
 

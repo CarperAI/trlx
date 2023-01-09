@@ -2,7 +2,10 @@ from typing import Iterable, Sequence, Union, cast
 
 import torch
 import torch.nn.functional as F
-
+from nemo.collections.nlp.modules.common.text_generation_utils import (
+    get_default_length_params,
+    get_default_sampling_params,
+)
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
@@ -20,10 +23,10 @@ from pytorch_lightning.trainer.connectors.checkpoint_connector import (
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.nemo.gpt import ILQLGPT
 from trlx.trainer.nn.ilql_models import ILQLConfig
-from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 
 from . import BaseRLTrainer
 
@@ -61,7 +64,6 @@ def train_megatron(ilql_config, cfg):
                     precision=cfg.trainer.precision, device="cuda", scaler=scaler
                 )
             )
-
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
 
@@ -141,7 +143,13 @@ class NemoILQLTrainer(BaseRLTrainer):
         train_dataloader = self.store.create_loader(self.batch_size)
         print(f"{len(train_dataloader)=}")
 
-        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)  
-        self.model.generate(["hello world"], dict(max_length=200, min_length=10), 
-        dict(use_greedy=False, compute_logprob=False))      
+        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
+        sampling_params = get_default_sampling_params()
+        sampling_params = {**sampling_params, "use_greedy": False}
+        gen = self.model.generate(
+            ["hello world"],
+            dict(max_length=200, min_length=10),
+            sampling_params,
+        )
+        print(f"{gen=}")
         self.trainer.fit(self.model, train_dataloader)

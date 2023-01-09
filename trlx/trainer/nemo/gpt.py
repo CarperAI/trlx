@@ -1,7 +1,8 @@
 # Extensible version of the GPT model
 import os
-from typing import Mapping, Optional, Tuple, Union
 from functools import reduce
+from math import floor
+from typing import Mapping, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -26,7 +27,8 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
 from torch.nn.utils.rnn import pad_sequence
 
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
-from trlx.utils import to_device, tree_map, set_seed
+from trlx.trainer.nn.ilql_models import ILQLConfig
+from trlx.utils import set_seed, to_device, tree_map
 
 
 class LogGPT(MegatronModule):
@@ -149,6 +151,8 @@ class HydraWithValueHeads(MegatronModule):
 
 
 class ILQLGPT(MegatronGPTModel):
+    ilql_config: ILQLConfig
+
     def __init__(self, ilql_config, **kwargs):
         self.ilql_config = ilql_config
         super().__init__(**kwargs)
@@ -168,7 +172,7 @@ class ILQLGPT(MegatronGPTModel):
         #    self._train_ds =
 
     def setup(self, stage=None):
-        """ PTL hook that is executed after DDP spawns """
+        """PTL hook that is executed after DDP spawns"""
         set_seed(self.cfg.seed + int(os.environ.get("GLOBAL_RANK", 0)))
         super().setup(stage)
 
@@ -220,6 +224,13 @@ class ILQLGPT(MegatronGPTModel):
                     stage = "first"
                 elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
                     stage = "last"
+                    if not validation_step:
+                        if (
+                            self.trainer.global_step
+                            % self.ilql_config.steps_for_target_q_sync
+                            == 0
+                        ):
+                            model.other_heads.sync_target_q_heads()
                 else:
                     stage = "middle"
 
@@ -244,7 +255,6 @@ class ILQLGPT(MegatronGPTModel):
                 )
 
                 mp_rank = parallel_state.get_tensor_model_parallel_rank()
-                mp_size = parallel_state.get_tensor_model_parallel_world_size()
 
                 model_output = model(
                     input_ids=inputs,
@@ -355,47 +365,79 @@ class ILQLGPT(MegatronGPTModel):
         checkpoint_activations_all_layers=None,
     ):
         def fwd_output_only_func(
-            input_ids: torch.Tensor,
+            batch: torch.Tensor,
             model,
         ):
-            if input_ids is not None:
-                
-                input_ids = to_device(input_ids, torch.cuda.current_device(), non_blocking=True)
+            if batch is not None:
+                print(f"{batch=}")
+                batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                    data=input_ids,
-                    eod_token=self.tokenizer.eos_id,
-                    reset_position_ids=False,
-                    reset_attention_mask=False,
-                    eod_mask_loss=False,
+                extra_arg = {}
+
+                if len(batch) == 3:
+                    tokens, attention_mask, position_ids = batch
+                    attention_mask = attention_mask[0:1]
+                else:
+                    (
+                        tokens,
+                        attention_mask,
+                        position_ids,
+                        set_inference_key_value_memory,
+                        inference_max_sequence_len,
+                    ) = batch
+
+                    extra_arg[
+                        "set_inference_key_value_memory"
+                    ] = set_inference_key_value_memory[0].item()
+                    extra_arg[
+                        "inference_max_sequence_len"
+                    ] = self.cfg.encoder_seq_length
+
+                    # extra_arg['inference_max_sequence_len'] = inference_max_sequence_len[0].item()
+
+                attention_mask = attention_mask[0:1]
+
+                mp_size = parallel_state.get_tensor_model_parallel_world_size()
+
+                # pad_by = floor(tokens.shape[1] / mp_size) * mp_size - tokens.shape[1]
+                pad_by = self.cfg.encoder_seq_length - tokens.shape[1]
+                tokens = torch.nn.functional.pad(
+                    tokens, (0, pad_by), value=self.tokenizer.eos_id
                 )
+                position_ids = torch.arange(
+                    0, tokens.shape[1], device=tokens.device
+                ).long()[None, :]
 
                 model_output = model(
-                    input_ids=input_ids,
+                    input_ids=tokens,
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
-                    set_inference_key_value_memory=set_inference_key_value_memory,
-                    inference_max_sequence_len=None,
+                    **extra_arg,
                 )
             else:
                 model_output = model(
                     input_ids=None, position_ids=None, attention_mask=None
                 )
-                    
 
-            def ilql_postprocess_func(model_output):
-                logits, (qs, target_qs, vs) = model_output
-                target_q = reduce(torch.minimum, target_qs)
-                advantage = target_q - vs
-                pi_beta = F.log_softmax(logits, -1)
+            def ilql_postprocess(model_output):
+                logits, (_, target_qs, vs) = model_output
+                last_qs = [q[:, -1] for q in target_qs]
+                target_q = reduce(torch.minimum, last_qs)
+                advantage = target_q - vs[:, -1]
+                pi_beta = F.log_softmax(logits[:, -1], -1)
                 beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
+
+                print(f"{pi_beta.shape=}, {advantage.shape=}, {logits.shape=} {beta=}")
+
                 pi_adjusted = pi_beta + advantage * beta
+                logits[:, -1] = pi_adjusted
 
-                return model_output, {"logits": pi_adjusted}
+                return logits, {"logits": logits}
 
-            return model_output, ilql_postprocess_func
+            return model_output, ilql_postprocess
 
         return fwd_output_only_func
+
 
 class HydraWithValueHeadGPT(MegatronGPTModel):
     def __init__(self, ppo_config, **kwargs):
@@ -426,4 +468,3 @@ class HydraWithValueHeadGPT(MegatronGPTModel):
         # Currently the Hydra head can only be as large as one pipeline parallelism stage
         if post_process:
             raise NotImplementedError
-
