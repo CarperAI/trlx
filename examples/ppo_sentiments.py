@@ -34,7 +34,7 @@ def main(hparams={}):
         "lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
-        batch_size=256,
+        batch_size=128,
         device=device,
     )
 
@@ -43,13 +43,15 @@ def main(hparams={}):
         return sentiments
 
     # Take few words off of movies reviews as prompts
-    imdb = load_dataset("imdb", split="train+test")
+    imdb = load_dataset("imdb", split="train")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
+    imdb = load_dataset("imdb", split="test")
+    val_prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
     return trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["I don't know much about Hungarian underground"] * 64,
+        eval_prompts=val_prompts[0:1000],
         config=config,
     )
 
