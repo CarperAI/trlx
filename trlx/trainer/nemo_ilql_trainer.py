@@ -135,21 +135,23 @@ class NemoILQLTrainer(BaseRLTrainer):
         input_ids = list(map(torch.as_tensor, tokenized.input_ids))
         return input_ids
 
-    def post_backward_callback(self):
-        if self.iter_count % self.config.method.steps_for_target_q_sync == 0:
-            self.accelerator.unwrap_model(self.model).sync_target_q_heads()
-
     def learn(self):
+        gen = self.model.generate(["hello world"] * 16)
+        print(f"{gen=}")
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+
         train_dataloader = self.store.create_loader(self.batch_size)
         print(f"{len(train_dataloader)=}")
 
         train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
-        sampling_params = get_default_sampling_params()
-        sampling_params = {**sampling_params, "use_greedy": False}
-        gen = self.model.generate(
-            ["hello world"],
-            dict(max_length=200, min_length=10),
-            sampling_params,
-        )
-        print(f"{gen=}")
+        # gen = self.model.generate(
+        #     ["hello world"],
+        #     dict(max_length=200, min_length=10),
+        #     sampling_params,
+        # )
         self.trainer.fit(self.model, train_dataloader)

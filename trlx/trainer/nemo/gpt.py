@@ -2,7 +2,7 @@
 import os
 from functools import reduce
 from math import floor
-from typing import Mapping, Optional, Tuple, Union
+from typing import List, Mapping, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -24,8 +24,19 @@ from nemo.collections.nlp.modules.common.megatron.utils import (
     get_ltor_masks_and_position_ids,
     get_params_for_weight_decay_optimization,
 )
+from nemo.collections.nlp.modules.common.text_generation_utils import (
+    get_default_length_params,
+    get_default_sampling_params,
+)
+from nemo.collections.nlp.modules.common.transformer.text_generation import (
+    LengthParam,
+    OutputType,
+    SamplingParam,
+    TextGeneration,
+)
 from torch.nn.utils.rnn import pad_sequence
 
+import trlx.trainer.nemo.generate_ilql as generate_ilql
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
 from trlx.trainer.nn.ilql_models import ILQLConfig
 from trlx.utils import set_seed, to_device, tree_map
@@ -369,7 +380,7 @@ class ILQLGPT(MegatronGPTModel):
             model,
         ):
             if batch is not None:
-                print(f"{batch=}")
+                # print(f"{batch=}")
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 extra_arg = {}
@@ -437,6 +448,40 @@ class ILQLGPT(MegatronGPTModel):
             return model_output, ilql_postprocess
 
         return fwd_output_only_func
+
+    def generate(
+        self,
+        inputs: Union[List[str], torch.Tensor, List[dict]],
+        length_params: LengthParam = None,
+        sampling_params: SamplingParam = None,
+    ) -> OutputType:
+
+        # check whether the DDP is initialized
+        if parallel_state.is_unitialized():
+
+            def dummy():
+                return
+
+            if self.trainer.strategy.launcher is not None:
+                self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
+            self.trainer.strategy.setup_environment()
+
+        # set the default sampling params if it is None.
+        # default do greedy sampling
+        if sampling_params is None:
+            sampling_params = get_default_sampling_params()
+
+        # set the default length params if it is None.
+        # default do greedy sampling
+        if length_params is None:
+            length_params = get_default_length_params()
+
+        return generate_ilql.generate(
+            self.cuda(),
+            inputs=inputs,
+            task_ids=None,
+            tokens_to_generate=length_params["max_length"],
+        )
 
 
 class HydraWithValueHeadGPT(MegatronGPTModel):
