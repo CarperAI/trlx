@@ -15,6 +15,7 @@ from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.trainer.nemo_ilql_trainer import NemoILQLTrainer
 
+
 def get_trainer(name: str) -> Callable:
     """
     Return constructor for specified RL model trainer

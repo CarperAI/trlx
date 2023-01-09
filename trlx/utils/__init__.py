@@ -2,11 +2,10 @@ import os
 import random
 import subprocess
 import time
-from functools import reduce
-from typing import Any, Iterable, List, Dict, Union
 from dataclasses import is_dataclass
 from enum import Enum
-from typing import Dict, Iterable
+from functools import reduce
+from typing import Any, Dict, Iterable, List, Union
 
 import numpy as np
 import torch

@@ -2,27 +2,6 @@ from typing import Iterable, Sequence, Union, cast
 
 import torch
 import torch.nn.functional as F
-
-from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
-from trlx.model import register_model
-from trlx.model.nn.ilql_models import ILQLConfig, CausalLMWithValueHeads
-from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
-from trlx.data.configs import TRLConfig
-from trlx.utils import to_device, set_seed
-
-from . import BaseRLTrainer
-
-from omegaconf.omegaconf import OmegaConf, open_dict
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks.timer import Timer
-from pytorch_lightning.plugins.environments.torchelastic_environment import (
-    TorchElasticEnvironment,
-)
-from pytorch_lightning.trainer.connectors.checkpoint_connector import (
-    CheckpointConnector,
-)
-
-
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
@@ -35,8 +14,25 @@ from nemo.collections.nlp.parts.nlp_overrides import (
 from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
+from omegaconf.omegaconf import OmegaConf, open_dict
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks.timer import Timer
+from pytorch_lightning.plugins.environments.torchelastic_environment import (
+    TorchElasticEnvironment,
+)
+from pytorch_lightning.trainer.connectors.checkpoint_connector import (
+    CheckpointConnector,
+)
 
+from trlx.data.configs import TRLConfig
+from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
+from trlx.model import register_model
 from trlx.model.nemo.gpt import ILQLGPT
+from trlx.model.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
+from trlx.utils import set_seed, to_device
+
+from . import BaseRLTrainer
 
 
 def train_megatron(ilql_config, cfg):

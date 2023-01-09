@@ -11,13 +11,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
-from torch import nn
-
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
     get_all_params_for_weight_decay_optimization,
     get_params_for_weight_decay_optimization,
 )
+from torch import nn
 
 import wandb
 from trlx.data.ilql_types import ILQLBatch

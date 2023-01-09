@@ -1,34 +1,29 @@
 # Extensible version of the GPT model
-from typing import Optional, Mapping, Tuple, Union
+from typing import Mapping, Optional, Tuple, Union
 
 import torch
-from torch.nn.utils.rnn import pad_sequence
-
-from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
-from trlx.utils import to_device, tree_map
-
 from apex.transformer import parallel_state
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
-
-from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
-from nemo.collections.nlp.modules.common.megatron.utils import (
-    get_ltor_masks_and_position_ids,
-)
-from nemo.collections.nlp.modules.common.megatron.utils import (
-    average_losses_across_data_parallel_group,
-    get_all_params_for_weight_decay_optimization,
-    get_params_for_weight_decay_optimization,
-)
+from einops import rearrange
 from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
     post_language_model_processing,
 )
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
+from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
+from nemo.collections.nlp.modules.common.megatron.utils import (
+    average_losses_across_data_parallel_group,
+    get_all_params_for_weight_decay_optimization,
+    get_ltor_masks_and_position_ids,
+    get_params_for_weight_decay_optimization,
+)
+from torch.nn.utils.rnn import pad_sequence
 
-from einops import rearrange
+from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
+from trlx.utils import to_device, tree_map
 
 
 class LogGPT(MegatronModule):
