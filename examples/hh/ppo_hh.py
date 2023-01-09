@@ -1,3 +1,4 @@
+import math
 import os
 import re
 
@@ -28,34 +29,43 @@ def main(hparams={}):
 
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.truncation_side = "left"
     client = client_util.InferenceServerClient(url=triton_host, verbose=False)
 
     def reward_fn(samples):
-        input = tokenizer(samples, padding=True)
-        input_ids = np.array(input.input_ids, dtype=np.int32)
-        attention_mask = np.array(input.attention_mask, dtype=np.int8)
+        samples = [s[len(hhh_prompt) :] for s in samples]
+        input = tokenizer(samples, padding=True, max_length=1024)
 
-        inputs = [
-            prepare_tensor("input_ids", input_ids),
-            prepare_tensor("attention_mask", attention_mask),
-        ]
+        mbs = 8
+        out = []
+        for i in range(math.ceil(len(samples) / mbs)):
+            batch_ixs = slice(i * mbs, (i + 1) * mbs)
+            input_ids = np.array(input.input_ids[batch_ixs], dtype=np.int32)
+            attention_mask = np.array(input.attention_mask[batch_ixs], dtype=np.int8)
 
-        result = client.infer(triton_model, inputs)
-        output_data = result.as_numpy("rewards")
-        if output_data is None:
-            raise RuntimeError("No output data")
+            inputs = [
+                prepare_tensor("input_ids", input_ids),
+                prepare_tensor("attention_mask", attention_mask),
+            ]
 
-        return output_data[:, -1]
+            result = client.infer(triton_model, inputs)
+            rewards = result.as_numpy("rewards")
+            if rewards is None:
+                raise RuntimeError("No output data")
+
+            last_ixs = attention_mask.sum(-1, keepdims=True) - 1
+            returns = np.take_along_axis(rewards, last_ixs, -1)
+            out.extend(returns.flatten())
+
+        return out
 
     dataset = load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base")
-    hhh_prompt = "".join(dataset["test"][-5:]["chosen"])
+    hhh_prompt = ""  # .join(dataset['test'][[-4, -24, -28]]['chosen'])
 
     dialogues = sum([[x["chosen"], x["rejected"]] for x in dataset["train"]], [])
     dialogues = [re.split(r"(\n\nHuman: |\n\nAssistant: )", x)[1:] for x in dialogues]
-
     prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues]
-
-    eval_prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues][:64]
+    eval_prompts = [hhh_prompt + "".join(x[:-1]) for x in dialogues][:128]
 
     trlx.train(
         reward_fn=reward_fn,
