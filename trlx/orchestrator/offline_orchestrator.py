@@ -7,7 +7,7 @@ from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 
 
-def tokenize_dialogue(
+def tokenize_dialogue(  # noqa: C901
     dialogue: Union[str, List[str]], tokenizer, max_length=2048, truncation_side="left"
 ) -> List[int]:
     """
@@ -15,6 +15,8 @@ def tokenize_dialogue(
     """
     if isinstance(dialogue, str):
         dialogue = [tokenizer.bos_token, dialogue]
+    elif isinstance(dialogue, tuple):
+        dialogue = list(dialogue)
     dialogue[-1] += tokenizer.eos_token
 
     out = []
