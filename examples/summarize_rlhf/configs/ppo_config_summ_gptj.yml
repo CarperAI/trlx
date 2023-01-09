@@ -12,7 +12,7 @@ train:
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path: "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf/trlx/examples/summarize_rlhf/gptneo-supervised-summarize-checkpoint/checkpoint-1000"
+  model_path: "pvduy/openai_summarize_sft_gptj_full_data"
   tokenizer_path: "EleutherAI/gpt-j-6B"
   num_layers_unfrozen: 8
 
