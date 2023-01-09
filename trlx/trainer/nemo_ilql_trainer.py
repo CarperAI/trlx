@@ -138,20 +138,22 @@ class NemoILQLTrainer(BaseRLTrainer):
     def learn(self):
         gen = self.model.generate(["hello world"] * 16)
         print(f"{gen=}")
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
 
         train_dataloader = self.store.create_loader(self.batch_size)
         print(f"{len(train_dataloader)=}")
 
         train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
+        self.trainer.fit(self.model, train_dataloader)
+
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+        # gen = self.model.generate(["hello world"] * 2)
+        # print(f"{gen=}")
+
         # gen = self.model.generate(
         #     ["hello world"],
         #     dict(max_length=200, min_length=10),
         #     sampling_params,
         # )
-        self.trainer.fit(self.model, train_dataloader)

@@ -205,7 +205,6 @@ class ILQLGPT(MegatronGPTModel):
                 self.ilql_config.heads(self.cfg.hidden_size, self.padded_vocab_size),
             )
         else:
-            return gpt
             old_fwd = gpt.forward
 
             def log_forward(*args, **kwargs):
@@ -215,6 +214,7 @@ class ILQLGPT(MegatronGPTModel):
                 elif gpt.language_model.encoder.input_tensor is not None:
                     input_shape = gpt.language_model.encoder.input_tensor.shape
                 lm_output = old_fwd(*args, **kwargs)
+                print(f"{parallel_state.get_tensor_model_parallel_rank()} {input_shape=} {lm_output.shape=}")
                 return lm_output
 
             gpt.forward = log_forward
@@ -241,7 +241,7 @@ class ILQLGPT(MegatronGPTModel):
                             % self.ilql_config.steps_for_target_q_sync
                             == 0
                         ):
-                            model.other_heads.sync_target_q_heads()
+                            model.module.other_heads.sync_target_q_heads()
                 else:
                     stage = "middle"
 
