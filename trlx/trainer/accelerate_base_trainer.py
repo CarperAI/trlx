@@ -190,15 +190,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         stats = {}
 
         if self.generate_sweep_kwarg is not None:
-            sweep_arg, sweep_values = self.generate_sweep_kwarg
+            gen_sweep_arg, gen_sweep_values = self.generate_sweep_kwarg
         else:
-            sweep_values = [None]
+            gen_sweep_values = [None]
 
-        for sweep_value in sweep_values:
-            if sweep_value is not None:
-                suffix = f"/{sweep_arg}={sweep_value}"
+        for gen_sweep_value in gen_sweep_values:
+            if gen_sweep_value is not None:
+                sweep_suffix = f"/{gen_sweep_arg}={gen_sweep_value}"
             else:
-                suffix = ""
+                sweep_suffix = ""
 
             all_samples = []
             prompts_sizes = []
@@ -207,7 +207,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if isinstance(prompts, torch.Tensor):
                     samples = self.generate(prompts)
                 else:
-                    samples = self.generate(**prompts, **{sweep_arg: sweep_value})
+                    samples = self.generate(
+                        **prompts, **{gen_sweep_arg: gen_sweep_value}
+                    )
 
                 if isinstance(samples, tuple):
                     samples, *_ = samples
@@ -262,7 +264,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     mean_reward = rewards.mean()
                     columns.append("reward")
                     columns_data.append(rewards)
-                    stats[f"reward/mean{suffix}"] = mean_reward
+                    stats[f"reward/mean{sweep_suffix}"] = mean_reward
                     print(f"{mean_reward=}")
 
                 # additionally log any other metrics
@@ -272,7 +274,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
-                        f"metrics/{k}{suffix}": torch.as_tensor(xs).mean(-1)
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1)
                         for k, xs in metrics.items()
                     }
 
@@ -288,7 +290,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if "wandb" in self.config.train.trackers:
                         import wandb
 
-                        stats[f"samples{suffix}"] = wandb.Table(
+                        stats[f"samples{sweep_suffix}"] = wandb.Table(
                             columns=columns, rows=rows
                         )
 
@@ -303,7 +305,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
                     print(
-                        "Only a single sweep value is allowed, {k} is going to be set to {v[0]}"
+                        "Only a single sweep is allowed, {k} is going to be set to {v[0]}"
                     )
                     self.generate_kwargs[k] = v[0]
                 else:
