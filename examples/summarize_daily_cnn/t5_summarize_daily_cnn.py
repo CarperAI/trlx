@@ -74,7 +74,7 @@ if __name__ == "__main__":
         )  # get prompt like trlx's prompt
         prompt_label[key.strip()] = val_summaries[i]
 
-    model = trlx.train(
+    trlx.train(
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=prompts,

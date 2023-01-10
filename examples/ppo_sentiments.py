@@ -48,7 +48,7 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="test")
     val_prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
-    return trlx.train(
+    trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=val_prompts[0:1000],
