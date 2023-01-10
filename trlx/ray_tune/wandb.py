@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 
 import wandb
-import wandb.apis.reports as wb  # noqa: E402
+
+import wandb.apis.reports as wb  # isort: skip
 
 
 ray_info = [
