@@ -34,6 +34,11 @@ trainer = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0
 trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
+#### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
+```python
+trainer.model.base_model.save_pretrained('/path/to/output/folder/')
+```
+
 #### Use 🤗 Accelerate to launch distributed training
 
 ```bash
