@@ -7,8 +7,8 @@ from pathlib import Path
 
 import wandb
 
-wandb.require("report-editing")
-import wandb.apis.reports as wb  # noqa: E402
+import wandb.apis.reports as wb  # isort: skip
+
 
 ray_info = [
     "done",
@@ -84,10 +84,10 @@ def log_trials(trial_path: str, project_name: str):
 def create_report(project_name, param_space, tune_config, trial_path, best_config=None):
     def get_parallel_coordinate(param_space, metric):
         column_names = list(param_space.keys())
-        columns = [wb.reports.PCColumn(column) for column in column_names]
+        columns = [wb.PCColumn(column) for column in column_names]
 
         return wb.ParallelCoordinatesPlot(
-            columns=columns + [wb.reports.PCColumn(metric)],
+            columns=columns + [wb.PCColumn(metric)],
             layout={"x": 0, "y": 0, "w": 12 * 2, "h": 5 * 2},
         )
 
@@ -155,7 +155,7 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
                 get_scatter_plot(tune_config["metric"]),
             ],
             runsets=[
-                wb.RunSet(project=project_name).set_filters_with_python_expr(
+                wb.Runset(project=project_name).set_filters_with_python_expr(
                     f'group == "{trial_path}"'
                 )
             ],
@@ -192,7 +192,7 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
         wb.PanelGrid(
             panels=line_plot_panels,
             runsets=[
-                wb.RunSet(project=project_name).set_filters_with_python_expr(
+                wb.Runset(project=project_name).set_filters_with_python_expr(
                     f'group == "{trial_path}"'
                 )
             ],

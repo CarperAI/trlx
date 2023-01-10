@@ -221,7 +221,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts_sizes = []
         lst_prompts = []
         generate_time = time()
-        for prompts in tqdm(self.eval_dataloader, desc="Generating samples"):
+        for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
                 samples = self.generate_eval(prompts)
             else:
