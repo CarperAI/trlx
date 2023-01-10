@@ -76,20 +76,17 @@ class OfflineOrchestrator(Orchestrator):
             length = 0
             all_input_ids.append(torch.tensor(sum(sample, [])))
             isoutput = False
-            actions_ixs, states_ixs = [], []
+            actions_ixs = []
             for phrase in sample:
                 if isoutput:
                     actions_ixs.append(
-                        torch.arange(length - 1, length + len(phrase) - 1)
-                    )
-                    states_ixs.append(
                         torch.arange(length - 1, length + len(phrase) - 1)
                     )
 
                 length += len(phrase)
                 isoutput = not isoutput
 
-            states_ixs = torch.hstack((*states_ixs, torch.tensor(length - 1)))
+            states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
             all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
             all_actions_ixs.append(torch.hstack(actions_ixs))
             all_states_ixs.append(states_ixs)
