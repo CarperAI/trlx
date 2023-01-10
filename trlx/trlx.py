@@ -24,9 +24,10 @@ def train(
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory
         reward_fn (List[str] -> List[float]): Function to rate batches of generated samples
         dataset (List[Union[str, List[str]]], List[float]):
-            Lists of samples and rewards for offline training. Samples are of the form
-            (prompt_0: str, output_0: str, prompt_1: str, output_1: str ...). Giving a single
-            string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
+            Lists of samples and rewards for offline training. Samples consist of a variable number
+            of prompts (questions, environment states etc.) and outputs which are meant to be optimized.
+            Following form is expected (prompt_0: str, output_0: str, prompt_1: str, output_1: str ...).
+            Giving a single string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
         prompts (List[str]): Prompts to sample off from during online training
         eval_prompts (List[str]): Prompts to periodically validate training on
         metric_fn (Optional[Callable[List[str], List[float]]]): Function to compute statistics on validation samples

@@ -12,7 +12,7 @@ def tokenize_dialogue(  # noqa: C901
     dialogue: Union[str, List[str]], tokenizer, max_length=2048, truncation_side="left"
 ) -> List[int]:
     """
-    Tokenize sample with the interleaved form of (question_1, answer_1, question_2, answer_2...)
+    Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
     if isinstance(dialogue, str):
         dialogue = [tokenizer.bos_token, dialogue]
