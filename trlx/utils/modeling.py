@@ -489,3 +489,86 @@ def regex_for_range(min_: int, max_: int) -> str:  # noqa
         negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
     )
     return "|".join(subpatterns)
+
+
+def best_of_n_sampling(
+    model,
+    tokenizer,
+    input_ids,
+    attention_mask,
+    number_best_of_n,
+    batch_size,
+    model_type,
+    **kwargs,
+):
+    """
+    This function is used to generate the best of n samples for a given input_ids.
+    Args:
+        model: the model to be used for generation
+        tokenizer: the tokenizer to be used for generation
+        input_ids: the input_ids of the prompt
+        attention_mask: the attention_mask of the prompt
+        number_best_of_n: the number of samples to be generated for consideration
+        batch_size: mini-batch size for each generate step to achieve number_best_of_n
+        model_type: the type of the model ["causal", "seq2seq"]
+        **kwargs: other arguments for model.generate()
+    Returns:
+        best_output_ids: the best output_ids
+    """
+
+    # save a giant list of output_ids
+    output_ids = []
+    output_scores = []
+
+    kwargs["output_scores"] = True
+    kwargs["return_dict_in_generate"] = True
+
+    for index in range(0, number_best_of_n, batch_size):
+        start = index
+        end = min(index + batch_size, number_best_of_n)
+        mbs = end - start
+        batch_input_ids = input_ids.repeat(mbs, 1)
+        batch_attention_mask = attention_mask.repeat(mbs, 1)
+        out_temp = model.generate(
+            batch_input_ids,
+            attention_mask=batch_attention_mask,
+            **kwargs,
+        )
+        if model_type == "seq2seq":
+            start_idx = 0
+        else:
+            start_idx = input_ids.shape[1]
+
+        log_probs = []
+        lengths = [0] * mbs
+        for i, t in enumerate(out_temp.scores):
+            # log softmax
+            t = -torch.log_softmax(t, dim=-1)[:, out_temp.sequences[:, start_idx + i]][
+                0
+            ]
+            # compute lengths
+            for j, t_j in enumerate(t):
+                if not (t_j == float("inf")):
+                    lengths[j] += 1
+            # replace inf with 0
+            t[t == float("inf")] = 0
+            log_probs.append(t)
+
+        # save input_ids
+        output_ids += out_temp.sequences.tolist()
+        # stack log probs
+        log_probs = torch.stack(log_probs, dim=1).sum(dim=1)
+        # divide by length
+        log_probs = log_probs / torch.tensor(lengths).to(log_probs.device)
+        output_scores += log_probs.tolist()
+
+    # zip for sorting
+    zipped = zip(output_ids, output_scores)
+    # sort by score in ascending order
+    zipped = sorted(zipped, key=lambda x: x[1], reverse=True)
+    # unzip
+    output_ids, output_scores = zip(*zipped)
+    # and return the best one
+    best_output_ids = torch.tensor(output_ids[0]).to(input_ids.device)
+    # sequence = tokenizer.decode(best_output_ids, skip_special_tokens=True)
+    return best_output_ids  # sequence

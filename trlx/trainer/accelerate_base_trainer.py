@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import random
 import sys
 from abc import abstractmethod
 from time import time
@@ -9,7 +10,7 @@ from typing import Dict, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, DataCollatorWithPadding
 
 if importlib.util.find_spec("rich") is not None:
     from tqdm.rich import tqdm
@@ -30,6 +31,7 @@ from trlx.utils import (
     get_scheduler_class,
 )
 from trlx.utils.modeling import (
+    best_of_n_sampling,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
@@ -168,6 +170,47 @@ class AccelerateRLTrainer(BaseRLTrainer):
             add_special_tokens=False,
         )
 
+    def generate_best_of_n(self, input_ids, attention_mask, **kwargs):
+        """Wrap's best of n sampling for a batch of inputs"""
+        del kwargs["use_best_of_n"]
+        percent = kwargs.pop("percentage_best_of_n", 0.5)
+        number_best_of_n = kwargs.pop("number_best_of_n", 20)
+
+        idxs_best_of_n = random.sample(
+            range(input_ids.shape[0]), int(percent * input_ids.shape[0])
+        )
+        idxs_not_best_of_n = list(set(range(input_ids.shape[0])) - set(idxs_best_of_n))
+
+        samples_best_of_n = []
+        for index in idxs_best_of_n:
+            samples_best_of_n.append(
+                best_of_n_sampling(
+                    self.accelerator.unwrap_model(self.model),
+                    self.tokenizer,
+                    input_ids=input_ids[index],
+                    attention_mask=attention_mask[index],
+                    number_best_of_n=number_best_of_n,
+                    batch_size=self.config.train.batch_size,
+                    model_type=self.config.model.model_arch_type,
+                    **kwargs,
+                )
+            )
+        samples_non_best_of_n = self.accelerator.unwrap_model(self.model).generate(
+            input_ids[idxs_not_best_of_n],
+            attention_mask=attention_mask[idxs_not_best_of_n],
+            **kwargs,
+        )
+        generated_samples = [None] * input_ids.shape[0]
+        for index, sample in zip(idxs_best_of_n, samples_best_of_n):
+            generated_samples[index] = sample
+        for index, sample in zip(idxs_not_best_of_n, samples_non_best_of_n):
+            generated_samples[index] = sample
+        collator = DataCollatorWithPadding(self.tokenizer)
+        padded_generated_samples = collator({"input_ids": generated_samples})[
+            "input_ids"
+        ].to(input_ids.device)
+        return padded_generated_samples
+
     def generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
@@ -177,6 +220,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             kwargs = dict(self.generate_experience_kwargs, **kwargs)
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
+
+        if "use_best_of_n" in kwargs and kwargs["use_best_of_n"]:
+            return self.generate_best_of_n(input_ids, attention_mask, **kwargs)
 
         with torch.no_grad():
             return self.accelerator.unwrap_model(self.model).generate(

@@ -51,3 +51,12 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 100
+  gen_experience_kwargs:
+    max_new_tokens: 100
+    do_sample: True
+    temperature: 1.0
+    top_k: 50
+    top_p: 0.95
+    use_best_of_n: True # use best of n sampling
+    percentage_best_of_n: 0.3 # percent of the batch to use best of n
+    number_best_of_n: 20 # number of best of n to use

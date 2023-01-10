@@ -120,9 +120,7 @@ training_args = TrainingArguments(
     save_total_limit=1,
 )
 
-model = GPTRewardModel(
-    "/fsx/home-duyphung/sandbox/refactor_summarize_rlhf_31Dec/gptj-supervised-summarize-checkpoint/checkpoint-1000"
-)
+model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
 layers = model.transformer.h
 num_layers = len(layers)
 num_unfrozen = int(0.3 * num_layers)

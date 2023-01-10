@@ -153,7 +153,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask=attention_mask,
             )
             logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-            start = query_tensors.shape[1] - 1
+            start = query_tensors.shape[1]
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],

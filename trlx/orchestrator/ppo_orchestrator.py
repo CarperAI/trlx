@@ -65,6 +65,7 @@ class PPOOrchestrator(Orchestrator):
         stats = {}
         clock = Clock()
         while len(ppo_rl_elements) < num_rollouts:
+            print(f"Making experience {len(ppo_rl_elements)} / {num_rollouts}")
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -212,10 +213,8 @@ class PPOOrchestrator(Orchestrator):
                 ref_logprobs = ref_logprobs.cpu()
                 query_tensors = query_tensors.cpu()
                 response_tensors = response_tensors.cpu()
-                start = (
-                    query_tensors.shape[1] - 1
-                )  # left shift by 1 ref: https://github.com/lvwerra/trl/blob/main/trl/trainer/ppo_trainer.py#L425
-                ends = start + attention_mask[:, start:].sum(1) - 1
+                start = query_tensors.shape[1]
+                ends = start + attention_mask[:, start:].sum(1)
                 for ix in range(n):
                     if ends[ix] == all_tokens.shape[1]:
                         ends[ix] = ends[ix] - 1
