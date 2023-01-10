@@ -36,7 +36,7 @@ trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'),
 
 #### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
 ```python
-trainer.model.base_model.save_pretrained('/path/to/output/folder/')
+trainer.save('/path/to/output/folder/')
 ```
 
 #### Use 🤗 Accelerate to launch distributed training
