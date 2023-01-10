@@ -1,6 +1,18 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 from torchtyping import TensorType  # type: ignore
+
+
+def flatten_dataclass(cls: type):
+    """Return a function that flattens a dataclass into a list"""
+    cls_fields = [f.name for f in fields(cls)]
+    return lambda x: [getattr(x, f) for f in cls_fields]
+
+
+def unflatten_dataclass(cls: type):
+    """Return a function that unflattens a list into a dataclass"""
+    cls_fields = [f.name for f in fields(cls)]
+    return lambda x: cls(**dict(zip(cls_fields, x)))
 
 
 @dataclass

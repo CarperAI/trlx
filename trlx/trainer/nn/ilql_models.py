@@ -11,8 +11,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
+from nemo.collections.nlp.modules.common.megatron.utils import (
+    average_losses_across_data_parallel_group,
+    get_all_params_for_weight_decay_optimization,
+    get_params_for_weight_decay_optimization,
+)
 from torch import nn
 
+import wandb
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
@@ -53,8 +59,8 @@ class ILQLConfig(MethodConfig):
             .gather(dim=1, index=labels.actions_ixs)
             .unsqueeze(-1)
         )
-        bsize, ntokens, dsize = logits.shape
-
+        bsize, _, dsize = logits.shape
+        ntokens = labels.states_ixs.shape[1]
         Q = [q.gather(-1, actions).squeeze(-1) for q in qs]
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
@@ -93,10 +99,15 @@ class ILQLConfig(MethodConfig):
 
         loss_cql = sum(cql_loss(q) for q in qs)
 
+        states_logits = logits.gather(
+            1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, logits.shape[-1])
+        )
+        input_states = labels.input_ids.gather(1, index=labels.states_ixs)
+
         loss_awac = (
             F.cross_entropy(
-                logits[:, :-1, :].reshape(-1, dsize),
-                labels.input_ids[:, 1:].reshape(-1),
+                states_logits[:, :-1, :].reshape(-1, dsize),
+                input_states[:, 1:].reshape(-1),
                 reduction="none",
             ).reshape(bsize, ntokens - 1)
             * labels.attention_mask[:, 1:]
@@ -129,22 +140,23 @@ class ILQLHeads(nn.Module):
         )
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
-        for q_head in self.target_q_heads:
-            q_head.requires_grad_(False)
+        # for q_head in self.target_q_heads:
+        #    q_head.requires_grad_(False)
 
     def forward(
         self,
         hs: torch.Tensor,
         states_ixs: torch.Tensor = None,
         actions_ixs: torch.Tensor = None,
+        **kwargs,
     ):
         if states_ixs is not None:
             states_hs = hs.gather(
                 dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
+            ).contiguous()
             actions_hs = hs.gather(
                 dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
+            ).contiguous()
         else:
             states_hs = actions_hs = hs
 
