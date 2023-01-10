@@ -25,9 +25,7 @@ except ModuleNotFoundError:
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2),
-        nn.ReLU(),
-        nn.Linear(n_embd * 2, out),
+        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
 
 
@@ -44,7 +42,26 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
         layer.requires_grad_(False)
 
 
-# HuggingFace utilities
+def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+    """Freezes the bottom transformer block layers of the specified model."""
+    if num_layers_unfrozen == -1:
+        return
+    shared_embed = model.shared
+    decoder_embed = model.decoder.embed_tokens
+    encoder_blocks = model.encoder.block
+    encoder_norm_layer = model.encoder.final_layer_norm
+    decoder_norm_layer = model.decoder.final_layer_norm
+    decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
+    blocks_to_freeze = (
+        list(encoder_blocks)
+        + list(decoder_blocks)
+        + [shared_embed]
+        + [encoder_norm_layer]
+        + [decoder_norm_layer]
+        + [decoder_embed]
+    )
+    for block in blocks_to_freeze:
+        block.requires_grad_(False)
 
 
 def rhasattr(obj, attr):

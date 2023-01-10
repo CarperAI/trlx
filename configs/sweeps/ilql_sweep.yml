@@ -5,7 +5,7 @@ tune_config:
   scheduler: "fifo"
   num_samples: 32
 
-lr_init:
+lr:
   strategy: "loguniform"
   values: [0.00001, 0.01]
 tau:

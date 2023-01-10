@@ -31,6 +31,7 @@ from trlx.utils import (
 )
 from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
+    freeze_bottom_seq2seq_layers,
     get_delta_model_class,
     parse_delta_kwargs,
 )
@@ -55,8 +56,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         if config.model.tokenizer_path:
             self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
-            self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.padding_side = "left"
+            self.tokenizer.truncation_side = "right"
+            self.tokenizer.sep_token = "<sep>"
+            if config.model.model_arch_type != "seq2seq":
+                self.tokenizer.pad_token = self.tokenizer.eos_token
         else:
             self.tokenizer = None
 
@@ -91,11 +95,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
-
+        if self.config.model.model_arch_type == "seq2seq":
+            freeze_bottom_seq2seq_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
+        else:
+            freeze_bottom_causal_layers(
+                model.base_model, self.config.model.num_layers_unfrozen
+            )
         # Set the delta tuning strategies
-        freeze_bottom_causal_layers(
-            model.base_model, self.config.model.num_layers_unfrozen
-        )
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(
                 model.base_model.config,
@@ -165,6 +173,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
+        if self.generate_experience_kwargs is not None:
+            kwargs = dict(self.generate_experience_kwargs, **kwargs)
+        else:
+            kwargs = dict(self.generate_kwargs, **kwargs)
+
+        with torch.no_grad():
+            return self.accelerator.unwrap_model(self.model).generate(
+                input_ids=input_ids, attention_mask=attention_mask, **kwargs
+            )
+
+    def generate_eval(self, input_ids, attention_mask=None, **kwargs):
+        """Wraps hf's `generate` adding some specific method's defaults"""
+        input_ids = input_ids.to(self.accelerator.device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.accelerator.device)
 
         kwargs = dict(self.generate_kwargs, **kwargs)
 
@@ -176,6 +199,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def save(self, directory=None):
         """Creates checkpoint of optimizer, scheduler and a model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+        if directory:
+            self.model.base_model.save_pretrained(f"hf_model_{directory}")
+        else:
+            self.model.base_model.save_pretrained(
+                f"hf_model_{self.config.train.checkpoint_dir}"
+            )
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""
@@ -190,52 +219,63 @@ class AccelerateRLTrainer(BaseRLTrainer):
         stats = {}
         all_samples = []
         prompts_sizes = []
+        lst_prompts = []
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
-                samples = self.generate(prompts)
+                samples = self.generate_eval(prompts)
             else:
-                samples = self.generate(**prompts)
-
+                samples = self.generate_eval(**prompts)
             if isinstance(samples, tuple):
                 samples, *_ = samples
-
-            pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-            all_samples.append(
-                F.pad(
-                    samples,
-                    (0, self.max_length - samples.shape[1]),
-                    value=pad_token,
+            if self.config.model.model_arch_type == "seq2seq":
+                pad_token = self.tokenizer.pad_token_id
+                all_samples.extend(samples[:, 1:])
+            else:
+                pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
+                all_samples.append(
+                    F.pad(
+                        samples,
+                        (0, self.max_length - samples.shape[1]),
+                        value=pad_token,
+                    )
                 )
-            )
             sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
                 len(prompts.input_ids)
             )
             prompts_sizes.append(sizes.to(samples.device))
+            lst_prompts.extend(prompts.input_ids)
 
         stats["time/generate"] = time() - generate_time
 
-        samples = self.accelerator.gather(torch.vstack(all_samples))
+        if self.config.model.model_arch_type == "seq2seq":
+            samples = all_samples
+        else:
+            samples = self.accelerator.gather(torch.vstack(all_samples))
         prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
 
         if self.accelerator.is_main_process:
             if self.tokenizer:
-                str_samples = self.tokenizer.batch_decode(
-                    samples, skip_special_tokens=True
-                )
-
                 prompts, responses = [], []
-                for sample, prompt_size in zip(samples, prompts_sizes):
-                    prompts.append(sample[:prompt_size])
-                    responses.append(sample[prompt_size:])
-
+                if self.config.model.model_arch_type == "seq2seq":
+                    prompts = lst_prompts
+                    responses = all_samples
+                else:
+                    for sample, prompt_size in zip(samples, prompts_sizes):
+                        prompts.append(sample[:prompt_size])
+                        responses.append(sample[prompt_size:])
                 str_prompts = self.tokenizer.batch_decode(
                     prompts, skip_special_tokens=True
                 )
                 str_responses = self.tokenizer.batch_decode(
                     responses, skip_special_tokens=True
                 )
-
+            if self.config.model.model_arch_type == "seq2seq":
+                str_samples = str_responses
+            else:
+                str_samples = self.tokenizer.batch_decode(
+                    samples, skip_special_tokens=True
+                )
             if isinstance(str_samples[0], str):
                 columns_data = [str_prompts, str_responses]
             else:
@@ -244,7 +284,18 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             # in online setting, compute the reward for validation
             if self.reward_fn:
-                rewards = torch.tensor(self.reward_fn(str_samples), dtype=torch.float)
+                if self.config.model.model_arch_type == "seq2seq":
+                    sep_token = self.tokenizer.sep_token
+                    texts = [
+                        f"{article}{sep_token}{response}"
+                        for article, response in zip(str_prompts, str_samples)
+                    ]
+                    rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)
+                else:
+                    rewards = torch.tensor(
+                        self.reward_fn(str_samples), dtype=torch.float
+                    )
+
                 mean_reward = rewards.mean()
                 columns.append("reward")
                 columns_data.append(rewards)
@@ -305,13 +356,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
             disable=not self.accelerator.is_local_main_process,
         )
 
+        best_reward = -float("inf")
+
         for _ in range(self.config.train.epochs):
             for batch in self.train_dataloader:
                 for _ in range(self.n_updates_per_batch):
                     forward_time = time()
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
-
                     backward_time = time()
                     self.accelerator.backward(loss)
                     backward_time = time() - backward_time
@@ -332,6 +384,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+
+                        if self.config.train.save_best:
+                            if (
+                                "reward/mean" in stats
+                                and stats["reward/mean"] > best_reward
+                            ):
+                                best_reward = stats["reward/mean"]
+                                self.save("best_checkpoint")
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():

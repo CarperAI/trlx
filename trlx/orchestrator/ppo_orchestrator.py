@@ -40,6 +40,7 @@ class PPOOrchestrator(Orchestrator):
 
         if not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
+            self.ref_model.to(self.trainer.accelerator.device)
 
         self.trainer.orch = self
         self.trainer.reward_fn = reward_fn
@@ -75,11 +76,26 @@ class PPOOrchestrator(Orchestrator):
             samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
 
-            query_tensors = batch.input_ids
-            response_tensors = samples[:, query_tensors.shape[1] :]
+            if self.trainer.config.model.model_arch_type == "seq2seq":
+                response_tensors = samples
+            else:
+                query_tensors = batch.input_ids
+                response_tensors = samples[:, query_tensors.shape[1] :]
+
             texts = self.trainer.tokenizer.batch_decode(
                 samples, skip_special_tokens=True
             )
+
+            if self.trainer.config.model.model_arch_type == "seq2seq":
+                articles = self.trainer.tokenizer.batch_decode(
+                    batch.input_ids, skip_special_tokens=True
+                )
+                sep_token = self.trainer.tokenizer.sep_token
+                texts = [
+                    f"{article}{sep_token}{response}"
+                    for article, response in zip(articles, texts)
+                ]
+
             exp_score_time = time()
             scores = torch.tensor(
                 self.score(texts), device=samples.device, dtype=torch.float
@@ -105,52 +121,117 @@ class PPOOrchestrator(Orchestrator):
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
-            all_tokens, attention_mask, position_ids = self.trainer.get_model_inputs(
-                query_tensors.to(response_tensors.device), response_tensors
-            )
-            with torch.no_grad():
-                logits, *_, values = self.trainer.model(
-                    all_tokens, attention_mask=attention_mask, position_ids=position_ids
+            if self.trainer.config.model.model_arch_type == "seq2seq":
+                response_tensors = response_tensors
+                attention_mask = batch.attention_mask.to(response_tensors.device)
+                query_tensors = batch.input_ids.to(response_tensors.device)
+                with torch.no_grad():
+                    outputs = self.trainer.model(
+                        input_ids=query_tensors,
+                        attention_mask=attention_mask,
+                        decoder_input_ids=response_tensors,
+                    )
+                    logits = outputs.logits
+                    values = outputs.value
+                    if hasattr(self.trainer.model, "frozen_head"):
+                        ref_logits = self.trainer.model.forward_hydra(
+                            input_ids=query_tensors,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=response_tensors,
+                        )
+                    else:
+                        ref_logits = self.ref_model(
+                            input_ids=query_tensors,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=response_tensors,
+                        ).logits
+            else:
+                all_tokens = torch.cat(
+                    (query_tensors.to(response_tensors.device), response_tensors), dim=1
                 )
-                # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                if hasattr(self.trainer.model, "frozen_head"):
-                    ref_logits = self.trainer.model.forward_hydra(
+                attention_mask = (
+                    all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
+                    .long()
+                    .to(all_tokens.device)
+                )
+                with torch.no_grad():
+                    logits, *_, values = self.trainer.model(
                         all_tokens,
                         attention_mask=attention_mask,
-                        position_ids=position_ids,
-                        return_dict=False,
                     )
-                else:
-                    ref_logits, _, *_ = self.ref_model(
-                        all_tokens.cpu(),
-                        attention_mask=attention_mask.cpu(),
-                        position_ids=position_ids.cpu(),
-                    )
-                    ref_logits = ref_logits.to(self.trainer.accelerator.device)
+                    # TODO(dahoas): When hydra model works need to also support generation on hydra head
+                    if hasattr(self.trainer.model, "frozen_head"):
+                        ref_logits = self.trainer.model.forward_hydra(
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            return_dict=False,
+                        )
+                    else:
+                        ref_logits, _, *_ = self.ref_model(
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            return_dict=False,
+                        )
+                        ref_logits = ref_logits.to(self.trainer.accelerator.device)
 
-            logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-            ref_logprobs = logprobs_from_logits(
-                ref_logits[:, :-1, :], all_tokens[:, 1:]
-            )
+            if self.trainer.config.model.model_arch_type == "seq2seq":
+                logprobs = logprobs_from_logits(
+                    logits[:, :-1, :], response_tensors[:, 1:]
+                )
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits[:, :-1, :], response_tensors[:, 1:]
+                )
+            else:
+                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits[:, :-1, :], all_tokens[:, 1:]
+                )
 
             n = samples.shape[0]
-            values = values.cpu()[:, :-1]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
-
-            start = query_tensors.shape[1] - 1
-            ends = start + attention_mask[:, start:].sum(1)
-            all_values = [values[ix, start : ends[ix]] for ix in range(n)]
-            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+            if self.trainer.config.model.model_arch_type == "seq2seq":
+                start = 1  # skip the <s> token
+                ends = (response_tensors[:, start:] != 0).sum(1)
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                rewards = [
+                    -self.trainer.kl_ctl.value
+                    * (
+                        logprobs[ix, start : ends[ix]]
+                        - ref_logprobs[ix, start : ends[ix]]
+                    )
+                    for ix in range(n)
+                ]
+            else:
+                n = samples.shape[0]
+                values = values.cpu()
+                logprobs = logprobs.cpu()
+                ref_logprobs = ref_logprobs.cpu()
+                query_tensors = query_tensors.cpu()
+                response_tensors = response_tensors.cpu()
+                start = (
+                    query_tensors.shape[1] - 1
+                )  # left shift by 1 ref: https://github.com/lvwerra/trl/blob/main/trl/trainer/ppo_trainer.py#L425
+                ends = start + attention_mask[:, start:].sum(1) - 1
+                for ix in range(n):
+                    if ends[ix] == all_tokens.shape[1]:
+                        ends[ix] = ends[ix] - 1
+                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
+                rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
             # Compute rewards
-            rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
             all_rewards = [None] * n
+
             for ix in range(n):
-                rs = rewards[ix][start : ends[ix]]
-                rs[-1] = scores[ix]
+                rs = rewards[ix]
+                if len(rs) == 0:
+                    rs = torch.tensor([0.0])
+                rs[-1] += scores[ix].cpu()
                 all_rewards[ix] = rs
 
             new_ppo_rl_elements = [
@@ -163,7 +244,6 @@ class PPOOrchestrator(Orchestrator):
                 )
                 for i in range(n)
             ]
-
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
 
