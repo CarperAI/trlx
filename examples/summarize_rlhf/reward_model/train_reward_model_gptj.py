@@ -12,10 +12,7 @@ def create_comparision_dataset(
     path="pvduy/openai_summarize_comparisions", split="train"
 ):
 
-    dataset = load_dataset(path, split=split)  # .select(range(1000))
-    if split == "test":
-        dataset = dataset.select(range(10000))
-
+    dataset = load_dataset(path, split=split)
     pairs = []
     for sample in tqdm(dataset):
         pair = {}
