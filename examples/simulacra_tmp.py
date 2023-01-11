@@ -19,5 +19,5 @@ if __name__ == "__main__":
         "EleutherAI/gpt-j-6b",
         reward_fn=reward_fn,
         config=TRLConfig.load_yaml("configs/ppo_gptj.yml"),
-        eval_prompts=["She"] * 4,
+        #eval_prompts=["She sells"] * 4,
     )
