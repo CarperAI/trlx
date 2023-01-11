@@ -11,7 +11,7 @@ Checkpoint: [SFT](https://huggingface.co/pvduy/openai_summarize_sft_gptj)
 
 2. Train Reward Model
 ```bash
-    cd reward_model/ && deepspeed train_reward_gptj.py
+    cd reward_model/ && deepspeed train_reward_model_gptj.py
 ```
 
 Download reward model checkpoint:

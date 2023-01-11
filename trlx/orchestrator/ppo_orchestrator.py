@@ -65,7 +65,9 @@ class PPOOrchestrator(Orchestrator):
         stats = {}
         clock = Clock()
         while len(ppo_rl_elements) < num_rollouts:
-            print(f"Making experience {len(ppo_rl_elements)} / {num_rollouts}")
+            if self.trainer.accelerator.is_main_process:
+                print(f"Making experience {len(ppo_rl_elements)} / {num_rollouts}")
+
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
