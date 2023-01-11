@@ -245,7 +245,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.config.model.model_arch_type == "seq2seq":
                     pad_token = self.tokenizer.pad_token_id
                     all_samples.extend(samples[:, 1:])
-                    lst_prompts.extend(prompts.input_ids)
                 else:
                     pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
                     all_samples.append(
@@ -255,12 +254,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             value=pad_token,
                         )
                     )
-                    sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
-                        len(prompts.input_ids)
-                    )
-                    prompts_sizes.append(sizes.to(samples.device))
+                sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
+                    len(prompts.input_ids)
+                )
+                prompts_sizes.append(sizes.to(samples.device))
+                lst_prompts.extend(prompts.input_ids)
 
-                stats["time/generate"] = time() - generate_time
+            stats["time/generate"] = time() - generate_time
 
             if self.config.model.model_arch_type == "seq2seq":
                 samples = all_samples
