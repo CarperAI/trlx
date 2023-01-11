@@ -148,16 +148,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             attention_mask = (
                 tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
             )
-            logits, *_, values_pred = self.model(
-                tokens,
-                attention_mask=attention_mask,
-            )
+            outputs = self.model(tokens, attention_mask, return_dict=True)
+            logits = outputs.logits
+            values_pred = outputs.value
+            values_pred = values_pred[:, :-1]
             logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-            start = query_tensors.shape[1]
+
+            start = query_tensors.shape[1] - 1
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start - 1 : end - 1],
+                values_pred[:, start:end],
                 attention_mask[:, start:end],
             )
 

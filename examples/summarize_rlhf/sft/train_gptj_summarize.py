@@ -44,7 +44,7 @@ def main():
     train_dataset = TLDRDataset(
         "pvduy/openai_summarize_tldr",
         tokenizer,
-        "train_sft",
+        "train",
         max_length=max_input_length,
     )
     dev_dataset = TLDRDataset(

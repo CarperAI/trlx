@@ -183,10 +183,8 @@ class PPOOrchestrator(Orchestrator):
                     ref_logits[:, :-1, :], response_tensors[:, 1:]
                 )
             else:
-                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
+                logprobs = logprobs_from_logits(logits, all_tokens)
+                ref_logprobs = logprobs_from_logits(ref_logits, all_tokens)
 
             n = samples.shape[0]
             logprobs = logprobs.cpu()
@@ -207,19 +205,23 @@ class PPOOrchestrator(Orchestrator):
                     for ix in range(n)
                 ]
             else:
+                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_from_logits(
+                    ref_logits[:, :-1, :], all_tokens[:, 1:]
+                )
+
                 n = samples.shape[0]
-                values = values.cpu()
+                values = values.cpu()[:, :-1]
                 logprobs = logprobs.cpu()
                 ref_logprobs = ref_logprobs.cpu()
                 query_tensors = query_tensors.cpu()
                 response_tensors = response_tensors.cpu()
-                start = query_tensors.shape[1]
+
+                start = query_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
-                for ix in range(n):
-                    if ends[ix] == all_tokens.shape[1]:
-                        ends[ix] = ends[ix] - 1
-                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                all_values = [values[ix, start : ends[ix]] for ix in range(n)]
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+
                 rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
