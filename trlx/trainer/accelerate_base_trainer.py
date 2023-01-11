@@ -4,7 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, Sequence, Tuple, Union
+from typing import Dict, List, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -43,8 +43,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, train_mode=True):
-        super().__init__(config, train_mode)
+    def __init__(self, config, **kwargs):
+        super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.trackers)
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
@@ -168,6 +168,49 @@ class AccelerateRLTrainer(BaseRLTrainer):
             add_special_tokens=False,
         )
 
+    def decode(
+        self, prompts: List[torch.IntTensor], samples, prompt_sizes=None
+    ) -> List[str]:
+        """
+        Decode samples into (samples: List[str], outputs: List[str], samples: List[str])
+        """
+        if prompt_sizes is None:
+            # Assuming prompts were left-padded
+            prompt_sizes = [prompts.shape[1]] * len(prompts)
+
+        str_samples, str_prompts, str_outputs = [], [], []
+        for prompt, sample, prompt_size in zip(prompts, samples, prompt_sizes):
+            if self.config.model.model_arch_type == "seq2seq":
+                output_start_ix = 0
+            else:
+                output_start_ix = prompt_size
+
+            str_prompt = self.tokenizer.decode(
+                prompt[:prompt_size], skip_special_tokens=True
+            )
+            str_output = self.tokenizer.decode(
+                sample[output_start_ix:], skip_special_tokens=True
+            )
+
+            # Trim outputs up to `self.stop_word` if present
+            if self.stop_word:
+                stop_word_ix = str_output.find(self.stop_word)
+                if stop_word_ix == -1:
+                    stop_word_ix = None
+                str_output = str_output[:stop_word_ix]
+
+            str_prompts.append(str_prompt)
+            str_outputs.append(str_output)
+
+            if self.config.model.model_arch_type == "seq2seq":
+                sample = str_prompt + self.tokenizer.sep_token + str_output
+            else:
+                sample = str_prompt + str_output
+
+            str_samples.append(str_prompt + str_output)
+
+        return str_samples, str_prompts, str_outputs
+
     def generate(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
@@ -230,71 +273,50 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 sweep_suffix = ""
 
             all_samples = []
-            prompts_sizes = []
-            lst_prompts = []
+            all_prompts = []
+            prompt_sizes = []
             generate_time = time()
             for prompts in self.eval_dataloader:
-                if isinstance(prompts, torch.Tensor):
-                    samples = self.generate_eval(prompts)
-                else:
-                    samples = self.generate_eval(
-                        **prompts, **{gen_sweep_arg: gen_sweep_value}
-                    )
-                if isinstance(samples, tuple):
-                    samples, *_ = samples
-                if self.config.model.model_arch_type == "seq2seq":
-                    pad_token = self.tokenizer.pad_token_id
-                    all_samples.extend(samples[:, 1:])
-                else:
-                    pad_token = self.tokenizer.eos_token_id if self.tokenizer else 0
-                    all_samples.append(
-                        F.pad(
-                            samples,
-                            (0, self.max_length - samples.shape[1]),
-                            value=pad_token,
-                        )
-                    )
-                sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(
-                    len(prompts.input_ids)
+                samples = self.generate_eval(
+                    **prompts, **{gen_sweep_arg: gen_sweep_value}
                 )
-                prompts_sizes.append(sizes.to(samples.device))
-                lst_prompts.extend(prompts.input_ids)
+
+                if self.config.model.model_arch_type == "seq2seq":
+                    samples = samples[:, 1:]
+
+                all_samples.append(
+                    F.pad(
+                        samples,
+                        (0, self.max_length - samples.shape[1]),
+                        value=self.tokenizer.pad_token_id,
+                    )
+                )
+                all_prompts.append(
+                    F.pad(
+                        prompts.input_ids,
+                        (0, self.max_length - prompts.input_ids.shape[1]),
+                        value=self.tokenizer.pad_token_id,
+                    )
+                )
+                prompt_sizes.append(
+                    torch.tensor(
+                        prompts.input_ids.shape[1], device=samples.device
+                    ).repeat(len(prompts.input_ids))
+                )
 
             stats["time/generate"] = time() - generate_time
 
-            if self.config.model.model_arch_type == "seq2seq":
-                samples = all_samples
-            else:
-                samples = self.accelerator.gather(torch.vstack(all_samples))
-            prompts_sizes = self.accelerator.gather(torch.hstack(prompts_sizes))
+            samples = self.accelerator.gather(torch.vstack(all_samples))
+            prompts = self.accelerator.gather(torch.vstack(all_prompts))
+            prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
-                if self.tokenizer:
-                    prompts, responses = [], []
-                    if self.config.model.model_arch_type == "seq2seq":
-                        prompts = lst_prompts
-                        responses = all_samples
-                    else:
-                        for sample, prompt_size in zip(samples, prompts_sizes):
-                            prompts.append(sample[:prompt_size])
-                            responses.append(sample[prompt_size:])
-                    str_prompts = self.tokenizer.batch_decode(
-                        prompts, skip_special_tokens=True
-                    )
-                    str_responses = self.tokenizer.batch_decode(
-                        responses, skip_special_tokens=True
-                    )
-                if self.config.model.model_arch_type == "seq2seq":
-                    str_samples = str_responses
-                else:
-                    str_samples = self.tokenizer.batch_decode(
-                        samples, skip_special_tokens=True
-                    )
-                if isinstance(str_samples[0], str):
-                    columns_data = [str_prompts, str_responses]
-                else:
-                    columns_data = [samples.tolist()]
+                str_samples, str_prompts, str_responses = self.decode(
+                    prompts, samples, prompt_sizes
+                )
+
                 columns = ["prompt", "response"]
+                columns_data = [str_prompts, str_responses]
 
                 # in online setting, compute the reward for validation
                 if self.reward_fn:

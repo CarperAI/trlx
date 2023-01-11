@@ -15,6 +15,7 @@ def train(
     metric_fn: Optional[Callable] = None,
     config: Optional[TRLConfig] = None,
     logit_mask: Optional[List[List[bool]]] = None,
+    stop_word: Optional[str] = "",
 ):
     """
     Dispatches online or offline reinforcement training
@@ -33,7 +34,9 @@ def train(
         metric_fn (Optional[Callable[List[str], List[float]]]): Function to compute statistics on validation samples
         config (Optional[TRLConfig]): TRL configuration object to override default settings
         logit_mask (Optional[List]): Bigram masking matrix
+        stop_word (Optional[str]): A string to trim generations (either for experience or evaluation) up to its encounter
     """
+
     if reward_fn is not None:
         if config is None:
             config = TRLConfig.load_yaml("configs/ppo_config.yml")
@@ -42,7 +45,9 @@ def train(
         if model_path:
             config.model.model_path = model_path
 
-        trainer = get_trainer(config.train.trainer)(config)
+        trainer = get_trainer(config.train.trainer)(
+            config=config, reward_fn=reward_fn, metric_fn=metric_fn, stop_word=stop_word
+        )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [trainer.tokenizer.bos_token] * batch_size
@@ -57,7 +62,7 @@ def train(
             prompts, max_prompt_length, trainer.tokenizer
         )
         orch = get_orchestrator(config.train.orchestrator)(
-            trainer, pipeline, reward_fn=reward_fn, chunk_size=config.method.chunk_size
+            trainer, pipeline, chunk_size=config.method.chunk_size
         )
         orch.make_experience(config.method.num_rollouts)
 
@@ -83,8 +88,9 @@ def train(
 
         trainer = get_trainer(config.train.trainer)(
             config=config,
-            logit_mask=logit_mask,
             metric_fn=metric_fn,
+            stop_word=stop_word,
+            logit_mask=logit_mask,
         )
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         max_prompt_length = (

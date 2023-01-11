@@ -1,5 +1,4 @@
 from time import time
-from typing import Callable, Optional
 
 import ray
 import torch
@@ -24,8 +23,6 @@ class PPOOrchestrator(Orchestrator):
         self,
         trainer: BaseRLTrainer,
         pipeline: BasePipeline,
-        reward_fn: Callable,
-        metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
@@ -43,8 +40,6 @@ class PPOOrchestrator(Orchestrator):
             self.ref_model.to(self.trainer.accelerator.device)
 
         self.trainer.orch = self
-        self.trainer.reward_fn = reward_fn
-        self.trainer.metric_fn = metric_fn
 
         self.running = RunningMoments()
         self.ref_mean = self.trainer.config.method.ref_mean
@@ -74,38 +69,27 @@ class PPOOrchestrator(Orchestrator):
 
             exp_generate_time = time()
             samples = self.trainer.generate(**batch)
-            stats["time/exp_generate"] = time() - exp_generate_time
-
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                response_tensors = samples
-            else:
-                query_tensors = batch.input_ids
-                response_tensors = samples[:, query_tensors.shape[1] :]
-
-            texts = self.trainer.tokenizer.batch_decode(
-                samples, skip_special_tokens=True
+            str_samples, str_prompts, str_outputs = self.trainer.decode(
+                batch.input_ids, samples
             )
 
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                articles = self.trainer.tokenizer.batch_decode(
-                    batch.input_ids, skip_special_tokens=True
-                )
-                sep_token = self.trainer.tokenizer.sep_token
-                texts = [
-                    f"{article}{sep_token}{response}"
-                    for article, response in zip(articles, texts)
-                ]
+            stats["time/exp_generate"] = time() - exp_generate_time
+
+            query_tensors = batch.input_ids
+
+            self.trainer.tokenizer.padding_side = "right"
+            response_tensors = self.trainer.tokenizer(
+                str_outputs, padding=True, return_tensors="pt"
+            ).input_ids.to(query_tensors.device)
+            self.trainer.tokenizer.padding_side = "left"
 
             exp_score_time = time()
+
             scores = torch.tensor(
                 self.trainer.reward_fn(
-                    samples=texts,
-                    prompts=self.trainer.tokenizer.batch_decode(
-                        query_tensors, skip_special_tokens=True
-                    ),
-                    outputs=self.trainer.tokenizer.batch_decode(
-                        response_tensors, skip_special_tokens=True
-                    ),
+                    samples=str_samples,
+                    prompts=str_prompts,
+                    outputs=str_outputs,
                 ),
                 dtype=float,
             )

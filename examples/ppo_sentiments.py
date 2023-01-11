@@ -6,10 +6,10 @@ from typing import List
 
 import torch
 import yaml
-from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
+from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 
@@ -38,7 +38,7 @@ def main(hparams={}):
         device=device,
     )
 
-    def reward_fn(samples: List[str]) -> List[float]:
+    def reward_fn(samples: List[str], **kwargs) -> List[float]:
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return sentiments
 
