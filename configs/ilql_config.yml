@@ -10,7 +10,6 @@ train:
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
   trainer: "AccelerateILQLTrainer"
-
   seed: 1000
 
 model:
@@ -39,6 +38,7 @@ method:
   cql_scale: 0.1
   awac_scale: 1
   alpha: 0.001
+  beta: 0
   steps_for_target_q_sync: 5
   two_qs: true
   gen_kwargs:
