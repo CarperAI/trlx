@@ -33,7 +33,7 @@
     "params": {
       "warmup_min_lr": 0,
       "warmup_max_lr": 1e-05,
-      "warmup_num_steps": 100
+      "warmup_num_steps": "auto"
     }
   }
 }

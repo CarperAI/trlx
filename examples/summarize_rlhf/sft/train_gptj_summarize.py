@@ -1,6 +1,5 @@
 import random
 
-import evaluate
 import numpy as np
 import torch
 from summarize_dataset import TLDRDataset
@@ -11,6 +10,13 @@ from transformers import (
     TrainingArguments,
     default_data_collator,
 )
+
+try:
+    import evaluate
+except ImportError:
+    raise ImportError(
+        "To run this example, please install the following packages: [`evaluate`, `nltk`, `rouge_score`]."
+    )
 
 
 def set_seed(seed_val=42):

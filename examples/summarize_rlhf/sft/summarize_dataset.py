@@ -27,7 +27,6 @@ def get_dataset_from_jsonl(jsonl_file, return_summary=True):
 
 class TLDRDataset(Dataset):
     def __init__(self, train_path, tokenizer, split, max_length=550):
-
         self.post_list = []
         dataset = load_dataset(train_path, split=split)
         for sample in dataset:
