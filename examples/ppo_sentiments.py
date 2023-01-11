@@ -2,6 +2,7 @@
 # with a sentiment reward function
 
 import os
+import pathlib
 from typing import List
 
 import torch
@@ -18,7 +19,9 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+TRLX_PATH = pathlib.Path(__file__).resolve().parent.parent
+with TRLX_PATH.joinpath("configs/ppo_config.yml").open() as f:
+    default_config = yaml.safe_load(f)
 
 
 def main(hparams={}):
