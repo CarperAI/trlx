@@ -36,7 +36,6 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
 
     trlx.train(
-        "gpt2",
         dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
