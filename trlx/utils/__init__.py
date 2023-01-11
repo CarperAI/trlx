@@ -83,6 +83,7 @@ class OptimizerName(str, Enum):
     ADAMW: str = "adamw"
     ADAM_8BIT_BNB: str = "adam_8bit_bnb"
     ADAMW_8BIT_BNB: str = "adamw_8bit_bnb"
+    RMSPROP: str = "rmsprop"
     SGD: str = "sgd"
 
 
@@ -119,6 +120,8 @@ def get_optimizer_class(name: OptimizerName):
             )
     if name == OptimizerName.SGD.value:
         return torch.optim.SGD
+    if name == OptimizerName.RMSPROP.value:
+        return torch.optim.RMSprop
     supported_optimizers = [o.value for o in OptimizerName]
     raise ValueError(
         f"`{name}` is not a supported optimizer. "
