@@ -19,6 +19,8 @@ else:
 import ray
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
+from rich.console import Console
+from rich.table import Table
 
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
@@ -260,15 +262,18 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
+        table = []
 
+        # Do multiple evaluations over a single list in `gen_kwargs` if present
         if self.generate_sweep_kwarg is not None:
             gen_sweep_arg, gen_sweep_values = self.generate_sweep_kwarg
         else:
             gen_sweep_arg, gen_sweep_values = "_", [None]
 
         for gen_sweep_value in gen_sweep_values:
+            # A dedicated suffix for wandb logging
             if gen_sweep_value is not None:
-                sweep_suffix = f"/{gen_sweep_arg}={gen_sweep_value}"
+                sweep_suffix = f"@{gen_sweep_arg}={gen_sweep_value}"
             else:
                 sweep_suffix = ""
 
@@ -328,11 +333,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         ),
                         dtype=float,
                     )
-                    mean_reward = rewards.mean()
+                    mean_reward = rewards.mean().item()
                     columns.append("reward")
+                    if not isinstance(rewards, list):
+                        rewards = rewards.tolist()
                     columns_data.append(rewards)
                     stats[f"reward/mean{sweep_suffix}"] = mean_reward
-                    print(f"{mean_reward=}")
 
                 # additionally log any other metrics
                 if self.metric_fn:
@@ -349,18 +355,31 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                     for metric, values in metrics.items():
                         columns.append(metric)
+                        if not isinstance(values, list):
+                            values = values.tolist()
                         columns_data.append(values)
 
-                rows = list(zip(*columns_data))
-                print(rows[0])
-                if not ray.is_initialized():
-                    if "wandb" in self.config.train.trackers:
-                        import wandb
+                # Prepend the sweep argument along with samples
+                if self.generate_sweep_kwarg:
+                    columns.insert(0, gen_sweep_arg)
+                    columns_data.insert(0, [gen_sweep_value] * len(samples))
 
-                        stats[f"samples{sweep_suffix}"] = wandb.Table(
-                            columns=columns, rows=rows
-                        )
+                table.append(list(zip(*columns_data)))
 
+        rows = sum(list(map(list, zip(*table))), [])
+        rich_table = Table(*columns, title=f"Evaluation #{self.nth_evaluation}")
+
+        for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
+            rich_table.add_row(*map(str, rows[ix]))
+
+        if not ray.is_initialized():
+            if "wandb" in self.config.train.trackers:
+                import wandb
+
+                stats["samples"] = wandb.Table(columns, rows)
+
+        self.nth_evaluation += 1
+        Console().print(rich_table)
         return stats
 
     def learn(self):  # noqa: C901
@@ -380,6 +399,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         self.prepare_learning()
         self.iter_count = 0
+        self.nth_evaluation = 0
 
         if ray.is_initialized():
             checkpoint = session.get_checkpoint()
