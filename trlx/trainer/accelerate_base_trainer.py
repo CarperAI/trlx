@@ -320,22 +320,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
-                    if self.config.model.model_arch_type == "seq2seq":
-                        sep_token = self.tokenizer.sep_token
-                        texts = [
-                            f"{article}{sep_token}{response}"
-                            for article, response in zip(str_prompts, str_samples)
-                        ]
-                        rewards = torch.tensor(self.reward_fn(texts), dtype=torch.float)
-                    else:
-                        rewards = torch.tensor(
-                            self.reward_fn(
-                                samples=str_samples,
-                                prompts=str_prompts,
-                                responses=str_responses,
-                            ),
-                            dtype=float,
-                        )
+                    rewards = torch.tensor(
+                        self.reward_fn(
+                            samples=str_samples,
+                            prompts=str_prompts,
+                            responses=str_responses,
+                        ),
+                        dtype=float,
+                    )
                     mean_reward = rewards.mean()
                     columns.append("reward")
                     columns_data.append(rewards)
