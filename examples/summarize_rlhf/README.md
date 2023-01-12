@@ -58,10 +58,10 @@ On 1000 samples from CNN/DailyMail test dataset:
 | PPO | 3.291 | +0.411 |
 
 
-2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/1rpm40g8).
+2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/2uirt89a).
 
 3. Check our blog post for this example [here](https://wandb.ai/carperai/summarize_RLHF/reports/RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2).
 
 ## References
 
-1. Nisan Stiennon, Long Ouyang, Jeff Wu, Daniel M. Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, Paul Christiano, "[Learning to Summarize from human feedback](https://arxiv.org/abs/2106.00987)", Neural Information Processing Systems, 2020.
+1. Nisan Stiennon, Long Ouyang, Jeff Wu, Daniel M. Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, Paul Christiano, "[Learning to Summarize from human feedback](https://arxiv.org/abs/2009.01325)", Neural Information Processing Systems, 2020.
