@@ -1,4 +1,3 @@
-import importlib
 import json
 import os
 import sys
@@ -6,21 +5,16 @@ from abc import abstractmethod
 from time import time
 from typing import Dict, List, Sequence, Tuple, Union
 
+import ray
 import torch
 import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
-from transformers import AutoTokenizer
-
-if importlib.util.find_spec("rich") is not None:
-    from tqdm.rich import tqdm
-else:
-    from tqdm import tqdm
-
-import ray
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
+from tqdm import tqdm
+from transformers import AutoTokenizer
 
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
