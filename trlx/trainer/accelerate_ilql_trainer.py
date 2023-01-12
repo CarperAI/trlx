@@ -96,8 +96,9 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
     def save_pretrained(self, directory: Optional[str] = None):
         # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
         # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
-        # requires a custom `generate` method using its (value) heads to steer sampling -
-        # something that is not possible from the default `transformers.PreTrainedModel.generate`.
+        # requires a custom `generate` method using its (value/q) heads to steer
+        # sampling - something that is not possible with the default
+        # `transformers.PreTrainedModel.generate`.
         raise NotImplementedError(
             "`AccelerateILQLTrainer` does not currently support automatic saving "
             "with `transformers.PreTrainedModel.save_pretrained`."
