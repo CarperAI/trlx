@@ -6,7 +6,7 @@ import trlx
 from trlx.data.configs import TRLConfig
 
 
-def reward_fn(samples):
+def reward_fn(samples, **kwargs):
     "Gives a negative count of rooms for each sample"
     return [-sample.count(":") for sample in samples]
 

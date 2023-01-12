@@ -25,16 +25,14 @@ meteor = evaluate.load("meteor")  # use meteor as the reward function
 
 if __name__ == "__main__":
 
-    def reward_fn(samples: List[str]):
-        sep_token = tokenizer.sep_token
-        articles = [sample.split(sep_token)[0].strip() for sample in samples]
-        predicted_summaries = [sample.split(sep_token)[1].strip() for sample in samples]
-        labels = [prompt_label[sample] for sample in articles]
+    def reward_fn(samples: List[str], prompts: List[str], outputs: List[str]):
+        original_summaries = [prompt_label[prompt.strip()] for prompt in prompts]
         scores = [
-            meteor.compute(predictions=[summary], references=[label])
-            for (summary, label) in zip(predicted_summaries, labels)
+            meteor.compute(predictions=[output.strip()], references=[original])[
+                "meteor"
+            ]
+            for (original, output) in zip(original_summaries, outputs)
         ]
-        scores = [score["meteor"] for score in scores]
         return scores
 
     dataset = load_dataset("cnn_dailymail", "3.0.0", cache_dir="data")
