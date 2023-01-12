@@ -1,4 +1,4 @@
-from typing import Sequence, Union, cast
+from typing import Optional, Sequence, Union, cast
 
 import torch
 
@@ -92,3 +92,14 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
+
+    def save_pretrained(self, directory: Optional[str] = None):
+        # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
+        # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
+        # requires a custom `generate` method using its (value/q) heads to steer
+        # sampling - something that is not possible with the default
+        # `transformers.PreTrainedModel.generate`.
+        raise NotImplementedError(
+            "`AccelerateILQLTrainer` does not currently support automatic saving "
+            "with `transformers.PreTrainedModel.save_pretrained`."
+        )
