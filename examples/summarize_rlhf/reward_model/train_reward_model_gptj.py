@@ -8,10 +8,9 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 
-def create_comparision_dataset(
+def create_comparison_dataset(
     path="pvduy/openai_summarize_comparisions", split="train"
 ):
-
     dataset = load_dataset(path, split=split)
     pairs = []
     for sample in tqdm(dataset):
@@ -88,56 +87,62 @@ def compute_metrics(eval_preds):
     return result
 
 
-tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
-tokenizer.pad_token = tokenizer.eos_token
+if __name__ == "__main__":
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
+    tokenizer.pad_token = tokenizer.eos_token
 
-PAD_ID = tokenizer(tokenizer.pad_token)["input_ids"][0]
+    if not os.path.exists("rm_checkpoint"):
+        os.mkdir("rm_checkpoint")
 
-if not os.path.exists("rm_checkpoint"):
-    os.mkdir("rm_checkpoint")
+    training_args = TrainingArguments(
+        output_dir="rm_checkpoint/",
+        num_train_epochs=5,
+        logging_steps=10,
+        gradient_accumulation_steps=4,
+        save_strategy="steps",
+        evaluation_strategy="steps",
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        eval_accumulation_steps=1,
+        eval_steps=500,
+        save_steps=500,
+        warmup_steps=100,
+        logging_dir="./logs",
+        fp16=True,
+        bf16=False,
+        learning_rate=1e-5,
+        deepspeed="ds_config_gpt_j.json",
+        save_total_limit=1,
+    )
 
-training_args = TrainingArguments(
-    output_dir="rm_checkpoint/",
-    num_train_epochs=5,
-    logging_steps=10,
-    gradient_accumulation_steps=4,
-    save_strategy="steps",
-    evaluation_strategy="steps",
-    per_device_train_batch_size=1,
-    per_device_eval_batch_size=1,
-    eval_accumulation_steps=1,
-    eval_steps=500,
-    save_steps=500,
-    warmup_steps=100,
-    logging_dir="./logs",
-    fp16=True,
-    bf16=False,
-    learning_rate=1e-5,
-    deepspeed="ds_config_gpt_j.json",
-    save_total_limit=1,
-)
+    # Initialize the reward model from the (supervised) fine-tuned GPT-J
+    model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
 
-model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
-layers = model.transformer.h
-num_layers = len(layers)
-num_unfrozen = int(0.3 * num_layers)
-for layer in layers[:-num_unfrozen]:
-    layer.requires_grad_(False)
+    # Freeze the first 70% of the hidden layers of the reward model backbone
+    layers = model.transformer.h
+    num_layers = len(layers)
+    num_unfrozen = int(0.3 * num_layers)
+    for layer in layers[:-num_unfrozen]:
+        layer.requires_grad_(False)
 
+    # Create the comparisons datasets
+    data_path = "pvduy/openai_summarize_comparisions"
+    train_pairs = create_comparison_dataset(data_path, "train")
+    val_pairs = create_comparison_dataset(data_path, "test")
 
-max_length = 550
-train_pairs = create_comparision_dataset("pvduy/openai_summarize_comparisions", "train")
-train_dataset = PairwiseDataset(train_pairs, tokenizer, max_length=max_length)
-val_pairs = create_comparision_dataset("pvduy/openai_summarize_comparisions", "test")
-val_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
+    # Make pairwise datasets for training
+    max_length = 550
+    train_dataset = PairwiseDataset(train_pairs, tokenizer, max_length=max_length)
+    val_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
 
-data_collator = DataCollatorReward()
+    # Create the collator to gather batches of pairwise comparisons
+    data_collator = DataCollatorReward()
 
-Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    compute_metrics=compute_metrics,
-    eval_dataset=val_dataset,
-    data_collator=data_collator,
-).train()
+    Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        compute_metrics=compute_metrics,
+        eval_dataset=val_dataset,
+        data_collator=data_collator,
+    ).train()

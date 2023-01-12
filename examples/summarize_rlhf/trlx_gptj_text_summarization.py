@@ -19,8 +19,10 @@ if not os.path.exists(REWARD_CHECKPOINT_PATH):
     )
 SFT_MODEL_PATH = "pvduy/openai_summarize_sft_gptj_full_data"
 
+
 if __name__ == "__main__":
 
+    # Load the pre-trained reward model
     rw_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     rw_tokenizer.pad_token = rw_tokenizer.eos_token
     rw_model = GPTRewardModel(SFT_MODEL_PATH)
@@ -31,13 +33,12 @@ if __name__ == "__main__":
     rw_model.to(rw_device)
 
     def reward_fn(samples: List[str]):
-
         original_samples = [text.split("TL;DR:")[0] + "TL;DR: " for text in samples]
         original_samples = [
             text + train_post_summ[text.strip()] for text in original_samples
         ]
 
-        ori_lst_scores = []
+        original_scores_list = []
         batch_size = 2
         for i in range(0, len(original_samples), batch_size):
             sub_samples = original_samples[i : i + batch_size]
@@ -57,10 +58,10 @@ if __name__ == "__main__":
             attn_masks = attn_masks.repeat(2, 1)
             with torch.no_grad():
                 sub_scores = rw_model(input_ids=input_ids, attention_mask=attn_masks)
-            ori_lst_scores.append(sub_scores["chosen_end_scores"])
-        ori_scores = torch.cat(ori_lst_scores, dim=0)
+            original_scores_list.append(sub_scores["chosen_end_scores"])
+        original_scores = torch.cat(original_scores_list, dim=0)
 
-        lst_scores = []
+        scores_list = []
         batch_size = 2
         for i in range(0, len(samples), batch_size):
             sub_samples = samples[i : i + batch_size]
@@ -80,34 +81,27 @@ if __name__ == "__main__":
             attn_masks = attn_masks.repeat(2, 1)
             with torch.no_grad():
                 sub_scores = rw_model(input_ids=input_ids, attention_mask=attn_masks)
-            lst_scores.append(sub_scores["chosen_end_scores"])
-        scores = torch.cat(lst_scores, dim=0)
-        norms_scores = scores - ori_scores
+            scores_list.append(sub_scores["chosen_end_scores"])
+        scores = torch.cat(scores_list, dim=0)
+        norms_scores = scores - original_scores
         return norms_scores
 
     config = TRLConfig.load_yaml("configs/ppo_config_summ_gptj.yml")
+
     tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
     max_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
-    train_openai_summ = [
-        sample["prompt"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="train")
-    ]
-    train_labels = [
-        sample["label"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="train")
-    ]
+    dataset = load_dataset("pvduy/openai_summarize_tldr")
 
-    val_openai_summ = [
-        sample["prompt"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
-    ]
-    val_labels = [
-        sample["label"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="valid")
-    ]
+    # Store data into prompt and label pairs
+    train_set = [(sample["prompt"], sample["label"]) for sample in dataset["train"]]
+    val_set = [(sample["prompt"], sample["label"]) for sample in dataset["valid"]]
+
+    # Split contents into summaries and labels
+    train_openai_summ, train_labels = zip(*train_set)
+    val_openai_summ, val_labels = zip(*val_set)
 
     train_post_summ = {}
     train_prompts = []
@@ -146,7 +140,7 @@ if __name__ == "__main__":
         train_post_summ[tmp] = val_labels[i]
         val_prompts.append(tmp)
 
-    model = trlx.train(
+    trainer = trlx.train(
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=train_prompts,

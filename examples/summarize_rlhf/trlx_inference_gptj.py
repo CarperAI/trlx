@@ -28,7 +28,7 @@ rw_model.to(rw_device)
 
 
 def reward_fn(samples):
-    lst_scores = []
+    scores_list = []
     batch_size = 2
     for i in range(0, len(samples), batch_size):
         sub_samples = samples[i : i + batch_size]
@@ -48,8 +48,8 @@ def reward_fn(samples):
         attn_masks = attn_masks.repeat(2, 1)
         with torch.no_grad():
             sub_scores = rw_model(input_ids=input_ids, attention_mask=attn_masks)
-        lst_scores.append(sub_scores["chosen_end_scores"])
-    scores = torch.cat(lst_scores, dim=0)
+        scores_list.append(sub_scores["chosen_end_scores"])
+    scores = torch.cat(scores_list, dim=0)
     return scores
 
 
@@ -57,9 +57,9 @@ def inference(model, tokenizer):
     model.to("cuda")
     model.eval()
 
-    lst_pred = []
-    lst_summarize = []
-    lst_post = []
+    pred_list = []
+    summarize_list = []
+    post_list = []
     rouge = evaluate.load("rouge")
     count = 0
     for post, summarize in tqdm(
@@ -76,19 +76,17 @@ def inference(model, tokenizer):
         )
         pred = tokenizer.batch_decode(summ_tokens)[0]
         pred = pred.split("TL;DR:")[1].replace("<|endoftext|>", "")
-        lst_pred.append(pred)
-        lst_summarize.append(summarize)
-        lst_post.append(post)
+        pred_list.append(pred)
+        summarize_list.append(summarize)
+        post_list.append(post)
         if count % 10 == 0:
-            result = rouge.compute(predictions=lst_pred, references=lst_summarize)
+            result = rouge.compute(predictions=pred_list, references=summarize_list)
             print(result)
-        #    if count == 1000:
-        #        break
         count += 1
     df = pd.DataFrame.from_dict(
-        {"pred": lst_pred, "truth": lst_summarize, "post": lst_post}
+        {"pred": pred_list, "truth": summarize_list, "post": post_list}
     )
-    result = rouge.compute(predictions=lst_pred, references=lst_summarize)
+    result = rouge.compute(predictions=pred_list, references=summarize_list)
     print(result)
     return df
 
@@ -97,9 +95,9 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
     model.to("cuda")
     model.eval()
 
-    lst_pred = []
-    lst_summarize = []
-    lst_post = []
+    pred_list = []
+    summarize_list = []
+    post_list = []
     rouge = evaluate.load("rouge")
 
     # Iterate over the input data in mini-batches
@@ -128,19 +126,19 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
         preds = tokenizer.batch_decode(summ_tokens)
 
         # Add predictions, truths, and input posts to lists
-        lst_pred += preds
-        lst_summarize += batch_summ_list
-        lst_post += batch_post_list
+        pred_list += preds
+        summarize_list += batch_summ_list
+        post_list += batch_post_list
 
         # Compute rouge scores every 10 mini-batches
-        result = rouge.compute(predictions=lst_pred, references=lst_summarize)
+        result = rouge.compute(predictions=pred_list, references=summarize_list)
         print(result)
 
     # Compute final rouge scores and create a dataframe
-    result = rouge.compute(predictions=lst_pred, references=lst_summarize)
+    result = rouge.compute(predictions=pred_list, references=summarize_list)
     print(result)
     df = pd.DataFrame.from_dict(
-        {"pred": lst_pred, "truth": lst_summarize, "post": lst_post}
+        {"pred": pred_list, "truth": summarize_list, "post": post_list}
     )
     return df
 
@@ -164,9 +162,9 @@ if __name__ == "__main__":
 
     scores_pred = []
     scores_truth = []
-    lst_preds = []
-    lst_truth = []
-    lst_post = []
+    preds_list = []
+    truth_list = []
+    post_list = []
     batch_size = 16
     for i in range(0, len(df_result), batch_size):
         predicts = df_result["pred"].values[i : i + batch_size]
@@ -174,17 +172,17 @@ if __name__ == "__main__":
         posts = df_result["post"].values[i : i + batch_size]
         data_pred = [posts[i] + predicts[i] for i in range(len(predicts))]
         data_truth = [posts[i] + labels[i] for i in range(len(labels))]
-        lst_preds.extend(list(predicts))
-        lst_truth.extend(list(labels))
-        lst_post.extend(list(posts))
+        preds_list.extend(list(predicts))
+        truth_list.extend(list(labels))
+        post_list.extend(list(posts))
         scores_pred.extend(list(reward_fn(data_pred).cpu().numpy()))
         scores_truth.extend(list(reward_fn(data_truth).cpu().numpy()))
 
     df = pd.DataFrame.from_dict(
         {
-            "pred": lst_preds,
-            "truth": lst_truth,
-            "post": lst_post,
+            "pred": preds_list,
+            "truth": truth_list,
+            "post": post_list,
             "score_pred": scores_pred,
             "score_truth": scores_truth,
         }

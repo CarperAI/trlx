@@ -12,16 +12,16 @@ def get_dataset_from_jsonl(jsonl_file, return_summary=True):
     with open(jsonl_file, "r") as f:
         dataset = [json.loads(line) for line in f]
     post_list = []
-    summ_list = []
+    summary_list = []
     for d in dataset:
         if return_summary:
             post = f"SUBREDDIT: r/{d['subreddit']}\nTITLE: {d['title']}\nPOST: {d['post']}\nTL;DR: {d['summary']}"
         else:
             post = f"SUBREDDIT: r/{d['subreddit']}\nTITLE: {d['title']}\nPOST: {d['post']}\nTL;DR: "
-            summ_list.append(d["summary"])
+            summary_list.append(d["summary"])
         post_list.append(post)
     if not return_summary:
-        return post_list, summ_list
+        return post_list, summary_list
     return post_list
 
 
@@ -56,15 +56,15 @@ class TLDRDataset(Dataset):
         }
 
 
-class ComparisionDataset(Dataset):
-    def __init__(self, comparision_path, tokenizer, max_length=550):
-        with open(comparision_path, "r") as f:
+class ComparisonDataset(Dataset):
+    def __init__(self, comparison_path, tokenizer, max_length=550):
+        with open(comparison_path, "r") as f:
             dataset = [json.loads(line) for line in f]
 
         self.tokenizer = tokenizer
-        self.lst_post = []
-        self.lst_summaries_0 = []
-        self.lst_summaries_1 = []
+        self.post_list = []
+        self.summaries_0 = []
+        self.summaries_1 = []
         self.labels = []
         self.max_length = max_length
 
@@ -72,29 +72,29 @@ class ComparisionDataset(Dataset):
             return f"SUBREDDIT: r/{post['subreddit']}\nTITLE: {post['title']}\nPOST: {post['post']}\nTL;DR: {summarize}"
 
         for sample in dataset:  # chosen summary is always the first one
-            self.lst_post.append(sample["info"]["post"])
+            self.post_list.append(sample["info"]["post"])
             if sample["choice"] == 0:
-                self.lst_summaries_0.append(
+                self.summaries_0.append(
                     make_text(sample["info"], sample["summaries"][0]["text"])
                 )
-                self.lst_summaries_1.append(
+                self.summaries_1.append(
                     make_text(sample["info"], sample["summaries"][1]["text"])
                 )
             else:
-                self.lst_summaries_0.append(
+                self.summaries_0.append(
                     make_text(sample["info"], sample["summaries"][1]["text"])
                 )
-                self.lst_summaries_1.append(
+                self.summaries_1.append(
                     make_text(sample["info"], sample["summaries"][0]["text"])
                 )
             self.labels.append(0)
 
     def __len__(self):
-        return len(self.lst_post)
+        return len(self.post_list)
 
     def __getitem__(self, idx):
-        summ0 = self.lst_summaries_0[idx]
-        summ1 = self.lst_summaries_1[idx]
+        summ0 = self.summaries_0[idx]
+        summ1 = self.summaries_1[idx]
         encodings_dict = self.tokenizer(
             [summ0, summ1],
             truncation=True,
@@ -103,7 +103,6 @@ class ComparisionDataset(Dataset):
         )
         input_ids = torch.tensor(encodings_dict["input_ids"])
         attention_mask = torch.tensor(encodings_dict["attention_mask"])
-
         return {"input_ids": input_ids, "attention_mask": attention_mask}
 
 

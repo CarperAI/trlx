@@ -2,6 +2,7 @@ import random
 
 import numpy as np
 import torch
+from datasets import load_dataset
 from reward_model import GPTRewardModel
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -15,10 +16,9 @@ def set_seed(seed_val=42):
     torch.cuda.manual_seed_all(seed_val)
 
 
-def create_comparision_dataset(
+def create_comparison_dataset(
     path="pvduy/openai_summarize_comparisions", split="train"
 ):
-
     dataset = load_dataset(path, split=split)
     if split == "test":
         dataset = dataset.select(range(5000))
@@ -95,9 +95,7 @@ if __name__ == "__main__":
     model = GPTRewardModel("pvduy/openai_summarize_sft_gptj")
     model.load_state_dict(torch.load("rm_checkpoint/pytorch_model.bin"))
     max_length = 550
-    val_pairs = create_comparision_dataset(
-        "pvduy/openai_summarize_comparisions", "test"
-    )
+    val_pairs = create_comparison_dataset("pvduy/openai_summarize_comparisions", "test")
     dev_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
 
     from torch.utils.data import DataLoader
@@ -109,8 +107,8 @@ if __name__ == "__main__":
     model.eval()
     model.half()
     correct = 0
-    lst_chosen = []
-    lst_reject = []
+    chosen_list = []
+    reject_list = []
     with torch.no_grad():
         for step, batch in tqdm(enumerate(dev_dataloader), total=len(dev_dataloader)):
             for x in batch:
@@ -119,6 +117,6 @@ if __name__ == "__main__":
             correct += sum(
                 outputs["chosen_end_scores"] > outputs["rejected_end_scores"]
             )
-            lst_chosen.append(outputs["chosen_end_scores"].cpu())
-            lst_reject.append(outputs["rejected_end_scores"].cpu())
+            chosen_list.append(outputs["chosen_end_scores"].cpu())
+            reject_list.append(outputs["rejected_end_scores"].cpu())
     print("Total accuracy: ", correct / len(dev_dataset))

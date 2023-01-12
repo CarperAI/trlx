@@ -26,7 +26,7 @@ def set_seed(seed_val=42):
     torch.cuda.manual_seed_all(seed_val)
 
 
-def main():
+if __name__ == "__main__":
     output_dir = "gptj-supervised-summarize-checkpoint"
     train_batch_size = 16
     gradient_accumulation_steps = 1
@@ -41,21 +41,27 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B", use_cache=False)
     tokenizer.pad_token = tokenizer.eos_token
-    #    tokenizer.padding_side = "left"
-    #    tokenizer.truncation_side = "left"
     model.resize_token_embeddings(len(tokenizer))
     tokenizer.pad_token_id = tokenizer.eos_token_id
     model.config.end_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = model.config.eos_token_id
+
+    # Set up the datasets
+    data_path = "pvduy/openai_summarize_tldr"
     train_dataset = TLDRDataset(
-        "pvduy/openai_summarize_tldr",
+        data_path,
         tokenizer,
         "train",
         max_length=max_input_length,
     )
     dev_dataset = TLDRDataset(
-        "pvduy/openai_summarize_tldr", tokenizer, "valid", max_length=max_input_length
+        data_path,
+        tokenizer,
+        "valid",
+        max_length=max_input_length,
     )
+
+    # Set up the metric
     rouge = evaluate.load("rouge")
 
     def compute_metrics(eval_preds):
@@ -66,11 +72,13 @@ def main():
         result = rouge.compute(predictions=pred_str, references=label_str)
         return result
 
+    # Create a preprocessing function to extract out the proper logits from the model output
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):
             logits = logits[0]
         return logits.argmax(dim=-1)
 
+    # Prepare the trainer and start training
     training_args = TrainingArguments(
         output_dir=output_dir,
         evaluation_strategy="steps",
@@ -104,7 +112,3 @@ def main():
     )
     trainer.train()
     trainer.save_model(output_dir)
-
-
-if __name__ == "__main__":
-    main()
