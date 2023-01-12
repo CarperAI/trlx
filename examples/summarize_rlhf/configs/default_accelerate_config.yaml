@@ -2,7 +2,7 @@ command_file: null
 commands: null
 compute_environment: LOCAL_MACHINE
 deepspeed_config:
-  deepspeed_config_file: ds_config_trlx_neoj.json
+  deepspeed_config_file: ds_config_trlx_gptj_summarize.json
   zero3_init_flag: false
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'
