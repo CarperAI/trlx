@@ -73,6 +73,7 @@ class ComparisonDataset(Dataset):
 
         for sample in dataset:  # chosen summary is always the first one
             self.post_list.append(sample["info"]["post"])
+            # NOTE: The chosen summary is always the first one, i.e. `sample["summaries"][0]`
             if sample["choice"] == 0:
                 self.summaries_0.append(
                     make_text(sample["info"], sample["summaries"][0]["text"])
