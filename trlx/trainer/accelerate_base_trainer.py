@@ -363,20 +363,23 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 table.append(list(zip(*columns_data)))
 
-        rows = sum(list(map(list, zip(*table))), [])
-        rich_table = Table(*columns, title=f"Evaluation #{self.nth_evaluation}")
+        # Log and display evaluation metrics
+        if self.accelerator.is_main_process:
+            rows = sum(list(map(list, zip(*table))), [])
+            rich_table = Table(*columns, title=f"Evaluation #{self.nth_evaluation}")
 
-        for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
-            rich_table.add_row(*map(str, rows[ix]))
+            for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
+                rich_table.add_row(*map(str, rows[ix]))
 
-        if not ray.is_initialized():
-            if "wandb" in self.config.train.trackers:
-                import wandb
+            if not ray.is_initialized():
+                if "wandb" in self.config.train.trackers:
+                    import wandb
 
-                stats["samples"] = wandb.Table(columns, rows)
+                    stats["samples"] = wandb.Table(columns, rows)
+
+            Console().print(rich_table)
 
         self.nth_evaluation += 1
-        Console().print(rich_table)
         return stats
 
     def learn(self):  # noqa: C901
@@ -446,7 +449,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         results = self.evaluate()
                         stats.update(results)
 
-                        if self.config.train.save_best:
+                        # FIXME: seems to not work with zero and barriers don't seem to help
+                        if (
+                            self.config.train.save_best
+                            and int(os.environ.get("DEEPSPEED_ZERO_STAGE", -1)) == -1
+                        ):
                             if (
                                 "reward/mean" in stats
                                 and stats["reward/mean"] > best_reward
