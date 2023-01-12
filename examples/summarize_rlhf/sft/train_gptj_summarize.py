@@ -41,7 +41,7 @@ if __name__ == "__main__":
     model.config.pad_token_id = model.config.eos_token_id
 
     # Set up the datasets
-    data_path = "CarperAIpvduyai_summarize_tldr"
+    data_path = "CarperAI/openai_summarize_tldr"
     train_dataset = TLDRDataset(
         data_path,
         tokenizer,
