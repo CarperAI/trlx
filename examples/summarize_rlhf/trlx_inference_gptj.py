@@ -19,7 +19,7 @@ def load_model(path):
 
 rw_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 rw_tokenizer.pad_token = rw_tokenizer.eos_token
-rw_model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
+rw_model = GPTRewardModel("CarperAI/openai_summarize_tldr_sft")
 rw_model.load_state_dict(torch.load("reward_model/rm_checkpoint/pytorch_model.bin"))
 rw_model.half()
 rw_model.eval()
@@ -145,15 +145,15 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
 
 if __name__ == "__main__":
 
-    model, tokenizer = load_model("pvduy/openai_summarize_sft_gptj_full_data")
+    model, tokenizer = load_model("CarperAI/openai_summarize_tldr_sft")
 
     test_post_list = [
         sample["prompt"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="test")
+        for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")
     ]
     test_summ_list = [
         sample["label"]
-        for sample in load_dataset("pvduy/openai_summarize_tldr", split="test")
+        for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")
     ]
 
     df_result = inference(model, tokenizer)
