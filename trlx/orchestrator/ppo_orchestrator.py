@@ -82,7 +82,7 @@ class PPOOrchestrator(Orchestrator):
             # This can be defered, instead letting the pass to made over the original samples
             # after unbinding and truncating operations lower are fixed
             outputs = self.trainer.tokenizer(str_outputs).input_ids
-            outputs = list(map(torch.IntTensor, outputs))
+            outputs = list(map(torch.LongTensor, outputs))
             maxsize = max(map(len, outputs))
             outputs = [
                 F.pad(
@@ -126,7 +126,6 @@ class PPOOrchestrator(Orchestrator):
 
             # Precompute logprobs, values
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                response_tensors = response_tensors
                 attention_mask = batch.attention_mask.to(device)
                 query_tensors = batch.input_ids.to(device)
                 with torch.no_grad():
