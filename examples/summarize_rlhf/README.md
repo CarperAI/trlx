@@ -21,7 +21,7 @@ For an in-depth description of the example, please refer to our [blog post](http
     ```
     Checkpoint: [SFT](https://huggingface.co/CarperAI/openai_summarize_tldr_sft)
 
-2. Train Reward Model
+2. Train Reward Model:
     ```bash
     cd reward_model/ && deepspeed train_reward_model_gptj.py
     ```
@@ -31,7 +31,7 @@ For an in-depth description of the example, please refer to our [blog post](http
     wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
     ```
 
-3. PPO training
+3. PPO training:
     ```bash
     accelerate launch --config_file configs/default_accelerate_config.yaml trlx_gptj_text_summarization.py
     ```
@@ -43,19 +43,20 @@ For an in-depth description of the example, please refer to our [blog post](http
 On 1,000 samples from CNN/DailyMail test dataset:
 
 1. SFT vs PPO
-- Rouge scores
 
-| Model | Rouge-1 | Rouge-2 | Rouge-L | Average |
-| --- | --- | --- | --- |   --- |
-| SFT | 0.334 | 0.125 | 0.261 | 0.240 |
-| PPO | 0.323 | 0.109 | 0.238 | 0.223 |
+    __ROUGE scores__
 
-- Reward scores
+    | Model | Rouge-1 | Rouge-2 | Rouge-L | Average |
+    | --- | --- | --- | --- |   --- |
+    | SFT | 0.334 | 0.125 | 0.261 | 0.240 |
+    | PPO | 0.323 | 0.109 | 0.238 | 0.223 |
 
-| Model | Average Reward | Reward $\Delta$ |
-| --- | --- | --- |
-| SFT | 2.729 | -0.181 |
-| PPO | 3.291 | +0.411 |
+    __Reward scores__
+
+    | Model | Average Reward | Reward $\Delta$ |
+    | --- | --- | --- |
+    | SFT | 2.729 | -0.181 |
+    | PPO | 3.291 | +0.411 |
 
 
 2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/2uirt89a).
