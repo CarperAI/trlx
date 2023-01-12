@@ -80,7 +80,7 @@ class PPOOrchestrator(Orchestrator):
             self.trainer.tokenizer.padding_side = "right"
             response_tensors = self.trainer.tokenizer(
                 str_outputs, padding=True, return_tensors="pt"
-            ).input_ids.to(query_tensors.device)
+            ).input_ids.to(samples.device)
             self.trainer.tokenizer.padding_side = "left"
 
             exp_score_time = time()
@@ -92,7 +92,7 @@ class PPOOrchestrator(Orchestrator):
                     outputs=str_outputs,
                 ),
                 dtype=float,
-            )
+            ).to(samples.device)
             stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference

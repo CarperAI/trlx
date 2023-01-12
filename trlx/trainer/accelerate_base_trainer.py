@@ -209,7 +209,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             else:
                 sample = str_prompt + str_output
 
-            str_samples.append(str_prompt + str_output)
+            str_samples.append(sample)
 
         return str_samples, str_prompts, str_outputs
 
@@ -268,7 +268,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.generate_sweep_kwarg is not None:
             gen_sweep_arg, gen_sweep_values = self.generate_sweep_kwarg
         else:
-            gen_sweep_arg, gen_sweep_values = "_", [None]
+            gen_sweep_values = [None]
 
         for gen_sweep_value in gen_sweep_values:
             # A dedicated suffix for wandb logging
@@ -282,9 +282,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
             prompt_sizes = []
             generate_time = time()
             for prompts in self.eval_dataloader:
-                samples = self.generate_eval(
-                    **prompts, **{gen_sweep_arg: gen_sweep_value}
-                )
+                if self.generate_sweep_kwarg:
+                    samples = self.generate_eval(
+                        **prompts, **{gen_sweep_arg: gen_sweep_value}
+                    )
+                else:
+                    samples = self.generate_eval(**prompts)
 
                 if self.config.model.model_arch_type == "seq2seq":
                     samples = samples[:, 1:]
@@ -301,7 +304,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         prompts.input_ids,
                         (0, self.max_length - prompts.input_ids.shape[1]),
                         value=self.tokenizer.pad_token_id,
-                    )
+                    ).to(samples.device)
                 )
                 prompt_sizes.append(
                     torch.tensor(
@@ -316,12 +319,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
             prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_responses = self.decode(
+                str_samples, str_prompts, str_outputs = self.decode(
                     prompts, samples, prompt_sizes
                 )
 
-                columns = ["prompt", "response"]
-                columns_data = [str_prompts, str_responses]
+                columns = ["prompt", "output"]
+                columns_data = [str_prompts, str_outputs]
 
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
@@ -329,7 +332,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         self.reward_fn(
                             samples=str_samples,
                             prompts=str_prompts,
-                            responses=str_responses,
+                            outputs=str_outputs,
                         ),
                         dtype=float,
                     )
