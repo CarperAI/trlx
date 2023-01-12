@@ -17,7 +17,7 @@ For an in-depth description of the example, please refer to our [blog post](http
 
 1. Train SFT:
     ```bash
-    cd  sft/ && deepspeed train_gptj_summarize.py
+    cd sft/ && deepspeed train_gptj_summarize.py
     ```
     Checkpoint: [SFT](https://huggingface.co/CarperAI/openai_summarize_tldr_sft)
 
