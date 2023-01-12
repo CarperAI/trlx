@@ -49,7 +49,3 @@ method:
   cliprange_reward: 10
   gen_kwargs:
     max_new_tokens: 50
-    # top_k: 0.0
-    # top_p: 0.7
-    # do_sample: True
-    # temperature: 0.5
