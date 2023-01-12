@@ -198,11 +198,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def save(self, directory: Optional[str] = None):
         """Creates a checkpoint of the optimizer, scheduler and model"""
-        directory = directory or self.config.train.checkpoint_dir
-        self.accelerator.save_state(directory)
-        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(
-            f"{directory}/hf_model"
-        )
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+
+    @abstractmethod
+    def save_pretrained(self, directory: Optional[str] = None):
+        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
+        `transformers.PreTrainedModel.from_pretrained` method.
+        """
+        pass
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""
