@@ -219,7 +219,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         stats = {}
         all_samples = []
         prompts_sizes = []
-        lst_prompts = []
+        prompts_list = []
         generate_time = time()
         for prompts in self.eval_dataloader:
             if isinstance(prompts, torch.Tensor):
@@ -244,7 +244,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 len(prompts.input_ids)
             )
             prompts_sizes.append(sizes.to(samples.device))
-            lst_prompts.extend(prompts.input_ids)
+            prompts_list.extend(prompts.input_ids)
 
         stats["time/generate"] = time() - generate_time
 
@@ -258,7 +258,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             if self.tokenizer:
                 prompts, responses = [], []
                 if self.config.model.model_arch_type == "seq2seq":
-                    prompts = lst_prompts
+                    prompts = prompts_list
                     responses = all_samples
                 else:
                     for sample, prompt_size in zip(samples, prompts_sizes):
