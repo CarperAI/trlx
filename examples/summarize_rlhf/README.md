@@ -33,19 +33,18 @@ On 1000 samples from CNN/DailyMail test dataset:
 
 | Model | Rouge-1 | Rouge-2 | Rouge-L | Average |
 | --- | --- | --- | --- |   --- |
-| SFT | 0.343 | 0.128 | 0.264 | 0.245 |
-| PPO | 0.301 | 0.102 | 0.213 | 0.205 |
+| SFT | 0.334 | 0.125 | 0.261 | 0.240 |
+| PPO | 0.323 | 0.109 | 0.238 | 0.223 |
 
 - Reward scores
 
 | Model | Average Reward | Reward $\Delta$ |
 | --- | --- | --- |
-| SFT | 2.457 | -0.406 |
-| PPO | 3.248 | +0.385 |
-
+| SFT | 2.729 | -0.181 |
+| PPO | 3.291 | 0.411 |
 
 2. Reward model accuracy:
 
 ![image](https://user-images.githubusercontent.com/28798474/210157656-c5b20b9a-f6ef-4e88-a0ee-5596d5b28d58.png)
 
-3. Examples of generated summaries: [here](https://wandb.ai/pvduy/trlx/runs/1rpm40g8)
+3. Examples of generated summaries: [here](https://wandb.ai/carperai/summarize_RLHF/runs/1rpm40g8)
