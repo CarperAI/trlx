@@ -4,7 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, Sequence, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -196,15 +196,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def save(self, directory=None):
-        """Creates checkpoint of optimizer, scheduler and a model"""
+    def save(self, directory: Optional[str] = None):
+        """Creates a checkpoint of the optimizer, scheduler and model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
-        if directory:
-            self.model.base_model.save_pretrained(f"hf_model_{directory}")
-        else:
-            self.model.base_model.save_pretrained(
-                f"hf_model_{self.config.train.checkpoint_dir}"
-            )
+
+    @abstractmethod
+    def save_pretrained(self, directory: Optional[str] = None):
+        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
+        `transformers.PreTrainedModel.from_pretrained` method.
+        """
+        pass
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""

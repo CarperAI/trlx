@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -218,3 +218,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             * len(self.train_dataloader)
         )
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
+
+    def save_pretrained(self, directory: Optional[str] = None):
+        directory = f"{directory or self.config.train.checkpoint_dir}/hf_model"
+        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
+        self.tokenizer.save_pretrained(directory)
