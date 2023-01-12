@@ -29,7 +29,7 @@ cd reward_model/ && deepspeed train_reward_model_gptj.py
 Download reward model checkpoint:
 ```bash
 mkdir reward_model/rm_checkpoint
-wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/blob/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
+wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
 ```
 
 3. PPO training
