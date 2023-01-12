@@ -37,10 +37,22 @@ def register_trainer(name):
 
 @register_trainer
 class BaseRLTrainer:
-    def __init__(self, config: TRLConfig, train_mode=False):
+    def __init__(
+        self,
+        config: TRLConfig,
+        reward_fn=None,
+        metric_fn=None,
+        stop_word=None,
+        logit_mask=None,
+        train_mode=False,
+    ):
         self.store: BaseRolloutStore = None
         self.config = config
+        self.reward_fn = reward_fn
+        self.metric_fn = metric_fn
         self.train_mode = train_mode
+        self.stop_word = stop_word
+        self.logit_mask = logit_mask
 
     def push_to_store(self, data):
         self.store.push(data)

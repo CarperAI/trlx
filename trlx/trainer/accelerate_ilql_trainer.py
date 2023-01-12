@@ -12,17 +12,8 @@ from trlx.utils import to_device
 
 @register_trainer
 class AccelerateILQLTrainer(AccelerateRLTrainer):
-    def __init__(
-        self,
-        config: TRLConfig,
-        logit_mask=None,
-        metric_fn=None,
-        train_mode=True,
-    ):
-        super().__init__(config, train_mode)
-        self.logit_mask = logit_mask
-        self.metric_fn = metric_fn
-        self.reward_fn = None
+    def __init__(self, config: TRLConfig, **kwargs):
+        super().__init__(config, **kwargs)
 
         if not isinstance(config.method, ILQLConfig):
             raise ValueError("config.method must be ILQLConfig")
