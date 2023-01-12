@@ -2,6 +2,7 @@ from time import time
 
 import ray
 import torch
+import torch.nn.functional as F
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
@@ -69,19 +70,29 @@ class PPOOrchestrator(Orchestrator):
 
             exp_generate_time = time()
             samples = self.trainer.generate(**batch)
-            str_samples, str_prompts, str_outputs = self.trainer.decode(
-                batch.input_ids, samples
-            )
-
             stats["time/exp_generate"] = time() - exp_generate_time
 
             query_tensors = batch.input_ids
+            device = samples.device
+            str_samples, str_prompts, str_outputs = self.trainer.decode(
+                query_tensors, samples
+            )
 
-            self.trainer.tokenizer.padding_side = "right"
-            response_tensors = self.trainer.tokenizer(
-                str_outputs, padding=True, return_tensors="pt"
-            ).input_ids.to(samples.device)
-            self.trainer.tokenizer.padding_side = "left"
+            # Convert trimmed samples back into tensors for another head pass
+            # This can be defered, instead letting the pass to made over the original samples
+            # after unbinding and truncating operations lower are fixed
+            outputs = self.trainer.tokenizer(str_outputs).input_ids
+            outputs = list(map(torch.IntTensor, outputs))
+            maxsize = max(map(len, outputs))
+            outputs = [
+                F.pad(
+                    output,
+                    (0, maxsize - len(output)),
+                    value=self.trainer.tokenizer.pad_token_id,
+                )
+                for output in outputs
+            ]
+            response_tensors = torch.vstack(outputs).to(device)
 
             exp_score_time = time()
 
@@ -92,7 +103,7 @@ class PPOOrchestrator(Orchestrator):
                     outputs=str_outputs,
                 ),
                 dtype=float,
-            ).to(samples.device)
+            ).to(device)
             stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
@@ -116,8 +127,8 @@ class PPOOrchestrator(Orchestrator):
             # Precompute logprobs, values
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 response_tensors = response_tensors
-                attention_mask = batch.attention_mask.to(response_tensors.device)
-                query_tensors = batch.input_ids.to(response_tensors.device)
+                attention_mask = batch.attention_mask.to(device)
+                query_tensors = batch.input_ids.to(device)
                 with torch.no_grad():
                     outputs = self.trainer.model(
                         input_ids=query_tensors,
@@ -140,12 +151,12 @@ class PPOOrchestrator(Orchestrator):
                         ).logits
             else:
                 all_tokens = torch.cat(
-                    (query_tensors.to(response_tensors.device), response_tensors), dim=1
+                    (query_tensors.to(device), response_tensors), dim=1
                 )
                 attention_mask = (
                     all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
                     .long()
-                    .to(all_tokens.device)
+                    .to(device)
                 )
                 with torch.no_grad():
                     logits, *_, values = self.trainer.model(
@@ -165,7 +176,7 @@ class PPOOrchestrator(Orchestrator):
                             attention_mask=attention_mask,
                             return_dict=False,
                         )
-                        ref_logits = ref_logits.to(self.trainer.accelerator.device)
+                        ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_from_logits(
