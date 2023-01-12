@@ -60,7 +60,7 @@ On 1000 samples from CNN/DailyMail test dataset:
 
 2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/2uirt89a).
 
-3. Check our blog post for this example [here](https://wandb.ai/carperai/summarize_RLHF/reports/RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2).
+3. Check our blog post for this example [here](http://wandb.me/summarize-rlhf-trlx).
 
 ## References
 
