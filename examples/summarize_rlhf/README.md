@@ -29,7 +29,7 @@ cd reward_model/ && deepspeed train_reward_model_gptj.py
 Download reward model checkpoint:
 ```bash
 mkdir reward_model/rm_checkpoint
-wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/blob/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
+wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
 ```
 
 3. PPO training
@@ -57,13 +57,10 @@ On 1000 samples from CNN/DailyMail test dataset:
 | SFT | 2.729 | -0.181 |
 | PPO | 3.291 | +0.411 |
 
-2. Reward model accuracy:
 
-![image](https://user-images.githubusercontent.com/28798474/210157656-c5b20b9a-f6ef-4e88-a0ee-5596d5b28d58.png)
+2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/1rpm40g8).
 
-3. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/1rpm40g8).
-
-
+3. Check our blog post for this example [here](https://wandb.ai/carperai/summarize_RLHF/reports/RLHF-Learning-to-Summarize-with-trlX--VmlldzozMzAwODM2).
 
 ## References
 
