@@ -6,42 +6,42 @@ following the fine-tuning procedures described in Stiennon et al.'s, "[Learning 
 
 Before running everything, we need some extra packages not included in the `trlx` dependency list. Specifically, we need HuggingFace's [`evaluate`](https://huggingface.co/docs/evaluate/index) package and Google's re-implementation of ROUGE, [`rouge-score`](https://github.com/google-research/google-research/tree/master/rouge). To install them, run `requirements.txt` in this example's root directory:
 
-
 ```bash
 pip install -r requirements.txt
 ```
 
+### Training Process
 
-### Training setup:
+For an in-depth description of the example, please refer to our [blog post](http://wandb.me/summarize-rlhf-trlx). We leave the following for a quick overview of the fine-tuning process and what scripts to run.
+
 
 1. Train SFT:
-```bash
-cd  sft/ && deepspeed train_gptj_summarize.py
-```
-
-Checkpoint: [SFT](https://huggingface.co/CarperAI/openai_summarize_tldr_sft)
+    ```bash
+    cd  sft/ && deepspeed train_gptj_summarize.py
+    ```
+    Checkpoint: [SFT](https://huggingface.co/CarperAI/openai_summarize_tldr_sft)
 
 2. Train Reward Model
-```bash
-cd reward_model/ && deepspeed train_reward_model_gptj.py
-```
-
-Download reward model checkpoint:
-```bash
-mkdir reward_model/rm_checkpoint
-wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
-```
+    ```bash
+    cd reward_model/ && deepspeed train_reward_model_gptj.py
+    ```
+    Download reward model checkpoint:
+    ```bash
+    mkdir reward_model/rm_checkpoint
+    wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
+    ```
 
 3. PPO training
-```bash
-accelerate launch --config_file configs/default_accelerate_config.yaml trlx_gptj_text_summarization.py
-```
+    ```bash
+    accelerate launch --config_file configs/default_accelerate_config.yaml trlx_gptj_text_summarization.py
+    ```
+    Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
 
-Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
 
+### Results
 
-### Results:
-On 1000 samples from CNN/DailyMail test dataset:
+On 1,000 samples from CNN/DailyMail test dataset:
+
 1. SFT vs PPO
 - Rouge scores
 
@@ -60,7 +60,7 @@ On 1000 samples from CNN/DailyMail test dataset:
 
 2. Examples of generated summaries can be found [here](https://wandb.ai/carperai/summarize_RLHF/runs/2uirt89a).
 
-3. Check our blog post for this example [here](http://wandb.me/summarize-rlhf-trlx).
+3. Check our blog post for metric logs and other results [here](http://wandb.me/summarize-rlhf-trlx).
 
 ## References
 
