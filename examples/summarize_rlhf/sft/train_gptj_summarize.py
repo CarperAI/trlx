@@ -1,5 +1,6 @@
 import random
 
+import evaluate
 import numpy as np
 import torch
 from summarize_dataset import TLDRDataset
@@ -10,13 +11,6 @@ from transformers import (
     TrainingArguments,
     default_data_collator,
 )
-
-try:
-    import evaluate
-except ImportError:
-    raise ImportError(
-        "To run this example, please install the following packages: [`evaluate`, `nltk`, `rouge_score`]."
-    )
 
 
 def set_seed(seed_val=42):
@@ -47,7 +41,7 @@ if __name__ == "__main__":
     model.config.pad_token_id = model.config.eos_token_id
 
     # Set up the datasets
-    data_path = "CarperAI/openai_summarize_tldr"
+    data_path = "CarperAIpvduyai_summarize_tldr"
     train_dataset = TLDRDataset(
         data_path,
         tokenizer,
