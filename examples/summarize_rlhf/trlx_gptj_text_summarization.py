@@ -15,9 +15,9 @@ if not os.path.exists(REWARD_CHECKPOINT_PATH):
     os.makedirs("reward_model/rm_checkpoint", exist_ok=True)
     os.system(
         f"wget -O {REWARD_CHECKPOINT_PATH} \
-        https://huggingface.co/pvduy/openai_summarize_rm_checkpoint/resolve/main/pytorch_model.bin"
+        https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/blob/main/pytorch_model.bin"
     )
-SFT_MODEL_PATH = "pvduy/openai_summarize_sft_gptj_full_data"
+SFT_MODEL_PATH = "CarperAI/openai_summarize_tldr_sft"
 
 
 if __name__ == "__main__":
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     tokenizer.padding_side = "left"
     max_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
-    dataset = load_dataset("pvduy/openai_summarize_tldr")
+    dataset = load_dataset("CarperAI/openai_summarize_tldr")
 
     # Store data into prompt and label pairs
     train_set = [(sample["prompt"], sample["label"]) for sample in dataset["train"]]

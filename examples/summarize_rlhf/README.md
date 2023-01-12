@@ -4,26 +4,28 @@
 
 1. Train SFT:
 ```bash
-    cd  sft/ && deepspeed train_gptj_summarize.py
+cd  sft/ && deepspeed train_gptj_summarize.py
 ```
 
-Checkpoint: [SFT](https://huggingface.co/pvduy/openai_summarize_sft_gptj)
+Checkpoint: [SFT](https://huggingface.co/CarperAI/openai_summarize_tldr_sft)
 
 2. Train Reward Model
 ```bash
-    cd reward_model/ && deepspeed train_reward_model_gptj.py
+cd reward_model/ && deepspeed train_reward_model_gptj.py
 ```
 
 Download reward model checkpoint:
 ```bash
-    mkdir reward_model/rm_checkpoint
-    wget https://huggingface.co/pvduy/openai_summarize_rm_checkpoint/resolve/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
+mkdir reward_model/rm_checkpoint
+wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/blob/main/pytorch_model.bin -O reward_model/rm_checkpoint/pytorch_model.bin
 ```
 
 3. PPO training
 ```bash
-    accelerate launch trlx_gptj_text_summarization.py
+accelerate launch trlx_gptj_text_summarization.py
 ```
+
+Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
 
 
 ### Results:
@@ -41,7 +43,7 @@ On 1000 samples from CNN/DailyMail test dataset:
 | Model | Average Reward | Reward $\Delta$ |
 | --- | --- | --- |
 | SFT | 2.729 | -0.181 |
-| PPO | 3.291 | 0.411 |
+| PPO | 3.291 | +0.411 |
 
 2. Reward model accuracy:
 

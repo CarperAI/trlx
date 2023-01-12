@@ -9,7 +9,7 @@ from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 
 def create_comparison_dataset(
-    path="pvduy/openai_summarize_comparisions", split="train"
+    path="CarperAI/openai_summarize_comparisons", split="train"
 ):
     dataset = load_dataset(path, split=split)
     pairs = []
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     )
 
     # Initialize the reward model from the (supervised) fine-tuned GPT-J
-    model = GPTRewardModel("pvduy/openai_summarize_sft_gptj_full_data")
+    model = GPTRewardModel("CarperAI/openai_summarize_tldr_sft")
 
     # Freeze the first 70% of the hidden layers of the reward model backbone
     layers = model.transformer.h
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         layer.requires_grad_(False)
 
     # Create the comparisons datasets
-    data_path = "pvduy/openai_summarize_comparisions"
+    data_path = "CarperAI/openai_summarize_comparisons"
     train_pairs = create_comparison_dataset(data_path, "train")
     val_pairs = create_comparison_dataset(data_path, "test")
 

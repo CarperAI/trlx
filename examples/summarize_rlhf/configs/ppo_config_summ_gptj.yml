@@ -12,7 +12,7 @@ train:
   trainer: "AcceleratePPOTrainer"
 
 model:
-  model_path: "pvduy/openai_summarize_sft_gptj_full_data"
+  model_path: "CarperAI/openai_summarize_tldr_sft"
   tokenizer_path: "EleutherAI/gpt-j-6B"
   num_layers_unfrozen: 8
 
