@@ -20,7 +20,7 @@ def get_positive_score(scores):
 
 
 TRLX_PATH = pathlib.Path(__file__).resolve().parent.parent
-with TRLX_PATH.joinpath("configs/ppo_config.yml").open() as f:
+with TRLX_PATH.joinpath("configs/a2c_config.yml").open() as f:
     default_config = yaml.safe_load(f)
 
 
@@ -37,7 +37,7 @@ def main(hparams={}):
         "lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
-        batch_size=256,
+        batch_size=128,
         device=device,
     )
 
@@ -46,13 +46,15 @@ def main(hparams={}):
         return sentiments
 
     # Take few words off of movies reviews as prompts
-    imdb = load_dataset("imdb", split="train+test")
+    imdb = load_dataset("imdb", split="train")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
+    imdb = load_dataset("imdb", split="test")
+    val_prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
     trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["I don't know much about Hungarian underground"] * 64,
+        eval_prompts=val_prompts[0:1000],
         config=config,
     )
 
