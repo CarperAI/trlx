@@ -14,7 +14,6 @@ def train(
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable] = None,
     config: Optional[TRLConfig] = None,
-    split_token: Optional[str] = None,
     logit_mask: Optional[List[List[bool]]] = None,
 ):
     """
@@ -24,12 +23,15 @@ def train(
     Args:
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory
         reward_fn (List[str] -> List[float]): Function to rate batches of generated samples
-        dataset (List[str], List[float]): Lists of samples and rewards
+        dataset (List[Union[str, List[str]]], List[float]):
+            Lists of samples and rewards for offline training. Samples consist of a variable number
+            of prompts (questions, environment states etc.) and outputs which are meant to be optimized.
+            Following form is expected (prompt_0: str, output_0: str, prompt_1: str, output_1: str ...).
+            Giving a single string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
         prompts (List[str]): Prompts to sample off from during online training
         eval_prompts (List[str]): Prompts to periodically validate training on
         metric_fn (Optional[Callable[List[str], List[float]]]): Function to compute statistics on validation samples
         config (Optional[TRLConfig]): TRL configuration object to override default settings
-        split_token (Optional[str]): Split samples in the dataset on prompts and continuations
         logit_mask (Optional[List]): Bigram masking matrix
     """
     if reward_fn is not None:
@@ -95,10 +97,8 @@ def train(
             eval_prompts, max_prompt_length, trainer.tokenizer
         )
 
-        orch = get_orchestrator(config.train.orchestrator)(
-            trainer, split_token=split_token
-        )
-        orch.make_experience(samples, rewards)
+        orch = get_orchestrator(config.train.orchestrator)(trainer)
+        orch.make_experience(samples, rewards, config.train.seq_length)
         trainer.add_eval_pipeline(eval_pipeline)
 
     else:
