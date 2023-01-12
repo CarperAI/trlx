@@ -34,7 +34,7 @@ wget https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve
 
 3. PPO training
 ```bash
-accelerate launch trlx_gptj_text_summarization.py
+accelerate launch --config_file configs/default_accelerate_config.yaml trlx_gptj_text_summarization.py
 ```
 
 Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
