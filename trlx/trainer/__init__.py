@@ -42,8 +42,8 @@ class BaseRLTrainer:
         config: TRLConfig,
         reward_fn=None,
         metric_fn=None,
-        stop_word=None,
         logit_mask=None,
+        stop_sequences=None,
         train_mode=False,
     ):
         self.store: BaseRolloutStore = None
@@ -51,8 +51,8 @@ class BaseRLTrainer:
         self.reward_fn = reward_fn
         self.metric_fn = metric_fn
         self.train_mode = train_mode
-        self.stop_word = stop_word
         self.logit_mask = logit_mask
+        self.stop_sequences = stop_sequences
 
     def push_to_store(self, data):
         self.store.push(data)

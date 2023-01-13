@@ -25,6 +25,7 @@ def main(hparams={}):
         eval_prompts=eval_prompts,
         metric_fn=lambda samples, **kwargs: metric_fn(samples),
         config=config,
+        stop_sequences=["|"],
     )
 
 

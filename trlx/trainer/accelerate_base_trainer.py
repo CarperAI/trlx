@@ -187,12 +187,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 sample[output_start_ix:], skip_special_tokens=True
             )
 
-            # Trim outputs up to `self.stop_word` if present
-            if self.stop_word:
-                stop_word_ix = str_output.find(self.stop_word)
-                if stop_word_ix == -1:
-                    stop_word_ix = None
-                str_output = str_output[:stop_word_ix]
+            # Trim outputs up to `self.stop` if present
+            if self.stop_sequences:
+                for stop in self.stop_sequences:
+                    stop_ix = str_output.find(stop)
+                    if stop_ix >= 0:
+                        str_output = str_output[:stop_ix].rstrip()
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)

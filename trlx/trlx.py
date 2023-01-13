@@ -19,7 +19,7 @@ def train(
     ] = None,
     config: Optional[TRLConfig] = None,
     logit_mask: Optional[List[List[bool]]] = None,
-    stop_word: Optional[str] = "",
+    stop_sequences: Optional[List[str]] = [],
 ):
     """
     Dispatches online or offline reinforcement training
@@ -43,8 +43,9 @@ def train(
             as metric's name and values and lists of numeric values per each sample in batch
         config (Optional[TRLConfig]): TRL configuration object to override default settings
         logit_mask (Optional[List]): Bigram masking matrix
-        stop_word (Optional[str]): A string to trim generations (either for experience or evaluation) up to
-            its encounter in them
+        stop_sequences (Optional[List[str]]):
+            String sequences to trim generations (either for experience or evaluation) up to its
+            encounter in them. Generatations will not contain them and also will be right-stripped
     """
 
     if reward_fn is not None:
@@ -56,7 +57,10 @@ def train(
             config.model.model_path = model_path
 
         trainer = get_trainer(config.train.trainer)(
-            config=config, reward_fn=reward_fn, metric_fn=metric_fn, stop_word=stop_word
+            config=config,
+            reward_fn=reward_fn,
+            metric_fn=metric_fn,
+            stop_sequences=stop_sequences
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
@@ -99,8 +103,8 @@ def train(
         trainer = get_trainer(config.train.trainer)(
             config=config,
             metric_fn=metric_fn,
-            stop_word=stop_word,
             logit_mask=logit_mask,
+            stop_sequences=stop_sequences,
         )
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         max_prompt_length = (
