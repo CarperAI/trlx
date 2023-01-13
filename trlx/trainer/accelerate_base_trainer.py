@@ -24,6 +24,7 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
+    print_rank_0
 )
 from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
@@ -390,7 +391,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
-                    print(
+                    print_rank_0(
                         "Only a single sweep is allowed, {k} is going to be set to {v[0]}"
                     )
                     self.generate_kwargs[k] = v[0]
