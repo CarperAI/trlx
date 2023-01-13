@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 class DSLDataset:
     def __init__(self):
-        self.train_data = json.load(open("dataset/train.json", "r"))
-        self.test_data = json.load(open("dataset/test.json", "r"))
+        with open("dataset/train.json", "r") as f:
+            self.train_data = json.load(f)
+        with open("dataset/test.json", "r") as f:
+            self.test_data = json.load(f)
         logger.info("Sucessfully loaded the dataset")
 
     def load_datapoints(self, split="train"):
