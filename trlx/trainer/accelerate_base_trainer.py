@@ -164,10 +164,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         )
 
     def decode(
-        self, prompts: List[torch.IntTensor], samples, prompt_sizes=None
-    ) -> List[str]:
+        self, prompts: List[torch.LongTensor], samples: List[torch.LongTensor], prompt_sizes: torch.LongTensor=None
+    ) -> Tuple[List[str], List[str], List[str]]:
         """
-        Decode samples into (samples: List[str], outputs: List[str], samples: List[str])
+        Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
         """
         if prompt_sizes is None:
             # Assuming prompts were left-padded
@@ -187,7 +187,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 sample[output_start_ix:], skip_special_tokens=True
             )
 
-            # Trim outputs up to `self.stop` if present
+            # Trim outputs up to `self.stop_sequences` if any are present
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
