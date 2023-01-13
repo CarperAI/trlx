@@ -19,7 +19,7 @@ model:
 optimizer:
   name: "rmsprop"
   kwargs:
-    lr: 7.0e-4
+    lr: 1.0e-5
     alpha: 0.99
     eps: 1.0e-5
     weight_decay: 0
