@@ -10,11 +10,20 @@ from ray import tune
 from ray.air import ScalingConfig, session
 from ray.train.torch import TorchTrainer
 from ray.tune.logger import CSVLoggerCallback
+import tempfile
 
 from trlx.ray_tune import get_param_space, get_tune_config
+from accelerate.commands.config import default_config_file, load_config_from_file
+from trlx.ray_train.launch import launch_command, launch_command_parser
 
 # from trlx.ray_tune.wandb import create_report, log_trials
 
+from argparse import Namespace
+class DefaultNamespace(Namespace):
+    def __getattr__(self, name: str):
+        parser = launch_command_parser()
+        ret = parser.get_default(name)
+        return ret
 
 def tune_function(
     train_function, param_space: dict, tune_config: dict, resources: dict
@@ -22,11 +31,26 @@ def tune_function(
     default_config = yaml.safe_load(open("configs/ppo_config.yml"))
     param_space["default_config"] = default_config
 
+    config_file_path = default_config_file
+    with open(config_file_path, "r") as f:
+        config_data = f.read()
+
     def train_function_wrapper(config):
+        temp_config_file = tempfile.mkstemp()[1]
+        with open(temp_config_file, "w") as f:
+            f.write(config_data)
+        args = DefaultNamespace()
+        setattr(args, "config_file", temp_config_file)
+        launch_command(args)
+        os.environ["RANK"] = str(session.get_world_rank())
         os.environ["WORLD_RANK"] = str(session.get_world_rank())
         os.environ["LOCAL_RANK"] = str(session.get_local_rank())
         os.environ["WORLD_SIZE"] = str(session.get_world_size())
         os.environ["LOCAL_WORLD_SIZE"] = str(session.get_local_world_size())
+        os.environ["CROSS_RANK"] = str(session.get_world_rank())
+        os.environ["CROSS_SIZE"] = str(session.get_world_size())
+        os.environ["LOCAL_SIZE"] = str(session.get_local_world_size())
+        print(os.environ)
 
         return train_function(config)
 
@@ -36,9 +60,9 @@ def tune_function(
             train_function_wrapper,
             scaling_config=ScalingConfig(
                 trainer_resources={"CPU": 0},
-                num_workers=2,
+                num_workers=resources["gpu"],
                 use_gpu=bool(resources["gpu"]),
-                resources_per_worker={"CPU": resources["cpu"], "GPU": resources["gpu"]},
+                resources_per_worker={"CPU": resources["cpu"], "GPU": int(bool(resources["gpu"]))},
             ),
         ),
         param_space=param_space_train,
