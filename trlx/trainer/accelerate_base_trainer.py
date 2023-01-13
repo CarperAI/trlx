@@ -3,7 +3,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Optional, Dict, List, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import ray
 import torch
@@ -24,7 +24,8 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
-    print_rank_0
+    print_rank_0,
+    significant,
 )
 from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
@@ -32,6 +33,7 @@ from trlx.utils.modeling import (
     get_delta_model_class,
     parse_delta_kwargs,
 )
+
 
 @register_trainer
 class AccelerateRLTrainer(BaseRLTrainer):
@@ -165,7 +167,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         )
 
     def decode(
-        self, prompts: List[torch.LongTensor], samples: List[torch.LongTensor], prompt_sizes: torch.LongTensor=None
+        self,
+        prompts: List[torch.LongTensor],
+        samples: List[torch.LongTensor],
+        prompt_sizes: torch.LongTensor = None,
     ) -> Tuple[List[str], List[str], List[str]]:
         """
         Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
@@ -367,10 +372,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # Log and display evaluation metrics
         if self.accelerator.is_main_process:
             rows = sum(list(map(list, zip(*table))), [])
-            rich_table = Table(*columns, title=f"Evaluation #{self.nth_evaluation}")
+
+            # Add metrics/rewards to the table's title
+            table_title = f"Evaluation #{self.nth_evaluation}"
+            for k, x in stats.items():
+                if k.startswith("reward") or k.startswith("metrics"):
+                    table_title += f" {k}: {significant(x)}"
+
+            rich_table = Table(*columns, title=table_title, show_lines=True)
 
             for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
-                rich_table.add_row(*map(str, rows[ix]))
+                rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
 
             if not ray.is_initialized():
                 if "wandb" in self.config.train.trackers:
