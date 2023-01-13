@@ -19,9 +19,9 @@ model:
 optimizer:
   name: "rmsprop"
   kwargs:
-    lr: 7e-4
+    lr: 7.0e-4
     alpha: 0.99
-    eps: 1e-5
+    eps: 1.0e-5
     weight_decay: 0
 
 scheduler:
