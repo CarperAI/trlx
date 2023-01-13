@@ -60,7 +60,7 @@ def train(
             config=config,
             reward_fn=reward_fn,
             metric_fn=metric_fn,
-            stop_sequences=stop_sequences
+            stop_sequences=stop_sequences,
         )
 
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
