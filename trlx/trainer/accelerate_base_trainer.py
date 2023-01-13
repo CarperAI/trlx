@@ -3,7 +3,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, List, Sequence, Tuple, Union
+from typing import Optional, Dict, List, Sequence, Tuple, Union
 
 import ray
 import torch
@@ -31,7 +31,6 @@ from trlx.utils.modeling import (
     get_delta_model_class,
     parse_delta_kwargs,
 )
-
 
 @register_trainer
 class AccelerateRLTrainer(BaseRLTrainer):
