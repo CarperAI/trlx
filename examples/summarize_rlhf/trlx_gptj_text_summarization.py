@@ -81,7 +81,7 @@ if __name__ == "__main__":
             formatted_prompts.append(tmp)
         return formatted_prompts
 
-    def reward_fn(samples: List[str]):
+    def reward_fn(samples: List[str], **kwargs):
         original_samples = [text.split("TL;DR:")[0] + "TL;DR: " for text in samples]
         original_samples = [
             text + post_summary_dict[text.strip()] for text in original_samples

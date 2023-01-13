@@ -27,7 +27,7 @@ rw_device = torch.device("cuda:{}".format(1))
 rw_model.to(rw_device)
 
 
-def reward_fn(samples):
+def reward_fn(samples, **kwargs):
     scores_list = []
     batch_size = 2
     for i in range(0, len(samples), batch_size):
