@@ -1,7 +1,9 @@
+import os
 from typing import Iterable, Sequence, Union, cast
 
 import torch
 import torch.nn.functional as F
+from apex.transformer import parallel_state
 from nemo.collections.nlp.modules.common.text_generation_utils import (
     get_default_length_params,
     get_default_sampling_params,
@@ -20,9 +22,10 @@ from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
+from torch.nn.utils.rnn import pad_sequence
 
 from trlx.data.configs import TRLConfig
-from trlx.data.ilql_types import ILQLBatch, flatten_dataclass
+from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.nemo.gpt import ILQLGPT
@@ -31,7 +34,7 @@ from trlx.trainer.nn.ilql_models import ILQLConfig
 from . import BaseRLTrainer
 
 
-def train_megatron(ilql_config, cfg):
+def train_megatron(ilql_config, cfg, pretrained_model=None):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
@@ -67,6 +70,21 @@ def train_megatron(ilql_config, cfg):
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
 
+    if pretrained_model is not None:
+        assert (
+            cfg.trainer.devices * cfg.trainer.num_nodes
+            == cfg.tensor_model_parallel_size * cfg.pipeline_model_parallel_size
+        ), "devices * num_nodes should equal tensor_model_parallel_size * pipeline_model_parallel_size"
+
+        save_restore_connector = NLPSaveRestoreConnector()
+        if os.path.isdir(cfg.gpt_model_file):
+            save_restore_connector.model_extracted_dir = cfg.gpt_model_file
+
+        model = ILQLGPT.restore_from(
+            restore_path=cfg.gpt_model_file,
+            trainer=trainer,
+            save_restore_connector=save_restore_connector,
+        )
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
         resume_from_checkpoint = cfg.model.resume_from_checkpoint
@@ -92,7 +110,7 @@ def train_megatron(ilql_config, cfg):
         cfg.model.precision = cfg.trainer.precision
 
     model = ILQLGPT(ilql_config=ilql_config, cfg=cfg.model, trainer=trainer)
-
+    print("model initialized")
     return trainer, model
 
 
@@ -116,7 +134,7 @@ class NemoILQLTrainer(BaseRLTrainer):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
+        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_40b.yaml")
         self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
@@ -136,14 +154,43 @@ class NemoILQLTrainer(BaseRLTrainer):
         return input_ids
 
     def learn(self):
-        gen = self.model.generate(["hello world"] * 16)
-        print(f"{gen=}")
+        # self.model.cfg.sequence_parallel = False
+        # gen = self.model.generate(["hello world"] * 16, length_params=None)
+        # print(f"{gen=}")
+        # self.model.cfg.sequence_parallel = True
+        def collate_fn(elems: Iterable[ILQLElement]):
+            batch = ILQLBatch(
+                pad_sequence(
+                    [x.input_ids for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.attention_mask for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.rewards for x in elems], batch_first=True, padding_value=0.0
+                ),
+                pad_sequence(
+                    [x.states_ixs for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.actions_ixs for x in elems], batch_first=True, padding_value=0
+                ),
+                pad_sequence(
+                    [x.dones for x in elems], batch_first=True, padding_value=0
+                ),
+            )
+            return flatten_dataclass(ILQLBatch)(batch)
 
-        train_dataloader = self.store.create_loader(self.batch_size)
-        print(f"{len(train_dataloader)=}")
+        # train_dataloader = self.model.build_data_loader(self.store, collate_fn=collate_fn)
+        # print(f"{len(train_dataloader)=}")
 
-        train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
-        self.trainer.fit(self.model, train_dataloader)
+        # train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
+        # # def handler(signum, frame):
+        # #     raise Exception("end of time")
+
+        self.model.set_train_dataset(self.store, collate_fn=collate_fn)
+
+        self.trainer.fit(self.model)
 
         # gen = self.model.generate(["hello world"] * 2)
         # print(f"{gen=}")

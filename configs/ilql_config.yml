@@ -40,7 +40,7 @@ method:
   awac_scale: 1
   alpha: 0.001
   steps_for_target_q_sync: 5
-  two_qs: true
+  two_qs: false
   gen_kwargs:
     max_new_tokens: 56
     top_k: 20

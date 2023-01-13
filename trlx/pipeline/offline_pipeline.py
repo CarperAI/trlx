@@ -73,7 +73,7 @@ class ILQLRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int):
+    def create_loader(self, batch_size: int, drop_last=False):
         def collate_fn(elems: Iterable[ILQLElement]):
             return ILQLBatch(
                 pad_sequence(
@@ -97,5 +97,9 @@ class ILQLRolloutStorage(BaseRolloutStore):
             )
 
         return DataLoader(
-            self, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
+            self,
+            batch_size=batch_size,
+            shuffle=True,
+            collate_fn=collate_fn,
+            drop_last=True,
         )

@@ -161,7 +161,8 @@ class ILQLHeads(nn.Module):
             states_hs = actions_hs = hs
 
         qs = tuple(q_head(actions_hs) for q_head in self.q_heads)
-        target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
+        with torch.no_grad():
+            target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
         vs = self.v_head(states_hs)
 
         return qs, target_qs, vs
