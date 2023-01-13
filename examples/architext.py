@@ -30,7 +30,7 @@ prompts = [
     "[prompt] the kitchen is not adjacent to the bathroom [layout]",
 ]
 
-config_path = pathlib.Path(__file__).parents[1].joinpath("../../configs/ppo_config.yml")
+config_path = pathlib.Path(__file__).parent.joinpath("../configs/ppo_config.yml")
 with config_path.open() as f:
     default_config = yaml.safe_load(f)
 
