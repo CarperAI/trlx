@@ -1,9 +1,11 @@
+import math
 import os
 import random
 import subprocess
 import time
 from dataclasses import is_dataclass
 from enum import Enum
+from numbers import Number
 from typing import Dict, Iterable
 
 import numpy as np
@@ -19,6 +21,19 @@ def print_rank_0(*message):
     """
     if os.environ.get("RANK", "0") == "0":
         print(*message)
+
+
+def significant(x: Number, ndigits=2) -> Number:
+    """
+    Cut the number up to its `ndigits` after the most significant
+    """
+    if isinstance(x, torch.Tensor):
+        x = x.item()
+
+    if not isinstance(x, Number) or x == 0:
+        return x
+
+    return round(x, ndigits - int(math.floor(math.log10(abs(x)))))
 
 
 def set_seed(seed: int):
@@ -246,4 +261,4 @@ def get_git_tag() -> str:
     """
     output = subprocess.check_output("git log --format='%h/%as' -n1".split())
     branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
-    return f"{branch.decode()[:-1]}/{output.decode()[1:-2]}"
+    return branch.decode()[:-1], output.decode()[1:-2]

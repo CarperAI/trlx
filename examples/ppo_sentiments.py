@@ -38,7 +38,7 @@ def main(hparams={}):
         device=device,
     )
 
-    def reward_fn(samples: List[str]) -> List[float]:
+    def reward_fn(samples: List[str], **kwargs) -> List[float]:
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return sentiments
 

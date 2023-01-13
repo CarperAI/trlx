@@ -1,8 +1,8 @@
 from time import time
-from typing import Callable, Optional
 
 import ray
 import torch
+import torch.nn.functional as F
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
@@ -24,8 +24,6 @@ class PPOOrchestrator(Orchestrator):
         self,
         trainer: BaseRLTrainer,
         pipeline: BasePipeline,
-        reward_fn: Callable,
-        metric_fn: Optional[Callable] = None,
         chunk_size: int = 512,
     ):
         self.pipeline = pipeline
@@ -43,8 +41,6 @@ class PPOOrchestrator(Orchestrator):
             self.ref_model.to(self.trainer.accelerator.device)
 
         self.trainer.orch = self
-        self.trainer.reward_fn = reward_fn
-        self.trainer.metric_fn = metric_fn
 
         self.running = RunningMoments()
         self.ref_mean = self.trainer.config.method.ref_mean
@@ -65,9 +61,6 @@ class PPOOrchestrator(Orchestrator):
         stats = {}
         clock = Clock()
         while len(ppo_rl_elements) < num_rollouts:
-            if self.trainer.accelerator.is_main_process:
-                print(f"Making experience {len(ppo_rl_elements)} / {num_rollouts}")
-
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -79,30 +72,38 @@ class PPOOrchestrator(Orchestrator):
             samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
 
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                response_tensors = samples
-            else:
-                query_tensors = batch.input_ids
-                response_tensors = samples[:, query_tensors.shape[1] :]
-
-            texts = self.trainer.tokenizer.batch_decode(
-                samples, skip_special_tokens=True
+            query_tensors = batch.input_ids
+            device = samples.device
+            str_samples, str_prompts, str_outputs = self.trainer.decode(
+                query_tensors, samples
             )
 
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                articles = self.trainer.tokenizer.batch_decode(
-                    batch.input_ids, skip_special_tokens=True
+            # Convert trimmed samples back into tensors for another head pass
+            # This can be defered, instead letting the pass to made over the original samples
+            # after unbinding and truncating operations lower are fixed
+            outputs = self.trainer.tokenizer(str_outputs).input_ids
+            outputs = list(map(torch.LongTensor, outputs))
+            maxsize = max(map(len, outputs))
+            outputs = [
+                F.pad(
+                    output,
+                    (0, maxsize - len(output)),
+                    value=self.trainer.tokenizer.pad_token_id,
                 )
-                sep_token = self.trainer.tokenizer.sep_token
-                texts = [
-                    f"{article}{sep_token}{response}"
-                    for article, response in zip(articles, texts)
-                ]
+                for output in outputs
+            ]
+            response_tensors = torch.vstack(outputs).to(device)
 
             exp_score_time = time()
+
             scores = torch.tensor(
-                self.score(texts), device=samples.device, dtype=torch.float
-            )
+                self.trainer.reward_fn(
+                    samples=str_samples,
+                    prompts=str_prompts,
+                    outputs=str_outputs,
+                ),
+                dtype=float,
+            ).to(device)
             stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
@@ -125,9 +126,8 @@ class PPOOrchestrator(Orchestrator):
 
             # Precompute logprobs, values
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                response_tensors = response_tensors
-                attention_mask = batch.attention_mask.to(response_tensors.device)
-                query_tensors = batch.input_ids.to(response_tensors.device)
+                attention_mask = batch.attention_mask.to(device)
+                query_tensors = batch.input_ids.to(device)
                 with torch.no_grad():
                     outputs = self.trainer.model(
                         input_ids=query_tensors,
@@ -150,12 +150,12 @@ class PPOOrchestrator(Orchestrator):
                         ).logits
             else:
                 all_tokens = torch.cat(
-                    (query_tensors.to(response_tensors.device), response_tensors), dim=1
+                    (query_tensors.to(device), response_tensors), dim=1
                 )
                 attention_mask = (
                     all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
                     .long()
-                    .to(all_tokens.device)
+                    .to(device)
                 )
                 with torch.no_grad():
                     logits, *_, values = self.trainer.model(
@@ -175,7 +175,7 @@ class PPOOrchestrator(Orchestrator):
                             attention_mask=attention_mask,
                             return_dict=False,
                         )
-                        ref_logits = ref_logits.to(self.trainer.accelerator.device)
+                        ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_from_logits(

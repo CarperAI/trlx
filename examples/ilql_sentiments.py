@@ -29,7 +29,7 @@ def main(hparams={}):
         device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
-    def metric_fn(samples: List[str]) -> Dict[str, List[float]]:
+    def metric_fn(samples: List[str], **kwargs) -> Dict[str, List[float]]:
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return {"sentiments": sentiments}
 

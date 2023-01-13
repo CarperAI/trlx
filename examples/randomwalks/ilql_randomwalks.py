@@ -23,8 +23,9 @@ def main(hparams={}):
         GPT2Config(n_layer=6, n_embd=144, vocab_size=23),
         dataset=(walks, rewards),
         eval_prompts=eval_prompts,
-        metric_fn=metric_fn,
+        metric_fn=lambda samples, **kwargs: metric_fn(samples),
         config=config,
+        stop_sequences=["|"],
     )
 
 

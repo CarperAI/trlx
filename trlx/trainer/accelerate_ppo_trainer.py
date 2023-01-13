@@ -22,8 +22,8 @@ from trlx.utils.modeling import logprobs_from_logits
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, **kwargs):
+        super().__init__(config, **kwargs)
 
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import wandb
 
+from trlx.utils import significant
+
 import wandb.apis.reports as wb  # isort: skip
 
 
@@ -37,10 +39,6 @@ def parse_result(result):
             out[k] = v
 
     return out
-
-
-def significant(x):
-    return round(x, 1 - int(math.floor(math.log10(x))))
 
 
 def log_trials(trial_path: str, project_name: str):
