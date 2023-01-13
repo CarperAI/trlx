@@ -83,6 +83,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 init_trackers_kwargs["wandb"] = {
                     "name": run_name,
                     "entity": self.config.train.entity_name,
+                    "group": self.config.train.group_name,
                     "tags": ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
