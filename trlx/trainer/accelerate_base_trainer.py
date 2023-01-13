@@ -68,7 +68,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.accelerator.num_processes == 1:
             num_gpus = "1gpu"
         else:
-            num_gpus = self.accelerator.num_processes + "gpus"
+            num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
