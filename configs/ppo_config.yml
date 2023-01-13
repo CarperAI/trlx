@@ -13,8 +13,11 @@ train:
 
 model:
   model_path: "lvwerra/gpt2-imdb"
-  tokenizer_path: "gpt2"
   num_layers_unfrozen: 2
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "right"
 
 optimizer:
   name: "adamw"

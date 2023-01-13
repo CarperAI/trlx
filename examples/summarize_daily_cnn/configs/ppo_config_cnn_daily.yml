@@ -15,8 +15,11 @@ train:
 model:
   model_path: "google/flan-t5-large"
   model_arch_type: "seq2seq"
-  tokenizer_path: "google/flan-t5-large"
   num_layers_unfrozen: 2
+
+tokenizer:
+  tokenizer_path: "google/flan-t5-large"
+  truncation_side: "right"
 
 optimizer:
   name: "adamw"

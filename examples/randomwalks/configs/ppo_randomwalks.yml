@@ -13,8 +13,10 @@ train:
 
 model:
   model_path: "CarperAI/randomwalks"
-  tokenizer_path: "CarperAI/randomwalks"
   num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "CarperAI/randomwalks"
 
 optimizer:
   name: "adamw"
