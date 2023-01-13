@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -148,16 +148,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             attention_mask = (
                 tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
             )
-            logits, *_, values_pred = self.model(
-                tokens,
-                attention_mask=attention_mask,
-            )
+            outputs = self.model(tokens, attention_mask, return_dict=True)
+            logits = outputs.logits
+            values_pred = outputs.value
+            values_pred = values_pred[:, :-1]
             logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+
             start = query_tensors.shape[1] - 1
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start - 1 : end - 1],
+                values_pred[:, start:end],
                 attention_mask[:, start:end],
             )
 
@@ -217,3 +218,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             * len(self.train_dataloader)
         )
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
+
+    def save_pretrained(self, directory: Optional[str] = None):
+        directory = f"{directory or self.config.train.checkpoint_dir}/hf_model"
+        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
+        self.tokenizer.save_pretrained(directory)
