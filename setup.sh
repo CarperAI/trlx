@@ -3,6 +3,8 @@
 pip install --upgrade --force-reinstall numexpr==2.7.3 numpy==1.23.*
 pip install --upgrade --force-reinstall torch --extra-index-url https://download.pytorch.org/whl/cu116
 
+pip install -e .
+
 # Add personal config
 git config --global user.name "Jeremy Gillen"
 git config --global user.email "jez.gillen@gmail.com"
