@@ -141,6 +141,9 @@ class TrainConfig:
     :param entity_name: Entity name for wandb
     :type entity_name: str
 
+    :param group_name: Group name for wandb (used for grouping runs)
+    :type group_name: str
+
     :param checkpoint_dir: Directory to save checkpoints
     :type checkpoint_dir: str
 
@@ -169,6 +172,7 @@ class TrainConfig:
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None
+    group_name: Optional[str] = None
 
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
