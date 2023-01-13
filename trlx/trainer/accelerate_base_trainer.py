@@ -65,11 +65,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             model_name = config.model.model_path.split("/")[-1]
 
+        if self.accelerator.num_processes == 1:
+            num_gpus = "1gpu"
+        else:
+            num_gpus = self.accelerator.num_processes + "gpus"
         branch = get_git_tag()[0]
-        run_name = (
-            "/".join([script_name, model_name, f"{self.accelerator.num_processes}gpus"])
-            + f":{branch}"
-        )
+
+        run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
         if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()
