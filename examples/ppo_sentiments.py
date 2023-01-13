@@ -19,8 +19,8 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-TRLX_PATH = pathlib.Path(__file__).resolve().parent.parent
-with TRLX_PATH.joinpath("configs/ppo_config.yml").open() as f:
+config_path = pathlib.Path(__file__).parents[1].joinpath("configs/ppo_config.yml")
+with config_path.open() as f:
     default_config = yaml.safe_load(f)
 
 
