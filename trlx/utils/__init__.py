@@ -1,3 +1,5 @@
+import importlib
+import inspect
 import math
 import os
 import random
@@ -86,39 +88,42 @@ class OptimizerName(str, Enum):
     SGD: str = "sgd"
 
 
-def get_optimizer_class(name: OptimizerName):
+torch_optimizers: Dict[str, type] = dict(
+    inspect.getmembers(
+        torch.optim, lambda x: inspect.isclass(x) and x.__name__ != "Optimizer"
+    )
+)
+torch_optimizers = {
+    name.lower(): optimizer for name, optimizer in torch_optimizers.items()
+}
+
+bitsandbytes_optimizers = {
+    OptimizerName.ADAM_8BIT_BNB: "Adam8bit",
+    OptimizerName.ADAMW_8BIT_BNB: "AdamW8bit",
+}
+
+
+def get_optimizer_class(name: str):
     """
     Returns the optimizer class with the given name
 
     Args:
         name (str): Name of the optimizer as found in `OptimizerNames`
     """
-    if name == OptimizerName.ADAM:
-        return torch.optim.Adam
-    if name == OptimizerName.ADAMW:
-        return torch.optim.AdamW
-    if name == OptimizerName.ADAM_8BIT_BNB.value:
+    if name in torch_optimizers:
+        return torch_optimizers[name]
+    if name in bitsandbytes_optimizers:
+        optimizer_name = bitsandbytes_optimizers[name]
         try:
-            from bitsandbytes.optim import Adam8bit
+            bitsandbytes_optim = importlib.import_module("bitsandbytes.optim")
+            optimizer_class = getattr(bitsandbytes_optim, optimizer_name)
 
-            return Adam8bit
+            return optimizer_class
         except ImportError:
             raise ImportError(
-                "You must install the `bitsandbytes` package to use the 8-bit Adam. "
+                f"You must install the `bitsandbytes` package to use the {optimizer_name} optimizer. "
                 "Install with: `pip install bitsandbytes`"
             )
-    if name == OptimizerName.ADAMW_8BIT_BNB.value:
-        try:
-            from bitsandbytes.optim import AdamW8bit
-
-            return AdamW8bit
-        except ImportError:
-            raise ImportError(
-                "You must install the `bitsandbytes` package to use 8-bit AdamW. "
-                "Install with: `pip install bitsandbytes`"
-            )
-    if name == OptimizerName.SGD.value:
-        return torch.optim.SGD
     supported_optimizers = [o.value for o in OptimizerName]
     raise ValueError(
         f"`{name}` is not a supported optimizer. "
