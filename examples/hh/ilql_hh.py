@@ -5,11 +5,11 @@ import re
 import numpy as np
 import tritonclient.grpc as client_util
 import yaml
+from datasets import load_dataset
 from transformers import AutoTokenizer
 from tritonclient.utils import np_to_triton_dtype
 
 import trlx
-from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_hh.yml")
