@@ -10,7 +10,6 @@ from ray.air.checkpoint import Checkpoint
 from ray.air.config import DatasetConfig, RunConfig, ScalingConfig
 from ray.train.torch.config import TorchConfig
 from ray.train.trainer import GenDataset
-from ray.util import PublicAPI
 
 if TYPE_CHECKING:
     from ray.data.preprocessor import Preprocessor
@@ -132,6 +131,7 @@ class AccelerateTrainer(TorchTrainer):
         accelerate_config_raw: str,
         deepspeed_config_file_raw: str,
     ):
+        """Wrap around train_loop_per_worker to set necessary Accelerate env vars."""
         @wraps(train_loop_per_worker)
         def wrapped_train_loop_per_worker(*args, **kwargs):
             with tempfile.TemporaryDirectory() as tempdir:
