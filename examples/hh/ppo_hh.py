@@ -72,7 +72,7 @@ def main(hparams={}):
         prompts=prompts,
         eval_prompts=eval_prompts,
         config=config,
-        stop_sequences=["Human:", "human:"],
+        stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
 
 

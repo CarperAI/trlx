@@ -1,10 +1,10 @@
 train:
   seq_length: 1024
   epochs: 10000
-  total_steps: 20000
+  total_steps: 6000
   batch_size: 2
 
-  checkpoint_interval: 100000
+  checkpoint_interval: 1000
   eval_interval: 1000
 
   pipeline: "PromptPipeline"

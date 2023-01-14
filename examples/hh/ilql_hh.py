@@ -76,7 +76,7 @@ def main(hparams={}):
         config=config,
         eval_prompts=eval_prompts,
         metric_fn=lambda xs: {"rewards": reward_fn(xs)},
-        stop_sequences=["Human:", "human:"],
+        stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
 
 
