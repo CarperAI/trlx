@@ -26,9 +26,6 @@ class ModelConfig:
     :param model_path: Path or name of the model (local or on huggingface hub)
     :type model_path: str
 
-    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
-    :type tokenizer_path: str
-
     :param model_arch_type: Type of model architecture. Either "causal" or "seq2seq"
     :type model_arch_type: str
 
@@ -50,10 +47,33 @@ class ModelConfig:
     """
 
     model_path: str
-    tokenizer_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
     delta_kwargs: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class TokenizerConfig:
+    """
+    Config for a model.
+
+    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
+    :type tokenizer_path: str
+
+    :param padding_side: Padding side
+    :type padding_path: str
+
+    :param truncation_side: Truncation side
+    :type truncation_side: str
+    """
+
+    tokenizer_path: str
+    padding_side: str = "left"
+    truncation_side: str = "right"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -194,6 +214,7 @@ class TRLConfig:
 
     method: MethodConfig
     model: ModelConfig
+    tokenizer: TokenizerConfig
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig
     train: TrainConfig
@@ -232,6 +253,7 @@ class TRLConfig:
         return cls(
             method=get_method(config["method"]["name"]).from_dict(config["method"]),
             model=ModelConfig.from_dict(config["model"]),
+            tokenizer=TokenizerConfig.from_dict(config["tokenizer"]),
             optimizer=OptimizerConfig.from_dict(config["optimizer"]),
             scheduler=SchedulerConfig.from_dict(config["scheduler"]),
             train=TrainConfig.from_dict(config["train"]),

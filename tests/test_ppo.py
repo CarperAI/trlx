@@ -18,7 +18,7 @@ class TestHydraHead(unittest.TestCase):
             config.model.model_path, config.model.num_layers_unfrozen
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+        tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
 

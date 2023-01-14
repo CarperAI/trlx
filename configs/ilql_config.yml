@@ -14,8 +14,11 @@ train:
 
 model:
   model_path: "gpt2"
-  tokenizer_path: "gpt2"
   num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "right"
 
 optimizer:
   name: "adamw"

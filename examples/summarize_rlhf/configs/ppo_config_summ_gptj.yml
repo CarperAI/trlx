@@ -13,8 +13,11 @@ train:
 
 model:
   model_path: "CarperAI/openai_summarize_tldr_sft"
-  tokenizer_path: "EleutherAI/gpt-j-6B"
   num_layers_unfrozen: 8
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "right"
 
 optimizer:
   name: "adamw"

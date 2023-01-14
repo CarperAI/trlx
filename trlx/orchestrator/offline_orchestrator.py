@@ -22,7 +22,7 @@ def tokenize_dialogue(  # noqa: C901
 
     out = []
     ctx_length = max_length
-    if truncation_side == "left":
+    if tokenizer.truncation_side == "left":
         for phrase in reversed(dialogue):
             tokens = tokenizer(phrase).input_ids[-ctx_length:]
             ctx_length -= len(tokens)
@@ -37,7 +37,7 @@ def tokenize_dialogue(  # noqa: C901
                 out[0].pop(0)
             out.insert(0, [tokenizer.bos_token_id])
 
-    elif truncation_side == "right":
+    elif tokenizer.truncation_side == "right":
         for phrase in dialogue:
             tokens = tokenizer(phrase).input_ids[:ctx_length]
             ctx_length -= len(tokens)
@@ -62,9 +62,7 @@ class OfflineOrchestrator(Orchestrator):
         """
         if self.trainer.tokenizer:
             samples = [
-                tokenize_dialogue(
-                    s, self.trainer.tokenizer, max_length, truncation_side="right"
-                )
+                tokenize_dialogue(s, self.trainer.tokenizer, max_length)
                 for s in samples
             ]
 

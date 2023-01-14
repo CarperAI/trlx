@@ -52,15 +52,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.opt = self.setup_optimizer()
         self.scheduler = self.setup_scheduler()
 
-        if config.model.tokenizer_path:
-            self.tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
-            self.tokenizer.padding_side = "left"
-            self.tokenizer.truncation_side = "right"
-            self.tokenizer.sep_token = "<sep>"
-            if config.model.model_arch_type != "seq2seq":
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-        else:
-            self.tokenizer = None
+        self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
+        self.tokenizer.padding_side = config.tokenizer.padding_side
+        self.tokenizer.truncation_side = config.tokenizer.truncation_side
+        self.tokenizer.sep_token = "<sep>"
+        if config.model.model_arch_type != "seq2seq":
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -68,11 +65,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             model_name = config.model.model_path.split("/")[-1]
 
+        if self.accelerator.num_processes == 1:
+            num_gpus = "1gpu"
+        else:
+            num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
-        run_name = (
-            "/".join([script_name, model_name, f"{self.accelerator.num_processes}gpus"])
-            + f":{branch}"
-        )
+
+        run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
         if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()
