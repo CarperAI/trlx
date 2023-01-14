@@ -1,5 +1,6 @@
 import json
 import logging
+import pathlib
 
 import yaml
 from lang import Interpreter
@@ -12,8 +13,10 @@ logger = logging.getLogger(__name__)
 
 class DSLDataset:
     def __init__(self):
-        self.train_data = json.load(open("dataset/train.json", "r"))
-        self.test_data = json.load(open("dataset/test.json", "r"))
+        with open("dataset/train.json", "r") as f:
+            self.train_data = json.load(f)
+        with open("dataset/test.json", "r") as f:
+            self.test_data = json.load(f)
         logger.info("Sucessfully loaded the dataset")
 
     def load_datapoints(self, split="train"):
@@ -50,7 +53,9 @@ def reward_fn(samples, **kwargs):
     return reward_list
 
 
-default_config = yaml.safe_load(open("configs/trlx_ppo_config.yml"))
+config_path = pathlib.Path(__file__).parent.joinpath("configs/trlx_ppo_config.yml")
+with config_path.open() as f:
+    default_config = yaml.safe_load(f)
 
 
 def main(hparams={}):
