@@ -24,7 +24,7 @@ You can train a model using a reward function or a reward-labeled dataset.
 
 #### Using a reward function
 ```python
-trainer = trlx.train('gpt2', reward_fn=lambda samples: [sample.count('cats') for sample in samples])
+trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('cats') for sample in samples])
 ```
 #### Using a reward-labeled dataset
 ```python
