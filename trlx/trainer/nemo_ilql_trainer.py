@@ -13,9 +13,12 @@ from nemo.collections.nlp.parts.nlp_overrides import (
     MegatronHalfPrecisionPlugin,
     NLPDDPStrategy,
     PipelineMixedPrecisionPlugin,
+    NLPSaveRestoreConnector
 )
+from nemo.collections.nlp.modules.common.megatron.megatron_init import fake_initialize_model_parallel
+from nemo.utils.app_state import AppState
 from nemo.utils import logging
-from nemo.utils.exp_manager import StatelessTimer
+from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.timer import Timer
@@ -69,22 +72,10 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
             )
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
-
-    if pretrained_model is not None:
-        assert (
-            cfg.trainer.devices * cfg.trainer.num_nodes
-            == cfg.tensor_model_parallel_size * cfg.pipeline_model_parallel_size
-        ), "devices * num_nodes should equal tensor_model_parallel_size * pipeline_model_parallel_size"
-
-        save_restore_connector = NLPSaveRestoreConnector()
-        if os.path.isdir(cfg.gpt_model_file):
-            save_restore_connector.model_extracted_dir = cfg.gpt_model_file
-
-        model = ILQLGPT.restore_from(
-            restore_path=cfg.gpt_model_file,
-            trainer=trainer,
-            save_restore_connector=save_restore_connector,
-        )
+    try:
+        exp_manager(trainer, cfg.exp_manager)
+    except FileNotFoundError:
+        print(f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}")
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
         resume_from_checkpoint = cfg.model.resume_from_checkpoint
@@ -104,12 +95,13 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
             trainer.callbacks[idx] = StatelessTimer(
                 cfg.trainer.max_time,
             )
-
     # hydra interpolation does not work here as the interpolation key is lost when PTL saves hparams
     with open_dict(cfg):
         cfg.model.precision = cfg.trainer.precision
 
     model = ILQLGPT(ilql_config=ilql_config, cfg=cfg.model, trainer=trainer)
+    if pretrained_model is not None:
+        model.load_from_pretrained(pretrained_model)
     print("model initialized")
     return trainer, model
 
@@ -134,8 +126,9 @@ class NemoILQLTrainer(BaseRLTrainer):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_40b.yaml")
-        self.trainer, self.model = train_megatron(self.ilql, megatron_cfg)
+        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
+        pretrained = '/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/'
+        self.trainer, self.model = train_megatron(self.ilql, megatron_cfg, pretrained)
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -189,7 +182,7 @@ class NemoILQLTrainer(BaseRLTrainer):
         # #     raise Exception("end of time")
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
-
+        torch.backends.cuda.matmul.allow_tf32 = True
         self.trainer.fit(self.model)
 
         # gen = self.model.generate(["hello world"] * 2)

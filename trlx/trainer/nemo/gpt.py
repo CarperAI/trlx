@@ -1,6 +1,7 @@
 # Extensible version of the GPT model
 import os
 import sys
+from pathlib import Path
 from functools import reduce
 from math import floor
 from typing import List, Mapping, Optional, Union
@@ -43,6 +44,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     OutputType,
     SamplingParam,
 )
+import wandb
 
 # import trlx.trainer.nemo.generate_ilql as generate_ilql
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
@@ -222,6 +224,10 @@ class LMHeads(MegatronModule):
     def word_embeddings_weight(self):
         return self.language_model.word_embeddings_weight()
 
+    def load_state_dict(self, state_dict, strict=True):
+        print("LMHeads load_state_dict")
+        self.language_model.load_state_dict(state_dict, strict=strict)
+
     def forward(
         self,
         *args,
@@ -356,6 +362,14 @@ class ILQLGPT(MegatronGPTModel):
         super().setup(stage)
         # self._trail_dl = self.build_data_loader(self._train_dataset, self._train_collate_fn)
 
+    def load_from_pretrained(self, checkpoint_dir):
+        mp_rank = parallel_state.get_tensor_model_parallel_rank()
+        rank_subfolder = f"mp_rank_{mp_rank:02d}"
+        rank_params = Path(checkpoint_dir) / rank_subfolder / "model_weights.ckpt"
+        print(f"Loading from {rank_params}")
+        state_dict = torch.load(rank_params)
+        self.model.module.load_state_dict(state_dict, strict=False)
+
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """
         Model construction for Apex Pipeline Parallelism.
@@ -401,6 +415,13 @@ class ILQLGPT(MegatronGPTModel):
             gpt.forward = log_forward
             return gpt
 
+
+    def setup_optimizer_param_groups(self):
+        # To support parameters without gradients, we need to manually
+        # set the optimizer param groups to exclude them
+        unfrozen_params = {'params': [p for p in self.parameters() if p.requires_grad]}
+        self._optimizer_param_groups = (unfrozen_params,)        
+        
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
             batch: ILQLBatch, model, checkpoint_activations_all_layers=None
@@ -465,50 +486,69 @@ class ILQLGPT(MegatronGPTModel):
                 t = rearrange(t, "T N ... -> N T ...")
                 return t
 
+            def batched_index_select(x, idxs, dim):
+                """
+                x: [batch, seq, hidden]
+                idxs: [batch, idxs_seq]
+                """
+                # print(f"{mp_rank=} {x.shape=} {idxs.shape=}")
+                idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
+                return x.gather(dim=dim, index=idxs)
+
             def loss_func(model_output):
 
                 # # TODO: implement this in a sequence parallel way
-                if self.cfg.sequence_parallel:
-                    model_output = tree_map(gather_ntc, model_output)
+                logits, (qs, target_qs, vs)  = model_output
 
-                logits, (qs, target_qs, vs) = model_output
+                if self.cfg.sequence_parallel:
+                    qs, target_qs, vs = tree_map(gather_ntc, (qs, target_qs, vs))
 
                 # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), qs)
                 # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), target_qs)
                 # print(f"{mp_rank=} {batch.actions_ixs.shape=}")
+                
                 qs = tree_map(
-                    lambda t: t.gather(
-                        dim=1,
-                        index=batch.actions_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
-                    ).contiguous(),
-                    qs,
+                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
+                    qs
                 )
+                # rewritten to use indexing
+                # qs = tree_map(
+                #     lambda t: t[torch.arange(t.shape[0]), batch.actions_ixs, :],
+                #     qs,
+                # )
+
                 target_qs = tree_map(
-                    lambda t: t.gather(
-                        dim=1,
-                        index=batch.actions_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
-                    ).contiguous(),
+                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
                     target_qs,
                 )
-                vs = tree_map(
-                    lambda t: t.gather(
-                        dim=1,
-                        index=batch.states_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
-                    ).contiguous(),
-                    vs,
-                )
 
+
+                # vs = tree_map(
+                #     lambda t: t.gather(
+                #         dim=1,
+                #         index=batch.states_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
+                #     ).contiguous(),
+                #     vs,
+                # )
+
+                vs = batched_index_select(vs, batch.states_ixs, 1)
+                print(f"{mp_rank=} {vs.shape=} {logits.shape} {qs[0].shape=} {target_qs[0].shape=} {vs.shape=}")
                 model_output = (logits, (qs, target_qs, vs))
 
                 # We compute the loss on the last rank because NeMo takes the loss to
                 # log from the last rank
                 if mp_rank == 0:
                     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                    loss_for_mb = loss_for_mb * 1.0
                 else:
                     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                    loss_for_mb = loss_for_mb * 0.0
                     stats = {}
 
                 stats = tree_map(lambda v: v.detach().item(), stats)
+
+                for k, v in stats.items():
+                    self.log(k, v, rank_zero_only=True)
 
                 if validation_step and not self.cfg.data.get(
                     "validation_drop_last", True

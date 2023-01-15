@@ -17,7 +17,7 @@ def get_positive_score(scores):
 import os.path
 
 default_config = yaml.safe_load(
-    open(os.path.dirname(__file__) + "/../configs/ilql_config.yml")
+    open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
 )
 
 

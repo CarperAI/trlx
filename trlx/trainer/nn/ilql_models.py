@@ -140,8 +140,8 @@ class ILQLHeads(nn.Module):
         )
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
-        # for q_head in self.target_q_heads:
-        #    q_head.requires_grad_(False)
+        for target_q_head in self.target_q_heads:
+           target_q_head.requires_grad_(False)
 
     def forward(
         self,
@@ -161,8 +161,7 @@ class ILQLHeads(nn.Module):
             states_hs = actions_hs = hs
 
         qs = tuple(q_head(actions_hs) for q_head in self.q_heads)
-        with torch.no_grad():
-            target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
+        target_qs = tuple(q_head(actions_hs) for q_head in self.target_q_heads)
         vs = self.v_head(states_hs)
 
         return qs, target_qs, vs

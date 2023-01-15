@@ -9,13 +9,13 @@ train:
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
-  trainer: "AccelerateILQLTrainer"
+  trainer: "NemoILQLTrainer"
 
   seed: 1000
 
 model:
-  model_path: "EleutherAI/gpt-neox-20b "
-  tokenizer_path: "EleutherAI/gpt-neox-20b"
+  model_path: "gpt2"
+  tokenizer_path: "gpt2"
   num_layers_unfrozen: -1
 
 optimizer:
@@ -40,7 +40,7 @@ method:
   awac_scale: 1
   alpha: 0.001
   steps_for_target_q_sync: 5
-  two_qs: true
+  two_qs: false
   gen_kwargs:
     max_new_tokens: 56
     top_k: 20
