@@ -1,4 +1,6 @@
 from omegaconf.omegaconf import OmegaConf
+
+
 def extract_config(pretrained_model):
     class Restorer(ILQLGPT):
         def __init__(self, cfg, trainer=None):

@@ -1,9 +1,9 @@
 # Extensible version of the GPT model
 import os
 import sys
-from pathlib import Path
 from functools import reduce
 from math import floor
+from pathlib import Path
 from typing import List, Mapping, Optional, Union
 
 import torch
@@ -44,6 +44,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     OutputType,
     SamplingParam,
 )
+
 import wandb
 
 # import trlx.trainer.nemo.generate_ilql as generate_ilql
@@ -415,13 +416,12 @@ class ILQLGPT(MegatronGPTModel):
             gpt.forward = log_forward
             return gpt
 
-
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
         # set the optimizer param groups to exclude them
-        unfrozen_params = {'params': [p for p in self.parameters() if p.requires_grad]}
-        self._optimizer_param_groups = (unfrozen_params,)        
-        
+        unfrozen_params = {"params": [p for p in self.parameters() if p.requires_grad]}
+        self._optimizer_param_groups = (unfrozen_params,)
+
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
             batch: ILQLBatch, model, checkpoint_activations_all_layers=None
@@ -492,13 +492,15 @@ class ILQLGPT(MegatronGPTModel):
                 idxs: [batch, idxs_seq]
                 """
                 # print(f"{mp_rank=} {x.shape=} {idxs.shape=}")
-                idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
+                idxs = idxs.unsqueeze(-1).expand(
+                    idxs.shape[0], idxs.shape[1], x.shape[-1]
+                )
                 return x.gather(dim=dim, index=idxs)
 
             def loss_func(model_output):
 
                 # # TODO: implement this in a sequence parallel way
-                logits, (qs, target_qs, vs)  = model_output
+                logits, (qs, target_qs, vs) = model_output
 
                 if self.cfg.sequence_parallel:
                     qs, target_qs, vs = tree_map(gather_ntc, (qs, target_qs, vs))
@@ -506,10 +508,9 @@ class ILQLGPT(MegatronGPTModel):
                 # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), qs)
                 # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), target_qs)
                 # print(f"{mp_rank=} {batch.actions_ixs.shape=}")
-                
+
                 qs = tree_map(
-                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
-                    qs
+                    lambda t: batched_index_select(t, batch.actions_ixs, 1), qs
                 )
                 # rewritten to use indexing
                 # qs = tree_map(
@@ -522,7 +523,6 @@ class ILQLGPT(MegatronGPTModel):
                     target_qs,
                 )
 
-
                 # vs = tree_map(
                 #     lambda t: t.gather(
                 #         dim=1,
@@ -532,7 +532,9 @@ class ILQLGPT(MegatronGPTModel):
                 # )
 
                 vs = batched_index_select(vs, batch.states_ixs, 1)
-                print(f"{mp_rank=} {vs.shape=} {logits.shape} {qs[0].shape=} {target_qs[0].shape=} {vs.shape=}")
+                print(
+                    f"{mp_rank=} {vs.shape=} {logits.shape} {qs[0].shape=} {target_qs[0].shape=} {vs.shape=}"
+                )
                 model_output = (logits, (qs, target_qs, vs))
 
                 # We compute the loss on the last rank because NeMo takes the loss to

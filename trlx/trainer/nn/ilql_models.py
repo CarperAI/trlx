@@ -141,7 +141,7 @@ class ILQLHeads(nn.Module):
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
         for target_q_head in self.target_q_heads:
-           target_q_head.requires_grad_(False)
+            target_q_head.requires_grad_(False)
 
     def forward(
         self,

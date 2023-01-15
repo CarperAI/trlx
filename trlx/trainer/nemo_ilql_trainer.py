@@ -4,6 +4,9 @@ from typing import Iterable, Sequence, Union, cast
 import torch
 import torch.nn.functional as F
 from apex.transformer import parallel_state
+from nemo.collections.nlp.modules.common.megatron.megatron_init import (
+    fake_initialize_model_parallel,
+)
 from nemo.collections.nlp.modules.common.text_generation_utils import (
     get_default_length_params,
     get_default_sampling_params,
@@ -12,12 +15,11 @@ from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
     NLPDDPStrategy,
+    NLPSaveRestoreConnector,
     PipelineMixedPrecisionPlugin,
-    NLPSaveRestoreConnector
 )
-from nemo.collections.nlp.modules.common.megatron.megatron_init import fake_initialize_model_parallel
-from nemo.utils.app_state import AppState
 from nemo.utils import logging
+from nemo.utils.app_state import AppState
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
@@ -75,7 +77,9 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
     try:
         exp_manager(trainer, cfg.exp_manager)
     except FileNotFoundError:
-        print(f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}")
+        print(
+            f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}"
+        )
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
         resume_from_checkpoint = cfg.model.resume_from_checkpoint
@@ -127,7 +131,7 @@ class NemoILQLTrainer(BaseRLTrainer):
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
         megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
-        pretrained = '/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/'
+        pretrained = "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"
         self.trainer, self.model = train_megatron(self.ilql, megatron_cfg, pretrained)
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
