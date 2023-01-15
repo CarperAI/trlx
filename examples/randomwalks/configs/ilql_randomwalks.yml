@@ -15,8 +15,10 @@ train:
 
 model:
   model_path: "CarperAI/randomwalks"
-  tokenizer_path: "CarperAI/randomwalks"
   num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "CarperAI/randomwalks"
 
 optimizer:
   name: "adamw"
@@ -39,10 +41,11 @@ method:
   cql_scale: 0.1
   awac_scale: 1
   alpha: 0.1
+  beta: 0
   steps_for_target_q_sync: 5
   two_qs: true
   gen_kwargs:
     max_new_tokens: 9
-    top_k: 1
-    beta: 100
+    top_k: 10
+    beta: [0, 1, 100]
     temperature: 1.0

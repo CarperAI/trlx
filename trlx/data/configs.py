@@ -26,17 +26,54 @@ class ModelConfig:
     :param model_path: Path or name of the model (local or on huggingface hub)
     :type model_path: str
 
-    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
-    :type tokenizer_path: str
+    :param model_arch_type: Type of model architecture. Either "causal" or "seq2seq"
+    :type model_arch_type: str
 
     :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
         -1 means all layers are unfrozen.
     :type num_layers_unfrozen: int
+
+    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
+        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
+            {"delta_type": "lora", "modified_modules": "all", "lora_a": 0.5}
+        or in YAML format:
+            delta_kwargs:
+                delta_type: lora
+                modified_modules: "all"
+                lora_a: 0.5
+        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
+    :type delta_kwargs: Optional[Dict[str, Any]]
     """
 
     model_path: str
-    tokenizer_path: str
+    model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
+    delta_kwargs: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]):
+        return cls(**config)
+
+
+@dataclass
+class TokenizerConfig:
+    """
+    Config for a model.
+
+    :param tokenizer_path: Path or name of the tokenizer (local or on huggingface hub)
+    :type tokenizer_path: str
+
+    :param padding_side: Padding side
+    :type padding_path: str
+
+    :param truncation_side: Truncation side
+    :type truncation_side: str
+    """
+
+    tokenizer_path: str
+    padding_side: str = "left"
+    truncation_side: str = "right"
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -116,6 +153,7 @@ class TrainConfig:
     :type orchestrator: str
 
     :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
+    :type trainer: str
 
     :param project_name: Project name for wandb
     :type project_name: str
@@ -123,12 +161,18 @@ class TrainConfig:
     :param entity_name: Entity name for wandb
     :type entity_name: str
 
+    :param group_name: Group name for wandb (used for grouping runs)
+    :type group_name: str
+
     :param checkpoint_dir: Directory to save checkpoints
     :type checkpoint_dir: str
 
     :param rollout_logging_dir: Directory to store generated rollouts for use in Algorithm Distillation.
                                 Only used by AcceleratePPOTrainer.
     :type rollout_logging_dir: Optional[str]
+
+    :param save_best: Save best model based on mean reward
+    :type save_best: bool
 
     :param seed: Random seed
     :type seed: int
@@ -148,9 +192,11 @@ class TrainConfig:
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None
+    group_name: Optional[str] = None
 
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
+    save_best: bool = True
 
     trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
@@ -168,6 +214,7 @@ class TRLConfig:
 
     method: MethodConfig
     model: ModelConfig
+    tokenizer: TokenizerConfig
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig
     train: TrainConfig
@@ -206,6 +253,7 @@ class TRLConfig:
         return cls(
             method=get_method(config["method"]["name"]).from_dict(config["method"]),
             model=ModelConfig.from_dict(config["model"]),
+            tokenizer=TokenizerConfig.from_dict(config["tokenizer"]),
             optimizer=OptimizerConfig.from_dict(config["optimizer"]),
             scheduler=SchedulerConfig.from_dict(config["scheduler"]),
             train=TrainConfig.from_dict(config["train"]),

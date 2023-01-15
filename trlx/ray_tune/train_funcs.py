@@ -14,7 +14,7 @@ def ppo_sentiments_train(config: dict):
 
     sentiment_fn = pipeline("sentiment-analysis", "lvwerra/distilbert-imdb", device=-1)
 
-    def reward_fn(samples):
+    def reward_fn(samples, **kwargs):
         outputs = sentiment_fn(samples, return_all_scores=True)
         sentiments = [output[1]["score"] for output in outputs]
         return sentiments

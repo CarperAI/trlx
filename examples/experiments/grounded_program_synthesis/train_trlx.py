@@ -29,7 +29,7 @@ class DSLDataset:
 interpreter = Interpreter()
 
 
-def reward_fn(samples):
+def reward_fn(samples, **kwargs):
     reward_list = []
     for sample in samples:
         code = sample.split("Function:")[1].strip()

@@ -13,8 +13,11 @@ train:
 
 model:
   model_path: "lvwerra/gpt2-imdb" # Name of hf model to load
-  tokenizer_path: "gpt2" # Name of hf tokenizer to load
   num_layers_unfrozen: 2 # Number of bottom layers to freeze during training
+
+tokenizer:
+  tokenizer_path: "gpt2" # Name of hf tokenizer to load
+  truncation_side: "right" # Trim this side of samples if they are longer than LM context
 
 optimizer:
   name: "adamw" # Name of optimizer to load
