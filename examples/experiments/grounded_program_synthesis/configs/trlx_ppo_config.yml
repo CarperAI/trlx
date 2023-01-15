@@ -13,8 +13,10 @@ train:
 
 model:
   model_path: "reshinthadith/codegen_350M_list_manip_5_len"
-  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"
   num_layers_unfrozen: 2
+
+tokenizer:
+  tokenizer_path: "reshinthadith/codegen_350M_list_manip_5_len"
 
 optimizer:
   name: "adamw"

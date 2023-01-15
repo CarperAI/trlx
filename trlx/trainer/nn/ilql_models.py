@@ -11,18 +11,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
-from nemo.collections.nlp.modules.common.megatron.utils import (
-    average_losses_across_data_parallel_group,
-    get_all_params_for_weight_decay_optimization,
-    get_params_for_weight_decay_optimization,
-)
 from torch import nn
 
-import wandb
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
+    flatten_dict,
     freeze_bottom_causal_layers,
+    get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_hidden_size,
     hf_get_lm_head,
@@ -45,6 +41,7 @@ class ILQLConfig(MethodConfig):
     cql_scale: float
     awac_scale: float
     alpha: float
+    beta: float
     steps_for_target_q_sync: float
     two_qs: bool
     gen_kwargs: dict
@@ -54,18 +51,20 @@ class ILQLConfig(MethodConfig):
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
+        terminal_mask = labels.dones[:, :-1]
+        n_nonterminal = max(1, terminal_mask.sum())
+
         actions = (
             labels.input_ids[:, 1:]
             .gather(dim=1, index=labels.actions_ixs)
             .unsqueeze(-1)
         )
+        nactions = actions.shape[1]
         bsize, _, dsize = logits.shape
-        ntokens = labels.states_ixs.shape[1]
+
         Q = [q.gather(-1, actions).squeeze(-1) for q in qs]
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
-        terminal_mask = labels.dones[:, :-1]
-        n_nonterminal = max(1, terminal_mask.sum())
 
         # values of current states
         V = vs[:, :-1].squeeze()
@@ -87,8 +86,6 @@ class ILQLConfig(MethodConfig):
             * terminal_mask
         ).sum() / n_nonterminal
 
-        nactions = qs[0].shape[1]
-
         def cql_loss(q):
             loss = F.cross_entropy(
                 q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
@@ -99,29 +96,41 @@ class ILQLConfig(MethodConfig):
 
         loss_cql = sum(cql_loss(q) for q in qs)
 
-        states_logits = logits.gather(
-            1, index=labels.states_ixs.unsqueeze(-1).repeat(1, 1, logits.shape[-1])
+        # select logits from continuations
+        action_logits = logits.gather(
+            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, dsize)
         )
-        input_states = labels.input_ids.gather(1, index=labels.states_ixs)
+        cross_entropy = F.cross_entropy(
+            action_logits.reshape(-1, dsize),
+            actions.reshape(-1),
+            reduction="none",
+        ).reshape(bsize, nactions)
+
+        with torch.no_grad():
+            awac_weight = torch.exp(self.beta * (targetQ - V))
 
         loss_awac = (
-            F.cross_entropy(
-                states_logits[:, :-1, :].reshape(-1, dsize),
-                input_states[:, 1:].reshape(-1),
-                reduction="none",
-            ).reshape(bsize, ntokens - 1)
-            * labels.attention_mask[:, 1:]
-        ).sum() / labels.attention_mask[:, 1:].sum()
-
+            torch.sum(cross_entropy * awac_weight * terminal_mask) / n_nonterminal
+        )
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
 
-        stats = {
-            f"losses/{k}": v
-            for k, v in locals().items()
-            if k in ["loss", "loss_v", "loss_q", "loss_cql", "loss_awac"]
-        }
+        stats = dict(
+            losses=dict(
+                loss=loss.item(),
+                loss_q=loss_q.item(),
+                loss_v=loss_v.item(),
+                loss_cql=loss_cql.item(),
+                loss_awac=loss_awac.item(),
+            ),
+            values=get_tensor_stats(V, terminal_mask, n_nonterminal),
+            qvalues={
+                str(ix): get_tensor_stats(Q[ix], terminal_mask, n_nonterminal)
+                for ix in range(len(Q))
+            },
+            awac_weight=get_tensor_stats(awac_weight, terminal_mask, n_nonterminal),
+        )
 
-        return loss, stats
+        return loss, flatten_dict(stats)
 
 
 class ILQLHeads(nn.Module):

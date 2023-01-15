@@ -38,7 +38,7 @@ def main(hparams={}):
         device=device,
     )
 
-    def reward_fn(samples: List[str]) -> List[float]:
+    def reward_fn(samples: List[str], **kwargs) -> List[float]:
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return sentiments
 
@@ -46,7 +46,7 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
-    return trlx.train(
+    trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=["I don't know much about Hungarian underground"] * 64,

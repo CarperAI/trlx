@@ -25,9 +25,7 @@ except ModuleNotFoundError:
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2),
-        nn.ReLU(),
-        nn.Linear(n_embd * 2, out),
+        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
     )
 
 
@@ -44,7 +42,26 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
         layer.requires_grad_(False)
 
 
-# HuggingFace utilities
+def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+    """Freezes the bottom transformer block layers of the specified model."""
+    if num_layers_unfrozen == -1:
+        return
+    shared_embed = model.shared
+    decoder_embed = model.decoder.embed_tokens
+    encoder_blocks = model.encoder.block
+    encoder_norm_layer = model.encoder.final_layer_norm
+    decoder_norm_layer = model.decoder.final_layer_norm
+    decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
+    blocks_to_freeze = (
+        list(encoder_blocks)
+        + list(decoder_blocks)
+        + [shared_embed]
+        + [encoder_norm_layer]
+        + [decoder_norm_layer]
+        + [decoder_embed]
+    )
+    for block in blocks_to_freeze:
+        block.requires_grad_(False)
 
 
 def rhasattr(obj, attr):
@@ -260,11 +277,6 @@ class RunningMoments:
 
 
 MODIFIED_MODULES_DICT = {
-    "gpt2": {
-        "attention": ["attn.c_attn", "attn.c_proj"],
-        "mlp": ["mlp.c_fc", "mlp.c_proj"],
-        "all": ["attn.c_attn", "attn.c_proj", "mlp.c_fc", "mlp.c_proj"],
-    },
     "gptj": {
         "attention": ["attn.q_proj", "attn.k_proj", "attn.v_proj"],
         "mlp": ["mlp.fc_in", "mlp.fc_out"],
@@ -335,7 +347,7 @@ def generate_layer_regex(
 
 def get_delta_modified_modules(
     config: transformers.PretrainedConfig,
-    modified_modules: str,
+    modified_modules: List[str],
     num_layers_unfrozen: int = -1,
 ) -> List[str]:
     """Returns a list of module names to be modified for a given delta method with
@@ -364,9 +376,9 @@ def parse_delta_kwargs(
     config: transformers.PretrainedConfig,
     delta_kwargs: Dict[str, Any],
     num_layers_unfrozen: int = -1,
-) -> Tuple[str, Dict[str, any]]:
+) -> Tuple[str, Dict[str, Any]]:
     """Parses through delta kwargs to get delta type and proper modified modules."""
-    # This is function is needed to parse through the `delta_kwargs` to:
+    # This function is needed to parse through the `delta_kwargs` in order to:
     # 1) Get the `delta_type` method name to access the correct `delta_model_class`
     # 2a) Accept user specified `modified_modules` and if not provided use the `trlx` default mapping
     # 2b) Convert the list of `modified_modules` to a range of layers that fit within the range
@@ -380,6 +392,11 @@ def parse_delta_kwargs(
     # Use `trlx` default modified modules if none are specified
     modified_modules = delta_kwargs.get("modified_modules", "all")
     if modified_modules in ["all", "attention", "mlp"]:
+        if config.model_type not in MODIFIED_MODULES_DICT:
+            raise ValueError(
+                f"Model type `{config.model_type}` is not currently supported for "
+                "delta training with default modified modules."
+            )
         modified_modules = MODIFIED_MODULES_DICT[config.model_type][modified_modules]
     # Update the `modified_modules` with the correct layer ranges
     delta_kwargs["modified_modules"] = get_delta_modified_modules(

@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -15,14 +15,15 @@ from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
     CausalLMHydraWithValueHead,
     FixedKLController,
+    Seq2SeqLMHydraWithValueHead,
 )
 from trlx.utils.modeling import logprobs_from_logits
 
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, **kwargs):
+        super().__init__(config, **kwargs)
 
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True
@@ -47,14 +48,40 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
-
-        self.generate_kwargs = dict(
-            config.method.gen_kwargs,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
+        if config.model.model_arch_type == "seq2seq":
+            self.generate_kwargs = dict(
+                config.method.gen_kwargs,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
+            )
+            if config.method.gen_experience_kwargs is not None:
+                self.generate_experience_kwargs = dict(
+                    config.method.gen_experience_kwargs,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
+            else:
+                self.generate_experience_kwargs = None
+        else:
+            self.generate_kwargs = dict(
+                config.method.gen_kwargs,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+            if config.method.gen_experience_kwargs is not None:
+                self.generate_experience_kwargs = dict(
+                    config.method.gen_experience_kwargs,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            else:
+                self.generate_experience_kwargs = None
 
     def get_arch(self, config: TRLConfig):
+        if config.model.model_arch_type == "seq2seq":
+            return Seq2SeqLMHydraWithValueHead(
+                config.model.model_path, config.model.num_layers_unfrozen
+            )
         return CausalLMHydraWithValueHead(
             config.model.model_path, config.model.num_layers_unfrozen
         )
@@ -82,32 +109,58 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_logprobs = batch.logprobs.to(self.accelerator.device)
         old_values = batch.values.to(self.accelerator.device)
         old_rewards = batch.rewards.to(self.accelerator.device)
-
         response_length = old_rewards.shape[1]
 
         advantages, returns = self.config.method.get_advantages_and_returns(
             old_values, old_rewards, response_length
         )
 
-        tokens, attention_mask, position_ids = self.get_model_inputs(
-            query_tensors, response_tensors
-        )
+        if self.config.model.model_arch_type == "seq2seq":
+            input_ids = query_tensors
+            decoder_input_ids = response_tensors
+            attention_mask = (
+                input_ids.ne(self.tokenizer.pad_token_id)
+                .long()
+                .to(self.accelerator.device)
+            )
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                decoder_input_ids=decoder_input_ids,
+            )
+            logits = outputs.logits
+            values_pred = outputs.value
+            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            mask = (
+                decoder_input_ids.ne(self.tokenizer.pad_token_id)
+                .long()
+                .to(self.accelerator.device)
+            )
+            start = 1
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start - 1 : end - 1],
+                mask[:, start:end],
+            )
+        else:
+            tokens = torch.cat((query_tensors, response_tensors), dim=1)
+            attention_mask = (
+                tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
+            )
+            outputs = self.model(tokens, attention_mask, return_dict=True)
+            logits = outputs.logits
+            values_pred = outputs.value
+            values_pred = values_pred[:, :-1]
+            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
 
-        logits, *_, values_pred = self.model(
-            tokens, attention_mask=attention_mask, position_ids=position_ids
-        )
-        values_pred = values_pred[:, :-1]
-        logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
-        attention_mask = attention_mask[:, :-1]
-
-        # Only the response part of the values/logprobs is needed
-        start = query_tensors.shape[1] - 1
-        end = start + response_length
-        logprobs, values_pred, mask = (
-            logprobs[:, start:end],
-            values_pred[:, start:end],
-            attention_mask[:, start:end],
-        )
+            start = query_tensors.shape[1] - 1
+            end = start + response_length
+            logprobs, values_pred, mask = (
+                logprobs[:, start:end],
+                values_pred[:, start:end],
+                attention_mask[:, start:end],
+            )
 
         loss, stats = self.config.method.loss(
             logprobs=logprobs,
@@ -165,3 +218,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             * len(self.train_dataloader)
         )
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
+
+    def save_pretrained(self, directory: Optional[str] = None):
+        directory = f"{directory or self.config.train.checkpoint_dir}/hf_model"
+        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
+        self.tokenizer.save_pretrained(directory)

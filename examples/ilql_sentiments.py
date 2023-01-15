@@ -14,8 +14,6 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-import os.path
-
 default_config = yaml.safe_load(
     open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
 )
@@ -33,14 +31,13 @@ def main(hparams={}):
         device=-1 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
-    def metric_fn(samples: List[str]) -> Dict[str, List[float]]:
+    def metric_fn(samples: List[str], **kwargs) -> Dict[str, List[float]]:
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return {"sentiments": sentiments}
 
     imdb = load_dataset("imdb", split="train+test")
 
     trlx.train(
-        "gpt2",
         dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
