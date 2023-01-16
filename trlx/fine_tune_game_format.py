@@ -21,7 +21,7 @@ def main() -> None:
     wandb.login()
 
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B")
-    training_args = TrainingArguments(per_device_train_batch_size=1,output_dir=".checkpoints", evaluation_strategy="epoch")
+    training_args = TrainingArguments(output_dir=".checkpoints", evaluation_strategy="epoch")
         
     trainer = Trainer(
         model=model,
