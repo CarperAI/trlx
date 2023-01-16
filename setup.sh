@@ -19,6 +19,7 @@ fi
 # to install correct versions
 pip install --upgrade --force-reinstall numexpr==2.7.3 numpy==1.23.*
 pip install --upgrade --force-reinstall torch --extra-index-url https://download.pytorch.org/whl/cu116
+pip install tictactoe-gpt-finetuning
 
 pip install -e .
 
