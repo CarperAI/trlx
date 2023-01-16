@@ -1,7 +1,6 @@
 ## NeMo Megatron setup
 This setup pertains to the cluster, but should also work if you clone the `r1.13.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.13.0 and apex from `nm_v1.13.0` from https://github.com/ericharper/apex.git
 
-
 1) install conda (or mamba/micromamba)
 
 2) srun into a compute node
@@ -14,7 +13,7 @@ srun --pty bash -i
 conda env create -f env.yaml
 ```
 
-4) copy the nemo r1.13 repo to your home folder
+4) copy the nemo r1.13 repo to your home folder (or clone the github)
 ```
 cp -R /mnt/nvme/jobs/NeMo-113-release ~/NeMo-113-release
 ```
@@ -25,7 +24,7 @@ cp -R /mnt/nvme/jobs/NeMo-113-release ~/NeMo-113-release
 cd ~/NeMo-113-release && pip install '.[all]'
 ```
 
-6) install apex
+6) install apex (or clone the github)
 ```
 cd ~/NeMo-113-release/apex
 ```
@@ -37,6 +36,7 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 # conda env export
 ```
 name: nemo-113
+prefix: /mnt/nvme/jobs/nemo/nemo-source
 channels:
   - anaconda
   - conda-forge
@@ -319,5 +319,4 @@ dependencies:
     - yarl==1.8.1
     - youtokentome==1.0.6
     - zipp==3.10.0
-prefix: /mnt/nvme/jobs/nemo/nemo-source
 ```

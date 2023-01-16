@@ -195,7 +195,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         padding_collator = DataCollatorWithPadding(self.tokenizer)
 
         def eval_collate(elems):
-            return padding_collator(elems)["input_ids"]
+            return [padding_collator(elems)["input_ids"]]
 
         self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
 

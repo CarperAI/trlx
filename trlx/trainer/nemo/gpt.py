@@ -499,7 +499,6 @@ class ILQLGPT(MegatronGPTModel):
         else:
             loss_mean = torch.tensor(0.0).cuda()
 
-        print(f"{loss_mean=}")
         # when using sequence parallelism, the sequence parallel layernorm grads must be all-reduced
         if self.cfg.get("tensor_model_parallel_size", 1) > 1 and self.cfg.get(
             "sequence_parallel", False
@@ -713,7 +712,7 @@ class ILQLGPT(MegatronGPTModel):
                             .detach(),
                         ]
                     )
-                    # Could potentially reduce num_valid_samples_in_microbatch and use that to 
+                    # Could potentially reduce num_valid_samples_in_microbatch and use that to
                     # aggregate instead of len(self._validation_ds)
                     torch.distributed.all_reduce(
                         loss_sum_and_mb_size_all_gpu,
