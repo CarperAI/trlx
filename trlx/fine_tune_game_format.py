@@ -2,14 +2,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingA
 from datasets import Dataset
 
 import wandb
-from trlx.tic_tac_toe_data import generate_dataset
+from tic_tac_toe_data import generate_dataset
 
 
 def main() -> None:
-    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B")
     
     # Create the train dataset
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B", mask_token="<mask>")
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B",)# mask_token="<mask>") #Why is this here?
     list_of_game_strings = generate_dataset(10)
     train_dataset = Dataset.from_dict({"text":list_of_game_strings})
     tokenized_dataset = train_dataset.map(lambda examples: tokenizer(examples["text"]), batched=True)
@@ -21,11 +20,9 @@ def main() -> None:
 
     wandb.login()
 
-
-    training_args = TrainingArguments(output_dir=".checkpoints", evaluation_strategy="epoch")
-    
-    # Convert the strings to features that can be fed into a model
-    
+    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B")
+    training_args = TrainingArguments(per_device_train_batch_size=1,output_dir=".checkpoints", evaluation_strategy="epoch")
+        
     trainer = Trainer(
         model=model,
         args=training_args,
