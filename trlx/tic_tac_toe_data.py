@@ -1,6 +1,8 @@
 """ Basic tic tac toe implementation to use as a language model finetuning task. """
 import numpy as np
 from datasets import Dataset
+from transformers import AutoTokenizer
+from typing import List
 
 class BoardState:
     """ A class to represent the state of a tic tac toe game """
@@ -98,5 +100,13 @@ def generate_n_games(n):
     return [ generate_random_game() for _ in range(n) ]
 
 def generate_dataset(number_games: int) -> Dataset:
-    games = generate_n_games(number_games)
-    return Dataset.from_dict({"train": games})
+    # Create the list of games (each is a dict with one text attribute of the
+    # prompt)
+    games: List[str] = generate_n_games(number_games)
+    games_prepared = []
+    for prompt in games:
+        games_prepared.append({"text": prompt})
+        
+    # Create dataset
+    dataset = Dataset.from_dict({"train": games_prepared})
+    return dataset
