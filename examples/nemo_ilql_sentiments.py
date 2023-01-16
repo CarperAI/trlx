@@ -15,7 +15,7 @@ def get_positive_score(scores):
 
 
 default_config = yaml.safe_load(
-    open(os.path.dirname(__file__) + "/../configs/ilql_config.yml")
+    open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
 )
 
 
@@ -39,7 +39,7 @@ def main(hparams={}):
 
     trlx.train(
         dataset=(imdb["text"], imdb["label"]),
-        eval_prompts=["I don't know much about Hungarian underground"] * 64,
+        eval_prompts=["I don't know much about Hungarian underground"] * 128 * 20,
         metric_fn=metric_fn,
         config=config,
     )
