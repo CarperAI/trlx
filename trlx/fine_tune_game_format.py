@@ -1,4 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling
+from datasets import Dataset
 
 import wandb
 from trlx.tic_tac_toe_data import generate_dataset
@@ -7,31 +8,33 @@ from trlx.tic_tac_toe_data import generate_dataset
 def main() -> None:
     model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B")
     
-    # Create the dataset
+    # Create the train dataset
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B", mask_token="<mask>")
-    datacollator = DataCollatorForLanguageModeling(tokenizer=tokenizer)
-    dataset = generate_dataset(10)
-    print(dataset["train"][0])
-    
-    # wandb.login()
+    list_of_game_strings = generate_dataset(10)
+    train_dataset = Dataset.from_dict({"text":list_of_game_strings})
+    tokenized_dataset = train_dataset.map(lambda examples: tokenizer(examples["text"]), batched=True)
+    # create labels by copying input_ids column to labels column
+    lm_dataset = tokenized_dataset.map(lambda examples: {"labels": examples["input_ids"]}, batched=True)
+    print(lm_dataset)
+    print(tokenizer.decode(lm_dataset[1]["input_ids"]))
 
 
-    # training_args = TrainingArguments(output_dir=".checkpoints", evaluation_strategy="epoch")
-    
-    # # Convert the strings to features that can be fed into a model
+    wandb.login()
 
-    # # Convert the features to a torch dataset
-    # dataset = torch.utils.data.TensorDataset(*(f.input_ids for f in features))
+
+    training_args = TrainingArguments(output_dir=".checkpoints", evaluation_strategy="epoch")
     
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=dataset["train"],
-    #     # eval_dataset=small_eval_dataset,
-    #     # compute_metrics=compute_metrics,
-    # )
+    # Convert the strings to features that can be fed into a model
     
-    # trainer.train()
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=lm_dataset,
+        # eval_dataset=small_eval_dataset,
+        # compute_metrics=compute_metrics,
+    )
+    
+    trainer.train()
 
 if __name__ == "__main__":
     main()
