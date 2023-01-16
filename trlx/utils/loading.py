@@ -13,7 +13,11 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.trainer import _TRAINERS
 from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
-from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
+
+try:
+    from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
+except ImportError:
+    pass
 
 
 def get_trainer(name: str) -> Callable:

@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Iterable, Sequence, Union, cast
 
 import torch
+from nemo.collections.nlp.modules.common.text_generation_strategy import pad_batch
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
@@ -95,7 +96,6 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
     model = ILQLGPT(ilql_config=ilql_config, cfg=cfg.model, trainer=trainer)
     if pretrained_model is not None:
         model.load_from_pretrained(pretrained_model)
-    print("model initialized")
     return trainer, model
 
 
@@ -132,6 +132,9 @@ class NeMoILQLTrainer(BaseRLTrainer):
             print(f"Loading NeMo config from {cfg_path=}")
             megatron_cfg = OmegaConf.load(cfg_path)
 
+        elif megatron_cfg is None:
+            raise ValueError("megatron_cfg must be a path or a config")
+
         self.trainer, self.model = train_megatron(
             self.ilql, megatron_cfg, pretrained_model
         )
@@ -142,7 +145,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
 
-        if stop_sequences is not None:
+        if stop_sequences is not None and len(stop_sequences) > 0:
             print(f"Ignoring stop_sequences {stop_sequences=}")
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
@@ -192,10 +195,12 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
-        padding_collator = DataCollatorWithPadding(self.tokenizer)
-
         def eval_collate(elems):
-            return [padding_collator(elems)["input_ids"]]
+            context_tokens = [e["input_ids"] for e in elems]
+            context_tokens, context_lengths = pad_batch(
+                context_tokens, self.tokenizer.eos_token_id, 64
+            )
+            return [context_tokens, context_lengths]
 
         self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
 

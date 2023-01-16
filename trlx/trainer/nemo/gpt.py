@@ -1,12 +1,11 @@
 # Extensible version of the GPT model
-import os
 import sys
 from collections import OrderedDict
 from copy import deepcopy
 from functools import partial, reduce
 from math import sqrt
 from pathlib import Path
-from typing import List, Mapping, Optional, Union
+from typing import List, Mapping, Optional, Tuple, Union
 
 import torch
 import torch.distributed
@@ -325,9 +324,6 @@ class ILQLGPT(MegatronGPTModel):
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
         return None
 
-    def process_global_batch(self, batch: ILQLBatch, global_batch_size=None):
-        return batch
-
     def build_train_valid_test_datasets(self):
         pass
         #    self._train_ds =
@@ -435,7 +431,7 @@ class ILQLGPT(MegatronGPTModel):
             ignore_virtual=True
         ) or parallel_state.is_pipeline_last_stage(ignore_virtual=True):
             # we prepare the micro batches for the apex fwd/bwd function
-            batch_for_pipeline = self.process_global_batch(batch)
+            batch_for_pipeline = batch
         else:
             # The intermediate pipeline stages do not need any inputs from data loader
             # GPT3 uses decoder with AttnMask:causal, thus doesn't need attention_mask
@@ -565,21 +561,26 @@ class ILQLGPT(MegatronGPTModel):
 
         return loss_mean
 
+    # TODO: replace this with less magical code
     def sequence_parallel_(self, enabled: bool):
         self.cfg.sequence_parallel = enabled
 
         def toggle_sp(m):
             if hasattr(m, "sequence_parallel"):
                 m.sequence_parallel = enabled
+
+            # for the Row/ColumnParallelLinear layers
             if hasattr(m, "sequence_parallel_enabled"):
                 if hasattr(m, "input_is_parallel"):
                     m.sequence_parallel_enabled = enabled and m.input_is_parallel
+                elif hasattr(m, "gather_output"):
+                    m.sequence_parallel_enabled = enabled and not m.gather_output
                 else:
                     m.sequence_parallel_enabled = enabled
 
         self.model.apply(toggle_sp)
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Tuple[List[int], List[int]], batch_idx: int):
         if self.metric_fn is None:
             raise ValueError("Must set metric_fn to use validation")
 
@@ -587,15 +588,33 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(False)
 
-        batch = self.process_global_batch(batch)
-        gen = self.model.generate(batch, dict(max_length=20, min_length=0))
+        input_ids, lengths = batch
+        input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
+        input_ids, lengths = to_device(
+            (input_ids, lengths), torch.cuda.current_device(), non_blocking=True
+        )
+
+        gen = self.generate((input_ids, lengths), dict(max_length=20, min_length=0))
         metrics = self.metric_fn(gen["sentences"])
-        for k, v in metrics.items():
-            mean_v = torch.as_tensor(v).mean().item()
-            self.log(f"metrics/{k}", mean_v, prog_bar=True, rank_zero_only=True)
+
+        avg_metrics = {
+            f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
+        }
+
+        for k, v in avg_metrics.items():
+            self.log(
+                f"metrics/{k}",
+                v,
+                prog_bar=True,
+                rank_zero_only=True,
+                batch_size=len(input_ids),
+            )
 
         if sp_was_enabled:
             self.sequence_parallel_(True)
+
+        avg_metric = list(avg_metrics.values())[0]
+        return [avg_metric, len(input_ids)]
 
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
@@ -766,9 +785,6 @@ class ILQLGPT(MegatronGPTModel):
                     extra_arg[
                         "inference_max_sequence_len"
                     ] = inference_max_sequence_len[0].item()
-                    print(
-                        f"{set_inference_key_value_memory=} {inference_max_sequence_len=}"
-                    )
                     # extra_arg['inference_max_sequence_len'] = inference_max_sequence_len[0].item()
 
                 attention_mask = attention_mask[0:1]
