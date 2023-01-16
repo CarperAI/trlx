@@ -27,12 +27,14 @@ from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
-from toolz import curry
+from toolz import compose
 from torch.nn.utils.rnn import pad_sequence
+from transformers import DataCollatorWithPadding
 
+import wandb
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
-from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, ilql_collate_fn
 from trlx.trainer import register_trainer
 from trlx.trainer.nemo.gpt import ILQLGPT
 from trlx.trainer.nn.ilql_models import ILQLConfig
@@ -137,6 +139,8 @@ class NeMoILQLTrainer(BaseRLTrainer):
         self.trainer, self.model = train_megatron(
             self.ilql, megatron_cfg, self.pretrained
         )
+        self.model.metric_fn = self.metric_fn
+
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -161,90 +165,38 @@ class NeMoILQLTrainer(BaseRLTrainer):
         input_ids = list(map(torch.as_tensor, tokenized.input_ids))
         return input_ids
 
+    def tokenize_inference(
+        self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]
+    ):
+        if isinstance(texts[0], torch.LongTensor):
+            return texts
+
+        side = self.tokenizer.padding_side
+        pad_token_id = self.tokenizer.pad_token_id
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.pad_token_id = self.tokenizer.bos_token_id
+
+        tokenized = self.tokenizer(
+            [self.tokenizer.bos_token + x for x in texts],
+            max_length=self.max_length,
+            truncation=True,
+            add_special_tokens=False,
+        )
+
+        self.tokenizer.padding_side = side
+        self.tokenizer.pad_token_id = pad_token_id
+
+        input_ids = list(map(torch.as_tensor, tokenized.input_ids))
+        return input_ids
+
     def learn(self):
-        # self.model.cfg.sequence_parallel = False
-        # self.model.cfg.activations_checkpoint_granularity = None
-        # self.model.cfg.activations_checkpoint_method = None
-        # self.model = ILQLGPT(ilql_config=self.ilql, cfg=self.model.cfg, trainer=self.trainer)
-        # if self.pretrained is not None:
-        #     self.model.model.load_from_pretrained(self.pretrained)
-        # # self.model.cfg.sequence_parallel = True
 
-        # # gen = self.model.generate(["hello world"] * 2, dict(max_length=64, min_length=10))
-        # # print(f"{gen=}")
-        for i in range(1):
+        train_collate = compose(ilql_collate_fn, flatten_dataclass(ILQLBatch))
+        self.model.set_train_dataset(self.store, collate_fn=train_collate)
 
-            def collate_fn(elems: Iterable[ILQLElement]):
-                batch = ILQLBatch(
-                    pad_sequence(
-                        [x.input_ids for x in elems], batch_first=True, padding_value=0
-                    ),
-                    pad_sequence(
-                        [x.attention_mask for x in elems],
-                        batch_first=True,
-                        padding_value=0,
-                    ),
-                    pad_sequence(
-                        [x.rewards for x in elems], batch_first=True, padding_value=0.0
-                    ),
-                    pad_sequence(
-                        [x.states_ixs for x in elems], batch_first=True, padding_value=0
-                    ),
-                    pad_sequence(
-                        [x.actions_ixs for x in elems],
-                        batch_first=True,
-                        padding_value=0,
-                    ),
-                    pad_sequence(
-                        [x.dones for x in elems], batch_first=True, padding_value=0
-                    ),
-                )
-                return flatten_dataclass(ILQLBatch)(batch)
+        padding_collator = DataCollatorWithPadding(self.tokenizer)
+        eval_collate = compose(padding_collator, lambda x: x["input_ids"])
 
-            self.model.set_train_dataset(self.store, collate_fn=collate_fn)
-            self.trainer.fit(self.model)
+        self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
 
-            self.model.cfg.sequence_parallel = False
-
-            @curry
-            def toggle_sp(val, m):
-                if hasattr(m, "sequence_parallel"):
-                    m.sequence_parallel = val
-                if hasattr(m, "sequence_parallel_enabled"):
-                    m.sequence_parallel_enabled = val
-
-            self.model.apply(toggle_sp(False))
-
-            sampling_params = {
-                "use_greedy": False,
-                "temperature": 0.7,
-                "top_k": 0,
-                "top_p": 1.0,
-                "repetition_penalty": 1.0,
-                "add_BOS": True,
-                "all_probs": False,
-                "compute_logprob": False,
-            }
-            gen = self.model.generate(
-                ["hello world! my name is"] * 16,
-                dict(max_length=20, min_length=0),
-                sampling_params=sampling_params,
-            )
-            print(gen["sentences"])
-            metrics = self.metric_fn(gen["sentences"])
-            print(metrics)
-            self.model.log(metrics)
-
-            self.model.cfg.sequence_parallel = True
-            self.model.apply(toggle_sp(True))
-
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
-
-        # gen = self.model.generate(
-        #     ["hello world"],
-        #     dict(max_length=200, min_length=10),
-        #     sampling_params,
-        # )
+        self.trainer.fit(self.model)

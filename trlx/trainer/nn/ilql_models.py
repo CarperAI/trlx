@@ -33,6 +33,17 @@ def topk_mask(xs: torch.FloatTensor, k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
 
+def batched_index_select(x, idxs, dim):
+    """
+    x: [batch, seq, hidden]
+    idxs: [batch, idxs_seq]
+    returns: [batch, idxs_seq, hidden]
+    """
+    # print(f"{mp_rank=} {x.shape=} {idxs.shape=}")
+    idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
+    return x.gather(dim=dim, index=idxs)
+
+
 @dataclass
 @register_method
 class ILQLConfig(MethodConfig):
@@ -160,12 +171,8 @@ class ILQLHeads(nn.Module):
         **kwargs,
     ):
         if states_ixs is not None:
-            states_hs = hs.gather(
-                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            ).contiguous()
-            actions_hs = hs.gather(
-                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            ).contiguous()
+            states_hs = batched_index_select(hs, states_ixs, 1)
+            actions_hs = batched_index_select(hs, actions_ixs, 1)
         else:
             states_hs = actions_hs = hs
 

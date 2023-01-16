@@ -22,6 +22,7 @@ class PromptPipeline(BasePipeline):
         )
         prompts = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]
+        self.str_prompts = prompts
         self.tokenizer = tokenizer
         self.prompts = [
             {"input_ids": prompt, "attention_mask": mask}
@@ -41,6 +42,19 @@ class PromptPipeline(BasePipeline):
         return DataLoader(
             self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle
         )
+
+
+def ilql_collate_fn(elems: Iterable[ILQLElement]):
+    return ILQLBatch(
+        pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
+        pad_sequence(
+            [x.attention_mask for x in elems], batch_first=True, padding_value=0
+        ),
+        pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
+        pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
+    )
 
 
 class ILQLRolloutStorage(BaseRolloutStore):
@@ -74,32 +88,10 @@ class ILQLRolloutStorage(BaseRolloutStore):
         return len(self.input_ids)
 
     def create_loader(self, batch_size: int, drop_last=False):
-        def collate_fn(elems: Iterable[ILQLElement]):
-            return ILQLBatch(
-                pad_sequence(
-                    [x.input_ids for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.attention_mask for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.rewards for x in elems], batch_first=True, padding_value=0.0
-                ),
-                pad_sequence(
-                    [x.states_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.actions_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.dones for x in elems], batch_first=True, padding_value=0
-                ),
-            )
-
         return DataLoader(
             self,
             batch_size=batch_size,
             shuffle=True,
-            collate_fn=collate_fn,
+            collate_fn=ilql_collate_fn,
             drop_last=True,
         )

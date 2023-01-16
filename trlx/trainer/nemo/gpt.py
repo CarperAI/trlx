@@ -55,7 +55,7 @@ import wandb
 
 # import trlx.trainer.nemo.generate_ilql as generate_ilql
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
-from trlx.trainer.nn.ilql_models import ILQLConfig
+from trlx.trainer.nn.ilql_models import ILQLConfig, batched_index_select
 from trlx.trainer.nn.ppo_models import PPOConfig
 from trlx.utils import set_seed, to_device, tree_map
 from trlx.utils.modeling import make_head
@@ -328,8 +328,9 @@ def unwrap_float16_module(module):
 class ILQLGPT(MegatronGPTModel):
     ilql_config: ILQLConfig
 
-    def __init__(self, ilql_config, **kwargs):
+    def __init__(self, ilql_config, metric_fn=None, **kwargs):
         self.ilql_config = ilql_config
+        self.metric_fn = metric_fn
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
@@ -345,7 +346,7 @@ class ILQLGPT(MegatronGPTModel):
         pass
         #    self._train_ds =
 
-    def build_data_loader(self, dataset, collate_fn):
+    def build_data_loader(self, dataset, collate_fn, consumed_samples=0):
         dp_rank = parallel_state.get_data_parallel_rank()
         dp_size = parallel_state.get_data_parallel_world_size()
         print(
@@ -354,7 +355,7 @@ class ILQLGPT(MegatronGPTModel):
         )
         batch_sampler = MegatronPretrainingRandomBatchSampler(
             total_samples=len(dataset),
-            consumed_samples=0,
+            consumed_samples=consumed_samples,
             micro_batch_size=self.cfg.micro_batch_size,
             global_batch_size=self.cfg.global_batch_size,
             data_parallel_rank=dp_rank,
@@ -373,10 +374,21 @@ class ILQLGPT(MegatronGPTModel):
         self._train_dataset = train_dataset
         self._train_collate_fn = collate_fn
 
+    def set_valid_dataset(self, valid_dataset, collate_fn):
+        self._valid_dataset = valid_dataset
+        self._valid_collate_fn = collate_fn
+
+    # Called by superclass to build data loaders
     def setup_training_data(self, _):
         if hasattr(self, "_train_dataset"):
             self._train_dl = self.build_data_loader(
                 self._train_dataset, self._train_collate_fn
+            )
+
+    def setup_validation_data(self, _):
+        if hasattr(self, "_valid_dataset"):
+            self._validation_dl = self.build_data_loader(
+                self._valid_dataset, self._valid_collate_fn
             )
 
     def load_from_pretrained(self, checkpoint_dir):
@@ -581,6 +593,37 @@ class ILQLGPT(MegatronGPTModel):
         )
         return loss_mean
 
+    def sequence_parallel_(self, enabled: bool):
+        self.cfg.sequence_parallel = enabled
+
+        def toggle_sp(m):
+            if hasattr(m, "sequence_parallel"):
+                m.sequence_parallel = enabled
+            if hasattr(m, "sequence_parallel_enabled"):
+                m.sequence_parallel_enabled = enabled
+
+        self.model.apply(toggle_sp)
+
+    def validation_step(self, batch, batch_idx):
+        if self.metric_fn is None:
+            raise ValueError("Must set metric_fn to use validation")
+
+        sp_was_enabled = self.cfg.get("sequence_parallel", False)
+        if sp_was_enabled:
+            self.sequence_parallel_(False)
+
+        batch = self.process_global_batch(batch)
+        print(f"{batch=}")
+        gen = self.model.generate(batch, dict(max_length=20, min_length=0))
+        print(gen["sentences"])
+        metrics = self.metric_fn(gen["sentences"])
+        for k, v in metrics.items():
+            mean_v = torch.as_tensor(v).mean().item()
+            self.log(f"metrics/{k}", mean_v, prog_bar=True, rank_zero_only=True)
+
+        if sp_was_enabled:
+            self.sequence_parallel_(True)
+
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
         # set the optimizer param groups to exclude them
@@ -653,17 +696,6 @@ class ILQLGPT(MegatronGPTModel):
                 t = gather_from_sequence_parallel_region(t, to_model_parallel=False)
                 t = rearrange(t, "T N ... -> N T ...")
                 return t
-
-            def batched_index_select(x, idxs, dim):
-                """
-                x: [batch, seq, hidden]
-                idxs: [batch, idxs_seq]
-                """
-                # print(f"{mp_rank=} {x.shape=} {idxs.shape=}")
-                idxs = idxs.unsqueeze(-1).expand(
-                    idxs.shape[0], idxs.shape[1], x.shape[-1]
-                )
-                return x.gather(dim=dim, index=idxs)
 
             def loss_func(model_output):
 
@@ -799,54 +831,31 @@ class ILQLGPT(MegatronGPTModel):
                 pi_adjusted = pi_beta + advantage * beta
                 logits[:, -1] = pi_adjusted
 
-                # target_q = reduce(torch.minimum, target_qs)
-                # advantage = target_q - vs
-                # pi_beta = F.log_softmax(logits, -1)
-                # beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
-
-                # print(f"{pi_beta.shape=}, {advantage.shape=}, {logits.shape=} {beta=}")
-
-                # logits = pi_beta + advantage * beta
-
                 return logits, {"logits": logits}
 
             return model_output, ilql_postprocess
 
         return fwd_output_only_func
 
-    # def generate(
-    #     self,
-    #     inputs: Union[List[str], torch.Tensor, List[dict]],
-    #     length_params: LengthParam = None,
-    #     sampling_params: SamplingParam = None,
-    # ) -> OutputType:
+    def generate(
+        self,
+        inputs: Union[List[str], torch.Tensor, List[dict]],
+        length_params: LengthParam,
+        sampling_params: SamplingParam = None,
+    ) -> OutputType:
+        if sampling_params is None:
+            sampling_params = {
+                "use_greedy": False,
+                "temperature": 0.7,
+                "top_k": 0,
+                "top_p": 1.0,
+                "repetition_penalty": 1.0,
+                "add_BOS": True,
+                "all_probs": False,
+                "compute_logprob": False,
+            }
 
-    #     # check whether the DDP is initialized
-    #     if parallel_state.is_unitialized():
-
-    #         def dummy():
-    #             return
-
-    #         if self.trainer.strategy.launcher is not None:
-    #             self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
-    #         self.trainer.strategy.setup_environment()
-
-    #     # set the default sampling params if it is None.
-    #     # default do greedy sampling
-    #     if sampling_params is None:
-    #         sampling_params = get_default_sampling_params()
-
-    #     # set the default length params if it is None.
-    #     # default do greedy sampling
-    #     if length_params is None:
-    #         length_params = get_default_length_params()
-
-    #     return generate_ilql.generate(
-    #         self.cuda(),
-    #         inputs=inputs,
-    #         task_ids=None,
-    #         tokens_to_generate=length_params["max_length"],
-    #     )
+        return super().generate(inputs, length_params, sampling_params)
 
 
 class HydraWithValueHeadGPT(MegatronGPTModel):
