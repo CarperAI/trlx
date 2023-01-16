@@ -55,10 +55,9 @@ def get_distributed_config(accelerator: Accelerator):
     Return accelerator distributed config
     """
 
-    accelerate_config = accelerator.state
     dist_config = {
-        "mixed_precision": accelerate_config.mixed_precision,
-        "num_gpus": accelerate_config.num_processes,
+        "mixed_precision": accelerator.mixed_precision,
+        "num_gpus": accelerator.num_processes,
     }
 
     if accelerator.state.deepspeed_plugin is not None:
