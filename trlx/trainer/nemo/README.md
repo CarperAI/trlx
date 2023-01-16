@@ -1,3 +1,7 @@
+## NeMo Megatron setup
+This setup pertains to the cluster, but should also work if you clone the `r1.13.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.13.0 and apex from `nm_v1.13.0` from https://github.com/ericharper/apex.git
+
+
 1) install conda (or mamba/micromamba)
 
 2) srun into a compute node
@@ -15,14 +19,15 @@ conda env create -f env.yaml
 cp -R /mnt/nvme/jobs/NeMo-113-release ~/NeMo-113-release
 ```
 
+
 5) pip install it
 ```
-pip install ./NeMo-113-release[all]
+cd ~/NeMo-113-release && pip install '.[all]'
 ```
 
 6) install apex
 ```
-cd NeMo-113-release/apex
+cd ~/NeMo-113-release/apex
 ```
 ```
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" --global-option="--fast_layer_norm" --global-option="--distributed_adam" --global-option="--deprecated_fused_adam" ./
@@ -32,7 +37,6 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 # conda env export
 ```
 name: nemo-113
-prefix: /mnt/nvme/jobs/nemo/nemo-source
 channels:
   - anaconda
   - conda-forge
@@ -290,8 +294,12 @@ dependencies:
     - texterrors==0.4.4
     - threadpoolctl==3.1.0
     - tokenizers==0.12.1
-    - tomlinstall conda (or mamba/micromamba)
-ion==0.14.0
+    - toml==0.10.2
+    - tomli==2.0.1
+    - torch==1.13.0
+    - torchaudio==0.13.0
+    - torchmetrics==0.10.3
+    - torchvision==0.14.0
     - tornado==6.2
     - tqdm==4.64.1
     - traitlets==5.5.0
@@ -311,4 +319,5 @@ ion==0.14.0
     - yarl==1.8.1
     - youtokentome==1.0.6
     - zipp==3.10.0
+prefix: /mnt/nvme/jobs/nemo/nemo-source
 ```

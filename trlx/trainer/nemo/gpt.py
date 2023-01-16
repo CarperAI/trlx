@@ -1,8 +1,10 @@
 # Extensible version of the GPT model
 import os
 import sys
-from functools import reduce
-from math import floor
+from collections import OrderedDict
+from copy import deepcopy
+from functools import partial, reduce
+from math import sqrt
 from pathlib import Path
 from typing import List, Mapping, Optional, Union
 
@@ -28,7 +30,10 @@ from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
-from nemo.collections.nlp.modules.common.megatron.module import MegatronModule
+from nemo.collections.nlp.modules.common.megatron.module import (
+    Float16Module,
+    MegatronModule,
+)
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
     get_all_params_for_weight_decay_optimization,
@@ -44,6 +49,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     OutputType,
     SamplingParam,
 )
+from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
 import wandb
 
@@ -52,6 +58,7 @@ from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_datacla
 from trlx.trainer.nn.ilql_models import ILQLConfig
 from trlx.trainer.nn.ppo_models import PPOConfig
 from trlx.utils import set_seed, to_device, tree_map
+from trlx.utils.modeling import make_head
 
 
 class ParallelLinear(nn.Module):
@@ -59,7 +66,7 @@ class ParallelLinear(nn.Module):
         self,
         in_size: int,
         out_size: int,
-        init_method=nn.init.xavier_normal_,
+        init_method=partial(nn.init.kaiming_uniform_, a=sqrt(5), nonlinearity="relu"),
         use_cpu_initialization=False,
         bias=True,
         sequence_parallel=False,
@@ -150,17 +157,12 @@ class ParallelILQLHeads(nn.Module):
             make_parallel_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
         )
 
-        self.target_q_heads = nn.ModuleList(
-            make_parallel_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
-        )
-
-        # Copy q_heads params into target_q_heads params
-        self._sync_target_q_heads(1.0)
+        self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
+        self.target_q_heads.requires_grad_(False)
 
     def forward(self, hidden_states):
         qs = tuple(q_head(hidden_states) for q_head in self.q_heads)
-        with torch.no_grad():
-            target_qs = tuple(q_head(hidden_states) for q_head in self.target_q_heads)
+        target_qs = tuple(q_head(hidden_states) for q_head in self.target_q_heads)
         vs = self.v_head(hidden_states)
 
         qs, target_qs, vs = tree_map(
@@ -227,7 +229,21 @@ class LMHeads(MegatronModule):
 
     def load_state_dict(self, state_dict, strict=True):
         print("LMHeads load_state_dict")
-        self.language_model.load_state_dict(state_dict, strict=strict)
+
+        def trim_key(key, prefix):
+            assert key.startswith(prefix)
+            return key[len(prefix) :]
+
+        lm_state_dict = {
+            trim_key(k, "model.language_model."): v for k, v in state_dict.items()
+        }
+        encoder_state_dict = {
+            trim_key(k, "encoder."): v
+            for k, v in lm_state_dict.items()
+            if k.startswith("encoder.")
+        }
+        lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
+        self.language_model.language_model.load_state_dict(lm_state_dict, strict=True)
 
     def forward(
         self,
@@ -303,6 +319,12 @@ class HydraWithValueHeads(MegatronModule):
         return lm_outputs, logits
 
 
+def unwrap_float16_module(module):
+    if isinstance(module, Float16Module):
+        return module.module
+    return module
+
+
 class ILQLGPT(MegatronGPTModel):
     ilql_config: ILQLConfig
 
@@ -357,19 +379,14 @@ class ILQLGPT(MegatronGPTModel):
                 self._train_dataset, self._train_collate_fn
             )
 
-    def setup(self, stage=None):
-        """PTL hook that is executed after DDP spawns"""
-        print(f"ILQLGPT setup {stage=}")
-        super().setup(stage)
-        # self._trail_dl = self.build_data_loader(self._train_dataset, self._train_collate_fn)
-
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
         rank_subfolder = f"mp_rank_{mp_rank:02d}"
         rank_params = Path(checkpoint_dir) / rank_subfolder / "model_weights.ckpt"
         print(f"Loading from {rank_params}")
         state_dict = torch.load(rank_params)
-        self.model.module.load_state_dict(state_dict, strict=False)
+
+        unwrap_float16_module(self.model).load_state_dict(state_dict, strict=False)
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """
@@ -379,9 +396,9 @@ class ILQLGPT(MegatronGPTModel):
         On the first rank, pre_process will be True
         On the last rank, post_process will be True
         """
+        gpt = super().model_provider_func(pre_process, post_process=post_process)
         # This disables post-processing the lm output to the vocab
-        gpt = super().model_provider_func(pre_process, post_process=False)
-        # return gpt
+        gpt.post_process = False
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
         # If running on the last pipeline stage, add the ILQL heads
@@ -398,29 +415,186 @@ class ILQLGPT(MegatronGPTModel):
                 parallel_ilql_heads,
             )
         else:
-            old_fwd = gpt.forward
-
-            def log_forward(*args, **kwargs):
-                input_shape = None
-                if kwargs["input_ids"] is not None:
-                    input_shape = kwargs["input_ids"].shape
-                elif gpt.language_model.encoder.input_tensor is not None:
-                    input_shape = gpt.language_model.encoder.input_tensor.shape
-                # print(f"{parallelz_state.get_tensor_model_parallel_rank()} {input_shape=}")
-                lm_output = old_fwd(*args, **kwargs)
-                # print(
-                #     f"{parallel_state.get_tensor_model_parallel_rank()} {input_shape=} {lm_output.shape=}"
-                # )
-                return lm_output
-
-            gpt.forward = log_forward
             return gpt
+
+    def training_step(self, batch: ILQLBatch, batch_idx: int):
+        mp_rank = parallel_state.get_tensor_model_parallel_rank()
+        dp_rank = parallel_state.get_data_parallel_rank()
+        print(
+            f"training step start {self.trainer.global_step=} {batch_idx=} {mp_rank=} {dp_rank=}"
+        )
+
+        """
+            Our dataloaders produce a micro-batch and then we fetch
+            a number of microbatches depending on the global batch size and model parallel size
+            from the dataloader to produce a list of microbatches.
+            Batch should be a list of microbatches and those microbatches should on CPU.
+            Microbatches are then moved to GPU during the pipeline.
+            The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
+        """
+
+        # we zero grads here because we also call backward in the apex fwd/bwd functions
+        self._optimizer.zero_grad()
+
+        if parallel_state.is_pipeline_first_stage(
+            ignore_virtual=True
+        ) or parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+            # we prepare the micro batches for the apex fwd/bwd function
+            batch_for_pipeline = self.process_global_batch(batch)
+        else:
+            # The intermediate pipeline stages do not need any inputs from data loader
+            # GPT3 uses decoder with AttnMask:causal, thus doesn't need attention_mask
+            batch_for_pipeline = None
+
+        tensor_shape = [
+            self.cfg.encoder_seq_length,
+            self.cfg.micro_batch_size,
+            self.cfg.hidden_size,
+        ]
+
+        # handle asynchronous grad reduction
+        if self.with_distributed_adam:
+            if self.megatron_amp_o2:
+                # copy grads to main grad
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(
+                    greedy_grad_copy=True
+                )
+            else:
+                # keep grad tensors around
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(
+                    greedy_grad_copy=False
+                )
+        else:
+            if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
+                custom_sync_context_handler = self._optimizer.no_sync
+            else:
+                # TODO: enable async grad all reduce for O1/autocast mixed precision training
+                custom_sync_context_handler = None
+
+        print(f"{custom_sync_context_handler=}")
+        # run forward and backwards passes for an entire global batch
+        # we do this inside training_step to support pipeline parallelism
+        fwd_bwd_function = self._get_fwd_bwd_function()
+
+        losses_reduced_per_micro_batch = fwd_bwd_function(
+            forward_step_func=self.get_forward_output_and_loss_func(),
+            batch=batch_for_pipeline,
+            model=self.model,
+            forward_only=False,
+            tensor_shape=tensor_shape,
+            dtype=self.autocast_dtype,
+            grad_scaler=self.trainer.precision_plugin.scaler
+            if self.cfg.precision == 16
+            else None,
+            custom_sync_context_handler=custom_sync_context_handler,
+            sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
+            sync_batch_comm=self.cfg.get("sync_batch_comm", False),
+            num_micro_batches_with_partial_activation_checkpoints=self.cfg.get(
+                "num_micro_batches_with_partial_activation_checkpoints", None
+            ),
+        )
+
+        # only the last stages of the pipeline return losses
+        if losses_reduced_per_micro_batch:
+            # average loss across micro batches
+            loss_tensors_list = [
+                loss_reduced["avg"] for loss_reduced in losses_reduced_per_micro_batch
+            ]
+            loss_tensor = torch.concat(loss_tensors_list)
+            loss_mean = loss_tensor.mean()
+        else:
+            loss_mean = torch.tensor(0.0).cuda()
+
+        print(f"{loss_mean=}")
+        # when using sequence parallelism, the sequence parallel layernorm grads must be all-reduced
+        if self.cfg.get("tensor_model_parallel_size", 1) > 1 and self.cfg.get(
+            "sequence_parallel", False
+        ):
+            self.allreduce_sequence_parallel_gradients()
+            print(f"allreduce sequence parallel grads")
+        if self.with_distributed_adam:
+            # launch grad reductions
+            # Note: grads in first pipeline stage have already been
+            # reduced
+            if not parallel_state.is_pipeline_first_stage():
+                self.reduce_overlap_gradients()
+                print(f"reduce overlap grads")
+        elif self.megatron_amp_o2:
+            # when using pipeline parallelism grads must be all-reduced after the pipeline (not asynchronously)
+            if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get(
+                "sequence_parallel", False
+            ):
+                # main grads are stored in the MainParamsOptimizer wrapper
+                self._optimizer.allreduce_main_grads()
+                print("mainparamsoptimizer allreduce grads done")
+        else:
+            # async grad allreduce is not currently implemented for O1/autocasting mixed precision training
+            # so we all-reduce gradients after the pipeline
+            self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
+            print("vanilla allreduce grads done")
+
+        print("Allreduce gradients done")
+
+        if self.cfg.get("pipeline_model_parallel_size", 1) > 1:
+            # when using pipeline parallelism the first and last stage must keep embeddings in sync
+            self.allreduce_first_last_embeddings()
+
+        print("Allreduce embeddings done")
+        ## logging
+        # we can only log on one rank if it is rank zero so we broadcast from last rank
+        # we can avoid this broadcast by updating the PTL log function to accept specific ranks
+        torch.distributed.broadcast(loss_mean, get_last_rank())
+        print("Broadcast loss done")
+        if self.cfg.precision == 16:
+            loss_scale = self.trainer.precision_plugin.scaler._scale
+            if loss_scale is not None:
+                self.log("loss_scale", loss_scale)
+
+        self.log("reduced_train_loss", loss_mean, prog_bar=True, rank_zero_only=True)
+        lr = self._optimizer.param_groups[0]["lr"]
+        self.log("lr", lr, rank_zero_only=True)
+        self.log(
+            "global_step", self.trainer.global_step, prog_bar=True, rank_zero_only=True
+        )
+        # TODO: make sure compute_consumed_samples works for pipeline parallelism
+        self.log(
+            "consumed_samples",
+            self.compute_consumed_samples(
+                self.trainer.global_step - self.init_global_step
+            ),
+            prog_bar=True,
+            rank_zero_only=True,
+        )
+        if (
+            self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0
+            and self.trainer.global_step > 0
+        ):
+            if parallel_state.is_pipeline_last_stage():
+                unwrap_float16_module(self.model).other_heads.sync_target_q_heads()
+                if dp_rank == 0:
+                    print(
+                        f"sync target q {self.trainer.global_step=} {batch_idx=} {mp_rank=}"
+                    )
+
+        print(
+            f"training step end {self.trainer.global_step=} {batch_idx=} {mp_rank=} {dp_rank=}"
+        )
+        return loss_mean
 
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
         # set the optimizer param groups to exclude them
-        unfrozen_params = {"params": [p for p in self.parameters() if p.requires_grad]}
-        self._optimizer_param_groups = (unfrozen_params,)
+        super().setup_optimizer_param_groups()
+        param_groups = self._optimizer_param_groups
+
+        def unfrozen_params_only(params):
+            return [p for p in params if p.requires_grad]
+
+        param_groups = [
+            {**pg, "params": unfrozen_params_only(pg["params"])} for pg in param_groups
+        ]
+
+        self._optimizer_param_groups = tuple(param_groups)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
@@ -436,12 +610,6 @@ class ILQLGPT(MegatronGPTModel):
                     stage = "first"
                 elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
                     stage = "last"
-                    if not validation_step:
-                        if (
-                            self.global_step % self.ilql_config.steps_for_target_q_sync
-                            == 0
-                        ):
-                            model.module.other_heads.sync_target_q_heads()
                 else:
                     stage = "middle"
 
@@ -505,50 +673,29 @@ class ILQLGPT(MegatronGPTModel):
                 if self.cfg.sequence_parallel:
                     qs, target_qs, vs = tree_map(gather_ntc, (qs, target_qs, vs))
 
-                # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), qs)
-                # tree_map(lambda t: print(f"{mp_rank=} {t.shape=}"), target_qs)
-                # print(f"{mp_rank=} {batch.actions_ixs.shape=}")
-
                 qs = tree_map(
-                    lambda t: batched_index_select(t, batch.actions_ixs, 1), qs
+                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
+                    qs,
                 )
-                # rewritten to use indexing
-                # qs = tree_map(
-                #     lambda t: t[torch.arange(t.shape[0]), batch.actions_ixs, :],
-                #     qs,
-                # )
 
                 target_qs = tree_map(
                     lambda t: batched_index_select(t, batch.actions_ixs, 1),
                     target_qs,
                 )
 
-                # vs = tree_map(
-                #     lambda t: t.gather(
-                #         dim=1,
-                #         index=batch.states_ixs.unsqueeze(-1).repeat(1, 1, t.shape[-1]),
-                #     ).contiguous(),
-                #     vs,
-                # )
-
                 vs = batched_index_select(vs, batch.states_ixs, 1)
-                print(
-                    f"{mp_rank=} {vs.shape=} {logits.shape} {qs[0].shape=} {target_qs[0].shape=} {vs.shape=}"
-                )
+
                 model_output = (logits, (qs, target_qs, vs))
+                loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
 
-                # We compute the loss on the last rank because NeMo takes the loss to
-                # log from the last rank
+                # if mp_rank == (mp_size - 1):
+                #     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                #     loss_for_mb = loss_for_mb * 1.0
+                # else:
+                #     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
+                #     loss_for_mb = loss_for_mb * 0.0
                 if mp_rank == 0:
-                    loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-                    loss_for_mb = loss_for_mb * 1.0
-                else:
-                    loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-                    loss_for_mb = loss_for_mb * 0.0
-                    stats = {}
-
-                stats = tree_map(lambda v: v.detach().item(), stats)
-
+                    print(f"{mp_rank=} {loss_for_mb=}")
                 for k, v in stats.items():
                     self.log(k, v, rank_zero_only=True)
 
@@ -583,6 +730,8 @@ class ILQLGPT(MegatronGPTModel):
                         [loss_for_mb]
                     )
 
+                    print(f"{mp_rank=} {reduced_loss=}")
+
                     return loss_for_mb, {"avg": reduced_loss, **stats}
 
             return model_output, loss_func
@@ -595,21 +744,17 @@ class ILQLGPT(MegatronGPTModel):
         inference_max_sequence_len=None,
         checkpoint_activations_all_layers=None,
     ):
-        print(f"get_forward_output_only_func")
-
         def fwd_output_only_func(
             batch: torch.Tensor,
             model,
         ):
             if batch is not None:
-                print(f"{batch=}")
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 extra_arg = {}
 
                 if len(batch) == 3:
                     tokens, attention_mask, position_ids = batch
-                    attention_mask = attention_mask[0:1]
                 else:
                     (
                         tokens,
@@ -624,22 +769,13 @@ class ILQLGPT(MegatronGPTModel):
                     ] = set_inference_key_value_memory[0].item()
                     extra_arg[
                         "inference_max_sequence_len"
-                    ] = self.cfg.encoder_seq_length
-
+                    ] = inference_max_sequence_len[0].item()
+                    print(
+                        f"{set_inference_key_value_memory=} {inference_max_sequence_len=}"
+                    )
                     # extra_arg['inference_max_sequence_len'] = inference_max_sequence_len[0].item()
 
                 attention_mask = attention_mask[0:1]
-
-                # pad_by = floor(tokens.shape[1] / mp_size) * mp_size - tokens.shape[1]
-                # pad_by = self.cfg.encoder_seq_length - tokens.shape[1]
-                # # )
-                # tokens = torch.nn.functional.pad(
-                #     tokens, (0, pad_by), value=self.tokenizer.eos_id
-                # )
-
-                # position_ids = torch.arange(
-                #     0, tokens.shape[1], device=tokens.device
-                # ).long()[None, :]
 
                 model_output = model(
                     input_ids=tokens,
@@ -659,8 +795,6 @@ class ILQLGPT(MegatronGPTModel):
                 advantage = target_q - vs[:, -1]
                 pi_beta = F.log_softmax(logits[:, -1], -1)
                 beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
-
-                print(f"{pi_beta.shape=}, {advantage.shape=}, {logits.shape=} {beta=}")
 
                 pi_adjusted = pi_beta + advantage * beta
                 logits[:, -1] = pi_adjusted

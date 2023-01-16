@@ -27,6 +27,7 @@ from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
+from toolz import curry
 from torch.nn.utils.rnn import pad_sequence
 
 from trlx.data.configs import TRLConfig
@@ -111,7 +112,7 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
 
 
 @register_trainer
-class NemoILQLTrainer(BaseRLTrainer):
+class NeMoILQLTrainer(BaseRLTrainer):
     store: ILQLRolloutStorage
 
     def __init__(
@@ -119,6 +120,7 @@ class NemoILQLTrainer(BaseRLTrainer):
         config: TRLConfig,
         logit_mask=None,
         metric_fn=None,
+        stop_sequences=None,
         train_mode=True,
     ):
         super().__init__(config, train_mode)
@@ -131,12 +133,17 @@ class NemoILQLTrainer(BaseRLTrainer):
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
         megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
-        pretrained = "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"
-        self.trainer, self.model = train_megatron(self.ilql, megatron_cfg, pretrained)
+        self.pretrained = "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"
+        self.trainer, self.model = train_megatron(
+            self.ilql, megatron_cfg, self.pretrained
+        )
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
+
+        if stop_sequences is not None:
+            print(f"Ignoring stop_sequences {stop_sequences=}")
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
@@ -146,51 +153,91 @@ class NemoILQLTrainer(BaseRLTrainer):
             [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
             max_length=self.max_length,
             truncation=True,
+            # NOTE: We manually add special tokens (bos) above so we set this False
+            # to avoid models that automatically add special tokens (e.g. OPT)
+            # adding them twice more.
+            add_special_tokens=False,
         )
         input_ids = list(map(torch.as_tensor, tokenized.input_ids))
         return input_ids
 
     def learn(self):
         # self.model.cfg.sequence_parallel = False
-        # gen = self.model.generate(["hello world"] * 16, length_params=None)
-        # print(f"{gen=}")
-        # self.model.cfg.sequence_parallel = True
-        def collate_fn(elems: Iterable[ILQLElement]):
-            batch = ILQLBatch(
-                pad_sequence(
-                    [x.input_ids for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.attention_mask for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.rewards for x in elems], batch_first=True, padding_value=0.0
-                ),
-                pad_sequence(
-                    [x.states_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.actions_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.dones for x in elems], batch_first=True, padding_value=0
-                ),
+        # self.model.cfg.activations_checkpoint_granularity = None
+        # self.model.cfg.activations_checkpoint_method = None
+        # self.model = ILQLGPT(ilql_config=self.ilql, cfg=self.model.cfg, trainer=self.trainer)
+        # if self.pretrained is not None:
+        #     self.model.model.load_from_pretrained(self.pretrained)
+        # # self.model.cfg.sequence_parallel = True
+
+        # # gen = self.model.generate(["hello world"] * 2, dict(max_length=64, min_length=10))
+        # # print(f"{gen=}")
+        for i in range(1):
+
+            def collate_fn(elems: Iterable[ILQLElement]):
+                batch = ILQLBatch(
+                    pad_sequence(
+                        [x.input_ids for x in elems], batch_first=True, padding_value=0
+                    ),
+                    pad_sequence(
+                        [x.attention_mask for x in elems],
+                        batch_first=True,
+                        padding_value=0,
+                    ),
+                    pad_sequence(
+                        [x.rewards for x in elems], batch_first=True, padding_value=0.0
+                    ),
+                    pad_sequence(
+                        [x.states_ixs for x in elems], batch_first=True, padding_value=0
+                    ),
+                    pad_sequence(
+                        [x.actions_ixs for x in elems],
+                        batch_first=True,
+                        padding_value=0,
+                    ),
+                    pad_sequence(
+                        [x.dones for x in elems], batch_first=True, padding_value=0
+                    ),
+                )
+                return flatten_dataclass(ILQLBatch)(batch)
+
+            self.model.set_train_dataset(self.store, collate_fn=collate_fn)
+            self.trainer.fit(self.model)
+
+            self.model.cfg.sequence_parallel = False
+
+            @curry
+            def toggle_sp(val, m):
+                if hasattr(m, "sequence_parallel"):
+                    m.sequence_parallel = val
+                if hasattr(m, "sequence_parallel_enabled"):
+                    m.sequence_parallel_enabled = val
+
+            self.model.apply(toggle_sp(False))
+
+            sampling_params = {
+                "use_greedy": False,
+                "temperature": 0.7,
+                "top_k": 0,
+                "top_p": 1.0,
+                "repetition_penalty": 1.0,
+                "add_BOS": True,
+                "all_probs": False,
+                "compute_logprob": False,
+            }
+            gen = self.model.generate(
+                ["hello world! my name is"] * 16,
+                dict(max_length=20, min_length=0),
+                sampling_params=sampling_params,
             )
-            return flatten_dataclass(ILQLBatch)(batch)
+            print(gen["sentences"])
+            metrics = self.metric_fn(gen["sentences"])
+            print(metrics)
+            self.model.log(metrics)
 
-        # train_dataloader = self.model.build_data_loader(self.store, collate_fn=collate_fn)
-        # print(f"{len(train_dataloader)=}")
+            self.model.cfg.sequence_parallel = True
+            self.model.apply(toggle_sp(True))
 
-        # train_dataloader = map(flatten_dataclass(ILQLBatch), train_dataloader)
-        # # def handler(signum, frame):
-        # #     raise Exception("end of time")
-
-        self.model.set_train_dataset(self.store, collate_fn=collate_fn)
-        torch.backends.cuda.matmul.allow_tf32 = True
-        self.trainer.fit(self.model)
-
-        # gen = self.model.generate(["hello world"] * 2)
-        # print(f"{gen=}")
         # gen = self.model.generate(["hello world"] * 2)
         # print(f"{gen=}")
         # gen = self.model.generate(["hello world"] * 2)
