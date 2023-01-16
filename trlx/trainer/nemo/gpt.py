@@ -10,18 +10,14 @@ from typing import List, Mapping, Optional, Union
 
 import torch
 import torch.distributed
-import torch.fx
-import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
 from apex.transformer import parallel_state, tensor_parallel
-from apex.transformer.pipeline_parallel.utils import get_num_microbatches
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
 from einops import rearrange
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
-    MegatronPretrainingBatchSampler,
     MegatronPretrainingRandomBatchSampler,
 )
 from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
@@ -36,13 +32,7 @@ from nemo.collections.nlp.modules.common.megatron.module import (
 )
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
-    get_all_params_for_weight_decay_optimization,
     get_ltor_masks_and_position_ids,
-    get_params_for_weight_decay_optimization,
-)
-from nemo.collections.nlp.modules.common.text_generation_utils import (
-    get_default_length_params,
-    get_default_sampling_params,
 )
 from nemo.collections.nlp.modules.common.transformer.text_generation import (
     LengthParam,
@@ -51,14 +41,11 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
-import wandb
-
 # import trlx.trainer.nemo.generate_ilql as generate_ilql
 from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
 from trlx.trainer.nn.ilql_models import ILQLConfig, batched_index_select
 from trlx.trainer.nn.ppo_models import PPOConfig
-from trlx.utils import set_seed, to_device, tree_map
-from trlx.utils.modeling import make_head
+from trlx.utils import to_device, tree_map
 
 
 class ParallelLinear(nn.Module):
@@ -726,7 +713,8 @@ class ILQLGPT(MegatronGPTModel):
                             .detach(),
                         ]
                     )
-                    # Could potentially reduce num_valid_samples_in_microbatch and use that to aggregate instead of len(self._validation_ds)
+                    # Could potentially reduce num_valid_samples_in_microbatch and use that to 
+                    # aggregate instead of len(self._validation_ds)
                     torch.distributed.all_reduce(
                         loss_sum_and_mb_size_all_gpu,
                         group=parallel_state.get_data_parallel_group(),
@@ -843,7 +831,6 @@ class HydraWithValueHeadGPT(MegatronGPTModel):
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
-        params = list(self.parameters())
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:

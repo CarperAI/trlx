@@ -1,26 +1,14 @@
-import os
 from pathlib import Path
 from typing import Iterable, Sequence, Union, cast
 
 import torch
-import torch.nn.functional as F
-from apex.transformer import parallel_state
-from nemo.collections.nlp.modules.common.megatron.megatron_init import (
-    fake_initialize_model_parallel,
-)
-from nemo.collections.nlp.modules.common.text_generation_utils import (
-    get_default_length_params,
-    get_default_sampling_params,
-)
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
     NLPDDPStrategy,
-    NLPSaveRestoreConnector,
     PipelineMixedPrecisionPlugin,
 )
 from nemo.utils import logging
-from nemo.utils.app_state import AppState
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
 from pytorch_lightning import Trainer
@@ -28,11 +16,8 @@ from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
-from toolz import compose
-from torch.nn.utils.rnn import pad_sequence
 from transformers import DataCollatorWithPadding
 
-import wandb
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, ilql_collate_fn
@@ -202,23 +187,14 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
     def learn(self):
         def collate_fn(elems: Iterable[ILQLElement]):
-            # batch = ILQLBatch(
-            #     pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
-            #     pad_sequence(
-            #         [x.attention_mask for x in elems], batch_first=True, padding_value=0
-            #     ),
-            #     pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
-            #     pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
-            #     pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
-            #     pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
-            # )
             batch = ilql_collate_fn(elems)
             return flatten_dataclass(ILQLBatch)(batch)
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
         padding_collator = DataCollatorWithPadding(self.tokenizer)
-        def collate_fn(elems):
+
+        def eval_collate(elems):
             return padding_collator(elems)["input_ids"]
 
         self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
