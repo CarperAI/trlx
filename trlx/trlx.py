@@ -105,6 +105,7 @@ def train(
             metric_fn=metric_fn,
             logit_mask=logit_mask,
             stop_sequences=stop_sequences,
+            **config.train.trainer_kwargs,
         )
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         max_prompt_length = (

@@ -189,6 +189,7 @@ class TrainConfig:
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
     trainer: str  # One of the trainers
+    trainer_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None

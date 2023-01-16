@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Iterable, Sequence, Union, cast
 
 import torch
@@ -124,6 +125,8 @@ class NeMoILQLTrainer(BaseRLTrainer):
         metric_fn=None,
         stop_sequences=None,
         train_mode=True,
+        megatron_cfg=None,
+        pretrained_model=None,
     ):
         super().__init__(config, train_mode)
         self.logit_mask = logit_mask
@@ -134,10 +137,18 @@ class NeMoILQLTrainer(BaseRLTrainer):
             raise ValueError("config.method must be ILQLConfig")
 
         self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
-        megatron_cfg = OmegaConf.load("/mnt/nvme/home/uwu/megatron_20b.yaml")
-        self.pretrained = "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"
+        if isinstance(megatron_cfg, str):
+            cfg_path = (
+                Path(__file__).parent.parent.parent
+                / "configs"
+                / "nemo_configs"
+                / megatron_cfg
+            )
+            print(f"Loading NeMo config from {cfg_path=}")
+            megatron_cfg = OmegaConf.load(cfg_path)
+
         self.trainer, self.model = train_megatron(
-            self.ilql, megatron_cfg, self.pretrained
+            self.ilql, megatron_cfg, pretrained_model
         )
         self.model.metric_fn = self.metric_fn
 
@@ -190,12 +201,25 @@ class NeMoILQLTrainer(BaseRLTrainer):
         return input_ids
 
     def learn(self):
+        def collate_fn(elems: Iterable[ILQLElement]):
+            # batch = ILQLBatch(
+            #     pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
+            #     pad_sequence(
+            #         [x.attention_mask for x in elems], batch_first=True, padding_value=0
+            #     ),
+            #     pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
+            #     pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
+            #     pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
+            #     pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
+            # )
+            batch = ilql_collate_fn(elems)
+            return flatten_dataclass(ILQLBatch)(batch)
 
-        train_collate = compose(ilql_collate_fn, flatten_dataclass(ILQLBatch))
-        self.model.set_train_dataset(self.store, collate_fn=train_collate)
+        self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
         padding_collator = DataCollatorWithPadding(self.tokenizer)
-        eval_collate = compose(padding_collator, lambda x: x["input_ids"])
+        def collate_fn(elems):
+            return padding_collator(elems)["input_ids"]
 
         self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
 

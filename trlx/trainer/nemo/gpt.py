@@ -228,7 +228,7 @@ class LMHeads(MegatronModule):
         return self.language_model.word_embeddings_weight()
 
     def load_state_dict(self, state_dict, strict=True):
-        print("LMHeads load_state_dict")
+        """Load GPTModel state dict."""
 
         def trim_key(key, prefix):
             assert key.startswith(prefix)
@@ -237,6 +237,7 @@ class LMHeads(MegatronModule):
         lm_state_dict = {
             trim_key(k, "model.language_model."): v for k, v in state_dict.items()
         }
+
         encoder_state_dict = {
             trim_key(k, "encoder."): v
             for k, v in lm_state_dict.items()
@@ -250,7 +251,6 @@ class LMHeads(MegatronModule):
         *args,
         get_key_value=False,
         forward_method_parallel_output=None,
-        heads_kwargs={},
         **kwargs,
     ):
         # print("LMHeads forward")
@@ -293,7 +293,6 @@ class HydraWithValueHeads(MegatronModule):
         *args,
         get_key_value=False,
         forward_method_parallel_output=None,
-        heads_kwargs={},
         **kwargs,
     ):
         # print("LMHeads forward")
@@ -432,9 +431,6 @@ class ILQLGPT(MegatronGPTModel):
     def training_step(self, batch: ILQLBatch, batch_idx: int):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
         dp_rank = parallel_state.get_data_parallel_rank()
-        print(
-            f"training step start {self.trainer.global_step=} {batch_idx=} {mp_rank=} {dp_rank=}"
-        )
 
         """
             Our dataloaders produce a micro-batch and then we fetch
@@ -483,7 +479,6 @@ class ILQLGPT(MegatronGPTModel):
                 # TODO: enable async grad all reduce for O1/autocast mixed precision training
                 custom_sync_context_handler = None
 
-        print(f"{custom_sync_context_handler=}")
         # run forward and backwards passes for an entire global batch
         # we do this inside training_step to support pipeline parallelism
         fwd_bwd_function = self._get_fwd_bwd_function()
@@ -523,14 +518,12 @@ class ILQLGPT(MegatronGPTModel):
             "sequence_parallel", False
         ):
             self.allreduce_sequence_parallel_gradients()
-            print(f"allreduce sequence parallel grads")
         if self.with_distributed_adam:
             # launch grad reductions
             # Note: grads in first pipeline stage have already been
             # reduced
             if not parallel_state.is_pipeline_first_stage():
                 self.reduce_overlap_gradients()
-                print(f"reduce overlap grads")
         elif self.megatron_amp_o2:
             # when using pipeline parallelism grads must be all-reduced after the pipeline (not asynchronously)
             if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get(
@@ -538,25 +531,20 @@ class ILQLGPT(MegatronGPTModel):
             ):
                 # main grads are stored in the MainParamsOptimizer wrapper
                 self._optimizer.allreduce_main_grads()
-                print("mainparamsoptimizer allreduce grads done")
         else:
             # async grad allreduce is not currently implemented for O1/autocasting mixed precision training
             # so we all-reduce gradients after the pipeline
             self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
-            print("vanilla allreduce grads done")
-
-        print("Allreduce gradients done")
 
         if self.cfg.get("pipeline_model_parallel_size", 1) > 1:
             # when using pipeline parallelism the first and last stage must keep embeddings in sync
             self.allreduce_first_last_embeddings()
 
-        print("Allreduce embeddings done")
         ## logging
         # we can only log on one rank if it is rank zero so we broadcast from last rank
         # we can avoid this broadcast by updating the PTL log function to accept specific ranks
         torch.distributed.broadcast(loss_mean, get_last_rank())
-        print("Broadcast loss done")
+
         if self.cfg.precision == 16:
             loss_scale = self.trainer.precision_plugin.scaler._scale
             if loss_scale is not None:
@@ -577,6 +565,7 @@ class ILQLGPT(MegatronGPTModel):
             prog_bar=True,
             rank_zero_only=True,
         )
+
         if (
             self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0
             and self.trainer.global_step > 0
@@ -588,9 +577,6 @@ class ILQLGPT(MegatronGPTModel):
                         f"sync target q {self.trainer.global_step=} {batch_idx=} {mp_rank=}"
                     )
 
-        print(
-            f"training step end {self.trainer.global_step=} {batch_idx=} {mp_rank=} {dp_rank=}"
-        )
         return loss_mean
 
     def sequence_parallel_(self, enabled: bool):
@@ -600,7 +586,10 @@ class ILQLGPT(MegatronGPTModel):
             if hasattr(m, "sequence_parallel"):
                 m.sequence_parallel = enabled
             if hasattr(m, "sequence_parallel_enabled"):
-                m.sequence_parallel_enabled = enabled
+                if hasattr(m, "input_is_parallel"):
+                    m.sequence_parallel_enabled = enabled and m.input_is_parallel
+                else:
+                    m.sequence_parallel_enabled = enabled
 
         self.model.apply(toggle_sp)
 
@@ -613,9 +602,7 @@ class ILQLGPT(MegatronGPTModel):
             self.sequence_parallel_(False)
 
         batch = self.process_global_batch(batch)
-        print(f"{batch=}")
         gen = self.model.generate(batch, dict(max_length=20, min_length=0))
-        print(gen["sentences"])
         metrics = self.metric_fn(gen["sentences"])
         for k, v in metrics.items():
             mean_v = torch.as_tensor(v).mean().item()
@@ -720,14 +707,6 @@ class ILQLGPT(MegatronGPTModel):
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
 
-                # if mp_rank == (mp_size - 1):
-                #     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-                #     loss_for_mb = loss_for_mb * 1.0
-                # else:
-                #     loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-                #     loss_for_mb = loss_for_mb * 0.0
-                if mp_rank == 0:
-                    print(f"{mp_rank=} {loss_for_mb=}")
                 for k, v in stats.items():
                     self.log(k, v, rank_zero_only=True)
 
@@ -761,8 +740,6 @@ class ILQLGPT(MegatronGPTModel):
                     reduced_loss = average_losses_across_data_parallel_group(
                         [loss_for_mb]
                     )
-
-                    print(f"{mp_rank=} {reduced_loss=}")
 
                     return loss_for_mb, {"avg": reduced_loss, **stats}
 
