@@ -1,0 +1,11 @@
+# Virtual environment
+.venv/
+
+# Tests
+.pytest_cache/
+
+# Checkpoints
+.checkpoints/
+
+# Weights and biases
+wandb/
