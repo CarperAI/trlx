@@ -129,7 +129,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
                 / "nemo_configs"
                 / megatron_cfg
             )
-            print(f"Loading NeMo config from {cfg_path=}")
+            logging.info(f"Loading NeMo config from {cfg_path=}")
             megatron_cfg = OmegaConf.load(cfg_path)
 
         elif megatron_cfg is None:
@@ -146,7 +146,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         self.max_length = megatron_cfg.model.encoder_seq_length
 
         if stop_sequences is not None and len(stop_sequences) > 0:
-            print(f"Ignoring stop_sequences {stop_sequences=}")
+            logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
         if isinstance(texts[0], torch.LongTensor):
@@ -161,30 +161,6 @@ class NeMoILQLTrainer(BaseRLTrainer):
             # adding them twice more.
             add_special_tokens=False,
         )
-        input_ids = list(map(torch.as_tensor, tokenized.input_ids))
-        return input_ids
-
-    def tokenize_inference(
-        self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]
-    ):
-        if isinstance(texts[0], torch.LongTensor):
-            return texts
-
-        side = self.tokenizer.padding_side
-        pad_token_id = self.tokenizer.pad_token_id
-        self.tokenizer.padding_side = "left"
-        self.tokenizer.pad_token_id = self.tokenizer.bos_token_id
-
-        tokenized = self.tokenizer(
-            [self.tokenizer.bos_token + x for x in texts],
-            max_length=self.max_length,
-            truncation=True,
-            add_special_tokens=False,
-        )
-
-        self.tokenizer.padding_side = side
-        self.tokenizer.pad_token_id = pad_token_id
-
         input_ids = list(map(torch.as_tensor, tokenized.input_ids))
         return input_ids
 

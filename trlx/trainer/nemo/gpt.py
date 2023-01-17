@@ -608,6 +608,7 @@ class ILQLGPT(MegatronGPTModel):
                 prog_bar=True,
                 rank_zero_only=True,
                 batch_size=len(input_ids),
+                sync_dist=True,
             )
 
         if sp_was_enabled:
