@@ -31,15 +31,17 @@ trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('
 trainer = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
-#### Trained model is a wrapper over a given autoregressive model
+#### Trainers provide a wrapper over their underlying model
 ```python
 trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
 #### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
 ```python
-trainer.save('/path/to/output/folder/')
+trainer.save_pretrained('/path/to/output/folder/')
 ```
+
+🩹 Warning: Only the `AcceleratePPOTrainer` can write HuggingFace transformers to disk with `save_pretrained` at the moment, as ILQL trainers require inference behavior currently unsupported by available `transformers` architectures.
 
 #### Use 🤗 Accelerate to launch distributed training
 
