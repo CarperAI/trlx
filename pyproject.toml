@@ -1,7 +1,17 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+[tool.poetry]
+name = "soft_optim"
+version = "0.1.0"
+description = ""
+authors = ["Alan <41682961+alan-cooney@users.noreply.github.com>"]
+readme = "README.md"
 
-[tool.isort]
-multi_line_output = 3
-profile = "black"
+[tool.poetry.dependencies]
+python = "^3.8"
+trlx = {git = "https://github.com/CarperAI/trlx"}
+numpy = "1.23.*"
+numexpr = "2.7.3"
+torch = "^1.13.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
