@@ -156,7 +156,14 @@ class AccelerateTrainer(TorchTrainer):
                         f.write(deepspeed_config_file_raw)
                     namespace.deepspeed_config_file = deepspeed_config_file
 
+                # Set by TorchBackend
+                master_addr = os.environ["MASTER_ADDR"]
+                master_port = os.environ["MASTER_PORT"]
+
                 launch_command(namespace)
+
+                os.environ["MASTER_ADDR"] = master_addr
+                os.environ["MASTER_PORT"] = master_port
                 os.environ["RANK"] = str(session.get_world_rank())
                 os.environ["WORLD_RANK"] = str(session.get_world_rank())
                 os.environ["CROSS_RANK"] = str(session.get_world_rank())
