@@ -2,6 +2,7 @@
 # with a sentiment reward function
 
 import os
+import pathlib
 from typing import List
 
 import torch
@@ -53,5 +54,7 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+    config_path = pathlib.Path(__file__).parent.joinpath("../configs/ppo_config.yml")
+    with config_path.open() as f:
+        default_config = yaml.safe_load(f)
     main({"default_config": default_config})
