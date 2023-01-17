@@ -85,6 +85,9 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def save_pretrained(self, directory: Optional[str] = None):
+        """NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
+        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
+        """
         # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
         # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
         # requires a custom `generate` method using its (value/q) heads to steer
