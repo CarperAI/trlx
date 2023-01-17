@@ -2,7 +2,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingA
 from datasets import Dataset
 
 import wandb
-from tic_tac_toe_data import generate_dataset
+from soft_optim.game_generator import generate_dataset
 
 
 def main() -> None:
