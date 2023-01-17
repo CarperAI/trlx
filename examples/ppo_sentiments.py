@@ -18,9 +18,6 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-# default_config = yaml.safe_load(open("configs/ppo_config.yml"))
-
-
 def main(hparams={}):
     default_config = hparams.pop("default_config")
     config = TRLConfig.update(default_config, hparams)
@@ -56,4 +53,5 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    main()
+    default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+    main({"default_config": default_config})

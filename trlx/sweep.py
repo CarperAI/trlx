@@ -18,24 +18,25 @@ from trlx.ray_train.accelerate_trainer import AccelerateTrainer
 
 
 def tune_function(
-    train_function, param_space: dict, tune_config: dict, resources: dict
+    train_function,
+    param_space: dict,
+    tune_config: dict,
+    default_config: dict,
+    resources: dict,
 ):
-    default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+    num_workers = resources.pop("num_workers")
     param_space["default_config"] = default_config
-
     param_space_train = {"train_loop_config": param_space}
+
     tuner = tune.Tuner(
         AccelerateTrainer(
             train_function,
-            accelerate_config_path=None,  # Use Accelerate default path
+            accelerate_config_path=None,  # Mandatory arg. None means use Accelerate default path
             scaling_config=ScalingConfig(
                 trainer_resources={"CPU": 0},
-                num_workers=resources["gpu"],
-                use_gpu=bool(resources["gpu"]),
-                resources_per_worker={
-                    "CPU": resources["cpu"],
-                    "GPU": int(bool(resources["gpu"])),
-                },
+                num_workers=num_workers,
+                use_gpu=bool(resources["GPU"]),
+                resources_per_worker=resources,
             ),
         ),
         param_space=param_space_train,
@@ -44,8 +45,8 @@ def tune_function(
             local_dir="ray_results", callbacks=[CSVLoggerCallback()]
         ),
     )
-
     results = tuner.fit()
+
     project_name = tune_config.get("project_name", "sweep")
 
     # log_trials(
@@ -74,10 +75,19 @@ if __name__ == "__main__":
         help="The config file defining the param_space.",
     )
     parser.add_argument(
-        "--num-cpus", type=int, default=4, help="Number of CPUs to use per exp."
+        "--default-config",
+        type=str,
+        required=True,
+        help="The default config file for the script.",
     )
     parser.add_argument(
-        "--num-gpus", type=int, default=1, help="Number of GPUs to use per exp."
+        "--num-workers", type=int, default=1, help="Number of workers to use per trial."
+    )
+    parser.add_argument(
+        "--num-cpus", type=int, default=4, help="Number of CPUs to use per worker."
+    )
+    parser.add_argument(
+        "--num-gpus", type=int, default=1, help="Number of GPUs to use per worker."
     )
     parser.add_argument(
         "-y", "--assume-yes", action="store_true", help="Don't ask for confirmation"
@@ -97,10 +107,13 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     tune_config = get_tune_config(config.pop("tune_config"))
     param_space = get_param_space(config)
+    with open(args.default_config) as f:
+        default_config = yaml.safe_load(f)
 
     resources = {
-        "cpu": args.num_cpus,
-        "gpu": args.num_gpus,
+        "num_workers": args.num_workers,
+        "CPU": args.num_cpus,
+        "GPU": args.num_gpus,
     }
 
     print(f'WARNING: Importing main from "{args.script}" and everything along with it')
@@ -116,7 +129,7 @@ if __name__ == "__main__":
     script = importlib.import_module(script_path)
     # Register the training function that will be used for training the model.
     # tune.register_trainable("train_function", script.main)
-    tune_function(script.main, param_space, tune_config, resources)
+    tune_function(script.main, param_space, tune_config, default_config, resources)
 
     # Shut down Ray.
     ray.shutdown()

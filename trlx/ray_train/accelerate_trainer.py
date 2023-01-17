@@ -132,6 +132,7 @@ class AccelerateTrainer(TorchTrainer):
         deepspeed_config_file_raw: str,
     ):
         """Wrap around train_loop_per_worker to set necessary Accelerate env vars."""
+
         @wraps(train_loop_per_worker)
         def wrapped_train_loop_per_worker(*args, **kwargs):
             with tempfile.TemporaryDirectory() as tempdir:
@@ -140,9 +141,12 @@ class AccelerateTrainer(TorchTrainer):
                     f.write(accelerate_config_raw)
                 namespace = AccelerateDefaultNamespace()
                 namespace.config_file = temp_config_file
+                namespace.num_processes = 1
+                namespace.num_machines = session.get_world_size()
                 namespace.num_cpu_threads_per_process = (
                     session.get_trial_resources().bundles[-1]["CPU"]
                 )
+                namespace.gpu_ids = None
 
                 if deepspeed_config_file_raw:
                     deepspeed_config_file = os.path.join(
