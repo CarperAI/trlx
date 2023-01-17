@@ -1,5 +1,7 @@
 # Toy example of optimizing textual interior designs to output the least number of rooms
 # Also see https://architext.design/
+import pathlib
+
 import yaml
 
 import trlx
@@ -28,7 +30,9 @@ prompts = [
     "[prompt] the kitchen is not adjacent to the bathroom [layout]",
 ]
 
-default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+config_path = pathlib.Path(__file__).parent.joinpath("../configs/ppo_config.yml")
+with config_path.open() as f:
+    default_config = yaml.safe_load(f)
 
 
 def main(hparams={}):
