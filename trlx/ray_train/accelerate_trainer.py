@@ -13,6 +13,7 @@ from ray.train.trainer import GenDataset
 
 if TYPE_CHECKING:
     from ray.data.preprocessor import Preprocessor
+    from ray.tune.trainable import Trainable
 
 
 from ray.train.torch import TorchTrainer
@@ -20,7 +21,7 @@ from .launch import launch_command, launch_command_parser
 from accelerate.commands.config import default_config_file, load_config_from_file
 
 
-class AccelerateDefaultNamespace(Namespace):
+class _AccelerateDefaultNamespace(Namespace):
     @property
     def parser(self):
         return launch_command_parser()
@@ -29,7 +30,7 @@ class AccelerateDefaultNamespace(Namespace):
         return self.parser.get_default(name)
 
 
-class AccelerateConfigWrapper:
+class _AccelerateConfigWrapper:
     """
     Lets Trainables know to treat this as already loaded file content instead of path.
     """
@@ -60,7 +61,7 @@ class AccelerateTrainer(TorchTrainer):
         resume_from_checkpoint: Optional[Checkpoint] = None
     ):
         self.accelerate_config_path = accelerate_config_path or default_config_file
-        if isinstance(self.accelerate_config_path, AccelerateConfigWrapper):
+        if isinstance(self.accelerate_config_path, _AccelerateConfigWrapper):
             self._accelerate_config_raw = self.accelerate_config_path.config_raw
             self._deepspeed_config_file_raw = (
                 self.accelerate_config_path.deepspeed_config_raw
@@ -100,7 +101,7 @@ class AccelerateTrainer(TorchTrainer):
         # and share the contents with the Trainables (which may be on different)
         # nodes
         old_accelerate_config_path = self._param_dict["accelerate_config_path"]
-        self._param_dict["accelerate_config_path"] = AccelerateConfigWrapper(
+        self._param_dict["accelerate_config_path"] = _AccelerateConfigWrapper(
             self._accelerate_config_raw, self._deepspeed_config_file_raw
         )
         try:
@@ -139,7 +140,8 @@ class AccelerateTrainer(TorchTrainer):
                 temp_config_file = os.path.join(tempdir, "default_config.yaml")
                 with open(temp_config_file, "w") as f:
                     f.write(accelerate_config_raw)
-                namespace = AccelerateDefaultNamespace()
+
+                namespace = _AccelerateDefaultNamespace()
                 namespace.config_file = temp_config_file
                 namespace.num_processes = 1
                 namespace.num_machines = session.get_world_size()
