@@ -11,6 +11,7 @@ from ray.air import ScalingConfig
 from ray.tune.logger import CSVLoggerCallback
 
 from trlx.ray_tune import get_param_space, get_tune_config
+from trlx.utils import get_git_tag
 
 # from trlx.ray_tune.wandb import create_report, log_trials
 
@@ -25,7 +26,8 @@ def tune_function(
     resources: dict,
 ):
     num_workers = resources.pop("num_workers")
-    param_space["default_config"] = default_config
+    param_space["default_config"] = default_config.copy()
+    param_space["default_config"]["train"]["git_tag"] = get_git_tag()
     param_space_train = {"train_loop_config": param_space}
 
     tuner = tune.Tuner(

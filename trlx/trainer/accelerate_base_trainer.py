@@ -69,7 +69,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             num_gpus = "1gpu"
         else:
             num_gpus = f"{self.accelerator.num_processes}gpus"
-        branch = get_git_tag()[0]
+        git_tags = config.train.git_tag or get_git_tag()
+        branch = git_tags[0]
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
@@ -83,7 +84,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "name": run_name,
                     "entity": self.config.train.entity_name,
                     "group": self.config.train.group_name,
-                    "tags": ["/".join(get_git_tag())],
+                    "tags": ["/".join(git_tags)],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
             self.accelerator.init_trackers(

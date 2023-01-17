@@ -176,6 +176,9 @@ class TrainConfig:
 
     :param seed: Random seed
     :type seed: int
+
+    :param git_tag: Git tag for logging (as returned by ``trlx.utils.get_git_tags()``)
+    :type git_tag: Optional[Tuple[str, str]]
     """
 
     total_steps: int
@@ -200,6 +203,7 @@ class TrainConfig:
 
     trackers: Tuple[str] = ("wandb",)
     seed: int = 1000
+    git_tag: Optional[Tuple[str, str]] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
