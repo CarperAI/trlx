@@ -1,6 +1,5 @@
 # python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 import argparse
-import os
 import importlib
 from pathlib import Path
 
@@ -11,11 +10,9 @@ from ray.air import ScalingConfig
 from ray.tune.logger import CSVLoggerCallback
 
 from trlx.ray_tune import get_param_space, get_tune_config
-from trlx.utils import get_git_tag
-
-# from trlx.ray_tune.wandb import create_report, log_trials
-
+from trlx.ray_tune.wandb import create_report, log_trials
 from trlx.ray_train.accelerate_trainer import AccelerateTrainer
+from trlx.utils import get_git_tag
 
 
 def tune_function(
@@ -51,18 +48,18 @@ def tune_function(
 
     project_name = tune_config.get("project_name", "sweep")
 
-    # log_trials(
-    #     tuner._local_tuner.get_experiment_checkpoint_dir(),
-    #     project_name,
-    # )
+    log_trials(
+        tuner._local_tuner.get_experiment_checkpoint_dir(),
+        project_name,
+    )
 
-    # create_report(
-    #     project_name,
-    #     param_space,
-    #     tune_config,
-    #     Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
-    #     results.get_best_result().config,
-    # )
+    create_report(
+        project_name,
+        param_space,
+        tune_config,
+        Path(tuner._local_tuner.get_experiment_checkpoint_dir()).stem,
+        results.get_best_result().config,
+    )
 
     print("Best hyperparameters found were: ", results.get_best_result().config)
 
