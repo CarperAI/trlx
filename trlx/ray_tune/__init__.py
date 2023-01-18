@@ -1,7 +1,7 @@
 from ray import tune
 
 
-def get_param_space(config: dict):  # noqa: C901
+def get_param_space(config: dict):  # noqa: max-complexity
     """Get the param space from the config file."""
 
     def get_strategy(value):

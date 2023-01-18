@@ -8,7 +8,7 @@ from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
 from trlx.utils import print_rank_0
 
 
-def tokenize_dialogue(  # noqa: C901
+def tokenize_dialogue(  # noqa: max-complexity
     dialogue: Union[str, List[str]], tokenizer, max_length=2048, truncation_side="left"
 ) -> List[int]:
     """

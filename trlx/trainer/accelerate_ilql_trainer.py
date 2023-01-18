@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Union, cast
+from typing import Sequence, Union, cast
 
 import torch
 
@@ -6,7 +6,7 @@ from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
+from trlx.trainer.nn.ilql_models import AutoModelForCausalLMWithILQLHeads, ILQLConfig
 from trlx.utils import to_device
 
 
@@ -29,10 +29,10 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return CausalLMWithValueHeads(
+        return AutoModelForCausalLMWithILQLHeads.from_pretrained(
             config.model.model_path,
-            ilql_config=config.method,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,
+            two_qs=config.method.two_qs,
+            alpha=config.method.alpha,
         )
 
     def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
@@ -83,14 +83,3 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-    def save_pretrained(self, directory: Optional[str] = None):
-        # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
-        # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
-        # requires a custom `generate` method using its (value/q) heads to steer
-        # sampling - something that is not possible with the default
-        # `transformers.PreTrainedModel.generate`.
-        raise NotImplementedError(
-            "`AccelerateILQLTrainer` does not currently support automatic saving "
-            "with `transformers.PreTrainedModel.save_pretrained`."
-        )

@@ -1,10 +1,8 @@
-import inspect
 import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, Dict, Union
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -16,12 +14,10 @@ from torch import nn
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
+    PreTrainedModelWrapper,
     flatten_dict,
-    freeze_bottom_causal_layers,
     get_tensor_stats,
-    hf_get_causal_base_model,
     hf_get_hidden_size,
-    hf_get_lm_head,
     make_head,
 )
 
@@ -45,9 +41,6 @@ class ILQLConfig(MethodConfig):
     steps_for_target_q_sync: float
     two_qs: bool
     gen_kwargs: dict
-
-    def heads(self, hidden_size: int, vocab_size: int):
-        return ILQLHeads(self, hidden_size, vocab_size)
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
@@ -134,16 +127,22 @@ class ILQLConfig(MethodConfig):
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int):
+    def __init__(
+        self,
+        hidden_size: int,
+        vocab_size: int,
+        two_qs: bool,
+        alpha: float,
+    ):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
+        self.two_qs = two_qs
+        self.alpha = alpha
         self.v_head = make_head(self.hidden_size, 1)
-        self.config = config
 
-        n_qs = 2 if self.config.two_qs else 1
-
+        n_qs = 2 if self.two_qs else 1
         self.q_heads = nn.ModuleList(
             make_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
         )
@@ -192,58 +191,30 @@ class ILQLHeads(nn.Module):
 
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
-                    self._sync_target_q_heads(self.config.alpha)
+                    self._sync_target_q_heads(self.alpha)
         else:
-            self._sync_target_q_heads(self.config.alpha)
+            self._sync_target_q_heads(self.alpha)
 
 
-class CausalLMWithValueHeads(nn.Module):
-    """This is a wrapper around huggingface AutoModelForCausalLM with two additional scalar heads"""
+class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
+    """An `AutoModel` that wraps a causal language model and adds ILQL heads on top."""
+
+    _auto_model_parent_class = transformers.AutoModelForCausalLM
+    _supported_modules = ["ilql_heads"]
+    _supported_args = ["two_qs", "alpha"]
 
     def __init__(
         self,
-        config: Union[transformers.PretrainedConfig, str],
-        ilql_config: ILQLConfig,
-        num_layers_unfrozen=-1,
+        pretrained_model_name_or_path: str,
+        two_qs: bool = True,
+        alpha: float = 0.99,
     ):
-        super().__init__()
-
-        # enable zero3 init within from_pretrained
-        if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
-            config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
-            if config_path:
-                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
-                    config_path
-                )
-
-        if isinstance(config, str):
-            self.config = transformers.AutoConfig.from_pretrained(config)
-            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
-        else:
-            self.config = config
-            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
-
-        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
-        self.base_model.lm_head = hf_get_lm_head(self.base_model)
-        freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
-
-        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_transformer_args = inspect.getfullargspec(
-            self.base_model.transformer.forward
-        ).args
-
-        self.hidden_size = hf_get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size)
-        self.ilql_config = ilql_config
-
-    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
-        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        return {
-            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
-        }
-
-    def sync_target_q_heads(self):
-        self.ilql_heads.sync_target_q_heads()
+        super().__init__(pretrained_model_name_or_path)
+        self.two_qs = two_qs
+        self.alpha = alpha
+        hidden_size = hf_get_hidden_size(self.pretrained_model.config)
+        vocab_size = self.pretrained_model.config.vocab_size
+        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha)
 
     def forward(
         self,
@@ -254,21 +225,20 @@ class CausalLMWithValueHeads(nn.Module):
         actions_ixs=None,
         states_ixs=None,
     ):
-        forward_kwargs = self._get_compatible_forward_kwargs(
+        forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
         )
-        out = self.base_model.transformer(**forward_kwargs)
-        hs = out.last_hidden_state
+        forward_kwargs["output_hidden_states"] = True
 
-        logits = self.base_model.lm_head(hs)
+        outputs = self.pretrained_model(**forward_kwargs)
         qs, target_qs, vs = self.ilql_heads(
-            hs, states_ixs=states_ixs, actions_ixs=actions_ixs
+            outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs
         )
 
-        return logits, qs, target_qs, vs, out.past_key_values
+        return outputs.logits, qs, target_qs, vs, outputs.past_key_values
 
     def generate(
         self,
@@ -290,6 +260,17 @@ class CausalLMWithValueHeads(nn.Module):
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
+        pad_token_id = (
+            pad_token_id
+            if pad_token_id is not None
+            else self.pretrained_model.config.pad_token_id
+        )
+        eos_token_id = (
+            eos_token_id
+            if eos_token_id is not None
+            else self.pretrained_model.config.eos_token_id
+        )
+
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)
 
@@ -312,7 +293,7 @@ class CausalLMWithValueHeads(nn.Module):
             )
 
             logits, _, target_qs, vs, past_key_values = out
-            if self.ilql_config.two_qs:
+            if self.two_qs:
                 qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
                 qs = target_qs[:, -1, :]
@@ -344,14 +325,28 @@ class CausalLMWithValueHeads(nn.Module):
 
         return samples
 
-    @property
-    def dummy_inputs(self):
-        return {
-            "input_ids": torch.ones(
-                1, 1, device=self.base_model.device, dtype=torch.long
-            )
-        }
+    def sync_target_q_heads(self):
+        self.ilql_heads.sync_target_q_heads()
 
-    @property
-    def device(self):
-        return self.base_model.device
+    def state_dict(self, *args, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the ilql heads
+        to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
+        """
+        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
+        for k, v in ilql_heads_state_dict.items():
+            pretrained_model_state_dict[f"ilql_heads.{k}"] = v
+        return pretrained_model_state_dict
+
+    def post_init(self, state_dict):
+        """
+        We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
+        by preprending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
+        keys of the value head state dictionary.
+        """
+        for k in list(state_dict.keys()):
+            if "ilql_heads." in k:
+                state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
+        self.ilql_heads.load_state_dict(state_dict, strict=False)
+        del state_dict

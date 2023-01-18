@@ -68,9 +68,9 @@ def test_hf_attr_getters(model_name: str):
         arch = transformers.AutoModelForCausalLM.from_config(config)
 
     arch_getters = [
-        modeling_utils.hf_get_causal_base_model,
-        modeling_utils.hf_get_causal_final_norm,
-        modeling_utils.hf_get_causal_hidden_layers,
+        modeling_utils.hf_get_decoder,
+        modeling_utils.hf_get_decoder_final_norm,
+        modeling_utils.hf_get_decoder_blocks,
         modeling_utils.hf_get_lm_head,
     ]
     for get in arch_getters:

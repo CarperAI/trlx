@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 from torchtyping import TensorType
@@ -13,9 +13,9 @@ from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.trainer.nn.ppo_models import (
     AdaptiveKLController,
-    CausalLMHydraWithValueHead,
+    AutoModelForCausalLMHydraWithValueHead,
+    AutoModelForSeq2SeqLMHydraWithValueHead,
     FixedKLController,
-    Seq2SeqLMHydraWithValueHead,
 )
 from trlx.utils.modeling import logprobs_from_logits
 
@@ -79,11 +79,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def get_arch(self, config: TRLConfig):
         if config.model.model_arch_type == "seq2seq":
-            return Seq2SeqLMHydraWithValueHead(
-                config.model.model_path, config.model.num_layers_unfrozen
+            return AutoModelForSeq2SeqLMHydraWithValueHead.from_pretrained(
+                config.model.model_path,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
             )
-        return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen
+        return AutoModelForCausalLMHydraWithValueHead.from_pretrained(
+            config.model.model_path,
+            num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
 
     def get_model_inputs(
@@ -218,8 +220,3 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             * len(self.train_dataloader)
         )
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-    def save_pretrained(self, directory: Optional[str] = None):
-        directory = f"{directory or self.config.train.checkpoint_dir}/hf_model"
-        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
-        self.tokenizer.save_pretrained(directory)
