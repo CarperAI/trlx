@@ -44,8 +44,8 @@ def tune_function(
             local_dir="ray_results", callbacks=[CSVLoggerCallback()]
         ),
     )
-    results = tuner.fit()
 
+    results = tuner.fit()
     project_name = tune_config.get("project_name", "sweep")
 
     log_trials(
@@ -109,6 +109,12 @@ if __name__ == "__main__":
     with open(args.default_config) as f:
         default_config = yaml.safe_load(f)
 
+    # Initialize Ray.
+    if args.server_address:
+        ray.init(address=f"ray://{args.server_address}")
+    else:
+        ray.init()
+
     resources = {
         "num_workers": args.num_workers,
         "CPU": args.num_cpus,
@@ -126,8 +132,6 @@ if __name__ == "__main__":
     # convert a nested path to a module path
     script_path = args.script.replace(".py", "").replace("/", ".")
     script = importlib.import_module(script_path)
-    # Register the training function that will be used for training the model.
-    # tune.register_trainable("train_function", script.main)
     tune_function(script.main, param_space, tune_config, default_config, resources)
 
     # Shut down Ray.
