@@ -141,14 +141,21 @@ class AccelerateTrainer(TorchTrainer):
                 with open(temp_config_file, "w") as f:
                     f.write(accelerate_config_raw)
 
+                # Set by TorchBackend
+                master_addr = os.environ["MASTER_ADDR"]
+                master_port = os.environ["MASTER_PORT"]
+
                 namespace = _AccelerateDefaultNamespace()
                 namespace.config_file = temp_config_file
                 namespace.num_processes = 1
                 namespace.num_machines = session.get_world_size()
+                namespace.machine_rank = session.get_world_rank()
                 namespace.num_cpu_threads_per_process = (
                     session.get_trial_resources().bundles[-1]["CPU"]
                 )
                 namespace.gpu_ids = None
+                namespace.main_process_ip = master_addr
+                namespace.main_process_port = master_port
 
                 if deepspeed_config_file_raw:
                     deepspeed_config_file = os.path.join(
@@ -157,10 +164,6 @@ class AccelerateTrainer(TorchTrainer):
                     with open(deepspeed_config_file, "w") as f:
                         f.write(deepspeed_config_file_raw)
                     namespace.deepspeed_config_file = deepspeed_config_file
-
-                # Set by TorchBackend
-                master_addr = os.environ["MASTER_ADDR"]
-                master_port = os.environ["MASTER_PORT"]
 
                 launch_command(namespace)
 
