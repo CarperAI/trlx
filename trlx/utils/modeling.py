@@ -1,5 +1,8 @@
 import functools
-from typing import Any, Dict, List, MutableMapping, Tuple, Union
+import inspect
+import json
+import os
+from typing import Any, Dict, List, MutableMapping, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,6 +10,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
+from huggingface_hub import hf_hub_download
 
 try:
     from opendelta import (
@@ -22,6 +26,185 @@ except ModuleNotFoundError:
     HAS_OPENDELTA = False
 
 
+class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
+    """A wrapper around `transformers.PreTrainedModel`
+
+    Reference: @younesbelkada's `PreTrainedModelWrapper`
+    https://github.com/lvwerra/trl/blob/4f5c16fafde42d9aca971952bcdcc1f5a0a68cf0/trl/models/modeling_base.py#L2
+
+    Class Attributes:
+        _auto_model_parent_class (transformers.AutoModel): The `transformers.AutoModel` type
+            to base the wrapping behavior off of, e.g. `transformers.AutoModelForCausalLM`.
+        _supported_modules (List[str]): A list of attribute names for modules of the wrapped model.
+            This is used to save and load any additional modules by manipulating the state dict.
+        _supported_args (List[str]): A list of arguments specific to the wrapped model to separate from
+            the arguments that are supported by the parent `AutoModel` class.
+    """
+
+    _auto_model_parent_class: transformers.AutoModel = None
+    _supported_modules: List[str] = None
+    # TODO (jon-tow): Supported args should come from a `Config` of the specific child type similar to
+    # how config classes are used to instantiate `transformers.PreTrainedModel`s.
+    _supported_args: List[str] = None
+
+    def __init__(self, pretrained_model: Optional[nn.Module] = None, **kwargs):
+        super().__init__()
+        self.pretrained_model = pretrained_model
+        # cache `pre_trained.forward` args for general use (avoids incompatible args across architectures)
+        self.forward_kwargs = inspect.getfullargspec(self.pretrained_model.forward).args
+
+    @classmethod
+    def _split_kwargs(cls, kwargs):
+        """
+        Separates the kwargs from the arguments that with support inside `supported_args`
+        and the ones that we don't.
+        """
+        supported_kwargs = {}
+        unsupported_kwargs = {}
+        for key, value in kwargs.items():
+            from_pretrained_args = inspect.signature(
+                cls._auto_model_parent_class.from_pretrained
+            ).parameters.keys()
+            if key in cls._supported_args or key not in from_pretrained_args:
+                supported_kwargs[key] = value
+            else:
+                unsupported_kwargs[key] = value
+        return supported_kwargs, unsupported_kwargs
+
+    @classmethod
+    def from_pretrained(  # noqa: max-complexity
+        cls,
+        pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        *model_args,
+        **kwargs,
+    ):
+        """
+        Instantiate a pretrained pytorch model from a pre-trained model configuration.
+        This method is a wrapper around `transformers.PreTrainedModel.from_pretrained`.
+        Please refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
+        for more information.
+
+        Args:
+            pretrained_model_name_or_path (str or `transformers.PreTrainedModel`):
+                The identifier of the pre-trained model to load or the pre-trained model itself.
+            *model_args (sequence of positional arguments, *optional*):
+                All remaining positional arguments will be passed to the `_auto_model_parent_class`.
+            **kwargs (dict, *optional*):
+                Dictionary of keyword arguments to pass to both the underlying `_auto_model_parent_class`
+                call (e.g. `transformers.AutoModelForCausalLM.from_pretrained`) and the specific
+                instance of the wrapped model.
+
+        NOTE: You must pass in arguments specific to the wrapped model as keyword arguments.
+        """
+
+        if kwargs is not None:
+            wrapped_model_kwargs, from_pretrained_kwargs = cls._split_kwargs(kwargs)
+        else:
+            from_pretrained_kwargs = {}
+            wrapped_model_kwargs = {}
+
+        if isinstance(pretrained_model_name_or_path, str):
+            # Load the pretrained model using the `transformers` AutoClass (e.g. AutoModelForCausalLM)
+            pretrained_model = cls._auto_model_parent_class.from_pretrained(
+                pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
+            )
+        elif isinstance(pretrained_model_name_or_path, transformers.PreTrainedModel):
+            pretrained_model = pretrained_model_name_or_path
+        else:
+            raise ValueError(
+                f"Invalid type for `pretrained_model_name_or_path`: {type(pretrained_model_name_or_path)}"
+                "Expected `str` or `transformers.PreTrainedModel`."
+            )
+
+        model = cls(pretrained_model, **wrapped_model_kwargs)
+
+        if isinstance(pretrained_model_name_or_path, str):
+            filename = os.path.join(pretrained_model_name_or_path, "pytorch_model.bin")
+            sharded_index_filename = os.path.join(
+                pretrained_model_name_or_path, "pytorch_model.bin.index.json"
+            )
+            is_sharded = False
+
+            if not os.path.exists(filename):
+                try:
+                    filename = hf_hub_download(
+                        pretrained_model_name_or_path, "pytorch_model.bin"
+                    )
+                # sharded
+                except Exception:
+                    if os.path.exists(sharded_index_filename):
+                        index_file_name = sharded_index_filename
+                    else:
+                        index_file_name = hf_hub_download(
+                            pretrained_model_name_or_path,
+                            "pytorch_model.bin.index.json",
+                        )
+                    with open(index_file_name, "r") as f:
+                        index = json.load(f)
+                    # check filename with supported modules
+                    files_to_download = set()
+                    for k, v in index["weight_map"].items():
+                        if any([module in k for module in cls._supported_modules]):
+                            files_to_download.add(v)
+                    is_sharded = True
+
+            if is_sharded:
+                # download each file and add it to the state_dict
+                state_dict = {}
+                for shard_file in files_to_download:
+                    filename = os.path.join(pretrained_model_name_or_path, shard_file)
+                    # download if shard file doesn't exist locally
+                    if not os.path.exists(filename):
+                        filename = hf_hub_download(
+                            pretrained_model_name_or_path, shard_file
+                        )
+                    state_dict.update(torch.load(filename, map_location="cpu"))
+            else:
+                state_dict = torch.load(filename, map_location="cpu")
+        else:
+            state_dict = pretrained_model_name_or_path.state_dict()
+
+        model.post_init(state_dict=state_dict)
+        return model
+
+    def save_pretrained(self, *args, **kwargs):
+        """Save the pretrained model to a directory. This method is a wrapper around
+        `transformers.PreTrainedModel.save_pretrained`. Please refer to the documentation
+        of `transformers.PreTrainedModel.save_pretrained` for more information.
+
+        Args:
+            *args (`list`, *optional*):
+                Positional arguments passed along to the underlying model's
+                `save_pretrained` method.
+            **kwargs (`dict`, *optional*):
+                Keyword arguments passed along to the underlying model's
+                `save_pretrained` method.
+        """
+        state_dict = kwargs.pop("state_dict", None)
+        if state_dict is None:
+            state_dict = self.state_dict()
+            kwargs["state_dict"] = state_dict
+
+        return self.pretrained_model.save_pretrained(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        """Return the state_dict of the pretrained model."""
+        raise NotImplementedError
+
+    def post_init(self, *args, **kwargs):
+        """Post initialization method. This method is called after the model is
+        instantiated and loaded from a checkpoint. It can be used to perform
+        additional operations such as loading the state_dict.
+        """
+        raise NotImplementedError
+
+    def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `pretrained_model.transformer.forward`"""
+        # FIXME: This is a hack to get around the fact that the `transformers` architectures
+        # we use don't have an enforced consistent API for `forward` parameters.
+        return {k: v for k, v in kwargs.items() if k in self.forward_kwargs}
+
+
 def make_head(n_embd: int, out: int) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
@@ -31,7 +214,7 @@ def make_head(n_embd: int, out: int) -> nn.Sequential:
 
 def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
-    hidden_layers = hf_get_causal_hidden_layers(model)
+    hidden_layers = hf_get_decoder_blocks(model)
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
     elif num_layers_unfrozen > 0:
@@ -100,21 +283,8 @@ def findattr(obj, attrs: Tuple[str]) -> Union[object, None]:
     raise ValueError(f"Could not find an attribute from `{attrs}` in `{obj}`")
 
 
-def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Module:
-    """Returns the causal decoder backbone of the specified HuggingFace transformers
-    model.
-    NOTE: Different model configurations have different causal decoder attribute
-    names.
-        - transformer: (GPT2LMHeadModel, GPTJConfig)
-        - model.decoder: (OPTConfig, BloomConfig)
-        - gpt_neox: (GPTNeoXConfig)
-    """
-    decoder_attrs = ("transformer", "model.decoder", "gpt_neox")
-    return findattr(model, decoder_attrs)
-
-
-def hf_get_causal_final_norm(model: nn.Module) -> float:
-    """Returns the final (layer) norm of the specified model.
+def hf_get_decoder_final_norm(model: nn.Module) -> float:
+    """Returns the final (layer) norm of the specified decoder.
     NOTE: Different model configurations have different final norm attribute names.
         - transformer.ln_f: (GPT2LMHeadModel, GPTJForCausalLM)
         - model.decoder.final_layer_norm: (OPTForCausalLM)
@@ -128,17 +298,19 @@ def hf_get_causal_final_norm(model: nn.Module) -> float:
     return findattr(model, norm_attrs)
 
 
-def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
-    """Returns the hidden layers of the specified model.
+def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
+    """Returns the decoder hidden layers of the specified model.
     NOTE: Different model configurations have different hidden layer attribute names.
         - transformer.h: (BloomForCausalLM, GPT2LMHeadModel, GPTJForCausalLM)
         - model.decoder.layers: (OPTForCausalLM)
         - gpt_neox.layers: (GPTNeoXForCausalLM)
+        - decoder.block: (T5ForConditionalGeneration)
     """
     hidden_layers_attrs = (
         "transformer.h",
         "model.decoder.layers",
         "gpt_neox.layers",
+        "decoder.block",
     )
     return findattr(model, hidden_layers_attrs)
 

@@ -100,21 +100,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
         model = self.get_arch(self.config)
         if self.config.model.model_arch_type == "seq2seq":
             freeze_bottom_seq2seq_layers(
-                model.base_model, self.config.model.num_layers_unfrozen
+                model.pretrained_model, self.config.model.num_layers_unfrozen
             )
         else:
             freeze_bottom_causal_layers(
-                model.base_model, self.config.model.num_layers_unfrozen
+                model.pretrained_model, self.config.model.num_layers_unfrozen
             )
         # Set the delta tuning strategies
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(
-                model.base_model.config,
+                model.pretrained_model.config,
                 self.config.model.delta_kwargs,
                 self.config.model.num_layers_unfrozen,
             )
             delta_model_class = get_delta_model_class(delta_type)
-            delta_model = delta_model_class(model.base_model, **delta_kwargs)
+            delta_model = delta_model_class(model.pretrained_model, **delta_kwargs)
             delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
             if self.accelerator.is_main_process:
                 delta_model.log()
@@ -249,12 +249,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Creates a checkpoint of the optimizer, scheduler and model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
-    @abstractmethod
-    def save_pretrained(self, directory: Optional[str] = None):
-        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
-        `transformers.PreTrainedModel.from_pretrained` method.
-        """
-        pass
+    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
+        """A wrapper around `PreTrainedModel.save_pretrained` method."""
+        if directory is None:
+            directory = f"{self.config.train.checkpoint_dir}/hf_model"
+        self.accelerator.wait_for_everyone()
+        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
+        if self.accelerator.is_main_process:
+            self.tokenizer.save_pretrained(directory)
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""
@@ -264,7 +266,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Adds pipeline from with validation prompts"""
         self.eval_pipeline = eval_pipeline
 
-    def evaluate(self):  # noqa: C901
+    def evaluate(self):  # noqa: max-complexity
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         table = []
@@ -400,7 +402,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.nth_evaluation += 1
         return stats
 
-    def learn(self):  # noqa: C901
+    def learn(self):  # noqa: max-complexity
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
