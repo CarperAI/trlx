@@ -78,16 +78,6 @@ def get_distributed_config(accelerator: Accelerator):
     return dist_config
 
 
-class OptimizerName(str, Enum):
-    """Supported optimizer names"""
-
-    ADAM: str = "adam"
-    ADAMW: str = "adamw"
-    ADAM_8BIT_BNB: str = "adam_8bit_bnb"
-    ADAMW_8BIT_BNB: str = "adamw_8bit_bnb"
-    SGD: str = "sgd"
-
-
 torch_optimizers: Dict[str, type] = dict(
     inspect.getmembers(
         torch.optim, lambda x: inspect.isclass(x) and x.__name__ != "Optimizer"
@@ -98,9 +88,10 @@ torch_optimizers = {
 }
 
 bitsandbytes_optimizers = {
-    OptimizerName.ADAM_8BIT_BNB: "Adam8bit",
-    OptimizerName.ADAMW_8BIT_BNB: "AdamW8bit",
+    "adam_8bit_bnb": "Adam8bit",
+    "adamw_8bit_bnb": "AdamW8bit",
 }
+supported_optimizers = tuple(torch_optimizers) + tuple(bitsandbytes_optimizers)
 
 
 def get_optimizer_class(name: str):
@@ -108,7 +99,7 @@ def get_optimizer_class(name: str):
     Returns the optimizer class with the given name
 
     Args:
-        name (str): Name of the optimizer as found in `OptimizerNames`
+        name (str): Name of the optimizer as found in `trlx.utils.supported_optimizers`
     """
     if name in torch_optimizers:
         return torch_optimizers[name]
@@ -124,7 +115,6 @@ def get_optimizer_class(name: str):
                 f"You must install the `bitsandbytes` package to use the {optimizer_name} optimizer. "
                 "Install with: `pip install bitsandbytes`"
             )
-    supported_optimizers = [o.value for o in OptimizerName]
     raise ValueError(
         f"`{name}` is not a supported optimizer. "
         f"Supported optimizers are: {supported_optimizers}"

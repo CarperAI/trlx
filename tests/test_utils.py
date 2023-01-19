@@ -19,7 +19,7 @@ except ImportError:
 
 @pytest.mark.parametrize(
     "optimizer_name",
-    [o.value for o in utils.OptimizerName],
+    utils.supported_optimizers,
 )
 def test_optimizer_class_getters(optimizer_name: str):
     try:
