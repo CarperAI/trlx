@@ -1,3 +1,5 @@
+import os
+
 import evaluate
 import pandas as pd
 import torch
@@ -17,17 +19,24 @@ def load_model(path):
     return model, tokenizer
 
 
+REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
+if not os.path.exists(REWARD_CHECKPOINT_PATH):
+    os.makedirs("reward_model/rm_checkpoint", exist_ok=True)
+    os.system(
+        f"wget -O {REWARD_CHECKPOINT_PATH} \
+        https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin"
+    )
 rw_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
 rw_tokenizer.pad_token = rw_tokenizer.eos_token
-rw_model = GPTRewardModel("CarperAI/openai_summarize_tldr_sft")
-rw_model.load_state_dict(torch.load("reward_model/rm_checkpoint/pytorch_model.bin"))
+rw_model = GPTRewardModel("CarperAI/openai_summarize_tldr_ppo")
+rw_model.load_state_dict(torch.load(REWARD_CHECKPOINT_PATH))
 rw_model.half()
 rw_model.eval()
 rw_device = torch.device("cuda:{}".format(1))
 rw_model.to(rw_device)
 
 
-def reward_fn(samples, **kwargs):
+def reward_fn(samples):
     scores_list = []
     batch_size = 2
     for i in range(0, len(samples), batch_size):
@@ -145,7 +154,7 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
 
 if __name__ == "__main__":
 
-    model, tokenizer = load_model("CarperAI/openai_summarize_tldr_sft")
+    model, tokenizer = load_model("CarperAI/openai_summarize_tldr_ppo")
 
     test_post_list = [
         sample["prompt"]

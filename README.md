@@ -5,7 +5,7 @@
 
 # Transformer Reinforcement Learning X
 
-trlX allows you to fine-tune 🤗 Hugging Face supported language models (`gpt2`, `gpt-j`, `gpt-neo` and `gpt-neox` based) up to 20B parameters using reinforcement learning via either a provided reward function or reward-labeled dataset. Proximal Policy Optimization ([PPO](https://arxiv.org/pdf/1909.08593.pdf)) and Implicit Language Q-Learning ([ILQL](https://sea-snell.github.io/ILQL_site/)) are implemented.
+trlX allows you to fine-tune 🤗 Hugging Face supported language models of up to 20B parameters (such as `gpt2`, `gpt-j`, and `gpt-neox`, as well as T5 based models, including `google/t5-v1_1` and `google/flan-t5`)  using reinforcement learning via either a provided reward function or reward-labeled dataset. Proximal Policy Optimization ([PPO](https://arxiv.org/pdf/1909.08593.pdf)) and Implicit Language Q-Learning ([ILQL](https://sea-snell.github.io/ILQL_site/)) are implemented.
 
 You can read more about trlX in our [documentation](https://trlX.readthedocs.io).
 
@@ -31,15 +31,17 @@ trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('
 trainer = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
-#### Trained model is a wrapper over a given autoregressive model
+#### Trainers provide a wrapper over their underlying model
 ```python
 trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
 #### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
 ```python
-trainer.save('/path/to/output/folder/')
+trainer.save_pretrained('/path/to/output/folder/')
 ```
+
+🩹 Warning: Only the `AcceleratePPOTrainer` can write HuggingFace transformers to disk with `save_pretrained` at the moment, as ILQL trainers require inference behavior currently unsupported by available `transformers` architectures.
 
 #### Use 🤗 Accelerate to launch distributed training
 

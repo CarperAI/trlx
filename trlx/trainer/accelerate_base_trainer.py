@@ -253,6 +253,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def save_pretrained(self, directory: Optional[str] = None):
         """Save the model and its configuration file to a directory, so that it can be re-loaded with the
         `transformers.PreTrainedModel.from_pretrained` method.
+
+        NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
+        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
         """
         pass
 
