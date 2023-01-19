@@ -229,6 +229,23 @@ class LMHeads(MegatronModule):
             for k, v in lm_state_dict.items()
             if k.startswith("encoder.")
         }
+        # encoder = self.language_model.language_model.encoder
+        # num_layers = len(encoder.layers)
+        # pp_rank = parallel_state.get_pipeline_model_parallel_rank()
+        # pp_offset = pp_rank * num_layers
+
+        # def filter_in_pp_rank(key):
+        #     assert key.startswith("layers.")
+        #     layer_idx = int(key.split(".")[1])
+        #     return pp_offset <= layer_idx < pp_offset + num_layers
+
+        # encoder_state_dict = {
+        #     k: v for k, v in encoder_state_dict.items() if filter_in_pp_rank(k)
+        # }
+
+        # for k in encoder_state_dict.keys():
+        #     print(f"{pp_rank=} {k=}")
+
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
         self.language_model.language_model.load_state_dict(lm_state_dict, strict=True)
 
@@ -255,7 +272,7 @@ class LMHeads(MegatronModule):
         )
 
         if get_key_value:
-            logits, logits_presents = logits
+            logits, logitsactivations_checkpoint_granularity_presents = logits
             lm_output, lm_output_presents = lm_output
 
         heads_output = self.other_heads(lm_output)
@@ -320,6 +337,16 @@ class ILQLGPT(MegatronGPTModel):
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
 
+        self._ori_activations_checkpoint_granularity = self.cfg.get(
+            "activations_checkpoint_granularity", None
+        )
+        self._ori_activations_checkpoint_method = self.cfg.get(
+            "activations_checkpoint_method", None
+        )
+        self._ori_activations_checkpoint_num_layers = self.cfg.get(
+            "activations_checkpoint_num_layers", None
+        )
+
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
         return None
@@ -373,14 +400,22 @@ class ILQLGPT(MegatronGPTModel):
                 self._valid_dataset, self._valid_collate_fn
             )
 
+    def setup(self, stage=None):
+        super().setup(stage)
+        # import pdb_attach
+        # mp_rank = parallel_state.get_tensor_model_parallel_rank()
+        # pp_rank = parallel_state.get_pipeline_model_parallel_rank()
+        # dp_rank = parallel_state.get_data_parallel_rank()
+        # port_offset = dp_rank * 100 + mp_rank * 10 + pp_rank
+        # pdb_attach.listen(50000 + port_offset)  # Listen on port 50000.
+
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
         rank_subfolder = f"mp_rank_{mp_rank:02d}"
         rank_params = Path(checkpoint_dir) / rank_subfolder / "model_weights.ckpt"
         print(f"Loading from {rank_params}")
         state_dict = torch.load(rank_params)
-
-        unwrap_float16_module(self.model).load_state_dict(state_dict, strict=False)
+        unwrap_float16_module(self.model).load_state_dict(state_dict)
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """
@@ -532,21 +567,29 @@ class ILQLGPT(MegatronGPTModel):
             if loss_scale is not None:
                 self.log("loss_scale", loss_scale)
 
-        self.log("reduced_train_loss", loss_mean, prog_bar=True, rank_zero_only=True)
-        lr = self._optimizer.param_groups[0]["lr"]
-        self.log("lr", lr, rank_zero_only=True)
         self.log(
-            "global_step", self.trainer.global_step, prog_bar=True, rank_zero_only=True
-        )
-        # TODO: make sure compute_consumed_samples works for pipeline parallelism
-        self.log(
-            "consumed_samples",
-            self.compute_consumed_samples(
-                self.trainer.global_step - self.init_global_step
-            ),
+            "reduced_train_loss",
+            loss_mean,
             prog_bar=True,
             rank_zero_only=True,
+            sync_dist=True,
         )
+        # lr = self._optimizer.param_groups[0]["lr"]
+        # self.log("lr", lr, rank_zero_only=True)
+        # self.log(
+        #     "global_step", float(self.trainer.global_step), prog_bar=True, rank_zero_only=True,
+        #     sync_dist=True
+        # )
+        # # TODO: make sure compute_consumed_samples works for pipeline parallelism
+        # self.log(
+        #     "consumed_samples",
+        #     float(self.compute_consumed_samples(
+        #         self.trainer.global_step - self.init_global_step
+        #     )),
+        #     prog_bar=True,
+        #     rank_zero_only=True,
+        #     sync_dist=True
+        # )
 
         if (
             self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0
@@ -560,6 +603,49 @@ class ILQLGPT(MegatronGPTModel):
                     )
 
         return loss_mean
+
+    def activation_checkpointing_(self, enable: bool):
+        def toggle_checkpointing(module):
+            if hasattr(module, "activations_checkpoint_granularity"):
+                if enable:
+                    module.activations_checkpoint_granularity = (
+                        self._ori_activations_checkpoint_granularity
+                    )
+                else:
+                    module.activations_checkpoint_granularity = None
+
+            if hasattr(module, "activations_checkpoint_method"):
+                if enable:
+                    module.activations_checkpoint_method = (
+                        self._ori_activations_checkpoint_method
+                    )
+                else:
+                    module.activations_checkpoint_method = None
+
+            if hasattr(module, "activations_checkpoint_num_layers"):
+                if enable:
+                    module.activations_checkpoint_num_layers = (
+                        self._ori_activations_checkpoint_num_layers
+                    )
+                else:
+                    module.activations_checkpoint_num_layers = None
+
+        self.model.apply(toggle_checkpointing)
+
+        if enable:
+            self.cfg.activations_checkpoint_granularity = (
+                self._ori_activations_checkpoint_granularity
+            )
+            self.cfg.activations_checkpoint_method = (
+                self._ori_activations_checkpoint_method
+            )
+            self.cfg.activations_checkpoint_num_layers = (
+                self._ori_activations_checkpoint_num_layers
+            )
+        else:
+            self.cfg.activations_checkpoint_granularity = None
+            self.cfg.activations_checkpoint_method = None
+            self.cfg.activations_checkpoint_num_layers = None
 
     # TODO: replace this with less magical code
     def sequence_parallel_(self, enabled: bool):
@@ -588,6 +674,13 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(False)
 
+        activations_checkpointing_was_enabled = (
+            self.cfg.get("activations_checkpoint_granularity", None) is not None
+        )
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(False)
+
         input_ids, lengths = batch
         input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
         input_ids, lengths = to_device(
@@ -610,6 +703,9 @@ class ILQLGPT(MegatronGPTModel):
                 batch_size=len(input_ids),
                 sync_dist=True,
             )
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(True)
 
         if sp_was_enabled:
             self.sequence_parallel_(True)

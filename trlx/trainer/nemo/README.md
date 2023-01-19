@@ -1,3 +1,12 @@
+## Using pretrained NeMo models
+To use a NeMo models in `.nemo` format, un-tar it:
+```
+tar xvf nemo_gpt20B_bf16_tp4.nemo
+```
+This will extract the model weights and the model config.
+
+Then set `train.trainer_kwargs.pretrained_model` to the path to the directory containing the parameters. The model hyperparameters in the `train.trainer_kwargs.megatron_cfg` should match the ones in the model config.
+
 ## NeMo Megatron setup
 This setup pertains to the cluster, but should also work if you clone the `r1.13.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.13.0 and apex from `nm_v1.13.0` from https://github.com/ericharper/apex.git
 
