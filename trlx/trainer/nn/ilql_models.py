@@ -39,7 +39,6 @@ def batched_index_select(x, idxs, dim):
     idxs: [batch, idxs_seq]
     returns: [batch, idxs_seq, hidden]
     """
-    # print(f"{mp_rank=} {x.shape=} {idxs.shape=}")
     idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
     return x.gather(dim=dim, index=idxs)
 

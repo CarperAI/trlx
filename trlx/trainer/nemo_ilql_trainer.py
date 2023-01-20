@@ -176,7 +176,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
             context_tokens, context_lengths = pad_batch(
                 context_tokens, self.tokenizer.eos_token_id, 64
             )
-            return [context_tokens, context_lengths]
+            return [torch.as_tensor(context_tokens), torch.as_tensor(context_lengths)]
 
         self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
 

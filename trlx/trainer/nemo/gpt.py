@@ -15,6 +15,8 @@ from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
+from apex.transformer.pipeline_parallel.utils import get_num_microbatches
+
 from einops import rearrange
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingRandomBatchSampler,
@@ -48,6 +50,7 @@ from trlx.utils import to_device, tree_map
 
 
 class ParallelLinear(nn.Module):
+    ''' Linear layer parallelized over the longer dimension. '''
     def __init__(
         self,
         in_size: int,
@@ -60,7 +63,6 @@ class ParallelLinear(nn.Module):
         gather_output=True,
         input_is_parallel=False,
     ):
-        """Linear layer with optional bias and activation fused into the linear layer."""
         super().__init__()
 
         no_async_tensor_model_parallel_allreduce = (
@@ -213,41 +215,9 @@ class LMHeads(MegatronModule):
     def word_embeddings_weight(self):
         return self.language_model.word_embeddings_weight()
 
-    def load_state_dict(self, state_dict, strict=True):
+    def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
-
-        def trim_key(key, prefix):
-            assert key.startswith(prefix)
-            return key[len(prefix) :]
-
-        lm_state_dict = {
-            trim_key(k, "model.language_model."): v for k, v in state_dict.items()
-        }
-
-        encoder_state_dict = {
-            trim_key(k, "encoder."): v
-            for k, v in lm_state_dict.items()
-            if k.startswith("encoder.")
-        }
-        # encoder = self.language_model.language_model.encoder
-        # num_layers = len(encoder.layers)
-        # pp_rank = parallel_state.get_pipeline_model_parallel_rank()
-        # pp_offset = pp_rank * num_layers
-
-        # def filter_in_pp_rank(key):
-        #     assert key.startswith("layers.")
-        #     layer_idx = int(key.split(".")[1])
-        #     return pp_offset <= layer_idx < pp_offset + num_layers
-
-        # encoder_state_dict = {
-        #     k: v for k, v in encoder_state_dict.items() if filter_in_pp_rank(k)
-        # }
-
-        # for k in encoder_state_dict.keys():
-        #     print(f"{pp_rank=} {k=}")
-
-        lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
-        self.language_model.language_model.load_state_dict(lm_state_dict, strict=True)
+        self.language_model.language_model.load_state_dict(lm_state_dict, strict=strict)
 
     def forward(
         self,
@@ -256,7 +226,6 @@ class LMHeads(MegatronModule):
         forward_method_parallel_output=None,
         **kwargs,
     ):
-        # print("LMHeads forward")
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
         logits = post_language_model_processing(
             lm_output,
@@ -272,59 +241,53 @@ class LMHeads(MegatronModule):
         )
 
         if get_key_value:
-            logits, logitsactivations_checkpoint_granularity_presents = logits
+            logits, presents = logits
             lm_output, lm_output_presents = lm_output
 
         heads_output = self.other_heads(lm_output)
         return logits, heads_output
 
 
-class HydraWithValueHeads(MegatronModule):
-    def __init__(self, language_models):
-        super().__init__()
-        self.language_models = language_models
-
-    def set_input_tensor(self, input_tensor):
-        for model in self.language_models:
-            model.set_input_tensor(input_tensor)
-
-    def word_embeddings_weight(self):
-        return self.language_models[0].word_embeddings_weight()
-
-    def forward(
-        self,
-        *args,
-        get_key_value=False,
-        forward_method_parallel_output=None,
-        **kwargs,
-    ):
-        # print("LMHeads forward")
-        lm_outputs = []
-        logits = []
-        for model in self.language_models:
-            lm_output = model(*args, get_key_value=get_key_value, **kwargs)
-            model_logits = post_language_model_processing(
-                lm_output,
-                labels=None,
-                logit_weights=model.word_embeddings_weight(),
-                get_key_value=get_key_value,
-                parallel_output=False,  # self.language_model.parallel_output,
-                forward_method_parallel_output=forward_method_parallel_output,
-                fp16_lm_cross_entropy=model.fp16_lm_cross_entropy,
-                return_logits=True,
-                sequence_parallel=model.sequence_parallel,
-                gradient_accumulation_fusion=model.gradient_accumulation_fusion,
-            )
-            lm_outputs.append(lm_output)
-            logits.append(model_logits)
-
-        return lm_outputs, logits
-
-
 def unwrap_float16_module(module):
     if isinstance(module, Float16Module):
         return module.module
     return module
+
+def reshard_for_pipeline_parallelism(num_layers, state_dict):
+    ''' Filter out the layers that are not in the current pipeline stage 
+        and shift the layer ids to match the local stage layer ids. '''
+    pp_rank = parallel_state.get_pipeline_model_parallel_rank()
+    pp_size = parallel_state.get_pipeline_model_parallel_world_size()
+    
+    stage_layers = num_layers // pp_size
+    pp_offset = pp_rank * stage_layers
+
+    encoder_layers_key = "model.language_model.encoder.layers."
+
+    def filter_in_pp_rank(key):
+        if key.startswith(encoder_layers_key):
+            layer_idx = int(key.split(".")[4])
+            return pp_offset <= layer_idx < (pp_offset + stage_layers)
+        elif (key.startswith("model.language_model.encoder.final_layernorm")
+                and not pp_rank == (pp_size - 1)):
+            return False
+        else:
+            return True
+
+    def shift_layer_idx(key):
+        """ If the key is for a transformer layer, shift down the layer index to select the 
+            correct layer for this pipeline stage. """
+        if key.startswith(encoder_layers_key):
+            layer_idx = int(key.split(".")[4])
+            return f"{encoder_layers_key}{str(layer_idx - pp_offset)}.{'.'.join(key.split('.')[5:])}"
+        else:
+            return key
+
+    state_dict = {
+        shift_layer_idx(k): v for k, v in state_dict.items() if filter_in_pp_rank(k)
+    }
+
+    return state_dict
 
 
 class ILQLGPT(MegatronGPTModel):
@@ -400,22 +363,34 @@ class ILQLGPT(MegatronGPTModel):
                 self._valid_dataset, self._valid_collate_fn
             )
 
-    def setup(self, stage=None):
-        super().setup(stage)
-        # import pdb_attach
-        # mp_rank = parallel_state.get_tensor_model_parallel_rank()
-        # pp_rank = parallel_state.get_pipeline_model_parallel_rank()
-        # dp_rank = parallel_state.get_data_parallel_rank()
-        # port_offset = dp_rank * 100 + mp_rank * 10 + pp_rank
-        # pdb_attach.listen(50000 + port_offset)  # Listen on port 50000.
-
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
         rank_subfolder = f"mp_rank_{mp_rank:02d}"
         rank_params = Path(checkpoint_dir) / rank_subfolder / "model_weights.ckpt"
         print(f"Loading from {rank_params}")
         state_dict = torch.load(rank_params)
-        unwrap_float16_module(self.model).load_state_dict(state_dict)
+
+        state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
+
+        def trim_key(key, prefix):
+            assert key.startswith(prefix), f"key {key} in state_dict does not start with {prefix}"
+            return key[len(prefix) :]
+
+        lm_state_dict = {
+            trim_key(k, "model.language_model."): v for k, v in state_dict.items()
+        }
+
+        encoder_state_dict = {
+            trim_key(k, "encoder."): v
+            for k, v in lm_state_dict.items()
+            if k.startswith("encoder.")
+        }
+
+        lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
+
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        print(f"Loaded from pretrained {rank_params}")
+    
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """
@@ -446,10 +421,9 @@ class ILQLGPT(MegatronGPTModel):
         else:
             return gpt
 
+    # Adapted from NeMo 
+    # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
     def training_step(self, batch: ILQLBatch, batch_idx: int):
-        mp_rank = parallel_state.get_tensor_model_parallel_rank()
-        dp_rank = parallel_state.get_data_parallel_rank()
-
         """
             Our dataloaders produce a micro-batch and then we fetch
             a number of microbatches depending on the global batch size and model parallel size
@@ -458,7 +432,6 @@ class ILQLGPT(MegatronGPTModel):
             Microbatches are then moved to GPU during the pipeline.
             The list of microbatches is then piped through the pipeline using Apex fwd/bwd functions.
         """
-
         # we zero grads here because we also call backward in the apex fwd/bwd functions
         self._optimizer.zero_grad()
 
@@ -572,24 +545,11 @@ class ILQLGPT(MegatronGPTModel):
             loss_mean,
             prog_bar=True,
             rank_zero_only=True,
-            sync_dist=True,
         )
-        # lr = self._optimizer.param_groups[0]["lr"]
-        # self.log("lr", lr, rank_zero_only=True)
-        # self.log(
-        #     "global_step", float(self.trainer.global_step), prog_bar=True, rank_zero_only=True,
-        #     sync_dist=True
-        # )
-        # # TODO: make sure compute_consumed_samples works for pipeline parallelism
-        # self.log(
-        #     "consumed_samples",
-        #     float(self.compute_consumed_samples(
-        #         self.trainer.global_step - self.init_global_step
-        #     )),
-        #     prog_bar=True,
-        #     rank_zero_only=True,
-        #     sync_dist=True
-        # )
+
+        self.log(
+            "global_step", float(self.trainer.global_step), prog_bar=True, rank_zero_only=True,
+        )
 
         if (
             self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0
@@ -597,10 +557,6 @@ class ILQLGPT(MegatronGPTModel):
         ):
             if parallel_state.is_pipeline_last_stage():
                 unwrap_float16_module(self.model).other_heads.sync_target_q_heads()
-                if dp_rank == 0:
-                    print(
-                        f"sync target q {self.trainer.global_step=} {batch_idx=} {mp_rank=}"
-                    )
 
         return loss_mean
 
@@ -750,8 +706,6 @@ class ILQLGPT(MegatronGPTModel):
                     inputs, (0, pad_by), value=self.tokenizer.eos_id
                 )
 
-                # print(f"{pad_by=} {self.cfg.encoder_seq_length=} {inputs.shape=}")
-
                 (
                     attention_mask,
                     loss_mask,
@@ -793,7 +747,7 @@ class ILQLGPT(MegatronGPTModel):
 
                 if self.cfg.sequence_parallel:
                     qs, target_qs, vs = tree_map(gather_ntc, (qs, target_qs, vs))
-
+                
                 qs = tree_map(
                     lambda t: batched_index_select(t, batch.actions_ixs, 1),
                     qs,
@@ -812,39 +766,18 @@ class ILQLGPT(MegatronGPTModel):
                 for k, v in stats.items():
                     self.log(k, v, rank_zero_only=True)
 
-                if validation_step and not self.cfg.data.get(
-                    "validation_drop_last", True
-                ):
-                    num_valid_samples_in_mb = int(
-                        loss_mask.sum() / loss_mask.numel() * loss_mask.shape[0]
-                    )
-                    loss_sum_for_mb = num_valid_samples_in_mb * loss_for_mb
-                    loss_sum_and_mb_size_all_gpu = torch.cat(
-                        [
-                            loss_sum_for_mb.clone().detach().view(1),
-                            torch.tensor([num_valid_samples_in_mb])
-                            .cuda()
-                            .clone()
-                            .detach(),
-                        ]
-                    )
-                    # Could potentially reduce num_valid_samples_in_microbatch and use that to
-                    # aggregate instead of len(self._validation_ds)
-                    torch.distributed.all_reduce(
-                        loss_sum_and_mb_size_all_gpu,
-                        group=parallel_state.get_data_parallel_group(),
-                    )
-
-                    return loss_for_mb, {
-                        "loss_sum_and_mb_size": loss_sum_and_mb_size_all_gpu,
-                        **stats,
-                    }
+                if mp_rank == (mp_size - 1):
+                    loss_for_mb = loss_for_mb * 1.0
                 else:
-                    reduced_loss = average_losses_across_data_parallel_group(
-                        [loss_for_mb]
-                    )
+                    loss_for_mb = loss_for_mb * 0.0
+                
+                reduced_loss = average_losses_across_data_parallel_group(
+                    [loss_for_mb]
+                )
 
-                    return loss_for_mb, {"avg": reduced_loss, **stats}
+                torch.cuda.synchronize()
+
+                return loss_for_mb, {"avg": reduced_loss, **stats}
 
             return model_output, loss_func
 
@@ -883,8 +816,6 @@ class ILQLGPT(MegatronGPTModel):
                         "inference_max_sequence_len"
                     ] = inference_max_sequence_len[0].item()
                     # extra_arg['inference_max_sequence_len'] = inference_max_sequence_len[0].item()
-
-                attention_mask = attention_mask[0:1]
 
                 model_output = model(
                     input_ids=tokens,
@@ -933,50 +864,3 @@ class ILQLGPT(MegatronGPTModel):
             }
 
         return super().generate(inputs, length_params, sampling_params)
-
-
-class HydraWithValueHeadGPT(MegatronGPTModel):
-    ppo_config: PPOConfig
-
-    def __init__(self, ppo_config, **kwargs):
-        self.ppo_config = ppo_config
-        super().__init__(**kwargs)
-        if len(list(self.parameters())) == 0:
-            raise ValueError("No parameters in model")
-
-    @classmethod
-    def list_available_models(cls) -> Optional[Mapping[str, str]]:
-        return None
-
-    def process_global_batch(self, batch: ILQLBatch, global_batch_size=None):
-        return batch
-
-    def build_train_valid_test_datasets(self):
-        pass
-        #    self._train_ds =
-
-    def model_provider_func(self, pre_process: bool, post_process: bool):
-        """Model construction for Apex Pipeline Parallelism.
-        every rank will construct the model but inside the model,
-        only the relevant layers for that rank should be constructed.
-        On the first rank, pre_process will be True
-        On the last rank, post_process will be True
-        """
-        # Currently the Hydra head can only be as large as one pipeline parallelism stage
-        def freeze_gpt(gpt):
-            for p in gpt.parameters():
-                p.requires_grad = False
-
-        if post_process:
-            gpts = [
-                super().model_provider_func(pre_process, post_process) for i in range(2)
-            ]
-
-            for gpt in gpts[1:]:
-                freeze_gpt(gpt)
-
-            return HydraWithValueHeads(gpts)
-        else:
-            gpt = super().model_provider_func(pre_process, post_process)
-            freeze_gpt(gpt)
-            return gpt
