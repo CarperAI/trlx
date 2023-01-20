@@ -12,7 +12,7 @@ trainer:
   max_epochs: -1 # PTL default. In practice, max_steps will be reached first.
   max_steps: 1000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
   log_every_n_steps: 1
-  val_check_interval: 100
+  val_check_interval: 500
   check_val_every_n_epoch: null
   limit_val_batches: 0
   limit_test_batches: 0
@@ -137,12 +137,12 @@ model:
 
   optim:
     name: distributed_fused_adam
-    lr: 5.0e-5
+    lr: 8.0e-5
     weight_decay: 1.0e-6
     betas:
     - 0.9
     - 0.95
     sched:
       name: CosineAnnealing
-      max_steps: 1000
-      min_lr: 5.0e-5
+      max_steps: 5000
+      min_lr: 8.0e-5

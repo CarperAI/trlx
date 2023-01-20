@@ -19,6 +19,7 @@ default_config = yaml.safe_load(
     open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
 )
 
+
 def split_dialog(dialog):
     dialog = re.split(r"(\n\nHuman: |\n\nAssistant: )", dialog)[1:]
     return ["".join(dialog[:-1]), dialog[-1]]
@@ -32,6 +33,7 @@ def preprocess(sample):
     sample["reward"] = [1, -1]
     return sample
 
+
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
@@ -44,7 +46,7 @@ def main(hparams={}):
     test_dataset = load_dataset(
         "Anthropic/hh-rlhf", data_dir="helpful-base", split="test"
     ).map(preprocess)
-    eval_prompts = [sample[0][0] for sample in test_dataset["prompt_output"]] # [:1024]
+    eval_prompts = [sample[0][0] for sample in test_dataset["prompt_output"]]  # [:1024]
 
     def reward_fn(xs):
         return [1.0 for x in xs]

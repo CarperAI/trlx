@@ -3,25 +3,23 @@ import os
 import re
 
 import numpy as np
-import tritonclient.grpc as client_util
 import yaml
 from datasets import load_dataset
 from transformers import AutoTokenizer
-from tritonclient.utils import np_to_triton_dtype
 
 import trlx
 from trlx.data.configs import TRLConfig
 
 config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_hh.yml")
 default_config = yaml.safe_load(open(config_path))
-triton_host = os.environ.get("TRITON_HOST", "localhost:8001")
-triton_model = os.environ.get("TRITON_MODEL", "gptj-rm-hh")
+# triton_host = os.environ.get("TRITON_HOST", "localhost:8001")
+# triton_model = os.environ.get("TRITON_MODEL", "gptj-rm-hh")
 
 
-def prepare_tensor(name: str, input):
-    t = client_util.InferInput(name, input.shape, np_to_triton_dtype(input.dtype))
-    t.set_data_from_numpy(input)
-    return t
+# def prepare_tensor(name: str, input):
+#     t = client_util.InferInput(name, input.shape, np_to_triton_dtype(input.dtype))
+#     t.set_data_from_numpy(input)
+#     return t
 
 
 def split_dialog(dialog):
