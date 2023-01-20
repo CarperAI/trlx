@@ -1,0 +1,50 @@
+train:
+  seq_length: 1024
+  epochs: 100
+  total_steps: 5000
+  batch_size: 6
+
+  checkpoint_interval: 100000
+  eval_interval: 500
+
+  pipeline: "PromptPipeline"
+  orchestrator: "OfflineOrchestrator"
+  trainer: "AccelerateILQLTrainer"
+
+model:
+  model_path: "gpt2-xl"
+  num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "left"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 8.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 10000000 # train.total_steps
+    eta_min: 8.0e-5
+
+method:
+  name: "ilqlconfig"
+  tau: 0.8
+  gamma: 0.99
+  cql_scale: 0.1
+  awac_scale: 1
+  alpha: 0.0001
+  beta: 0
+  steps_for_target_q_sync: 5
+  two_qs: true
+  gen_kwargs:
+    max_new_tokens: 128
+    top_k: 20
+    beta: [0, 1, 4, 8]
+    temperature: 1.0
