@@ -165,8 +165,8 @@ def generate_random_walks(
 
     def metric_fn(
         samples: List[str],
-        _prompts: List[str],
-        _outputs: List[str]
+        _prompts: Optional[List[str]] = None,
+        _outputs: Optional[List[str]] = None
     ) -> Dict[str, torch.Tensor]:
         """Metric Function
 
@@ -236,7 +236,8 @@ def generate_random_walks(
 
     logit_mask = torch.tensor(adjacency_matrix)
 
-    # Set the evaluation prompts as a list of unique random walk samples
+    # Set the evaluation prompts as a list of unique random walk samples, using
+    # just the start point (first character) from each samples.
     eval_prompts = list(sorted(set(w[0] for w in sample_walks)))
     eval_prompts = [prompt + delimiter for prompt in eval_prompts]
 
