@@ -199,6 +199,8 @@ class TrainConfig:
     save_best: bool = True
 
     trackers: Tuple[str] = ("wandb",)
+    logging_dir: str = None
+    
     seed: int = 1000
 
     @classmethod
