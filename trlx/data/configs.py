@@ -137,8 +137,8 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param trackers: Tuple of trackers to use for logging. Default: ("wandb",)
-    :type trackers: Tuple[str]
+    :param tracker: Tracker to use for logging. Default: "wandb"
+    :type tracker: str
 
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
@@ -198,7 +198,7 @@ class TrainConfig:
     rollout_logging_dir: Optional[str] = None
     save_best: bool = True
 
-    trackers: Tuple[str] = ("wandb",)
+    tracker: str = "wandb"
     logging_dir: str = None
     
     seed: int = 1000

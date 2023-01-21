@@ -78,25 +78,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
-            if "wandb" in config.train.trackers:
-                init_trackers_kwargs["wandb"] = {
+
+            init_trackers_kwargs[config.train.tracker] = {
                     "name": run_name,
                     "entity": self.config.train.entity_name,
                     "group": self.config.train.group_name,
                     "tags": ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
-                self.accelerator.init_trackers(
-                    project_name=self.config.train.project_name,
-                    config=config_dict,
-                    init_kwargs=init_trackers_kwargs,
-                )
-            elif "tensorboard" in config.train.trackers:
-                config_dict = {"test": 5}
-                self.accelerator.init_trackers(
-                    project_name=self.config.train.project_name,
-                    config=config_dict,
-                )
+            self.accelerator.init_trackers(
+                project_name=self.config.train.project_name,
+                config=config_dict,
+                init_kwargs=init_trackers_kwargs,
+            )
 
 
     def setup_model(self):
