@@ -92,7 +92,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     init_kwargs=init_trackers_kwargs,
                 )
             elif "tensorboard" in config.train.trackers:
-                pass
+                config_dict = {"test": 5}
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict,
+                )
+
 
     def setup_model(self):
         """
