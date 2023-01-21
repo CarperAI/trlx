@@ -50,5 +50,5 @@ method:
   gen_kwargs:
     max_new_tokens: 128
     top_k: 20
-    beta: [0, 1, 4, 8]
+    beta: 0
     temperature: 1.0

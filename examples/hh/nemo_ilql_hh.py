@@ -10,7 +10,7 @@ from transformers import AutoTokenizer
 import trlx
 from trlx.data.configs import TRLConfig
 
-config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_hh.yml")
+config_path = os.path.join(os.path.dirname(__file__), "configs/nemo_ilql_hh.yml")
 default_config = yaml.safe_load(open(config_path))
 # triton_host = os.environ.get("TRITON_HOST", "localhost:8001")
 # triton_model = os.environ.get("TRITON_MODEL", "gptj-rm-hh")
@@ -35,13 +35,16 @@ def preprocess(sample):
     sample["reward"] = [1, -1]
     return sample
 
+def reward_fn(xs):
+    ''' wireheading reward function '''
+    return [1.0 for x in xs]
 
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    reward_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    reward_tokenizer.pad_token = reward_tokenizer.eos_token
-    reward_tokenizer.truncation_side = "left"
+    # reward_tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    # reward_tokenizer.pad_token = reward_tokenizer.eos_token
+    # reward_tokenizer.truncation_side = "left"
 
     dataset = load_dataset("Anthropic/hh-rlhf").map(preprocess)
     prompts_outputs = sum(dataset["train"]["prompt_output"], [])
@@ -50,7 +53,7 @@ def main(hparams={}):
     test_dataset = load_dataset(
         "Anthropic/hh-rlhf", data_dir="helpful-base", split="test"
     ).map(preprocess)
-    eval_prompts = [sample[0][0] for sample in test_dataset["prompt_output"]][:1024]
+    eval_prompts = [sample[0][0] for sample in test_dataset["prompt_output"]]
 
     trlx.train(
         dataset=(prompts_outputs, rewards),

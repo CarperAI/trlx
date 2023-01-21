@@ -324,7 +324,7 @@ class ILQLGPT(MegatronGPTModel):
         dp_rank = parallel_state.get_data_parallel_rank()
         dp_size = parallel_state.get_data_parallel_world_size()
         print(
-            f"Building data loader for {dataset=} {len(dataset)=} {dp_rank=} {dp_size=}",
+            f"Building data loader for {type(dataset)=} {len(dataset)=} {dp_rank=} {dp_size=}",
             file=sys.stderr,
         )
         batch_sampler = MegatronPretrainingRandomBatchSampler(
@@ -649,8 +649,13 @@ class ILQLGPT(MegatronGPTModel):
             (input_ids, lengths), torch.cuda.current_device(), non_blocking=True
         )
 
-        gen = self.generate((input_ids, lengths), dict(max_length=20, min_length=0))
+        max_new_tokens = self.ilql_config.gen_kwargs.get('max_new_tokens', 64)
+        gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
         metrics = self.metric_fn(gen["sentences"])
+
+        columns, rows = ['sentences'], [[s] for s in gen['sentences']]
+        self.logger.log_text(key="samples", columns=columns, data=rows)
+
 
         avg_metrics = {
             f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
@@ -672,6 +677,17 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
+        from nemo.utils import AppState
+        from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
+
+        _reconfigure_microbatch_calculator(
+            rank=AppState().global_rank,
+            rampup_batch_size=None,
+            global_batch_size=self.cfg.global_batch_size,
+            micro_batch_size=self.cfg.micro_batch_size,
+            data_parallel_size=AppState().data_parallel_size,
+        )
+
         avg_metric = list(avg_metrics.values())[0]
         return [avg_metric, len(input_ids)]
 
@@ -692,7 +708,7 @@ class ILQLGPT(MegatronGPTModel):
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
-            batch: ILQLBatch, model, checkpoint_activations_all_layers=None
+            batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None
         ):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:

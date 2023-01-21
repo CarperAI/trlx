@@ -29,7 +29,7 @@ from trlx.trainer.nn.ilql_models import ILQLConfig
 from . import BaseRLTrainer
 
 
-def train_megatron(ilql_config, cfg, pretrained_model=None):
+def megatron_trainer(cfg, pretrained_model=None):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
@@ -93,10 +93,7 @@ def train_megatron(ilql_config, cfg, pretrained_model=None):
     with open_dict(cfg):
         cfg.model.precision = cfg.trainer.precision
 
-    model = ILQLGPT(ilql_config=ilql_config, cfg=cfg.model, trainer=trainer)
-    if pretrained_model is not None:
-        model.load_from_pretrained(pretrained_model)
-    return trainer, model
+    return trainer
 
 
 @register_trainer
@@ -121,7 +118,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         if not isinstance(config.method, ILQLConfig):
             raise ValueError("config.method must be ILQLConfig")
 
-        self.ilql: ILQLConfig = cast(ILQLConfig, config.method)
+        self.ilql_config: ILQLConfig = cast(ILQLConfig, config.method)
         if isinstance(megatron_cfg, str):
             cfg_path = (
                 Path(__file__).parent.parent.parent
@@ -135,15 +132,23 @@ class NeMoILQLTrainer(BaseRLTrainer):
         elif megatron_cfg is None:
             raise ValueError("megatron_cfg must be a path or a config")
 
-        self.trainer, self.model = train_megatron(
-            self.ilql, megatron_cfg, pretrained_model
+        self.trainer = megatron_trainer(megatron_cfg, pretrained_model)
+        self.model = ILQLGPT(
+            ilql_config=self.ilql_config,
+            metric_fn=self.metric_fn,
+            cfg=megatron_cfg.model,
+            trainer=self.trainer,
         )
-        self.model.metric_fn = self.metric_fn
+
+        if pretrained_model is not None:
+            self.model.load_from_pretrained(pretrained_model)
 
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
+        
+        self.tokenizer.truncation_side = config.tokenizer.truncation_side
 
         if stop_sequences is not None and len(stop_sequences) > 0:
             logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
@@ -171,13 +176,20 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
+        max_new_tokens = self.ilql_config.gen_kwargs.get('max_new_tokens', 64)
+
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
             context_tokens, context_lengths = pad_batch(
-                context_tokens, self.tokenizer.eos_token_id, 64
+                context_tokens, self.tokenizer.eos_token_id, max_new_tokens
             )
             return [torch.as_tensor(context_tokens), torch.as_tensor(context_lengths)]
 
-        self.model.set_valid_dataset(self.eval_pipeline, collate_fn=eval_collate)
+        max_train_steps = self.trainer.max_steps
+        eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
+        eval_samples = eval_iters * self.model.cfg.global_batch_size
+        long_pipe = [self.eval_pipeline[i % len(self.eval_pipeline)] for i in range(eval_samples)]
+        
+        self.model.set_valid_dataset(long_pipe, collate_fn=eval_collate)
 
         self.trainer.fit(self.model)
