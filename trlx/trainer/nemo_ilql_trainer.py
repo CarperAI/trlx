@@ -147,7 +147,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
-        
+
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
 
         if stop_sequences is not None and len(stop_sequences) > 0:
@@ -176,7 +176,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
-        max_new_tokens = self.ilql_config.gen_kwargs.get('max_new_tokens', 64)
+        max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
 
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
@@ -186,10 +186,14 @@ class NeMoILQLTrainer(BaseRLTrainer):
             return [torch.as_tensor(context_tokens), torch.as_tensor(context_lengths)]
 
         max_train_steps = self.trainer.max_steps
-        eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
+        eval_iters = (
+            max_train_steps // self.trainer.val_check_interval + 1
+        ) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size
-        long_pipe = [self.eval_pipeline[i % len(self.eval_pipeline)] for i in range(eval_samples)]
-        
+        long_pipe = [
+            self.eval_pipeline[i % len(self.eval_pipeline)] for i in range(eval_samples)
+        ]
+
         self.model.set_valid_dataset(long_pipe, collate_fn=eval_collate)
 
         self.trainer.fit(self.model)

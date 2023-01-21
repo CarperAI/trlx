@@ -35,9 +35,11 @@ def preprocess(sample):
     sample["reward"] = [1, -1]
     return sample
 
+
 def reward_fn(xs):
-    ''' wireheading reward function '''
+    """wireheading reward function"""
     return [1.0 for x in xs]
+
 
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)

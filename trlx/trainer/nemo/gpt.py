@@ -649,13 +649,14 @@ class ILQLGPT(MegatronGPTModel):
             (input_ids, lengths), torch.cuda.current_device(), non_blocking=True
         )
 
-        max_new_tokens = self.ilql_config.gen_kwargs.get('max_new_tokens', 64)
-        gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
+        max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
+        gen = self.generate(
+            (input_ids, lengths), dict(max_length=max_new_tokens, min_length=0)
+        )
         metrics = self.metric_fn(gen["sentences"])
 
-        columns, rows = ['sentences'], [[s] for s in gen['sentences']]
+        columns, rows = ["sentences"], [[s] for s in gen["sentences"]]
         self.logger.log_text(key="samples", columns=columns, data=rows)
-
 
         avg_metrics = {
             f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
@@ -677,8 +678,10 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
+        from apex.transformer.pipeline_parallel.utils import (
+            _reconfigure_microbatch_calculator,
+        )
         from nemo.utils import AppState
-        from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 
         _reconfigure_microbatch_calculator(
             rank=AppState().global_rank,

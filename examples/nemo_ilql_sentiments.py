@@ -18,6 +18,7 @@ default_config = yaml.safe_load(
     open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
 )
 
+
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
