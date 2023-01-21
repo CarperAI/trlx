@@ -9,6 +9,18 @@ import diffusers
 from diffusers import UNet2DConditionModel
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 
+from trlx.data.method_configs import MethodConfig, register_method
+from trlx.model.nn.ppo_models import PPOConfig
+
+@dataclass 
+@register_method
+class DiffPPOConfig(PPOConfig):
+    """
+    Diffusion PPO config
+    """
+    img_size: Tuple[int, int]
+    num_channels: int
+
 @dataclass
 class UNet2DConditionOutputHidden(UNet2DConditionOutput):
     hidden: torch.Tensor = None
@@ -144,24 +156,31 @@ class UNet2DConditionModelHidden(UNet2DConditionModel):
 
         return UNet2DConditionOutputHidden(sample=sample, hidden = hidden)
 
+def convert_to_hidden_model(model : UNet2DConditionModel) -> UNet2DConditionModelHidden:
+    """
+    Converts a UNet2DConditionModel to a UNet2DConditionModelHidden.
+    """
+    model.__class__ = UNet2DConditionModelHidden
+    return model
+
 class UNetActorCritic(nn.Module):
-    def __init__(self, cfg, vae_scale_factor: int = 8):
+    def __init__(self, vae, model):
         super().__init__()
 
-        self.model = UNet2DConditionModelHidden(
-            **cfg
-        )
+        self.model = convert_to_hidden_model(model)
 
-        
+        # Figure out hidden size to make value head
+        with torch.no_grad() and torch.autocast('cuda')
+
         # Infer size of middle block hidden state rather than hardcoding it
-        size = cfg.sample_size * vae_scale_factor   
-        inp = torch.zeros(1, cfg.num_channels_latent, size, size)
-        enc_hidden = torch.zeros(1, 512)
-        with torch.no_grad():
-            out, hidden = self.model(inp, 0)
-            print(hidden.shape)
+        #size = cfg.sample_size * vae_scale_factor   
+        #inp = torch.zeros(1, cfg.in_channels, size, size)
+        #enc_hidden = torch.zeros(1, 1, 512)
+        #with torch.no_grad() and torch.autocast('cuda'):
+        #    out, hidden = self.model(inp, 0, enc_hidden)
+        #    print(hidden.shape)
 
-        self.value_head()
+        #self.value_head()
 
     def forward(
         self,
@@ -175,3 +194,4 @@ class UNetActorCritic(nn.Module):
         """
 
         pass
+
