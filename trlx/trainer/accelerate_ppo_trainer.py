@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader
@@ -31,13 +31,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     trainer class extending the orchestrator class (and thus having access to
     the `orch.make_experience` method that creates "rollouts" i.e. episodes).
     """
-
-    orch: Any  # Can't be typed as it's a circular reference
-    """PPO Orchestrator (creates episodes)
-
-    Note this is not available on initialization, and is instead only
-    available once the PPOOrchestrator class has been initialised, with this
-    trainer as a parameter."""
 
     def __init__(self, config, **kwargs):
         """PPO Accelerate Trainer initialization
