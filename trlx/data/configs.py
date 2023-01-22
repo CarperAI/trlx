@@ -198,8 +198,8 @@ class TrainConfig:
     rollout_logging_dir: Optional[str] = None
     save_best: bool = True
 
-    tracker: str = "wandb"
-    logging_dir: str = None
+    tracker: Optional[str] = "wandb"
+    logging_dir: Optional[str] = None
     
     seed: int = 1000
 
