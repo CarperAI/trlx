@@ -28,7 +28,7 @@ def main(hparams={}):
         top_k=2,
         truncation=True,
         batch_size=256,
-        device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
+        device=-1 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
     def metric_fn(samples: List[str], **kwargs) -> Dict[str, List[float]]:
@@ -39,7 +39,7 @@ def main(hparams={}):
 
     trlx.train(
         dataset=(imdb["text"], imdb["label"]),
-        eval_prompts=["I don't know much about Hungarian underground"] * 128 * 20,
+        eval_prompts=["I don't know much about Hungarian underground"] * 128,
         metric_fn=metric_fn,
         config=config,
     )

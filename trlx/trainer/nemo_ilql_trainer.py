@@ -17,7 +17,6 @@ from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
-from transformers import DataCollatorWithPadding
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
@@ -29,7 +28,7 @@ from trlx.trainer.nn.ilql_models import ILQLConfig
 from . import BaseRLTrainer
 
 
-def megatron_trainer(cfg, pretrained_model=None):
+def megatron_trainer(cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
 
@@ -132,7 +131,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         elif megatron_cfg is None:
             raise ValueError("megatron_cfg must be a path or a config")
 
-        self.trainer = megatron_trainer(megatron_cfg, pretrained_model)
+        self.trainer = megatron_trainer(megatron_cfg)
         self.model = ILQLGPT(
             ilql_config=self.ilql_config,
             metric_fn=self.metric_fn,
@@ -176,12 +175,10 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         self.model.set_train_dataset(self.store, collate_fn=collate_fn)
 
-        max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
-
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
             context_tokens, context_lengths = pad_batch(
-                context_tokens, self.tokenizer.eos_token_id, max_new_tokens
+                context_tokens, self.tokenizer.eos_token_id, self.model.cfg.encoder_seq_length
             )
             return [
                 torch.as_tensor(context_tokens, device="cpu"),

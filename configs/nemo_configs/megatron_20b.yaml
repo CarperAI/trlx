@@ -5,7 +5,7 @@ trainer:
   devices: 8
   num_nodes: 4
   accelerator: gpu
-  precision: 16
+  precision: bf16
   logger: False # logger provided by exp_manager
   enable_checkpointing: False
   replace_sampler_ddp: False
@@ -14,7 +14,7 @@ trainer:
   log_every_n_steps: 1
   val_check_interval: 250
   check_val_every_n_epoch: null
-  limit_val_batches: 2
+  limit_val_batches: 10
   limit_test_batches: 0
   accumulate_grad_batches: 1 # do not modify, grad acc is automatic for training megatron models
   gradient_clip_val: 1.0
@@ -46,13 +46,13 @@ exp_manager:
     buffer_size: 5
 
 model:
-  micro_batch_size: 2
-  global_batch_size:  8 #2048
+  micro_batch_size: 8
+  global_batch_size:  128 #2048
   tensor_model_parallel_size: 4
   pipeline_model_parallel_size: 2
   resume_from_checkpoint: null # manually set the checkpoint file to load from
   # model architecture
-  encoder_seq_length: 64
+  encoder_seq_length: 1024
   max_position_embeddings: 2048
   num_layers: 44
   hidden_size: 6144

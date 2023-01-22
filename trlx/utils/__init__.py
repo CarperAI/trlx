@@ -206,8 +206,6 @@ def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
 
 
-# Sentiment/scores
-
 
 def tree_map(f, tree: Any) -> Any:
     """

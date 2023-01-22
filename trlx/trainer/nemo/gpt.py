@@ -172,29 +172,6 @@ class ParallelILQLHeads(nn.Module):
         self._sync_target_q_heads(self.config.alpha)
 
 
-class LogGPT(MegatronModule):
-    def __init__(self, language_model):
-        super().__init__()
-        self.language_model = language_model
-        self.pre_process = language_model.pre_process
-        self.post_process = language_model.post_process
-
-        if hasattr(language_model, "word_embeddings"):
-            self.word_embeddings = language_model.word_embeddings
-
-    def set_input_tensor(self, input_tensor):
-        self.language_model.set_input_tensor(input_tensor)
-
-    def word_embeddings_weight(self):
-        return self.language_model.word_embeddings_weight()
-
-    def forward(self, *args, **kwargs):
-        print(f"{kwargs['input_ids'].shape=}")
-        lm_output = self.language_model(*args, **kwargs)
-        print(f"{lm_output.shape=}")
-        return lm_output
-
-
 class LMHeads(MegatronModule):
     def __init__(self, language_model, other_heads):
         super().__init__()
@@ -318,7 +295,6 @@ class ILQLGPT(MegatronGPTModel):
 
     def build_train_valid_test_datasets(self):
         pass
-        #    self._train_ds =
 
     def build_data_loader(self, dataset, collate_fn, consumed_samples=0):
         dp_rank = parallel_state.get_data_parallel_rank()
@@ -448,6 +424,11 @@ class ILQLGPT(MegatronGPTModel):
             # GPT3 uses decoder with AttnMask:causal, thus doesn't need attention_mask
             batch_for_pipeline = None
 
+        # Pipeline stages will transfer this shape tensor to and from the
+        # previous and next stages
+        # The model must output a tensor of this shape if not the last pipeline
+        # stage. The model is given input of this shape if not the first pipeline
+        # stage via .set_input_tensor
         tensor_shape = [
             self.cfg.encoder_seq_length,
             self.cfg.micro_batch_size,
@@ -475,6 +456,8 @@ class ILQLGPT(MegatronGPTModel):
 
         # run forward and backwards passes for an entire global batch
         # we do this inside training_step to support pipeline parallelism
+        # This gets the correct fwd/bwd pipeline step depending on the pipeline 
+        # parallelism configuration
         fwd_bwd_function = self._get_fwd_bwd_function()
 
         losses_reduced_per_micro_batch = fwd_bwd_function(
@@ -655,7 +638,10 @@ class ILQLGPT(MegatronGPTModel):
         )
         metrics = self.metric_fn(gen["sentences"])
 
-        columns, rows = ["sentences"], [[s] for s in gen["sentences"]]
+        metric_keys, metric_values = zip(*metrics.items())
+        columns = ["sentences", *metric_keys]
+        rows = list(zip(gen["sentences"], *metric_values))
+
         self.logger.log_text(key="samples", columns=columns, data=rows)
 
         avg_metrics = {
@@ -678,18 +664,19 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
-        # from apex.transformer.pipeline_parallel.utils import (
-        #     _reconfigure_microbatch_calculator,
-        # )
-        # from nemo.utils import AppState
+        # NeMo generate resets the microbatch calculator        
+        from apex.transformer.pipeline_parallel.utils import (
+            _reconfigure_microbatch_calculator,
+        )
+        from nemo.utils import AppState
 
-        # _reconfigure_microbatch_calculator(
-        #     rank=AppState().global_rank,
-        #     rampup_batch_size=None,
-        #     global_batch_size=self.cfg.global_batch_size,
-        #     micro_batch_size=self.cfg.micro_batch_size,
-        #     data_parallel_size=AppState().data_parallel_size,
-        # )
+        _reconfigure_microbatch_calculator(
+            rank=AppState().global_rank,
+            rampup_batch_size=None,
+            global_batch_size=self.cfg.global_batch_size,
+            micro_batch_size=self.cfg.micro_batch_size,
+            data_parallel_size=AppState().data_parallel_size,
+        )
 
         avg_metric = list(avg_metrics.values())[0]
         return [avg_metric, len(input_ids)]
@@ -790,8 +777,6 @@ class ILQLGPT(MegatronGPTModel):
                     loss_for_mb = loss_for_mb * 0.0
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
-
-                torch.cuda.synchronize()
 
                 return loss_for_mb, {"avg": reduced_loss, **stats}
 
