@@ -183,7 +183,10 @@ class NeMoILQLTrainer(BaseRLTrainer):
             context_tokens, context_lengths = pad_batch(
                 context_tokens, self.tokenizer.eos_token_id, max_new_tokens
             )
-            return [torch.as_tensor(context_tokens), torch.as_tensor(context_lengths)]
+            return [
+                torch.as_tensor(context_tokens, device="cpu"),
+                torch.as_tensor(context_lengths, device="cpu"),
+            ]
 
         max_train_steps = self.trainer.max_steps
         eval_iters = (

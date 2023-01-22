@@ -678,18 +678,18 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
-        from apex.transformer.pipeline_parallel.utils import (
-            _reconfigure_microbatch_calculator,
-        )
-        from nemo.utils import AppState
+        # from apex.transformer.pipeline_parallel.utils import (
+        #     _reconfigure_microbatch_calculator,
+        # )
+        # from nemo.utils import AppState
 
-        _reconfigure_microbatch_calculator(
-            rank=AppState().global_rank,
-            rampup_batch_size=None,
-            global_batch_size=self.cfg.global_batch_size,
-            micro_batch_size=self.cfg.micro_batch_size,
-            data_parallel_size=AppState().data_parallel_size,
-        )
+        # _reconfigure_microbatch_calculator(
+        #     rank=AppState().global_rank,
+        #     rampup_batch_size=None,
+        #     global_batch_size=self.cfg.global_batch_size,
+        #     micro_batch_size=self.cfg.micro_batch_size,
+        #     data_parallel_size=AppState().data_parallel_size,
+        # )
 
         avg_metric = list(avg_metrics.values())[0]
         return [avg_metric, len(input_ids)]
@@ -719,13 +719,6 @@ class ILQLGPT(MegatronGPTModel):
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 inputs = batch.input_ids
-                if parallel_state.is_pipeline_first_stage(ignore_virtual=True):
-                    stage = "first"
-                elif parallel_state.is_pipeline_last_stage(ignore_virtual=True):
-                    stage = "last"
-                else:
-                    stage = "middle"
-
                 pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
                 inputs = torch.nn.functional.pad(
                     inputs, (0, pad_by), value=self.tokenizer.eos_id
@@ -877,8 +870,8 @@ class ILQLGPT(MegatronGPTModel):
         if sampling_params is None:
             sampling_params = {
                 "use_greedy": False,
-                "temperature": 0.7,
-                "top_k": 0,
+                "temperature": self.ilql_config.gen_kwargs.get("temperature", 1.0),
+                "top_k": self.ilql_config.gen_kwargs.get("top_k", 0),
                 "top_p": 1.0,
                 "repetition_penalty": 1.0,
                 "add_BOS": True,

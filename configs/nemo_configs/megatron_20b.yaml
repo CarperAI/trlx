@@ -3,18 +3,18 @@ restore_from_path: null  # used when starting from a .nemo file
 
 trainer:
   devices: 8
-  num_nodes: 16
+  num_nodes: 4
   accelerator: gpu
   precision: 16
   logger: False # logger provided by exp_manager
   enable_checkpointing: False
   replace_sampler_ddp: False
   max_epochs: -1 # PTL default. In practice, max_steps will be reached first.
-  max_steps: 3000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
+  max_steps: 1000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
   log_every_n_steps: 1
   val_check_interval: 250
   check_val_every_n_epoch: null
-  limit_val_batches: 1
+  limit_val_batches: 2
   limit_test_batches: 0
   accumulate_grad_batches: 1 # do not modify, grad acc is automatic for training megatron models
   gradient_clip_val: 1.0
@@ -23,12 +23,12 @@ trainer:
 exp_manager:
   explicit_log_dir: null
   exp_dir: null
-  name: megatron_gpt_20b_hh
+  name: megatron_gpt_20b_ilql_sentiments
   create_tensorboard_logger: False
   create_wandb_logger: True
   wandb_logger_kwargs:
-    project: trlx
-    name: nemo_20b_hh
+    project: trlxnemo
+    name: megatron_gpt_20b_ilql_sentiments
   resume_if_exists: True
   resume_ignore_no_checkpoint: True
   create_checkpoint_callback: False
@@ -46,13 +46,13 @@ exp_manager:
     buffer_size: 5
 
 model:
-  micro_batch_size: 8
-  global_batch_size:  128 #2048
+  micro_batch_size: 2
+  global_batch_size:  8 #2048
   tensor_model_parallel_size: 4
-  pipeline_model_parallel_size: 2 #2
+  pipeline_model_parallel_size: 2
   resume_from_checkpoint: null # manually set the checkpoint file to load from
   # model architecture
-  encoder_seq_length: 1024
+  encoder_seq_length: 64
   max_position_embeddings: 2048
   num_layers: 44
   hidden_size: 6144
