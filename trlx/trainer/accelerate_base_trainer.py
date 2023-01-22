@@ -82,6 +82,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             config_dict_flat = {a:b for (k,v) in config_dict.items() for (a,b) in v.items()}
             config_dict_flat_no_dict_values = {k:v for (k,v) in config_dict_flat.items() if not isinstance(v, dict)}
 
+            if config.train.tracker not in ("wandb", "tensorboard"):
+                raise ValueError(f"Only supported trackers are wandb and tensorboard, got {config.train.tracker}")
+
             if config.train.tracker == "wandb":
                 init_trackers_kwargs["wandb"] = {
                         "name": run_name,
