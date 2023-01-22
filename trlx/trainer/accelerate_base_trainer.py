@@ -78,6 +78,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
+            # HACK: Tensorboard doesn't like nested dict as hyperparams
+            config_dict_flat = {a:b for (k,v) in config_dict.items() for (a,b) in v.items()}
+            config_dict_flat_no_dict_values = {k:v for (k,v) in config_dict_flat.items() if not isinstance(v, dict)}
 
             if config.train.tracker == "wandb":
                 init_trackers_kwargs["wandb"] = {
@@ -88,11 +91,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         "mode": "disabled" if os.environ.get("debug", False) else "online",
                     }
 
-            self.accelerator.init_trackers(
-                project_name=self.config.train.project_name,
-                #config=config_dict,
-                init_kwargs=init_trackers_kwargs,
-            )
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict,
+                    init_kwargs=init_trackers_kwargs,
+                )
+            else:
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict_flat_no_dict_values,
+                )
 
 
     def setup_model(self):
