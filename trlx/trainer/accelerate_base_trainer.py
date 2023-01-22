@@ -79,8 +79,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
             # HACK: Tensorboard doesn't like nested dict as hyperparams
-            config_dict_flat = {a:b for (k,v) in config_dict.items() for (a,b) in v.items()}
-            config_dict_flat_no_dict_values = {k:v for (k,v) in config_dict_flat.items() if not isinstance(v, dict)}
+            config_dict_flat = {a:b for (k,v) in config_dict.items() for (a,b) in v.items() if not isinstance(b, dict)}
 
             if config.train.tracker not in ("wandb", "tensorboard"):
                 raise ValueError(f"Only supported trackers are wandb and tensorboard, got {config.train.tracker}")
@@ -102,7 +101,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             else:
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
-                    config=config_dict_flat_no_dict_values,
+                    config=config_dict_flat,
                 )
 
 
