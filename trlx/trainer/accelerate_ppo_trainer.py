@@ -4,10 +4,12 @@ import uuid
 from typing import Optional, Tuple
 
 import torch
+from torch.utils.data import DataLoader
 from torchtyping import TensorType
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
+from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
@@ -22,32 +24,68 @@ from trlx.utils.modeling import logprobs_from_logits
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
+    """PPO Accelerate Trainer
+
+    Note this class is intwined with `PPOOrchestrator`. The PPO trainer must be
+    created first and then given as a parameter to the PPO orchestrator. The PPO
+    orchestrator then adds a `orch` property to the trainer and also sets a
+    `trainer` property on itself. This broadly has the effect of the
+    trainer class extending the orchestrator class (and thus having access to
+    the `orch.make_experience` method that creates "rollouts" i.e. episodes).
+    """
+
+    orch: PPOOrchestrator
+    """PPO Orchestrator (creates episodes)
+
+    Note this is not available on initialization, and is instead only
+    available once the PPOOrchestrator class has been initialised, with this
+    trainer as a parameter."""
+
     def __init__(self, config, **kwargs):
+        """PPO Accelerate Trainer initialization
+
+        Args:
+            config: Config
+        """
         super().__init__(config, **kwargs)
 
+        # Setup rollout logging
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True
             self.setup_rollout_logging(config)
         else:
             self.log_rollouts = False
 
+        # Setup the rollout store
+        # Rollouts contain the query & response, log probs, values
+        # and rewards - from each rollout (episode) in an epoch
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
-        rollout_loader = self.store.create_loader(
+        # Create the rollout store dataloader (for batching up rollouts)
+        rollout_loader: DataLoader = self.store.create_loader(
             self.config.train.batch_size, shuffle=True
         )
 
+        # Prepare multi-GPU acceleration
         self.model, self.opt, self.scheduler, rollout_loader = self.accelerator.prepare(
             self.model, self.opt, self.scheduler, rollout_loader
         )
 
+        # Clear the rollout store
         self.store.clear_history()
+
+        # Setup the KL controller
+        # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(
                 config.method.init_kl_coef, config.method.target, config.method.horizon
             )
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
+
+        # Create the parameters for the Hugging Face language model's generator
+        # method (that generates new tokens from a prompt).
+        # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
         if config.model.model_arch_type == "seq2seq":
             self.generate_kwargs = dict(
                 config.method.gen_kwargs,
@@ -78,6 +116,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 self.generate_experience_kwargs = None
 
     def get_arch(self, config: TRLConfig):
+        """Get the model"""
         if config.model.model_arch_type == "seq2seq":
             return Seq2SeqLMHydraWithValueHead(
                 config.model.model_path, config.model.num_layers_unfrozen
