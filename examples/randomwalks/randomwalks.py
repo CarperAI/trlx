@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Callable, Dict, List, Optional, Tuple
 
 import networkx as nx
 import numpy as np
@@ -6,14 +6,12 @@ import torch
 
 
 def generate_rand_int_excluding(
-    random_state: np.random.RandomState,
-    max: int,
-    exclude: int
+    rng: np.random.RandomState, max: int, exclude: int
 ) -> int:
     """Random integer generator, excluding a specific number
 
     Args:
-        random_state: Numpy random state
+        rng: Numpy random number generator
         max: Max number
         exclude: Number to exclude
 
@@ -22,7 +20,7 @@ def generate_rand_int_excluding(
     """
     while True:
         # Create the random integer
-        x = random_state.randint(max)
+        x = rng.randint(max)
 
         # Return the random integer if it isn't the exclude value, otherwise try
         # again
@@ -30,20 +28,19 @@ def generate_rand_int_excluding(
             return x
 
 
-def generate_random_walks(
+def generate_random_walks(  # noqa: max-complexity
     n_nodes: int = 21,
     max_length: int = 10,
     n_walks: int = 1000,
     p_edge: float = 0.1,
     seed: int = 1002,
-    gpt2_tokenizer: bool = False
+    gpt2_tokenizer: bool = False,
 ) -> Tuple[
-        Callable[
-            [List[str], List[str], List[str]],
-            Dict[str, List[float]]],
-        List[str],
-        List[str],
-        torch.Tensor]:
+    Callable[[List[str]], Dict[str, List[float]]],
+    List[str],
+    List[str],
+    torch.Tensor,
+]:
     """Generate random walks
 
     Args:
@@ -57,10 +54,10 @@ def generate_random_walks(
         gpt2_tokenizer: True if GPT2's tokenizer is being used
 
     Returns:
-        Tuple of metric function, 
+        Tuple of metric function,
     """
     # Initialise a random state with the seed
-    random_state = np.random.RandomState(seed)
+    rng = np.random.RandomState(seed)
 
     # Create the adjacency matrix
     # https://en.wikipedia.org/wiki/Adjacency_matrix
@@ -71,8 +68,7 @@ def generate_random_walks(
     while True:
         # Create the adjacency matrix, where each node is connected to each
         # other node, with probability p_edge
-        adjacency_matrix: np.ndarray = \
-            random_state.rand(n_nodes, n_nodes) > (1 - p_edge)
+        adjacency_matrix: np.ndarray = rng.rand(n_nodes, n_nodes) > (1 - p_edge)
 
         # Nodes can't be connected to themselves, so the diagonal values must
         # all be False
@@ -98,10 +94,8 @@ def generate_random_walks(
     # Create dicts for converting nodes into characters and vice versa
     # Nodes are converted into characters as these (when split by the delimiter) are
     # guaranteed to be tokenized as individual tokens.
-    char_to_node: Dict[str, int] = \
-        {chr(ix + ord("a")): ix for ix in range(n_nodes)}
-    node_to_char: Dict[int, str] = \
-        {ix: chr(ix + ord("a")) for ix in range(n_nodes)}
+    char_to_node: Dict[str, int] = {chr(ix + ord("a")): ix for ix in range(n_nodes)}
+    node_to_char: Dict[int, str] = {ix: chr(ix + ord("a")) for ix in range(n_nodes)}
 
     # Initialise a list of sample walks
     sample_walks: List[str] = []
@@ -114,7 +108,7 @@ def generate_random_walks(
     for _ in range(n_walks):
 
         # Create a random starting node (that isn't already at the goal state)
-        node: int = generate_rand_int_excluding(random_state, n_nodes, goal)
+        node: int = generate_rand_int_excluding(rng, n_nodes, goal)
 
         # Initialise the list of nodes that we visit
         walk_nodes: List[int] = [node]
@@ -125,7 +119,7 @@ def generate_random_walks(
 
             # From the starting node, get all the nodes we can move to. Pick one
             # of these at random, and add it to the list of visited nodes
-            node = random_state.choice(np.nonzero(adjacency_matrix[node])[0])
+            node = rng.choice(np.nonzero(adjacency_matrix[node])[0])
             walk_nodes.append(node)
 
             # If we're at the goal state, stop
@@ -140,34 +134,26 @@ def generate_random_walks(
         sample_walks.append(delimiter.join(walk))
 
     # Initialise list of shortest lengths for each node (to the goal node)
-    shortest_node_to_goal_lengths: List[int] = []
+    shortest_lengths: List[int] = []
 
     # Create a directional graph from the adjacency list
-    directional_graph = nx.from_numpy_array(
-        adjacency_matrix,
-        create_using=nx.DiGraph)
+    directional_graph = nx.from_numpy_array(adjacency_matrix, create_using=nx.DiGraph)
 
     # Fore each node (except for the goal node), find the shortest path
     for start in set(range(n_nodes)) - {goal}:
         try:
             # Find the shortest path (up to the max_length)
-            shortest_path = nx.shortest_path(
-                directional_graph,
-                start,
-                goal)[:max_length]
-            shortest_node_to_goal_lengths.append(len(shortest_path))
+            shortest_path = nx.shortest_path(directional_graph, start, goal)[
+                :max_length
+            ]
+            shortest_lengths.append(len(shortest_path))
         except Exception:
             # If there is no path, use the maximum length instead
-            shortest_node_to_goal_lengths.append(max_length)
-
-    # Convert the shortest lengths list to a Tensor
-    shortest_lengths = torch.tensor(shortest_node_to_goal_lengths)
+            shortest_lengths.append(max_length)
 
     def metric_fn(
         samples: List[str],
-        _prompts: Optional[List[str]] = None,
-        _outputs: Optional[List[str]] = None
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, List[float]]:
         """Metric Function
 
         Args:
@@ -182,7 +168,7 @@ def generate_random_walks(
 
         # Initialise batch lengths & reference lengths (the optimal length
         # starting from each batch items specific start node)
-        sample_lengths: List[int] = []
+        lengths: List[float] = []
         sample_optimal_lengths: List[int] = []
 
         for sample_str in samples:
@@ -195,12 +181,16 @@ def generate_random_walks(
             sample: List[int] = [char_to_node.get(c, 1000) for c in sample_str]
 
             # Initialise the specific sample length
-            length: Optional[int] = None
+            length: Optional[float] = None
 
             for node in range(len(sample)):
                 # If an invalid path is taken, set the length to the invalid
                 # path score
-                if sample[node] >= n_nodes or node > 0 and not adjacency_matrix[sample[node - 1], sample[node]]:
+                if (
+                    sample[node] >= n_nodes
+                    or node > 0
+                    and not adjacency_matrix[sample[node - 1], sample[node]]
+                ):
                     length = invalid_path_length
                     break
 
@@ -216,22 +206,23 @@ def generate_random_walks(
 
             # Store the batch item length & optimal length staring from the
             # start node
-            sample_lengths.append(length)
+            lengths.append(float(length))
             sample_optimal_lengths.append(shortest_lengths[sample[0] - 1])
 
-        lengths: torch.Tensor = torch.tensor(sample_lengths, dtype=torch.float)
+        # Calculate optimality scores, in [0, 1], as compared to the shortest
+        # path
+        lengths_tensor = torch.tensor(lengths, dtype=torch.float)
         bound_lengths: torch.Tensor = torch.where(
-            lengths.eq(invalid_path_length),
-            max_length,
-            lengths
+            lengths_tensor.eq(invalid_path_length), max_length, lengths_tensor
         ).abs()
         optimal_lengths = torch.as_tensor(sample_optimal_lengths)
 
+        # Optimality scores, in [0, 1], as compared to the shortest path
+        optimality = (max_length - bound_lengths) / (max_length - optimal_lengths)
+
         return {
-            "lengths": sample_lengths,
-            # Optimality scores, in [0, 1], as compared to the shortest path
-            "optimality": \
-            (max_length - bound_lengths) / (max_length - optimal_lengths),
+            "lengths": lengths,
+            "optimality": optimality.tolist(),
         }
 
     logit_mask = torch.tensor(adjacency_matrix)

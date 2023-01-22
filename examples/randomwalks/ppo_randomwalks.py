@@ -20,7 +20,7 @@ def main(hparams={}):
         "CarperAI/randomwalks",
         # An "optimality" reward function is used, with scores in [0,1]
         # depending on how close the path is to the shortest possible path.
-        reward_fn=lambda samples, p, o: metric_fn(samples, p, o)["optimality"],
+        reward_fn=lambda samples, prompts, outputs: metric_fn(samples)["optimality"],
         # The prompts are simply the first notes (represented as letters) to
         # start from
         prompts=prompts,

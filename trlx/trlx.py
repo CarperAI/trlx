@@ -14,9 +14,7 @@ def train(
     dataset: Optional[Iterable[Tuple[str, float]]] = None,
     prompts: Optional[List[str]] = None,
     eval_prompts: Optional[List[str]] = None,
-    metric_fn: Optional[
-        Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]
-    ] = None,
+    metric_fn: Optional[Callable[[List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
     logit_mask: Optional[List[List[bool]]] = None,
     stop_sequences: Optional[List[str]] = [],
@@ -37,7 +35,7 @@ def train(
             Giving a single string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
         prompts (List[str]): Prompts to sample off from during online training
         eval_prompts (List[str]): Prompts to periodically validate training on
-        metric_fn (Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]]):
+        metric_fn ( Optional[Callable[[List[str]], Dict[str, List[float]]]]):
             Function to compute statistics on batches of gnerated samples. Its arguments are the same
             as in `reward_fn` (`samples`, `prompts`, `outputs`) but the return is dictionary with keys
             as metric's name and values and lists of numeric values per each sample in batch

@@ -6,7 +6,7 @@ et al. 2021)](https://arxiv.org/abs/2106.01345).
 ## Game Description
 
 The task is to find the shortest path on a directed graph. The reward is based
-on tow optimal the path is compared to the shortest possible (bounded in [0,
+on how optimal the path is compared to the shortest possible (bounded in [0,
 1]).
 
 Note this is different to the paper, which gave rewards of -1 for every
@@ -22,9 +22,6 @@ node in the graph.
 
 ![Graph Example](graph-example.png)
 Source: Decision Transformer (Lili Chen et al. 2021)
-
-Paths are represented as strings of letters, with each letter corresponding to a
-node in a graph.
 
 For PPO, a language model was fine-tuned to predict the next token in a sequence
 of returns-to-go (sum of future rewards), states and actions. It was trained
