@@ -1,15 +1,13 @@
 import json
 import os
 import uuid
-from typing import Optional, Tuple
+from typing import Any, Optional
 
 import torch
 from torch.utils.data import DataLoader
-from torchtyping import TensorType
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
-from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
@@ -34,7 +32,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     the `orch.make_experience` method that creates "rollouts" i.e. episodes).
     """
 
-    orch: PPOOrchestrator
+    orch: Any  # Can't be typed as it's a circular reference
     """PPO Orchestrator (creates episodes)
 
     Note this is not available on initialization, and is instead only
@@ -58,7 +56,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Setup the rollout store
         # Rollouts contain the query & response, log probs, values
-        # and rewards - from each rollout (episode) in an epoch
+        # and rewards - from each rollout
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
         # Create the rollout store dataloader (for batching up rollouts)
@@ -125,23 +123,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             config.model.model_path, config.model.num_layers_unfrozen
         )
 
-    def get_model_inputs(
-        self,
-        query_tensors: TensorType["batch_size", "query_size"],
-        response_tensors: TensorType["batch_size", "response_size"],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        tokens = torch.cat((query_tensors, response_tensors), dim=1)[
-            :, -self.max_length :
-        ]
-        attention_mask = (
-            tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-        )
-        # For a proper positional encoding in case of left padding
-        position_ids = attention_mask.cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask.eq(0), 0)
-        return tokens, attention_mask, position_ids
-
     def loss(self, batch: PPORLBatch):
+        """Forward pass & loss
+
+        Args:
+            batch: Previous batch of episodes
+        """
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
         response_tensors = batch.response_tensors.to(self.accelerator.device)
@@ -162,11 +149,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 .long()
                 .to(self.accelerator.device)
             )
+
+            # Forward pass
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 decoder_input_ids=decoder_input_ids,
             )
+
             logits = outputs.logits
             values_pred = outputs.value
             logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
@@ -229,6 +219,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             f.write(json.dumps(config.to_dict(), indent=2))
 
     def post_epoch_callback(self):
+        """Post epoch callback
+
+        Clears the store and creates `num_rollouts` new episodes.
+        """
         if self.log_rollouts:
             self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
