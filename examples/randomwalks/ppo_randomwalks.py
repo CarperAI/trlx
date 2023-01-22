@@ -21,11 +21,11 @@ def main(hparams={}):
         # An "optimality" reward function is used, with scores in [0,1]
         # depending on how close the path is to the shortest possible path.
         reward_fn=lambda samples, prompts, outputs: metric_fn(samples)["optimality"],
-        # The prompts are simply the first notes (represented as letters) to
-        # start from
+        # The prompts are simply the first nodes (represented as letters) to
+        # start from.
         prompts=prompts,
         eval_prompts=prompts,
-        metric_fn=metric_fn,
+        metric_fn=lambda samples, prompts, outputs: metric_fn(samples),
         config=config,
     )
 
