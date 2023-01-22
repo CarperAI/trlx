@@ -1,6 +1,5 @@
 # Extensible version of the GPT model
 import sys
-from collections import OrderedDict
 from copy import deepcopy
 from functools import partial, reduce
 from math import sqrt
@@ -12,7 +11,6 @@ import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
 from apex.transformer import parallel_state, tensor_parallel
-from apex.transformer.pipeline_parallel.utils import get_num_microbatches
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
@@ -42,9 +40,8 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
 # import trlx.trainer.nemo.generate_ilql as generate_ilql
-from trlx.data.ilql_types import ILQLBatch, flatten_dataclass, unflatten_dataclass
+from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
 from trlx.trainer.nn.ilql_models import ILQLConfig, batched_index_select
-from trlx.trainer.nn.ppo_models import PPOConfig
 from trlx.utils import to_device, tree_map
 
 
@@ -456,7 +453,7 @@ class ILQLGPT(MegatronGPTModel):
 
         # run forward and backwards passes for an entire global batch
         # we do this inside training_step to support pipeline parallelism
-        # This gets the correct fwd/bwd pipeline step depending on the pipeline 
+        # This gets the correct fwd/bwd pipeline step depending on the pipeline
         # parallelism configuration
         fwd_bwd_function = self._get_fwd_bwd_function()
 
@@ -664,7 +661,7 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
-        # NeMo generate resets the microbatch calculator        
+        # NeMo generate resets the microbatch calculator
         from apex.transformer.pipeline_parallel.utils import (
             _reconfigure_microbatch_calculator,
         )

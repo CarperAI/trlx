@@ -178,7 +178,9 @@ class NeMoILQLTrainer(BaseRLTrainer):
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
             context_tokens, context_lengths = pad_batch(
-                context_tokens, self.tokenizer.eos_token_id, self.model.cfg.encoder_seq_length
+                context_tokens,
+                self.tokenizer.eos_token_id,
+                self.model.cfg.encoder_seq_length,
             )
             return [
                 torch.as_tensor(context_tokens, device="cpu"),

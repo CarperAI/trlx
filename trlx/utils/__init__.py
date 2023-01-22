@@ -206,7 +206,6 @@ def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
 
 
-
 def tree_map(f, tree: Any) -> Any:
     """
     Apply function f to all leaves in tree
