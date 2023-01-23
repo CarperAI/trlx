@@ -1,10 +1,11 @@
 import json
 import os
 import uuid
-from typing import Optional
+from typing import Callable, List, Optional
 
 import torch
 from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
@@ -17,7 +18,7 @@ from trlx.trainer.nn.ppo_models import (
     FixedKLController,
     Seq2SeqLMHydraWithValueHead,
 )
-from trlx.utils.modeling import logprobs_from_logits
+from trlx.utils.modeling import logprobs_of_labels
 
 
 @register_trainer
@@ -31,6 +32,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     trainer class extending the orchestrator class (and thus having access to
     the `orch.make_experience` method that creates "rollouts" i.e. episodes).
     """
+
+    reward_fn: Callable[[List[str], List[str], List[str]], List[float]]
+
+    tokenizer: AutoTokenizer
 
     def __init__(self, config, **kwargs):
         """PPO Accelerate Trainer initialization
@@ -152,7 +157,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = (
                 decoder_input_ids.ne(self.tokenizer.pad_token_id)
                 .long()
@@ -174,7 +179,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
-            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
 
             start = query_tensors.shape[1] - 1
             end = start + response_length

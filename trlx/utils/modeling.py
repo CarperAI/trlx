@@ -205,8 +205,10 @@ def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
     return whitened
 
 
-def logprobs_from_logits(logits, labels):
-    """Compute log softmax values from logits."""
+def logprobs_of_labels(logits, labels):
+    """Log probabilities of the labels
+
+    These are calculated from the logits."""
     logprobs = F.log_softmax(logits, dim=-1)
     logprobs_labels = torch.gather(logprobs, dim=-1, index=labels.unsqueeze(-1))
     return logprobs_labels.squeeze(-1)

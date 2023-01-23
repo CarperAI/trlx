@@ -1,36 +1,52 @@
 from time import time
+from typing import List
 
 import ray
 import torch
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
-from trlx.trainer import BaseRLTrainer
+from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
-from trlx.utils.modeling import RunningMoments, logprobs_from_logits
+from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
-    """
-    Orchestrator prepares data for PPO training.
-    Transforms samples from `pipeline` into `PPOBatch` and pushes them into trainer's `store`
+    """PPO Orchestrator
+
+    Runs rollouts - generates samples from prompts using the model, calculates
+    KL divergence against the reference model, and then pushes these
+    samples/rewards etc to the trainers store.
+
+    Note this class is intwined with the trainer `AcceleratePPOTrainer` - it
+    adds an `orch` property to the trainer instance and also sets a `trainer`
+    property on itself. See the trainer class for more details.
     """
 
     def __init__(
         self,
-        trainer: BaseRLTrainer,
+        trainer: AcceleratePPOTrainer,
         pipeline: BasePipeline,
         chunk_size: int = 512,
     ):
+        """_summary_
+
+        Args:
+            trainer: Trainer
+            pipeline: Dataset
+            chunk_size: Batch size
+        """
         self.pipeline = pipeline
         self.trainer = trainer
         self.chunk_size = chunk_size
 
-        self.pipeline_loader = self.pipeline.create_loader(
+        # Create the dataloader (for batches of prompts)
+        self.pipeline_loader: DataLoader = self.pipeline.create_loader(
             self.chunk_size, shuffle=True
         )
         self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
@@ -40,27 +56,32 @@ class PPOOrchestrator(Orchestrator):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
             self.ref_model.to(self.trainer.accelerator.device)
 
+        # Set this orchestrator as a property on the trainer, so that the
+        # trainer can call `make_experience` directly for each epoch.
         self.trainer.orch = self
 
         self.running = RunningMoments()
         self.ref_mean = self.trainer.config.method.ref_mean
         self.ref_std = self.trainer.config.method.ref_std
 
-    def score(self, samples):
-        """
-        Batched scoring function taking text and generating scalar
-        """
-        return self.trainer.reward_fn(samples)
-
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
-        """
-        Takes `num_rollouts` prompts from `pipeline`, samples model and computes the
-        KL againts a reference model. It then appends PPOElements to trainer's `store`
+        """Make experiences
+
+        Takes `num_rollouts` prompts from `pipeline`, samples from the model and
+        then computes the KL against a reference model. Finally it then appends
+        PPOElements to trainer's `store`.
+
+        Args:
+            num_rollouts: Number of rollouts to generate
+            iter_count: Total number of updates run (i.e. number of updates run
+            for all batches & epochs)
         """
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+
         while len(ppo_rl_elements) < num_rollouts:
+
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -69,6 +90,9 @@ class PPOOrchestrator(Orchestrator):
                 batch = next(self.pipeline_iterator)
 
             exp_generate_time = time()
+
+            # Generate samples from the language model (similar to using
+            # HuggingFace `generate` method)
             samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
 
@@ -78,9 +102,7 @@ class PPOOrchestrator(Orchestrator):
                 query_tensors, samples
             )
 
-            # Convert trimmed samples back into tensors for another head pass
-            # This can be defered, instead letting the pass to made over the original samples
-            # after unbinding and truncating operations lower are fixed
+            # Pad the samples
             outputs = self.trainer.tokenizer(str_outputs).input_ids
             outputs = list(map(torch.LongTensor, outputs))
             maxsize = max(map(len, outputs))
@@ -92,7 +114,7 @@ class PPOOrchestrator(Orchestrator):
                 )
                 for output in outputs
             ]
-            response_tensors = torch.vstack(outputs).to(device)
+            padded_samples = torch.vstack(outputs).to(device)
 
             exp_score_time = time()
 
@@ -102,7 +124,7 @@ class PPOOrchestrator(Orchestrator):
                     prompts=str_prompts,
                     outputs=str_outputs,
                 ),
-                dtype=float,
+                dtype=torch.float,
             ).to(device)
             stats["time/exp_score"] = time() - exp_score_time
 
@@ -132,7 +154,7 @@ class PPOOrchestrator(Orchestrator):
                     outputs = self.trainer.model(
                         input_ids=query_tensors,
                         attention_mask=attention_mask,
-                        decoder_input_ids=response_tensors,
+                        decoder_input_ids=padded_samples,
                     )
                     logits = outputs.logits
                     values = outputs.value
@@ -140,17 +162,17 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = self.trainer.model.forward_hydra(
                             input_ids=query_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=response_tensors,
+                            decoder_input_ids=padded_samples,
                         )
                     else:
                         ref_logits = self.ref_model(
                             input_ids=query_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=response_tensors,
+                            decoder_input_ids=padded_samples,
                         ).logits
             else:
                 all_tokens = torch.cat(
-                    (query_tensors.to(device), response_tensors), dim=1
+                    (query_tensors.to(device), padded_samples), dim=1
                 )
                 attention_mask = (
                     all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
@@ -178,74 +200,98 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_from_logits(
-                    logits[:, :-1, :], response_tensors[:, 1:]
-                )
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], response_tensors[:, 1:]
+                logprobs = logprobs_of_labels(logits[:, :-1, :], padded_samples[:, 1:])
+                ref_logprobs = logprobs_of_labels(
+                    ref_logits[:, :-1, :], padded_samples[:, 1:]
                 )
             else:
-                logprobs = logprobs_from_logits(logits, all_tokens)
-                ref_logprobs = logprobs_from_logits(ref_logits, all_tokens)
+                logprobs = logprobs_of_labels(logits, all_tokens)
+                ref_logprobs = logprobs_of_labels(ref_logits, all_tokens)
 
-            n = samples.shape[0]
+            n_samples: int = samples.shape[0]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
-            response_tensors = response_tensors.cpu()
+            padded_samples = padded_samples.cpu()
+
+            # Estimate the KL divergence between the model and reference model
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                start = 1  # skip the <s> token
-                ends = (response_tensors[:, start:] != 0).sum(1)
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
-                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
-                rewards = [
+                # Skip the beginning of sequence token
+                start = 1
+
+                # Get the number of non-padding tokens for each sample
+                # This assumes all padding is on the right side
+                padding_token: int = 0
+                ends = (padded_samples[:, start:] != padding_token).sum(1)
+
+                # Get the logprobs and values, for tokens that are not padding
+                # or beginning of sequences tokens. These are from the model
+                # (not the reference model)
+                all_logprobs = [
+                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+                ]
+                all_values = [
+                    values[ix, start - 1 : ends[ix] - 1] for ix in range(n_samples)
+                ]
+
+                kl_divergence_estimate: List[torch.Tensor] = [
                     -self.trainer.kl_ctl.value
                     * (
-                        logprobs[ix, start : ends[ix]]
-                        - ref_logprobs[ix, start : ends[ix]]
+                        logprobs[sample_idx, start : ends[sample_idx]]
+                        - ref_logprobs[sample_idx, start : ends[sample_idx]]
                     )
-                    for ix in range(n)
+                    for sample_idx in range(n_samples)
                 ]
+
+            # Else if not seq2seq (i.e. causal)
             else:
-                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_from_logits(
+                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_of_labels(
                     ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
 
-                n = samples.shape[0]
+                n_samples = samples.shape[0]
                 values = values.cpu()[:, :-1]
                 logprobs = logprobs.cpu()
                 ref_logprobs = ref_logprobs.cpu()
                 query_tensors = query_tensors.cpu()
-                response_tensors = response_tensors.cpu()
+                padded_samples = padded_samples.cpu()
 
                 start = query_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start : ends[ix]] for ix in range(n)]
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
+                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+                all_logprobs = [
+                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+                ]
 
-                rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
-                rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
+                kl_divergence_estimate = -self.trainer.kl_ctl.value * (
+                    logprobs - ref_logprobs
+                )
+                kl_divergence_estimate = [
+                    rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
+                ]
 
             # Compute rewards
-            all_rewards = [None] * n
+            all_rewards = [None] * n_samples
 
-            for ix in range(n):
-                rs = rewards[ix]
-                if len(rs) == 0:
-                    rs = torch.tensor([0.0])
-                rs[-1] += scores[ix].cpu()
-                all_rewards[ix] = rs
+            for sample_idx in range(n_samples):
+                sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
+
+                if len(sample_kl_divergence_estimate) == 0:
+                    sample_kl_divergence_estimate = torch.tensor([0.0])
+
+                sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
+                all_rewards[sample_idx] = sample_kl_divergence_estimate
 
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=query_tensors[i],
-                    response_tensor=response_tensors[i],
+                    response_tensor=padded_samples[i],
                     logprobs=all_logprobs[i],
                     values=all_values[i],
                     rewards=all_rewards[i],
                 )
-                for i in range(n)
+                for i in range(n_samples)
             ]
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
