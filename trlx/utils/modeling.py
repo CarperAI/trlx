@@ -25,7 +25,9 @@ except ModuleNotFoundError:
 def make_head(n_embd: int, out: int, dtype: type = torch.float32) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2, dtype=dtype), nn.ReLU(), nn.Linear(n_embd * 2, out, dtype=dtype)
+        nn.Linear(n_embd, n_embd * 2, dtype=dtype),
+        nn.ReLU(),
+        nn.Linear(n_embd * 2, out, dtype=dtype),
     )
 
 

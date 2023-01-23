@@ -134,7 +134,9 @@ class ILQLConfig(MethodConfig):
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int, dtype: type):
+    def __init__(
+        self, config: ILQLConfig, hidden_size: int, vocab_size: int, dtype: type
+    ):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -234,7 +236,9 @@ class CausalLMWithValueHeads(nn.Module):
 
         dtype = next(self.base_model.lm_head.parameters()).dtype
         self.hidden_size = hf_get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size, dtype)
+        self.ilql_heads = ilql_config.heads(
+            self.hidden_size, self.config.vocab_size, dtype
+        )
         self.ilql_config = ilql_config
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
