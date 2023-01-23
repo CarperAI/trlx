@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
@@ -200,7 +200,7 @@ class TrainConfig:
 
     tracker: Optional[str] = "wandb"
     logging_dir: Optional[str] = None
-    
+
     seed: int = 1000
 
     @classmethod

@@ -44,7 +44,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
-        self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+        self.accelerator = Accelerator(
+            log_with=config.train.tracker, logging_dir=config.train.logging_dir
+        )
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
@@ -79,19 +81,26 @@ class AccelerateRLTrainer(BaseRLTrainer):
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
             # HACK: Tensorboard doesn't like nested dict as hyperparams
-            config_dict_flat = {a:b for (k,v) in config_dict.items() for (a,b) in v.items() if not isinstance(b, dict)}
+            config_dict_flat = {
+                a: b
+                for (k, v) in config_dict.items()
+                for (a, b) in v.items()
+                if not isinstance(b, dict)
+            }
 
             if config.train.tracker not in ("wandb", "tensorboard"):
-                raise ValueError(f"Only supported trackers are wandb and tensorboard, got {config.train.tracker}")
+                raise ValueError(
+                    f"Only supported trackers are wandb and tensorboard, got {config.train.tracker}"
+                )
 
             if config.train.tracker == "wandb":
                 init_trackers_kwargs["wandb"] = {
-                        "name": run_name,
-                        "entity": self.config.train.entity_name,
-                        "group": self.config.train.group_name,
-                        "tags": ["/".join(get_git_tag())],
-                        "mode": "disabled" if os.environ.get("debug", False) else "online",
-                    }
+                    "name": run_name,
+                    "entity": self.config.train.entity_name,
+                    "group": self.config.train.group_name,
+                    "tags": ["/".join(get_git_tag())],
+                    "mode": "disabled" if os.environ.get("debug", False) else "online",
+                }
 
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
@@ -103,7 +112,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     project_name=self.config.train.project_name,
                     config=config_dict_flat,
                 )
-
 
     def setup_model(self):
         """
