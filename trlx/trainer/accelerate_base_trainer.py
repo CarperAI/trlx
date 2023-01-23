@@ -28,6 +28,7 @@ from trlx.utils import (
     significant,
 )
 from trlx.utils.modeling import (
+    flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
@@ -80,13 +81,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
-            # HACK: Tensorboard doesn't like nested dict as hyperparams
-            config_dict_flat = {
-                a: b
-                for (k, v) in config_dict.items()
-                for (a, b) in v.items()
-                if not isinstance(b, dict)
-            }
 
             if config.train.tracker not in ("wandb", "tensorboard"):
                 raise ValueError(
@@ -108,6 +102,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     init_kwargs=init_trackers_kwargs,
                 )
             else:
+                config_dict_flat = flatten_dict(config_dict)
+                config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][0]
+                config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][1]
+                config_dict_flat.pop("optimizer/kwargs/betas", None)
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
                     config=config_dict_flat,
