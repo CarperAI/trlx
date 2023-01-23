@@ -443,9 +443,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         best_reward = -float("inf")
 
+        # For each epoch
         for _ in range(self.config.train.epochs):
+            # For each batch
             for batch in self.train_dataloader:
+                # For each update per batch
                 for _ in range(self.n_updates_per_batch):
+                    # Note that whereas standard policy gradient methods perform one
+                    # gradient update per batch, PPO for example commonly performs
+                    # multiple gradient updates on the same batch of data.
+                    # https://arxiv.org/pdf/1707.06347.pdf
                     forward_time = time()
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
