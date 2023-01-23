@@ -243,7 +243,8 @@ class CausalLMWithValueHead(nn.Module):
 
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
-        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+        dtype = next(self.base_model.lm_head.parameters()).dtype
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype)
 
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
         self.base_model_transformer_args = inspect.getfullargspec(
@@ -318,7 +319,8 @@ class CausalLMHydraWithValueHead(nn.Module):
 
         self.base_model.transformer = hf_get_causal_base_model(self.base_model)
         self.base_model.lm_head = hf_get_lm_head(self.base_model)
-        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+        dtype = next(self.base_model.lm_head.parameters()).dtype
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype)
 
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:

@@ -46,8 +46,8 @@ class ILQLConfig(MethodConfig):
     two_qs: bool
     gen_kwargs: dict
 
-    def heads(self, hidden_size: int, vocab_size: int):
-        return ILQLHeads(self, hidden_size, vocab_size)
+    def heads(self, hidden_size: int, vocab_size: int, dtype: type):
+        return ILQLHeads(self, hidden_size, vocab_size, dtype)
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
@@ -134,18 +134,18 @@ class ILQLConfig(MethodConfig):
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int):
+    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int, dtype: type):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.v_head = make_head(self.hidden_size, 1)
+        self.v_head = make_head(self.hidden_size, 1, dtype)
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
 
         self.q_heads = nn.ModuleList(
-            make_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
+            make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs)
         )
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
@@ -232,8 +232,9 @@ class CausalLMWithValueHeads(nn.Module):
             self.base_model.transformer.forward
         ).args
 
+        dtype = next(self.base_model.lm_head.parameters()).dtype
         self.hidden_size = hf_get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size, dtype)
         self.ilql_config = ilql_config
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
