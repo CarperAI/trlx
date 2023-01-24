@@ -1,8 +1,8 @@
-train:
-  seq_length: 1024
+train
+  seq_length: 2048
   epochs: 100
-  total_steps: 3000
-  batch_size: 8
+  total_steps: 6000
+  batch_size: 2
 
   checkpoint_interval: 100000
   eval_interval: 1000
@@ -10,10 +10,10 @@ train:
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
   trainer: "AccelerateILQLTrainer"
-  checkpoint_dir: "checkpoints/ilql_summarize_6B-2301"
+  checkpoint_dir: "checkpoints/ilql_summarize_20B-2301"
 
 model:
-  model_path: "EleutherAI/pythia-6.9b-deduped"
+  model_path: "EleutherAI/gpt-neox-20b"
   num_layers_unfrozen: -1
 
 tokenizer:
@@ -40,12 +40,12 @@ method:
   gamma: 0.99
   cql_scale: 0.1
   awac_scale: 1
-  alpha: 0.0001
+  alpha: 0.01
   beta: 0
   steps_for_target_q_sync: 1
   two_qs: true
   gen_kwargs:
     max_new_tokens: 96
     top_k: 20
-    beta: [1, 4]
+    beta: [1]
     temperature: 1.0

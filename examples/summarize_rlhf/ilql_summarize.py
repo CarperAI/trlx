@@ -16,7 +16,8 @@ import trlx
 from trlx.data.configs import TRLConfig
 import math
 
-config_path = os.path.join(os.path.dirname(__file__), "configs/ilql_summarize.yml")
+config_path = os.path.join(os.path.dirname(__file__),
+                           os.environ.get("CONFIG_PATH", "configs/ilql_summarize.yml"))
 default_config = yaml.safe_load(open(config_path))
 triton_host = os.environ.get("TRITON_HOST", "localhost:8001")
 triton_model = os.environ.get("TRITON_MODEL", "gptj-rm-summarize")
