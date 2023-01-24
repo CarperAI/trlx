@@ -193,29 +193,34 @@ class PPOOrchestrator(Orchestrator):
             ref_logprobs = ref_logprobs.cpu()
             query_tensors = query_tensors.cpu()
             response_tensors = response_tensors.cpu()
+
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 start = 1  # skip the <s> token
                 ends = (response_tensors[:, start:] != 0).sum(1)
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
-                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+
+                # Calculate the KL Divergence
+                logprobs_all_vocab = F.log_softmax(
+                    logits[:, start:-1, :], dim=-1
+                )  # [sample x tokens x vocab]
+                ref_logprobs_all_vocab = F.log_softmax(
+                    ref_logits[:, start - 1 : -2, :], dim=-1
+                )  # [sample x tokens x vocab]
+                kl_divergence = -torch.sum(
+                    torch.exp(logprobs_all_vocab)
+                    * (ref_logprobs_all_vocab - logprobs_all_vocab),
+                    dim=-1,
+                )
+                kl_score = -self.trainer.kl_ctl.value * kl_divergence
                 rewards = [
-                    -self.trainer.kl_ctl.value
-                    * (
-                        logprobs[ix, start : ends[ix]]
-                        - ref_logprobs[ix, start : ends[ix]]
-                    )
-                    for ix in range(n)
-                ]
+                    rs[start : ends[ix]] for ix, rs in enumerate(kl_score)
+                ]  # [sample x tokens]
+
             else:
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
 
                 n = samples.shape[0]
                 values = values.cpu()[:, :-1]
                 logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
                 query_tensors = query_tensors.cpu()
                 response_tensors = response_tensors.cpu()
 
@@ -224,8 +229,22 @@ class PPOOrchestrator(Orchestrator):
                 all_values = [values[ix, start : ends[ix]] for ix in range(n)]
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
 
-                rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
-                rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
+                # Calculate the KL Divergence
+                logprobs_all_vocab = F.log_softmax(
+                    logits[:, :-1, :], dim=-1
+                )  # [sample x tokens x vocab]
+                ref_logprobs_all_vocab = F.log_softmax(
+                    ref_logits[:, :-1, :], dim=-1
+                )  # [sample x tokens x vocab]
+                kl_divergence = -torch.sum(
+                    torch.exp(logprobs_all_vocab)
+                    * (ref_logprobs_all_vocab - logprobs_all_vocab),
+                    dim=-1,
+                )
+                kl_score = -self.trainer.kl_ctl.value * kl_divergence
+                rewards = [
+                    rs[start : ends[ix]] for ix, rs in enumerate(kl_score)
+                ]  # [sample x tokens]
 
             # Compute rewards
             all_rewards = [None] * n
