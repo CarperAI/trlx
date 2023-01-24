@@ -101,7 +101,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     config=config_dict,
                     init_kwargs=init_trackers_kwargs,
                 )
-            else:  # only other suppoert tracker is tensorboard
+            else:  # only other supported tracker is tensorboard
                 config_dict_flat = flatten_dict(
                     config_dict
                 )  # flatten config for tensorboard, split list in hparams into flatten config
