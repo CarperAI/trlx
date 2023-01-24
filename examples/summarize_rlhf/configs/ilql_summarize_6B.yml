@@ -1,8 +1,8 @@
 train:
   seq_length: 2048
   epochs: 100
-  total_steps: 6000
-  batch_size: 8
+  total_steps: 5000
+  batch_size: 6
 
   checkpoint_interval: 100000
   eval_interval: 1000

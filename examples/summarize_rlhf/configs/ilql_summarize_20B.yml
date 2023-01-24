@@ -1,4 +1,4 @@
-train
+train:
   seq_length: 2048
   epochs: 100
   total_steps: 6000
