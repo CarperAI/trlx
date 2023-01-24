@@ -10,10 +10,21 @@ from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
 
 # Register load trainers via module import
-from trlx.trainer import _TRAINERS
+from trlx.trainer import _TRAINERS, register_trainer
 from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
-from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
+
+try:
+    from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
+except ImportError:
+    # NeMo is not installed
+    def _trainer_unavailble(name):
+        def log_error(*args, **kwargs):
+            raise ImportError(f"Unable to import NeMo so {name} is unavailable")
+
+        return register_trainer(name)(log_error)
+
+    _trainer_unavailble("NeMoILQLTrainer")
 
 
 def get_trainer(name: str) -> Callable:

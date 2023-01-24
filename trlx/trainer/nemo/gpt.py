@@ -16,7 +16,7 @@ from apex.transformer.tensor_parallel.mappings import (
 )
 from einops import rearrange
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
-    MegatronPretrainingRandomBatchSampler,
+    MegatronPretrainingBatchSampler,
 )
 from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
     post_language_model_processing,
@@ -300,7 +300,7 @@ class ILQLGPT(MegatronGPTModel):
             f"Building data loader for {type(dataset)=} {len(dataset)=} {dp_rank=} {dp_size=}",
             file=sys.stderr,
         )
-        batch_sampler = MegatronPretrainingRandomBatchSampler(
+        batch_sampler = MegatronPretrainingBatchSampler(
             total_samples=len(dataset),
             consumed_samples=consumed_samples,
             micro_batch_size=self.cfg.micro_batch_size,
@@ -661,22 +661,22 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
-        # NeMo generate resets the microbatch calculator
-        from apex.transformer.pipeline_parallel.utils import (
-            _reconfigure_microbatch_calculator,
-        )
-        from nemo.utils import AppState
+        # # NeMo generate resets the microbatch calculator
+        # from apex.transformer.pipeline_parallel.utils import (
+        #     _reconfigure_microbatch_calculator,
+        # )
+        # from nemo.utils import AppState
 
-        _reconfigure_microbatch_calculator(
-            rank=AppState().global_rank,
-            rampup_batch_size=None,
-            global_batch_size=self.cfg.global_batch_size,
-            micro_batch_size=self.cfg.micro_batch_size,
-            data_parallel_size=AppState().data_parallel_size,
-        )
+        # _reconfigure_microbatch_calculator(
+        #     rank=AppState().global_rank,
+        #     rampup_batch_size=None,
+        #     global_batch_size=self.cfg.global_batch_size,
+        #     micro_batch_size=self.cfg.micro_batch_size,
+        #     data_parallel_size=AppState().data_parallel_size,
+        # )
 
         avg_metric = list(avg_metrics.values())[0]
-        return [avg_metric, len(input_ids)]
+        return -torch.as_tensor(avg_metric).cuda()
 
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
@@ -765,15 +765,21 @@ class ILQLGPT(MegatronGPTModel):
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
 
-                for k, v in stats.items():
-                    self.log(k, v, rank_zero_only=True)
+                # for k, v in stats.items():
+                #     print(f"STATS: {k} {v}")
+                #     self.log(k, v)
 
                 if mp_rank == (mp_size - 1):
                     loss_for_mb = loss_for_mb * 1.0
                 else:
                     loss_for_mb = loss_for_mb * 0.0
 
+                torch.distributed.barrier()
+
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
+
+                # TODO: figure out why this sync is needed (crashes otherwise)
+                torch.cuda.synchronize()
 
                 return loss_for_mb, {"avg": reduced_loss, **stats}
 

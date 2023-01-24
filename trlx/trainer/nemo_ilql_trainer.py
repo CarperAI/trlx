@@ -95,6 +95,18 @@ def megatron_trainer(cfg):
     return trainer
 
 
+class CyclicIndexable:
+    def __init__(self, new_length: int, data: Sequence):
+        self.data = data
+        self.new_length = new_length
+
+    def __len__(self):
+        return self.new_length
+
+    def __getitem__(self, idx):
+        return self.data[idx % len(self.data)]
+
+
 @register_trainer
 class NeMoILQLTrainer(BaseRLTrainer):
     store: ILQLRolloutStorage
@@ -173,7 +185,10 @@ class NeMoILQLTrainer(BaseRLTrainer):
             batch = ilql_collate_fn(elems)
             return flatten_dataclass(ILQLBatch)(batch)
 
-        self.model.set_train_dataset(self.store, collate_fn=collate_fn)
+        train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
+        self.model.set_train_dataset(
+            CyclicIndexable(train_samples, self.store), collate_fn=collate_fn
+        )
 
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
@@ -197,5 +212,11 @@ class NeMoILQLTrainer(BaseRLTrainer):
         ]
 
         self.model.set_valid_dataset(long_pipe, collate_fn=eval_collate)
+
+        torch.set_float32_matmul_precision("medium")
+        self.trainer.fit(self.model)
+
+        eval_loader = self.model.build_data_loader(self.eval_pipeline, collate_fn)
+        self.trainer.validate(self.model, eval_loader)
 
         self.trainer.fit(self.model)
