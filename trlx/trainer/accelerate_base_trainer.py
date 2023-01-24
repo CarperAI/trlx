@@ -28,6 +28,7 @@ from trlx.utils import (
     significant,
 )
 from trlx.utils.modeling import (
+    flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
@@ -44,7 +45,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
-        self.accelerator = Accelerator(log_with=config.train.trackers)
+        self.accelerator = Accelerator(
+            log_with=config.train.tracker, logging_dir=config.train.logging_dir
+        )
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
@@ -78,7 +81,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
-            if "wandb" in config.train.trackers:
+
+            if config.train.tracker not in ("wandb", "tensorboard"):
+                raise ValueError(
+                    f"Only supported trackers are wandb and tensorboard, got {config.train.tracker}"
+                )
+
+            if config.train.tracker == "wandb":
                 init_trackers_kwargs["wandb"] = {
                     "name": run_name,
                     "entity": self.config.train.entity_name,
@@ -86,11 +95,27 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "tags": ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
-            self.accelerator.init_trackers(
-                project_name=self.config.train.project_name,
-                config=config_dict,
-                init_kwargs=init_trackers_kwargs,
-            )
+
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict,
+                    init_kwargs=init_trackers_kwargs,
+                )
+            else:  # only other supported tracker is tensorboard
+                config_dict_flat = flatten_dict(
+                    config_dict
+                )  # flatten config for tensorboard, split list in hparams into flatten config
+                config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][0]
+                config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat[
+                    "optimizer/kwargs/betas"
+                ][1]
+                config_dict_flat.pop("optimizer/kwargs/betas", None)
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict_flat,
+                )
 
     def setup_model(self):
         """
