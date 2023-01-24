@@ -47,7 +47,7 @@ exp_manager:
 
 model:
   micro_batch_size: 2
-  global_batch_size:  16 #2048
+  global_batch_size:  128 #2048
   tensor_model_parallel_size: 4
   pipeline_model_parallel_size: 1
   resume_from_checkpoint: null # manually set the checkpoint file to load from

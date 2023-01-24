@@ -95,16 +95,20 @@ def megatron_trainer(cfg):
     return trainer
 
 
-class CyclicIndexable:
-    def __init__(self, new_length: int, data: Sequence):
+class ShuffledCycicSequence:
+    def __init__(self, new_length: int, data: Sequence, seed: int):
         self.data = data
         self.new_length = new_length
+
+        rng = torch.Generator().manual_seed(seed)
+        self.perm = torch.randperm(new_length, generator=rng, device="cpu")
 
     def __len__(self):
         return self.new_length
 
     def __getitem__(self, idx):
-        return self.data[idx % len(self.data)]
+        permuted_idx = self.perm[idx].item()
+        return self.data[permuted_idx % len(self.data)]
 
 
 @register_trainer
@@ -186,9 +190,10 @@ class NeMoILQLTrainer(BaseRLTrainer):
             return flatten_dataclass(ILQLBatch)(batch)
 
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
-        self.model.set_train_dataset(
-            CyclicIndexable(train_samples, self.store), collate_fn=collate_fn
+        train_dataset = ShuffledCycicSequence(
+            train_samples, self.store, self.config.train.seed
         )
+        self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
 
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
@@ -207,16 +212,12 @@ class NeMoILQLTrainer(BaseRLTrainer):
             max_train_steps // self.trainer.val_check_interval + 1
         ) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size
-        long_pipe = [
-            self.eval_pipeline[i % len(self.eval_pipeline)] for i in range(eval_samples)
-        ]
 
-        self.model.set_valid_dataset(long_pipe, collate_fn=eval_collate)
+        eval_dataset = ShuffledCycicSequence(
+            eval_samples, self.eval_pipeline, self.config.train.seed
+        )
+
+        self.model.set_valid_dataset(eval_dataset, collate_fn=eval_collate)
 
         torch.set_float32_matmul_precision("medium")
-        self.trainer.fit(self.model)
-
-        eval_loader = self.model.build_data_loader(self.eval_pipeline, collate_fn)
-        self.trainer.validate(self.model, eval_loader)
-
         self.trainer.fit(self.model)
