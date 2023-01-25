@@ -8,7 +8,7 @@ This will extract the model weights and the model config.
 Then set `train.trainer_kwargs.pretrained_model` to the path to the directory containing the parameters. The model hyperparameters in the `train.trainer_kwargs.megatron_cfg` should match the ones in the model config.
 
 ## NeMo Megatron setup
-This setup pertains to CoreWeave cluster, but should also work if you clone the `r1.13.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.13.0 and apex from `nm_v1.13.0` from https://github.com/ericharper/apex.git
+This setup pertains to CoreWeave cluster, but should also work if you clone the `r1.14.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.14.0 and apex from `nemo_v1.14.0` from https://github.com/ericharper/apex/tree/nemo_v1.14.0
 
 1) install conda (or mamba/micromamba)
 
