@@ -200,7 +200,7 @@ class PPOConfig(MethodConfig):
                 ( logprobs_vocab - ref_logprobs_vocab ),
                 dim=-1
             )
-            kl_loss = - self.init_kl_coef * torch.sum(kl * mask, dim=-1).mean()
+            kl_loss = self.init_kl_coef * torch.sum(kl * mask, dim=-1).mean()
 
         loss = pg_loss + self.vf_coef * vf_loss + kl_loss
 
