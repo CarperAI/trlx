@@ -63,8 +63,181 @@ class PPOOrchestrator(Orchestrator):
         self.running = RunningMoments()
         self.ref_mean = self.trainer.config.method.ref_mean
         self.ref_std = self.trainer.config.method.ref_std
+    
+    def generate_and_calc_logprobs(self, batch: PromptBatch):
+        """
+            self: PPOOrchestrator
+                has a trainer property with trainer.generate method
+            batch: PromptBatch
 
-    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
+            returns: Tuple(dict, dict)
+                first dict keys: 
+                    {'query_tensors', 'padded_samples', 'all_logprobs', 'kl_divergence_estimate', 'response_tensors', 'all_values'}
+                second dict (stats) keys:
+                    {'time/exp_generate', 'kl_ctl_value'}
+
+            Does almost everything in the inner loop of make_experience, except anything related to the reward function and scores.
+        """
+
+        stats = {}
+        exp_generate_time = time()
+        samples = self.trainer.generate(**batch)
+        stats["time/exp_generate"] = time() - exp_generate_time
+
+        query_tensors = batch.input_ids
+        device = samples.device
+        str_samples, str_prompts, str_outputs = self.trainer.decode(
+            query_tensors, samples
+        )
+
+        # Pad the samples
+        outputs = self.trainer.tokenizer(str_outputs).input_ids
+        outputs = list(map(torch.LongTensor, outputs))
+        maxsize = max(map(len, outputs))
+        outputs = [
+            F.pad(
+                output,
+                (0, maxsize - len(output)),
+                value=self.trainer.tokenizer.pad_token_id,
+            )
+            for output in outputs
+        ]
+        padded_samples = torch.stack(outputs).to(device)
+
+        # Precompute logprobs, values
+        if self.trainer.config.model.model_arch_type == "seq2seq":
+            attention_mask = batch.attention_mask.to(device)
+            query_tensors = batch.input_ids.to(device)
+            with torch.no_grad():
+                outputs = self.trainer.model(
+                    input_ids=query_tensors,
+                    attention_mask=attention_mask,
+                    labels=padded_samples,
+                )
+                logits = outputs.logits
+                values = outputs.value
+                if hasattr(self.trainer.model, "frozen_head"):
+                    ref_logits = self.trainer.model.forward_hydra(
+                        input_ids=query_tensors,
+                        attention_mask=attention_mask,
+                        decoder_input_ids=padded_samples,
+                    )
+                else:
+                    ref_logits = self.ref_model(
+                        input_ids=query_tensors,
+                        attention_mask=attention_mask,
+                        decoder_input_ids=padded_samples,
+                    ).logits
+        else:
+            #print("not seq2seq") # this
+            all_tokens = torch.cat([query_tensors.to(device), padded_samples], dim=1)
+            attention_mask = (
+                all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
+                .long()
+                .to(device)
+            )
+            with torch.no_grad():
+                logits, *_, values = self.trainer.model(
+                    all_tokens, attention_mask=attention_mask,
+                )
+                # TODO(dahoas): When hydra model works need to also support generation on hydra head
+                if hasattr(self.trainer.model, "frozen_head"):
+                    ref_logits = self.trainer.model.forward_hydra(
+                        all_tokens,
+                        attention_mask=attention_mask,
+                        return_dict=False,
+                    )
+                else:
+                    #print("not frozen_head") # this
+                    ref_logits, _, *_ = self.ref_model(
+                        all_tokens,
+                        attention_mask=attention_mask,
+                        return_dict=False,
+                    )
+                    ref_logits = ref_logits.to(device)
+        
+        if self.trainer.config.model.model_arch_type == "seq2seq":
+            logprobs = logprobs_of_labels(logits[:, :-1, :], padded_samples[:, 1:])
+            ref_logprobs = logprobs_of_labels(
+                ref_logits[:, :-1, :], padded_samples[:, 1:]
+            )
+        else:
+            logprobs = logprobs_of_labels(logits, all_tokens)
+            ref_logprobs = logprobs_of_labels(ref_logits, all_tokens)
+        
+        n_samples: int = samples.shape[0]
+        logprobs = logprobs.cpu()
+        ref_logprobs = ref_logprobs.cpu()
+        query_tensors = query_tensors.cpu()
+        padded_samples = padded_samples.cpu()
+
+        # Estimate the KL divergence between the model and reference model
+        if self.trainer.config.model.model_arch_type == "seq2seq":
+            # Skip the beginning of sequence token
+            start = 1
+
+            # Get the number of non-padding tokens for each sample
+            # This assumes all padding is on the right side
+            padding_token: int = 0
+            ends = (padded_samples[:, start:] != padding_token).sum(1)
+
+            # Get the logprobs and values, for tokens that are not padding
+            # or beginning of sequences tokens. These are from the model
+            # (not the reference model)
+            all_logprobs = [
+                logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+            ]
+            all_values = [
+                values[ix, start - 1 : ends[ix] - 1] for ix in range(n_samples)
+            ]
+
+            kl_divergence_estimate: List[torch.Tensor] = [
+                -self.trainer.kl_ctl.value
+                * (
+                    logprobs[sample_idx, start : ends[sample_idx]]
+                    - ref_logprobs[sample_idx, start : ends[sample_idx]]
+                )
+                for sample_idx in range(n_samples)
+            ]
+
+        # Else if not seq2seq (i.e. causal)
+        else:
+            logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
+            ref_logprobs = logprobs_of_labels(
+                ref_logits[:, :-1, :], all_tokens[:, 1:]
+            )
+
+            n_samples = samples.shape[0]
+            values = values.cpu()[:, :-1]
+            logprobs = logprobs.cpu()
+            ref_logprobs = ref_logprobs.cpu()
+            query_tensors = query_tensors.cpu()
+            padded_samples = padded_samples.cpu()
+
+            start = query_tensors.shape[1] - 1
+            ends = start + attention_mask[:, start:].sum(1)
+            all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+            all_logprobs = [
+                logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+            ]
+
+            kl_divergence_estimate = -self.trainer.kl_ctl.value * (
+                logprobs - ref_logprobs
+            )
+            kl_divergence_estimate = [
+                rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
+            ]
+        
+        return {
+            "query_tensors": query_tensors,
+            "padded_samples": padded_samples,
+            "logprobs": all_logprobs,
+            "values": all_values,
+            "kl_divergence_estimate": kl_divergence_estimate,
+        }, stats
+
+    # Rewrite the make_experience function to use generate_and_calc_logprobs
+    def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0): 
         """Make experiences
 
         Takes `num_rollouts` prompts from `pipeline`, samples from the model and
@@ -77,7 +250,6 @@ class PPOOrchestrator(Orchestrator):
             for all batches & epochs)
         """
         ppo_rl_elements = []
-        stats = {}
         clock = Clock()
 
         while len(ppo_rl_elements) < num_rollouts:
@@ -89,35 +261,24 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            exp_generate_time = time()
+            # Use the generate_and_calc_logprobs function to get all data needed for PPO
+            data, stats = self.generate_and_calc_logprobs(batch)
+            # data: dict with keys "query_tensors", "padded_samples", "logprobs", "values", "kl_divergence_estimate"
 
-            # Generate samples from the language model (similar to using
-            # HuggingFace `generate` method)
-            samples = self.trainer.generate(**batch)
-            stats["time/exp_generate"] = time() - exp_generate_time
+            query_tensors = data["query_tensors"]
+            device = query_tensors.device
+            assert torch.all(query_tensors == batch.input_ids.to(device))
 
-            query_tensors = batch.input_ids
-            device = samples.device
+            padded_samples = data["padded_samples"]
+            all_logprobs = data["logprobs"]
+            all_values = data["values"]
+            kl_divergence_estimate = data["kl_divergence_estimate"]
+
             str_samples, str_prompts, str_outputs = self.trainer.decode(
-                query_tensors, samples
+                query_tensors, padded_samples
             )
 
-            # Pad the samples
-            outputs = self.trainer.tokenizer(str_outputs).input_ids
-            outputs = list(map(torch.LongTensor, outputs))
-            maxsize = max(map(len, outputs))
-            outputs = [
-                F.pad(
-                    output,
-                    (0, maxsize - len(output)),
-                    value=self.trainer.tokenizer.pad_token_id,
-                )
-                for output in outputs
-            ]
-            padded_samples = torch.vstack(outputs).to(device)
-
             exp_score_time = time()
-
             scores = torch.tensor(
                 self.trainer.reward_fn(
                     samples=str_samples,
@@ -146,132 +307,9 @@ class PPOOrchestrator(Orchestrator):
             if clip_reward:
                 scores = torch.clip(scores, -clip_reward, clip_reward)
 
-            # Precompute logprobs, values
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                attention_mask = batch.attention_mask.to(device)
-                query_tensors = batch.input_ids.to(device)
-                with torch.no_grad():
-                    outputs = self.trainer.model(
-                        input_ids=query_tensors,
-                        attention_mask=attention_mask,
-                        decoder_input_ids=padded_samples,
-                    )
-                    logits = outputs.logits
-                    values = outputs.value
-                    if hasattr(self.trainer.model, "frozen_head"):
-                        ref_logits = self.trainer.model.forward_hydra(
-                            input_ids=query_tensors,
-                            attention_mask=attention_mask,
-                            decoder_input_ids=padded_samples,
-                        )
-                    else:
-                        ref_logits = self.ref_model(
-                            input_ids=query_tensors,
-                            attention_mask=attention_mask,
-                            decoder_input_ids=padded_samples,
-                        ).logits
-            else:
-                all_tokens = torch.cat(
-                    (query_tensors.to(device), padded_samples), dim=1
-                )
-                attention_mask = (
-                    all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
-                    .long()
-                    .to(device)
-                )
-                with torch.no_grad():
-                    logits, *_, values = self.trainer.model(
-                        all_tokens,
-                        attention_mask=attention_mask,
-                    )
-                    # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.trainer.model, "frozen_head"):
-                        ref_logits = self.trainer.model.forward_hydra(
-                            all_tokens,
-                            attention_mask=attention_mask,
-                            return_dict=False,
-                        )
-                    else:
-                        ref_logits, _, *_ = self.ref_model(
-                            all_tokens,
-                            attention_mask=attention_mask,
-                            return_dict=False,
-                        )
-                        ref_logits = ref_logits.to(device)
-
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_of_labels(logits[:, :-1, :], padded_samples[:, 1:])
-                ref_logprobs = logprobs_of_labels(
-                    ref_logits[:, :-1, :], padded_samples[:, 1:]
-                )
-            else:
-                logprobs = logprobs_of_labels(logits, all_tokens)
-                ref_logprobs = logprobs_of_labels(ref_logits, all_tokens)
-
-            n_samples: int = samples.shape[0]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            query_tensors = query_tensors.cpu()
-            padded_samples = padded_samples.cpu()
-
-            # Estimate the KL divergence between the model and reference model
-            if self.trainer.config.model.model_arch_type == "seq2seq":
-                # Skip the beginning of sequence token
-                start = 1
-
-                # Get the number of non-padding tokens for each sample
-                # This assumes all padding is on the right side
-                padding_token: int = 0
-                ends = (padded_samples[:, start:] != padding_token).sum(1)
-
-                # Get the logprobs and values, for tokens that are not padding
-                # or beginning of sequences tokens. These are from the model
-                # (not the reference model)
-                all_logprobs = [
-                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
-                ]
-                all_values = [
-                    values[ix, start - 1 : ends[ix] - 1] for ix in range(n_samples)
-                ]
-
-                kl_divergence_estimate: List[torch.Tensor] = [
-                    -self.trainer.kl_ctl.value
-                    * (
-                        logprobs[sample_idx, start : ends[sample_idx]]
-                        - ref_logprobs[sample_idx, start : ends[sample_idx]]
-                    )
-                    for sample_idx in range(n_samples)
-                ]
-
-            # Else if not seq2seq (i.e. causal)
-            else:
-                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_of_labels(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
-
-                n_samples = samples.shape[0]
-                values = values.cpu()[:, :-1]
-                logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
-                query_tensors = query_tensors.cpu()
-                padded_samples = padded_samples.cpu()
-
-                start = query_tensors.shape[1] - 1
-                ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
-                all_logprobs = [
-                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
-                ]
-
-                kl_divergence_estimate = -self.trainer.kl_ctl.value * (
-                    logprobs - ref_logprobs
-                )
-                kl_divergence_estimate = [
-                    rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
-                ]
-
             # Compute rewards
+            n_samples = len(scores)
+            assert query_tensors.shape[0] == n_samples
             all_rewards = [None] * n_samples
 
             for sample_idx in range(n_samples):
@@ -281,6 +319,7 @@ class PPOOrchestrator(Orchestrator):
                     sample_kl_divergence_estimate = torch.tensor([0.0])
 
                 sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
+                # TODO refactor this code, the above line is horrifying
                 all_rewards[sample_idx] = sample_kl_divergence_estimate
 
             new_ppo_rl_elements = [
