@@ -72,7 +72,7 @@ class PPOOrchestrator(Orchestrator):
 
             returns: Tuple(dict, dict)
                 first dict keys: 
-                    {'query_tensors', 'padded_samples', 'all_logprobs', 'kl_divergence_estimate', 'response_tensors', 'all_values'}
+                    {'query_tensors', 'padded_samples', 'all_logprobs', 'kl_divergence_estimate', 'response_tensors', 'all_values', 'str_samples', 'str_prompts', 'str_outputs'}
                 second dict (stats) keys:
                     {'time/exp_generate', 'kl_ctl_value'}
 
@@ -235,6 +235,9 @@ class PPOOrchestrator(Orchestrator):
             "logprobs": all_logprobs,
             "values": all_values,
             "kl_divergence_estimate": kl_divergence_estimate,
+            "str_samples": str_samples,
+            "str_prompts": str_prompts,
+            "str_outputs": str_outputs,
         }, stats
 
     # Rewrite the make_experience function to use generate_and_calc_logprobs
@@ -274,10 +277,10 @@ class PPOOrchestrator(Orchestrator):
             all_logprobs = data["logprobs"]
             all_values = data["values"]
             kl_divergence_estimate = data["kl_divergence_estimate"]
+            str_samples = data["str_samples"]
+            str_prompts = data["str_prompts"]
+            str_outputs = data["str_outputs"]
 
-            str_samples, str_prompts, str_outputs = self.trainer.decode(
-                query_tensors, padded_samples
-            )
             print("str_samples: ", str_samples)
             print("str_prompts: ", str_prompts)
             print("str_outputs: ", str_outputs)
