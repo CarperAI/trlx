@@ -136,6 +136,24 @@ class PPOConfig(MethodConfig):
         response_length: int,
         use_whitening: Optional[bool] = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """ Function that computes advantages and returns from rewards and values.
+        Calculated as in the original PPO paper: https://arxiv.org/abs/1707.06347
+        Note that rewards may include a KL divergence loss term.
+
+        Advantages looks like this:
+        Adv1 =  R1 + γ * λ * R2     + γ^2 * λ^2 * R3       + ...
+              - V1 + γ * (1 - λ) V2 + γ^2 * λ * (1 - λ) V3 + ...
+
+        Returns looks like this:
+        Ret1 =  R1 + γ * λ * R2     + γ^2 * λ^2 * R3       + ...
+                   + γ * (1 - λ) V2 + γ^2 * λ * (1 - λ) V3 + ...
+
+        Input:
+        - values: Tensor of shape (batch_size, response_size)
+        - rewards: Tensor of shape (batch_size, response_size)
+        - response_length: Length of the response sequence
+        - use_whitening: Whether to use whitening (ie. normalize advantages) or not
+        """
         lastgaelam = 0
         advantages_reversed = []
         for t in reversed(range(response_length)):
