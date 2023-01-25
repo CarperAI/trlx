@@ -208,6 +208,7 @@ class PPOConfig(MethodConfig):
                 total_loss=loss.item(),
                 policy_loss=pg_loss.item(),
                 value_loss=vf_loss.item(),
+                kl_loss=kl_loss.item(),
             ),
             values=dict(
                 get_tensor_stats(values, mask, n),
