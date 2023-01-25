@@ -154,6 +154,8 @@ class PPOConfig(MethodConfig):
         logprobs: TensorType["batch_size", "response_size"],
         values: TensorType["batch_size", "response_size"],
         old_logprobs: TensorType["batch_size", "response_size"],
+        logprobs_vocab: TensorType["batch_size", "response_size", "vocab_size"],
+        ref_logprobs_vocab: TensorType["batch_size", "response_size", "vocab_size"],
         old_values: TensorType["batch_size", "response_size"],
         advantages: TensorType["batch_size", "response_size"],
         returns: TensorType["batch_size", "response_size"],
@@ -163,6 +165,7 @@ class PPOConfig(MethodConfig):
         References:
         - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
+        print("actually calculating loss")
         values_clipped = torch.clamp(
             values,
             old_values - self.cliprange_value,
@@ -190,7 +193,17 @@ class PPOConfig(MethodConfig):
         pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / n
         pg_clipfrac = torch.sum((pg_loss2 > pg_loss1).float() * mask) / n
 
-        loss = pg_loss + self.vf_coef * vf_loss
+        kl_loss = 0
+        if self.init_kl_coef != 0:
+            kl = torch.sum(
+                torch.exp(logprobs_vocab) *
+                ( logprobs_vocab - ref_logprobs_vocab ),
+                dim=-1
+            )
+            kl_loss = - self.init_kl_coef * torch.sum(kl * mask) / n
+            print("kl_loss", kl_loss.mean(dim=-1))
+
+        loss = pg_loss + self.vf_coef * vf_loss + kl_loss
 
         stats = dict(
             losses=dict(

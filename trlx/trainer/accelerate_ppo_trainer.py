@@ -103,10 +103,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return tokens, attention_mask, position_ids
 
     def loss(self, batch: PPORLBatch):
+        print("preparing to calculate loss")
+
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
         response_tensors = batch.response_tensors.to(self.accelerator.device)
         old_logprobs = batch.logprobs.to(self.accelerator.device)
+        ref_logprobs_vocab = batch.ref_logprobs_vocab.to(self.accelerator.device)
         old_values = batch.values.to(self.accelerator.device)
         old_rewards = batch.rewards.to(self.accelerator.device)
         response_length = old_rewards.shape[1]
@@ -130,6 +133,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
             logits = outputs.logits
             values_pred = outputs.value
+            logprobs_vocab = torch.log_softmax(logits, dim=-1)
             logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = (
                 decoder_input_ids.ne(self.tokenizer.pad_token_id)
@@ -138,6 +142,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
             start = 1
             end = start + response_length
+            logprobs_vocab = logprobs_vocab[:, start:end, :]
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start - 1 : end - 1],
@@ -152,10 +157,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
+            logprobs_vocab = torch.log_softmax(logits, dim=-1)
             logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
 
             start = query_tensors.shape[1] - 1
             end = start + response_length
+            logprobs_vocab = logprobs_vocab[:, start:end, :]
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
@@ -166,6 +173,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs=logprobs,
             values=values_pred,
             old_logprobs=old_logprobs,
+            logprobs_vocab=logprobs_vocab,
+            ref_logprobs_vocab=ref_logprobs_vocab,
             old_values=old_values,
             advantages=advantages,
             returns=returns,

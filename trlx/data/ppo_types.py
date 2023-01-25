@@ -21,6 +21,13 @@ class PPORLElement:
                     with a dimension across the vocabulary.
     :type logprobs: torch.Tensor
 
+    :param ref_logprobs: The log probabilities over all tokens in the vocabulary for
+                    each token generated from the reference policy network
+                    (i.e. the autoregressive model).
+                    Should be a float tensor of same size as tokens,
+                    with a dimension across the vocabulary.
+    :type logprobs: torch.Tensor
+
     :param values: The values for each token generated from the value network or value head.
                     Should be a float tensor of same size as tokens.
     :type values: torch.Tensor
@@ -33,6 +40,7 @@ class PPORLElement:
     query_tensor: TensorType["query_size"]
     response_tensor: TensorType["response_size"]
     logprobs: TensorType["response_size", "vocab_size"]
+    ref_logprobs_vocab: TensorType["response_size", "vocab_size"]
     values: TensorType["response_size"]
     rewards: TensorType["response_size"]
 
@@ -51,6 +59,9 @@ class PPORLBatch:
     :param logprobs: A batch of log probabilities from policy
     :type logprobs: torch.Tensor
 
+    :param logprobs: A batch of log probabilities from reference policy
+    :type logprobs: torch.Tensor
+
     :param values: A batch of values from value network
     :type values: torch.Tensor
 
@@ -61,5 +72,6 @@ class PPORLBatch:
     query_tensors: TensorType["batch_size", "query_size"]
     response_tensors: TensorType["batch_size", "response_size"]
     logprobs: TensorType["batch_size", "response_size", "vocab_size"]
+    ref_logprobs_vocab: TensorType["batch_size", "response_size", "vocab_size"]
     values: TensorType["batch_size", "response_size"]
     rewards: TensorType["batch_size", "response_size"]
