@@ -200,8 +200,9 @@ class PPOOrchestrator(Orchestrator):
                 ends = (response_tensors[:, start:] != 0).sum(1)
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
                 all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
+                ref_logprobs_vocab = torch.log_softmax(ref_logits, dim=-1)
                 all_ref_logprobs_vocab = [
-                    ref_logprobs_vocab[ix, start : ends[ix]] for ix in range(n)
+                    ref_logprobs_vocab[ix, start : ends[ix], :] for ix in range(n)
                 ]
                 rewards = [ 0 for _ in range(n)]
                 #rewards = [
@@ -217,7 +218,7 @@ class PPOOrchestrator(Orchestrator):
                 ref_logprobs = logprobs_from_logits(
                     ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
-                ref_logprobs_vocab = torch.log_softmax(ref_logprobs, dim=-1)
+                ref_logprobs_vocab = torch.log_softmax(ref_logits, dim=-1)
 
                 n = samples.shape[0]
                 values = values.cpu()[:, :-1]

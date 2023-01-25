@@ -70,6 +70,11 @@ class PPORolloutStorage(BaseRolloutStore):
                     batch_first=True,
                 ),
                 pad_sequence(
+                    [elem.ref_logprobs_vocab for elem in elems],
+                    padding_value=[0.0] * len(elem.ref_logprobs_vocab[0]),
+                    batch_first=True,
+                ),
+                pad_sequence(
                     [elem.values for elem in elems], padding_value=0.0, batch_first=True
                 ),
                 pad_sequence(
