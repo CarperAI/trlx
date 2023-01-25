@@ -199,7 +199,7 @@ class PPOConfig(MethodConfig):
         pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / n
         pg_clipfrac = torch.sum((pg_loss2 > pg_loss1).float() * mask) / n
 
-        kl_loss = 0
+        kl_loss = torch.tensor(0.0)
         if self.kl_mode == "loss" and self.init_kl_coef != 0:
             kl = torch.sum(
                 torch.exp(logprobs_vocab) *
