@@ -210,13 +210,16 @@ class PPOConfig(MethodConfig):
 
         loss = pg_loss + self.vf_coef * vf_loss + kl_loss
 
+        losses_dict = dict(
+            total_loss=loss.item(),
+            policy_loss=pg_loss.item(),
+            value_loss=vf_loss.item(),
+        )
+        if self.kl_mode == "loss":
+            losses_dict.update({"kl_loss": kl_loss.item()})
+
         stats = dict(
-            losses=dict(
-                total_loss=loss.item(),
-                policy_loss=pg_loss.item(),
-                value_loss=vf_loss.item(),
-                kl_loss=kl_loss.item(),
-            ),
+            losses=losses_dict,
             values=dict(
                 get_tensor_stats(values, mask, n),
                 values_error=torch.sum(((values - returns) * mask) ** 2) / n,
