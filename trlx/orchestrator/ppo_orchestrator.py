@@ -208,11 +208,12 @@ class PPOOrchestrator(Orchestrator):
             )
 
             n_samples = samples.shape[0]
-            values = values.cpu()[:, :-1]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            query_tensors = query_tensors.cpu()
-            padded_samples = padded_samples.cpu()
+            #values = values.cpu()[:, :-1]
+            values = values[:, :-1]
+            #logprobs = logprobs.cpu()
+            #ref_logprobs = ref_logprobs.cpu()
+            #query_tensors = query_tensors.cpu()
+            #padded_samples = padded_samples.cpu()
 
             start = query_tensors.shape[1] - 1
             ends = start + attention_mask[:, start:].sum(1)
@@ -277,6 +278,9 @@ class PPOOrchestrator(Orchestrator):
             str_samples, str_prompts, str_outputs = self.trainer.decode(
                 query_tensors, padded_samples
             )
+            print("str_samples: ", str_samples)
+            print("str_prompts: ", str_prompts)
+            print("str_outputs: ", str_outputs)
 
             exp_score_time = time()
             scores = torch.tensor(

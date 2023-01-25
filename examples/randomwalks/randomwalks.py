@@ -61,6 +61,9 @@ def generate_random_walks(  # noqa: max-complexity
     shortest_lengths = torch.tensor(shortest_lengths)
 
     def metric_fn(samples):
+        # deep copy samples
+        samples = samples.copy()
+
         # a measure for an invalid or a not found path
         infty = 100
         lengths = []
