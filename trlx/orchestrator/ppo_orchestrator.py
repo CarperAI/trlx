@@ -219,6 +219,11 @@ class PPOOrchestrator(Orchestrator):
                         rs[start : ends[ix]] for ix, rs in enumerate(kl_score)
                     ]  # [sample x tokens]
 
+                # Save ref_logprobs_vocab for
+                ref_logprobs_vocab = [
+                    ref_logprobs_all_vocab[ix, start:ends[ix], :] for ix in range(n)
+                ]
+
             else:
                 logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
 
@@ -253,6 +258,11 @@ class PPOOrchestrator(Orchestrator):
                         rs[start : ends[ix]] for ix, rs in enumerate(kl_score)
                     ]  # [sample x tokens]
 
+                # Save for potential use in loss
+                ref_logprobs_vocab = [
+                    ref_logprobs_all_vocab[ix, start:ends[ix], :] for ix in range(n)
+                ]
+
             # Compute rewards
             all_rewards = [None] * n
 
@@ -268,7 +278,7 @@ class PPOOrchestrator(Orchestrator):
                     query_tensor=query_tensors[i],
                     response_tensor=response_tensors[i],
                     logprobs=all_logprobs[i],
-                    ref_logprobs_vocab=ref_logprobs_all_vocab[i],
+                    ref_logprobs_vocab=ref_logprobs_vocab[i],
                     values=all_values[i],
                     rewards=all_rewards[i],
                 )
