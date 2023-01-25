@@ -42,12 +42,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         )
 
         self.store.clear_history()
+        if (config.method.target is not None and config.method.kl_mode == "loss"):
+            raise ValueError("Attempting to use gradient loss KL and adaptive KL.",
+                + "Either change kl_mode from 'loss' to 'reward', or",
+                + "use fixed KL by setting target to None")
         if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(
+            self.kl_ctl = AdaptiveKLController(config.method.kl_mode,
                 config.method.init_kl_coef, config.method.target, config.method.horizon
             )
         else:
-            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
+            self.kl_ctl = FixedKLController(
+                config.method.kl_mode, config.method.init_kl_coef
+            )
         if config.model.model_arch_type == "seq2seq":
             self.generate_kwargs = dict(
                 config.method.gen_kwargs,

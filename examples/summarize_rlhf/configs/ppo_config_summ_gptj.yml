@@ -38,6 +38,7 @@ method:
   num_rollouts: 128
   chunk_size: 16
   ppo_epochs: 4
+  kl_mode: "reward"
   init_kl_coef: 0.1
   target: 6
   horizon: 10000

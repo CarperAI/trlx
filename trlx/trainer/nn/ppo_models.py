@@ -35,7 +35,8 @@ class AdaptiveKLController:
     Source: https://github.com/openai/lm-human-preferences/blob/master/lm_human_preferences/train_policy.py
     """
 
-    def __init__(self, init_kl_coef: float, target: float, horizon: int):
+    def __init__(self, kl_mode: str, init_kl_coef: float, target: float, horizon: int):
+        self.mode = kl_mode
         self.value = init_kl_coef
         self.target = target
         self.horizon = horizon
@@ -53,7 +54,8 @@ class AdaptiveKLController:
 class FixedKLController:
     """Fixed KL controller."""
 
-    def __init__(self, kl_coef):
+    def __init__(self, kl_mode: str, kl_coef: float):
+        self.mode = kl_mode
         self.value = kl_coef
 
     def update(self, current: float, n_steps: int):
@@ -78,6 +80,10 @@ class PPOConfig(MethodConfig):
 
     :param num_rollouts: Number  of experiences to observe before learning
     :type num_rollouts: int
+
+    :param kl_mode: Whether to make KL a loss term with a gradient 'loss', or
+        make it a term added to the reward outputs with no gradient 'reward'.
+    :type kl_mode: str
 
     :param init_kl_coef: Initial value for KL coefficient
     :type init_kl_coef: float
@@ -114,6 +120,7 @@ class PPOConfig(MethodConfig):
     ppo_epochs: int
     num_rollouts: int
     chunk_size: int
+    kl_mode: str
     init_kl_coef: float
     target: float
     horizon: int
@@ -193,7 +200,7 @@ class PPOConfig(MethodConfig):
         pg_clipfrac = torch.sum((pg_loss2 > pg_loss1).float() * mask) / n
 
         kl_loss = 0
-        if self.init_kl_coef != 0:
+        if self.kl_mode == "loss" and self.init_kl_coef != 0:
             kl = torch.sum(
                 torch.exp(logprobs_vocab) *
                 ( logprobs_vocab - ref_logprobs_vocab ),
