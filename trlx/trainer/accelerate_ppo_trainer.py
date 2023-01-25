@@ -103,8 +103,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return tokens, attention_mask, position_ids
 
     def loss(self, batch: PPORLBatch):
-        print("preparing to calculate loss")
-
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
         response_tensors = batch.response_tensors.to(self.accelerator.device)

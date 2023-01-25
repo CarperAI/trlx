@@ -165,7 +165,6 @@ class PPOConfig(MethodConfig):
         References:
         - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
-        print("actually calculating loss")
         values_clipped = torch.clamp(
             values,
             old_values - self.cliprange_value,

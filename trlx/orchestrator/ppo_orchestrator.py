@@ -236,10 +236,8 @@ class PPOOrchestrator(Orchestrator):
                 #rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 #rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
                 #rewards = [ torch.zeros_like(rs) for rs in rewards ]
-                #print([ rs.shape for rs in rewards ])
 
                 rewards = [torch.zeros(ends[ix]-start-1) for ix in range(n)]
-                print([ rs.shape for rs in rewards ])
 
 
             # Compute rewards
