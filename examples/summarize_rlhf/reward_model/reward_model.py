@@ -94,7 +94,7 @@ class GPTRewardModel(nn.Module):
             loss += -torch.log(
                 torch.sigmoid(c_truncated_reward - r_truncated_reward)
             ).mean()
-            loss = loss / bs
+        loss = loss / bs
 
         if not inference:
             chosen_end_scores = torch.stack(chosen_end_scores)
