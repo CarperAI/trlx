@@ -9,8 +9,9 @@ from trlx.data.method_configs import MethodConfig, get_method
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     "Recursively updates a nested dictionary with new values"
     for k, v in base.items():
-        if isinstance(v, dict):
-            base[k] = merge(v, update, updated)
+        if k in update and isinstance(v, dict):
+            base[k] = merge(v, update[k], updated)
+            updated.add(k)
         elif k in update:
             base[k] = update[k]
             updated.add(k)
