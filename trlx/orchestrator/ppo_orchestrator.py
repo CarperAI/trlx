@@ -188,7 +188,6 @@ class PPOOrchestrator(Orchestrator):
             else:
                 logprobs = logprobs_from_logits(logits, all_tokens)
                 ref_logprobs = logprobs_from_logits(ref_logits, all_tokens)
-                ref_logprobs_vocab = torch.log_softmax(ref_logits, dim=-1)
 
             n = samples.shape[0]
             logprobs = logprobs.cpu()
@@ -200,11 +199,10 @@ class PPOOrchestrator(Orchestrator):
                 ends = (response_tensors[:, start:] != 0).sum(1)
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
                 all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
-                ref_logprobs_vocab = torch.log_softmax(ref_logits, dim=-1)
                 all_ref_logprobs_vocab = [
                     ref_logprobs_vocab[ix, start : ends[ix], :] for ix in range(n)
                 ]
-                rewards = [ 0 for _ in range(n)]
+                rewards = [ torch.zeros(ends[ix]-start-1) for ix in range(n)]
                 #rewards = [
                     #-self.trainer.kl_ctl.value
                     #* (
@@ -218,7 +216,7 @@ class PPOOrchestrator(Orchestrator):
                 ref_logprobs = logprobs_from_logits(
                     ref_logits[:, :-1, :], all_tokens[:, 1:]
                 )
-                ref_logprobs_vocab = torch.log_softmax(ref_logits, dim=-1)
+                ref_logprobs_vocab = torch.log_softmax(ref_logits[:, :-1, :], dim=-1)
 
                 n = samples.shape[0]
                 values = values.cpu()[:, :-1]
@@ -237,8 +235,12 @@ class PPOOrchestrator(Orchestrator):
 
                 #rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 #rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
+                #rewards = [ torch.zeros_like(rs) for rs in rewards ]
+                #print([ rs.shape for rs in rewards ])
 
-                rewards = [torch.zeros(ends[ix]-start+1) for ix in range(n)]
+                rewards = [torch.zeros(ends[ix]-start-1) for ix in range(n)]
+                print([ rs.shape for rs in rewards ])
+
 
             # Compute rewards
             all_rewards = [None] * n
