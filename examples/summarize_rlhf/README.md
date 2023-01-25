@@ -40,8 +40,6 @@ For an in-depth description of the example, please refer to our [blog post](http
 
 ### Results
 
-On 1,000 samples from CNN/DailyMail test dataset:
-
 1. SFT vs PPO
 
     __ROUGE scores__
