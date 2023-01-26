@@ -15,6 +15,9 @@ from torch.utils.data import Dataset, DataLoader
 
 default_config = yaml.safe_load(open("configs/ppo_config.yml"))
 
+# get gpt2 tokenizer
+tokenizer = transformers.GPT2Tokenizer.from_pretrained("gpt2")
+
 def get_last_digit(sample: List[str]) -> int:
     """
     Extract last char from a sample, check if it's a digit, otherwise return -1
@@ -25,22 +28,19 @@ def get_last_digit(sample: List[str]) -> int:
     else:
         return -1
 
-def reward_fn(samples: List[List]) -> List[float]:
+def reward_fn(trajectories: List[List]) -> List[float]:
     """
     Inputs have the form [digit, sample_1, sample_2]
     Return if the last digit of sample_2 is the same as the digit
     """
-    for sample in samples:
+    for sample in trajectories:
         assert len(sample) == 3
-    reconstructed_digits = list(map(get_last_digit, samples[:, 2]))
-    return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(samples[:, 0], reconstructed_digits)]
+    reconstructed_digits = list(map(get_last_digit, trajectories[:, 2]))
+    return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(trajectories[:, 0], reconstructed_digits)]
 
 
 def make_tokens(text, batch_size, device) -> BatchEncoding:
-    tokens = model.tokenizer(
-        text,
-        return_tensors="pt",
-    ).to(device)
+    tokens = tokenizer(text, return_tensors="pt").to(device)
     tokens.input_ids = tokens.input_ids.repeat(batch_size, 1)
     tokens.attention_mask = tokens.attention_mask.repeat(batch_size, 1)
     tokens.labels = tokens.input_ids.clone()
