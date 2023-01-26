@@ -21,7 +21,7 @@ class PPOOrchestrator(Orchestrator):
 
     Runs rollouts - generates samples from prompts using the model, calculates
     KL divergence against the reference model, and then pushes these
-    samples/rewards etc to the trainers store.
+    samples/rewards etc to the trainer's store.
 
     Note this class is intwined with the trainer `AcceleratePPOTrainer` - it
     adds an `orch` property to the trainer instance and also sets a `trainer`
