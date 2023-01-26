@@ -30,7 +30,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     orchestrator then adds a `orch` property to the trainer and also sets a
     `trainer` property on itself. This broadly has the effect of the
     trainer class extending the orchestrator class (and thus having access to
-    the `orch.make_experience` method that creates "rollouts" i.e. episodes).
+    the `orch.make_experience` method that creates rollouts).
     """
 
     reward_fn: Callable[[List[str], List[str], List[str]], List[float]]
