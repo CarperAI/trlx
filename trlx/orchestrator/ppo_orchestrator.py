@@ -1,4 +1,3 @@
-from __future__ import annotations
 from time import time
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
@@ -10,46 +9,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
-from trlx.data.ppo_types import PPORLElement, RewardFnInput
+from trlx.data.ppo_types import PPORLElement, RewardFnInput, RunElementBatch
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
-
-@dataclass
-class RunElementBatch:
-    # TODO have a non-batch version and base this off of that
-    query_tensors: List[torch.Tensor]
-    padded_samples: List[torch.Tensor]
-    logprobs: List[torch.Tensor]
-    values: List[torch.Tensor]
-    kl_divergence_estimate: List[torch.Tensor]
-    str_samples: List[str]
-    str_prompts: List[str]
-    str_outputs: List[str]
-
-    # Make it so that it can be accessed as a dict
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def __setitem__(self, key, value):
-        setattr(self, key, value)
-    
-    # Make it so that two RunElements can be added together.
-    # Assume all List attributes are the same length, and add them elementwise
-    # Assume the tensors can be added together
-    def __add__(self, other : RunElementBatch):
-        return RunElementBatch(
-            query_tensors=self.query_tensors + other.query_tensors,
-            padded_samples=self.padded_samples + other.padded_samples,
-            logprobs=self.logprobs + other.logprobs,
-            values=self.values + other.values,
-            kl_divergence_estimate=self.kl_divergence_estimate + other.kl_divergence_estimate,
-            str_samples=self.str_samples + other.str_samples,
-            str_prompts=self.str_prompts + other.str_prompts,
-            str_outputs=self.str_outputs + other.str_outputs,
-        )
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):

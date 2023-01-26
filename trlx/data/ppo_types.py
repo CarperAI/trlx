@@ -1,6 +1,8 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 from torchtyping import TensorType
+import torch
 
 
 @dataclass
@@ -66,3 +68,38 @@ class PPORLBatch:
 
 
 RewardFnInput = Union[List[List[str]], Tuple[List[str], List[str], List[str]], List[str]]
+
+
+@dataclass
+class RunElementBatch:
+    # TODO have a non-batch version and base this off of that
+    query_tensors: List[torch.Tensor]
+    padded_samples: List[torch.Tensor]
+    logprobs: List[torch.Tensor]
+    values: List[torch.Tensor]
+    kl_divergence_estimate: List[torch.Tensor]
+    str_samples: List[str]
+    str_prompts: List[str]
+    str_outputs: List[str]
+
+    # Make it so that it can be accessed as a dict
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+    
+    # Make it so that two RunElements can be added together.
+    # Assume all List attributes are the same length, and add them elementwise
+    # Assume the tensors can be added together
+    def __add__(self, other : RunElementBatch):
+        return RunElementBatch(
+            query_tensors=self.query_tensors + other.query_tensors,
+            padded_samples=self.padded_samples + other.padded_samples,
+            logprobs=self.logprobs + other.logprobs,
+            values=self.values + other.values,
+            kl_divergence_estimate=self.kl_divergence_estimate + other.kl_divergence_estimate,
+            str_samples=self.str_samples + other.str_samples,
+            str_prompts=self.str_prompts + other.str_prompts,
+            str_outputs=self.str_outputs + other.str_outputs,
+        )
