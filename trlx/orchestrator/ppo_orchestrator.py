@@ -1,5 +1,8 @@
+from __future__ import annotations
 from time import time
-from typing import List
+from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from dacite import from_dict
 
 import ray
 import torch
@@ -7,13 +10,46 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
-from trlx.data.ppo_types import PPORLElement
+from trlx.data.ppo_types import PPORLElement, RewardFnInput
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
+@dataclass
+class RunElementBatch:
+    # TODO have a non-batch version and base this off of that
+    query_tensors: List[torch.Tensor]
+    padded_samples: List[torch.Tensor]
+    logprobs: List[torch.Tensor]
+    values: List[torch.Tensor]
+    kl_divergence_estimate: List[torch.Tensor]
+    str_samples: List[str]
+    str_prompts: List[str]
+    str_outputs: List[str]
+
+    # Make it so that it can be accessed as a dict
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+    
+    # Make it so that two RunElements can be added together.
+    # Assume all List attributes are the same length, and add them elementwise
+    # Assume the tensors can be added together
+    def __add__(self, other : RunElementBatch):
+        return RunElementBatch(
+            query_tensors=self.query_tensors + other.query_tensors,
+            padded_samples=self.padded_samples + other.padded_samples,
+            logprobs=self.logprobs + other.logprobs,
+            values=self.values + other.values,
+            kl_divergence_estimate=self.kl_divergence_estimate + other.kl_divergence_estimate,
+            str_samples=self.str_samples + other.str_samples,
+            str_prompts=self.str_prompts + other.str_prompts,
+            str_outputs=self.str_outputs + other.str_outputs,
+        )
 
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
@@ -63,7 +99,11 @@ class PPOOrchestrator(Orchestrator):
         self.running = RunningMoments()
         self.ref_mean = self.trainer.config.method.ref_mean
         self.ref_std = self.trainer.config.method.ref_std
+
+        if self.trainer.experience_fn is None:
+                self.trainer.experience_fn = self.default_experience_fn
     
+
     def generate_and_calc_logprobs(self, batch: PromptBatch):
         """
             self: PPOOrchestrator
@@ -229,16 +269,45 @@ class PPOOrchestrator(Orchestrator):
                 rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
             ]
         
-        return {
-            "query_tensors": query_tensors,
-            "padded_samples": padded_samples,
-            "logprobs": all_logprobs,
-            "values": all_values,
-            "kl_divergence_estimate": kl_divergence_estimate,
-            "str_samples": str_samples,
-            "str_prompts": str_prompts,
-            "str_outputs": str_outputs,
-        }, stats
+        return RunElementBatch(
+            query_tensors=query_tensors,
+            padded_samples=padded_samples,
+            logprobs=all_logprobs,
+            values=all_values,
+            kl_divergence_estimate=kl_divergence_estimate,
+            str_samples=str_samples,
+            str_prompts=str_prompts,
+            str_outputs=str_outputs,
+        ), stats
+
+
+    def default_experience_fn(self, batch : PromptBatch) -> Tuple[Optional[List], RunElementBatch, dict]:
+        """
+        Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
+        This default_experience_fn is a wrapper around that function that returns the same data as generate_and_calc_logprobs.
+
+        If an user-provided experience_fn returns non-None trajectories,
+        passed to the reward function in the List[Any] form, batch_size outer lists, arbitrary inner lists.
+        The user-provided reward function should be able to handle this format.
+
+        The default_experience_fn returns None for trajectories, in which case the orchestrator will default
+        to passing (str_samples, str_prompts, str_outputs) to the reward function.
+    
+
+        :return: trajectories, data : RunElementBatch, stats
+        """ 
+        data, stats = self.generate_and_calc_logprobs(batch)
+
+        #print("data['samples'].shape", data['samples'].shape) # (batch_size, max_length)
+        #print("data['samples']", data['samples']) # some tokens
+
+        #texts = data['str_samples']
+        #trajectories = [[text] for text in texts]
+        #print("trajectories", trajectories)
+
+        trajectories = None
+        return trajectories, data, stats
+    
 
     # Rewrite the make_experience function to use generate_and_calc_logprobs
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0): 
@@ -266,7 +335,7 @@ class PPOOrchestrator(Orchestrator):
                 batch = next(self.pipeline_iterator)
 
             # Use the generate_and_calc_logprobs function to get all data needed for PPO
-            data, stats = self.generate_and_calc_logprobs(batch)
+            trajectories, data, stats = self.trainer.experience_fn(batch)
             # data: dict with keys "query_tensors", "padded_samples", "logprobs", "values", "kl_divergence_estimate"
 
             query_tensors = data["query_tensors"]
@@ -277,23 +346,26 @@ class PPOOrchestrator(Orchestrator):
             all_logprobs = data["logprobs"]
             all_values = data["values"]
             kl_divergence_estimate = data["kl_divergence_estimate"]
-            str_samples = data["str_samples"]
-            str_prompts = data["str_prompts"]
-            str_outputs = data["str_outputs"]
 
-            print("str_samples: ", str_samples)
-            print("str_prompts: ", str_prompts)
-            print("str_outputs: ", str_outputs)
 
             exp_score_time = time()
-            scores = torch.tensor(
-                self.trainer.reward_fn(
-                    samples=str_samples,
-                    prompts=str_prompts,
-                    outputs=str_outputs,
-                ),
-                dtype=torch.float,
-            ).to(device)
+
+            if trajectories is None:
+                str_samples = data["str_samples"]
+                str_prompts = data["str_prompts"]
+                str_outputs = data["str_outputs"]
+
+                print("str_samples: ", str_samples)
+                print("str_prompts: ", str_prompts)
+                print("str_outputs: ", str_outputs)
+                scores = torch.tensor(
+                    self.trainer.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs),
+                    dtype=torch.float,
+                ).to(device)
+            else:
+                scores = torch.tensor(
+                    self.trainer.reward_fn(trajectories), dtype=torch.float
+                ).to(device)
             stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference

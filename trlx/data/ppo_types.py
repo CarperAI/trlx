@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 from torchtyping import TensorType
 
 
@@ -63,3 +63,6 @@ class PPORLBatch:
     logprobs: TensorType["batch_size", "response_size", "vocab_size"]
     values: TensorType["batch_size", "response_size"]
     rewards: TensorType["batch_size", "response_size"]
+
+
+RewardFnInput = Union[List[List[str]], Tuple[List[str], List[str], List[str]], List[str]]

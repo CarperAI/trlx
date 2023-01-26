@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from trlx.data.configs import TRLConfig
-from trlx.data.ppo_types import PPORLBatch
+from trlx.data.ppo_types import PPORLBatch, RewardFnInput
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
@@ -33,7 +33,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     the `orch.make_experience` method that creates "rollouts" i.e. episodes).
     """
 
-    reward_fn: Callable[[List[str], List[str], List[str]], List[float]]
+    reward_fn: Callable[[RewardFnInput], List[float]]
 
     tokenizer: AutoTokenizer
 

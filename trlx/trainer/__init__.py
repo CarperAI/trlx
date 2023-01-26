@@ -41,6 +41,7 @@ class BaseRLTrainer:
         self,
         config: TRLConfig,
         reward_fn=None,
+        experience_fn=None,
         metric_fn=None,
         logit_mask=None,
         stop_sequences=None,
@@ -49,6 +50,7 @@ class BaseRLTrainer:
         self.store: BaseRolloutStore = None
         self.config = config
         self.reward_fn = reward_fn
+        self.experience_fn = experience_fn
         self.metric_fn = metric_fn
         self.train_mode = train_mode
         self.logit_mask = logit_mask
