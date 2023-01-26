@@ -252,7 +252,7 @@ class PPOOrchestrator(Orchestrator):
                 )
                 kl_score = -self.trainer.kl_ctl.value * kl_divergence
 
-                rewards = [torch.zeros(ends[ix]-start-1) for ix in range(n)]
+                rewards = [torch.zeros_like(v) for v in all_values]
                 if self.trainer.config.method.kl_mode == "reward":
                     rewards = [
                         rs[start : ends[ix]] for ix, rs in enumerate(kl_score)
