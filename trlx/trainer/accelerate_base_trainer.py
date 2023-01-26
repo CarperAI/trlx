@@ -77,7 +77,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
         is_tracking = config.train.tracker is not None
-        if is_tracking and self.accelerator.is_main_process and not ray.is_initialized():
+        if (
+            is_tracking
+            and self.accelerator.is_main_process
+            and not ray.is_initialized()
+        ):
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -117,7 +121,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`"
                     "Set `tracker` to `None` to disable tracking."
                 )
-                
 
     def setup_model(self):
         """
