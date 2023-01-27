@@ -97,7 +97,7 @@ if __name__ == "__main__":
     )
     config = TRLConfig.load_yaml(config_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
     max_length_input = (
