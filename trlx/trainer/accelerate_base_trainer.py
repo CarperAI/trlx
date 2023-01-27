@@ -335,21 +335,26 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 columns_data = [str_prompts, str_outputs]
 
                 # in online setting, compute the reward for validation
+                # NOTE: skipped if experience_fn is enabled, evaluation not supported yet
                 if self.reward_fn:
-                    rewards = torch.tensor(
-                        self.reward_fn(
-                            samples=str_samples,
-                            prompts=str_prompts,
-                            outputs=str_outputs,
-                        ),
-                        dtype=float,
-                    )
-                    mean_reward = rewards.mean().item()
-                    columns.append("reward")
-                    if not isinstance(rewards, list):
-                        rewards = rewards.tolist()
-                    columns_data.append(rewards)
-                    stats[f"reward/mean{sweep_suffix}"] = mean_reward
+                    #import code; code.interact(local=dict(globals(), **locals()))
+                    if self.experience_fn is not None:
+                        print("Eval prompts with custom experience_fn not supported yet")
+                    else:
+                        rewards = torch.tensor(
+                            self.reward_fn(
+                                samples=str_samples,
+                                prompts=str_prompts,
+                                outputs=str_outputs,
+                            ),
+                            dtype=float,
+                        )
+                        mean_reward = rewards.mean().item()
+                        columns.append("reward")
+                        if not isinstance(rewards, list):
+                            rewards = rewards.tolist()
+                        columns_data.append(rewards)
+                        stats[f"reward/mean{sweep_suffix}"] = mean_reward
 
                 # additionally log any other metrics
                 if self.metric_fn:

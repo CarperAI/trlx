@@ -86,9 +86,6 @@ class PPOOrchestrator(Orchestrator):
         self.ref_mean = self.trainer.config.method.ref_mean
         self.ref_std = self.trainer.config.method.ref_std
 
-        if self.trainer.experience_fn is None:
-                self.trainer.experience_fn = default_experience_fn
-    
 
     def generate_and_calc_logprobs(self, batch: PromptBatch, **kwargs):
         """
@@ -295,16 +292,14 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
-            #import code; print("make_experience"); code.interact(local=locals())
 
-            # Use the generate_and_calc_logprobs function to get all data needed for PPO
-            trajectories, data, stats = self.trainer.experience_fn(self.trainer, batch)
-            # data: dict with keys "query_tensors", "padded_samples", "logprobs", "values", "kl_divergence_estimate"
+            if self.trainer.experience_fn is None:
+                trajectories, data, stats = default_experience_fn(self.trainer, batch)
+            else:
+                trajectories, data, stats = self.trainer.experience_fn(self.trainer, batch)
 
             query_tensors = data["query_tensors"]
             device = query_tensors.device
-            assert torch.all(query_tensors == batch.input_ids.to(device))
-
             padded_samples = data["padded_samples"]
             all_logprobs = data["logprobs"]
             all_values = data["values"]
@@ -318,9 +313,6 @@ class PPOOrchestrator(Orchestrator):
                 str_prompts = data["str_prompts"]
                 str_outputs = data["str_outputs"]
 
-                print("str_samples: ", str_samples)
-                print("str_prompts: ", str_prompts)
-                print("str_outputs: ", str_outputs)
                 scores = torch.tensor(
                     self.trainer.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs),
                     dtype=torch.float,

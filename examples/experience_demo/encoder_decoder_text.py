@@ -16,12 +16,14 @@ import numpy as np
 import torch
 import pandas as pd
 
-default_config = yaml.safe_load(open("configs/ppo_config.yml"))
+default_config = yaml.safe_load(open("examples/experience_demo/configs/ppo_config.yml"))
 
 def get_last_digit(sample: List[str]) -> int:
     """
     Extract last char from a sample, check if it's a digit, otherwise return -1
     """
+    if len(sample) == 0:
+        return -2
     last_word = sample[-1]
     if last_word.isdigit():
         return int(last_word)
@@ -35,8 +37,14 @@ def reward_fn(trajectories: List[List]) -> List[float]:
     """
     for sample in trajectories:
         assert len(sample) == 5
-    reconstructed_digits = list(map(get_last_digit, trajectories[:, 2]))
-    return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(trajectories[:, 0], reconstructed_digits)]
+    #reconstructed_digits = list(map(get_last_digit, trajectories[:, 2]))
+    # can't do that with list of lists
+    reconstructed_digits = list(map(get_last_digit, [sample[4] for sample in trajectories]))
+    #return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(trajectories[:, 0], reconstructed_digits)]
+    reward_list = [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip([sample[0] for sample in trajectories], reconstructed_digits)]
+    print(f"reward_mean = {np.mean(reward_list)}")
+    return reward_list
+
 
 
 def encoder_decoder_experience_fn(trainer, batch):
@@ -73,6 +81,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     # batch {'input_ids': tensor([[ 3], [ 8]]), 'attention_mask': tensor([[1], [1]]), 'labels': tensor([[ 8], [10]])}
 
     batch_size = batch.input_ids.shape[0]
+    print(f"batch_size = {batch_size}")
     device = batch.input_ids.device
     query_tensors = batch.input_ids
     digits = list(np.random.randint(0, 2, batch_size)) # sample a digit from {0, 1}
@@ -90,7 +99,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     first_run_strs = [""] * batch_size
     # First run
     for i in range(batch_size):
-        first_run_strs[i] = fact_strs[i] + str_prompts[i] + "The\n"
+        first_run_strs[i] = fact_strs[i] + str_prompts[i] + "\nThe"
 
     # Encode the first run
     #first_run_batch = trainer.tokenizer(first_run_strs)
@@ -107,7 +116,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = str_prompts[i] + "The\n" + first_run_str_outputs[i] + recall_str
+        second_run_strs[i] = str_prompts[i] + "\nThe" + first_run_str_outputs[i] + recall_str
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
@@ -119,11 +128,12 @@ def encoder_decoder_experience_fn(trainer, batch):
     second_run_str_prompts = second_run_data['str_prompts']
     second_run_str_outputs = second_run_data['str_outputs']
 
-
-    print("first_run_str_prompts", first_run_str_prompts)
-    print("first_run_str_outputs", first_run_str_outputs)
-    print("second_run_str_prompts", second_run_str_prompts)
-    print("second_run_str_outputs", second_run_str_outputs)
+    print("AAAAAAAAAAAAAAAAAa")
+    if digits[0] == 0 and digits[1] == 0 and digits[2] == 0 and digits[3] == 0: # prob 1/16
+        print("first_run_str_prompts\n", first_run_str_prompts)
+        print("first_run_str_outputs\n", first_run_str_outputs)
+        print("second_run_str_prompts\n", second_run_str_prompts)
+        print("second_run_str_outputs\n", second_run_str_outputs)
     #import code; print("just before data concatenation"); code.interact(local=locals())
 
     # RunElementBatch has an __add__ method which should do the right thing
