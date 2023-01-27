@@ -217,9 +217,9 @@ class TRLConfig:
 
     method: MethodConfig
     model: ModelConfig
-    tokenizer: TokenizerConfig
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig
+    tokenizer: TokenizerConfig
     train: TrainConfig
 
     @classmethod
@@ -243,6 +243,7 @@ class TRLConfig:
             "model": self.model.__dict__,
             "optimizer": self.optimizer.__dict__,
             "scheduler": self.scheduler.__dict__,
+            "tokenizer": self.tokenizer.__dict__,
             "train": self.train.__dict__,
         }
 
