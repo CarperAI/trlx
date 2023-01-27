@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional, Union, Type, Tuple
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from ray.air.config import DatasetConfig, RunConfig, ScalingConfig
-from ray.train.torch.config import TorchConfig
+from ray.train.torch import TorchConfig, get_device
 from ray.train.trainer import GenDataset
 
 if TYPE_CHECKING:
@@ -177,6 +177,7 @@ class AccelerateTrainer(TorchTrainer):
                 os.environ["LOCAL_RANK"] = str(session.get_local_rank())
                 os.environ["LOCAL_WORLD_SIZE"] = str(session.get_local_world_size())
                 os.environ["LOCAL_SIZE"] = str(session.get_local_world_size())
+                os.environ["ACCELERATE_TORCH_DEVICE"] = str(get_device())
 
                 return train_loop_per_worker(*args, **kwargs)
 
