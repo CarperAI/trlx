@@ -16,7 +16,6 @@ from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
-# TODO there is some issue in trainer/orch methods, fix this before proceeding
 def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) -> Tuple[Optional[List], RunElementBatch, dict]:
     """
     Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
@@ -304,7 +303,6 @@ class PPOOrchestrator(Orchestrator):
             all_logprobs = data["logprobs"]
             all_values = data["values"]
             kl_divergence_estimate = data["kl_divergence_estimate"]
-
 
             exp_score_time = time()
 
