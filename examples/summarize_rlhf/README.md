@@ -40,7 +40,7 @@ For an in-depth description of the example, please refer to our [blog post](http
 
 ### Results
 
-On 1,000 samples from CNN/DailyMail test dataset:
+The following tables display ROUGE and reward scores on the test set of the TL;DR dataset between SFT and PPO models.
 
 1. SFT vs PPO
 
