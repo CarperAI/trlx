@@ -16,6 +16,27 @@ from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
+# TODO there is some issue in trainer/orch methods, fix this before proceeding
+def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) -> Tuple[Optional[List], RunElementBatch, dict]:
+    """
+    Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
+    This default_experience_fn is a wrapper around that function that returns the same data as generate_and_calc_logprobs.
+
+    If an user-provided experience_fn returns non-None trajectories,
+    passed to the reward function in the List[Any] form, batch_size outer lists, arbitrary inner lists.
+    The user-provided reward function should be able to handle this format.
+
+    The default_experience_fn returns None for trajectories, in which case the orchestrator will default
+    to passing (str_samples, str_prompts, str_outputs) to the reward function.
+
+    :return: trajectories, data : RunElementBatch, stats
+    """ 
+
+    data, stats = trainer.orch.generate_and_calc_logprobs(batch)
+    trajectories = None
+    return trajectories, data, stats
+
+
 @register_orchestrator
 class PPOOrchestrator(Orchestrator):
     """PPO Orchestrator
@@ -66,27 +87,28 @@ class PPOOrchestrator(Orchestrator):
         self.ref_std = self.trainer.config.method.ref_std
 
         if self.trainer.experience_fn is None:
-                self.trainer.experience_fn = self.default_experience_fn
+                self.trainer.experience_fn = default_experience_fn
     
 
-    def generate_and_calc_logprobs(self, batch: PromptBatch):
+    def generate_and_calc_logprobs(self, batch: PromptBatch, **kwargs):
         """
             self: PPOOrchestrator
                 has a trainer property with trainer.generate method
             batch: PromptBatch
 
-            returns: Tuple(dict, dict)
-                first dict keys: 
-                    {'query_tensors', 'padded_samples', 'all_logprobs', 'kl_divergence_estimate', 'response_tensors', 'all_values', 'str_samples', 'str_prompts', 'str_outputs'}
+            returns: RunElementBatch, dict
                 second dict (stats) keys:
                     {'time/exp_generate', 'kl_ctl_value'}
 
             Does almost everything in the inner loop of make_experience, except anything related to the reward function and scores.
         """
 
+        #import code; print("generate_and_calc_logprobs"); code.interact(local=locals())
+
+
         stats = {}
         exp_generate_time = time()
-        samples = self.trainer.generate(**batch)
+        samples = self.trainer.generate(**batch, **kwargs)
         stats["time/exp_generate"] = time() - exp_generate_time
 
         query_tensors = batch.input_ids
@@ -246,32 +268,6 @@ class PPOOrchestrator(Orchestrator):
         ), stats
 
 
-    def default_experience_fn(self, batch : PromptBatch) -> Tuple[Optional[List], RunElementBatch, dict]:
-        """
-        Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
-        This default_experience_fn is a wrapper around that function that returns the same data as generate_and_calc_logprobs.
-
-        If an user-provided experience_fn returns non-None trajectories,
-        passed to the reward function in the List[Any] form, batch_size outer lists, arbitrary inner lists.
-        The user-provided reward function should be able to handle this format.
-
-        The default_experience_fn returns None for trajectories, in which case the orchestrator will default
-        to passing (str_samples, str_prompts, str_outputs) to the reward function.
-    
-
-        :return: trajectories, data : RunElementBatch, stats
-        """ 
-        data, stats = self.generate_and_calc_logprobs(batch)
-
-        #print("data['samples'].shape", data['samples'].shape) # (batch_size, max_length)
-        #print("data['samples']", data['samples']) # some tokens
-
-        #texts = data['str_samples']
-        #trajectories = [[text] for text in texts]
-        #print("trajectories", trajectories)
-
-        trajectories = None
-        return trajectories, data, stats
     
 
     # Rewrite the make_experience function to use generate_and_calc_logprobs
@@ -299,8 +295,10 @@ class PPOOrchestrator(Orchestrator):
                 self.pipeline_iterator = iter(self.pipeline_loader)
                 batch = next(self.pipeline_iterator)
 
+            #import code; print("make_experience"); code.interact(local=locals())
+
             # Use the generate_and_calc_logprobs function to get all data needed for PPO
-            trajectories, data, stats = self.trainer.experience_fn(batch)
+            trajectories, data, stats = self.trainer.experience_fn(self.trainer, batch)
             # data: dict with keys "query_tensors", "padded_samples", "logprobs", "values", "kl_divergence_estimate"
 
             query_tensors = data["query_tensors"]

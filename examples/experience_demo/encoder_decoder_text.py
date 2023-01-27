@@ -8,6 +8,8 @@ import trlx
 from typing import List
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import RunElementBatch
+from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
+from trlx.data.accelerate_base_datatypes import PromptBatch
 import transformers
 from transformers.tokenization_utils_base import BatchEncoding
 import numpy as np
@@ -32,7 +34,7 @@ def reward_fn(trajectories: List[List]) -> List[float]:
     Return if the last digit of output_2 is the same as the digit
     """
     for sample in trajectories:
-        assert len(sample) == 3
+        assert len(sample) == 5
     reconstructed_digits = list(map(get_last_digit, trajectories[:, 2]))
     return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(trajectories[:, 0], reconstructed_digits)]
 
@@ -91,31 +93,38 @@ def encoder_decoder_experience_fn(trainer, batch):
         first_run_strs[i] = fact_strs[i] + str_prompts[i] + "The\n"
 
     # Encode the first run
-    first_run_batch = trainer.tokenizer(first_run_strs)
+    #first_run_batch = trainer.tokenizer(first_run_strs)
+    # but tensors
+    first_run_batch = trainer.tokenizer(first_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the first run
+    #import code; print("first_run_data"); code.interact(local=locals())
     first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch)
 
-    # Decode the first run
-    _, first_run_str_prompts, first_run_str_outputs = trainer.decode(
-        first_run_data.query_tensors, first_run_data.response_tensors,  # this one is not intended to be a hack
-    )
+    first_run_str_prompts = first_run_data['str_prompts']
+    first_run_str_outputs = first_run_data['str_outputs']
 
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = str_prompts[i] + "\nThe" + first_run_str_outputs[i] + recall_str
+        second_run_strs[i] = str_prompts[i] + "The\n" + first_run_str_outputs[i] + recall_str
 
     # Encode the second run
-    second_run_batch = trainer.tokenizer(second_run_strs) 
+    second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the second run
-    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch)
+    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
 
     # Decode the second run
-    _, second_run_str_prompts, second_run_str_outputs = trainer.decode(
-        second_run_data.query_tensors, second_run_data.response_tensors,  # this one is not intended to be a hack
-    )
+    second_run_str_prompts = second_run_data['str_prompts']
+    second_run_str_outputs = second_run_data['str_outputs']
+
+
+    print("first_run_str_prompts", first_run_str_prompts)
+    print("first_run_str_outputs", first_run_str_outputs)
+    print("second_run_str_prompts", second_run_str_prompts)
+    print("second_run_str_outputs", second_run_str_outputs)
+    #import code; print("just before data concatenation"); code.interact(local=locals())
 
     # RunElementBatch has an __add__ method which should do the right thing
     data = first_run_data + second_run_data
