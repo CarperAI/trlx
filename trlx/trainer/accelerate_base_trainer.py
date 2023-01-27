@@ -76,9 +76,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        is_tracking = config.train.tracker is not None
         if (
-            is_tracking
+            config.train.tracker is not None
             and self.accelerator.is_main_process
             and not ray.is_initialized()
         ):
@@ -118,7 +117,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             else:
                 raise ValueError(
-                    f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`"
+                    f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`. "
                     "Set `tracker` to `None` to disable tracking."
                 )
 
