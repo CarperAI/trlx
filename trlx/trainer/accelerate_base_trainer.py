@@ -112,7 +112,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     config=config_dict_flat,
                 )
             elif config.train.tracker is None:
-                self.accelerator.init_trackers(project_name=self.config.train.project_name)
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name
+                )
             else:
                 raise ValueError(
                     f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`. "
