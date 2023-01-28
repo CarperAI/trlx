@@ -19,6 +19,7 @@ from trlx.utils.modeling import (
     flatten_dict,
     get_tensor_stats,
     hf_get_hidden_size,
+    hf_get_lm_head,
     make_head,
 )
 
@@ -145,7 +146,6 @@ class ILQLHeads(nn.Module):
         self.v_head = make_head(self.hidden_size, 1, dtype)
 
         n_qs = 2 if self.two_qs else 1
-        n_qs = 2 if self.two_qs else 1
         self.q_heads = nn.ModuleList(
             make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs)
         )
@@ -195,9 +195,7 @@ class ILQLHeads(nn.Module):
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
                     self._sync_target_q_heads(self.alpha)
-                    self._sync_target_q_heads(self.alpha)
         else:
-            self._sync_target_q_heads(self.alpha)
             self._sync_target_q_heads(self.alpha)
 
 
@@ -219,7 +217,9 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         self.alpha = alpha
         hidden_size = hf_get_hidden_size(self.pretrained_model.config)
         vocab_size = self.pretrained_model.config.vocab_size
-        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha)
+        lm_head_dtype = hf_get_lm_head(self.pretrained_model).dtype
+        self.ilql_heads = ILQLHeads(
+            hidden_size, vocab_size, self.two_qs, self.alpha, dtype=lm_head_dtype)
 
     def forward(
         self,
