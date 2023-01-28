@@ -448,7 +448,7 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
             branch_class = hf_get_decoder_branch_class(config)
             self.frozen_head = branch_class(
                 self.pretrained_model, self.num_layers_unfrozen
-            )
+            ).eval()
 
     def forward_hydra(self, *args, **kwargs) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(**kwargs)
@@ -489,7 +489,7 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
                 self.pretrained_model, self.num_layers_unfrozen
-            )
+            ).eval()
 
     def forward_hydra(
         self,

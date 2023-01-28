@@ -200,7 +200,7 @@ class ILQLHeads(nn.Module):
 
 
 class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
-    """An `AutoModel` class wrapper `transformers` causal models wtih a language
+    """An `AutoModel` class wrapper for `transformers` causal models wtih a language
     modeling head and ILQL heads.
 
     References:
@@ -219,11 +219,11 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         alpha: float = 0.99,
     ):
         super().__init__(pretrained_model)
-        self.two_qs = two_qs
-        self.alpha = alpha
         hidden_size = hf_get_hidden_size(self.pretrained_model.config)
         vocab_size = self.pretrained_model.config.vocab_size
         dtype = next(hf_get_lm_head(self.pretrained_model).parameters()).dtype
+        self.two_qs = two_qs
+        self.alpha = alpha
         self.ilql_heads = ILQLHeads(
             hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype
         )

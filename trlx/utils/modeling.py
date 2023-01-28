@@ -50,16 +50,16 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     Reference: @younesbelkada's `PreTrainedModelWrapper`
     https://github.com/lvwerra/trl/blob/4f5c16fafde42d9aca971952bcdcc1f5a0a68cf0/trl/models/modeling_base.py#L2
 
-    Class Attributes:
+    Attributes:
         _auto_model_parent_class (transformers.AutoModel): The `transformers.AutoModel`
             type to base the wrapping behavior off of, e.g. `transformers.AutoModelForCausalLM`.
         _supported_modules (List[str]): A list of attribute names for modules of
             the underlying architecture model. This is used, for example, to save
             and load any additional modules by manipulating the state dict.
         _supported_args (List[str]): A list of arguments specific to the underlying
-            architecture model separate from the arguments that are supported by the
+            architecture to separate from arguments that are supported by the
             parent `AutoModel` class. Any arguments that are not supported by the
-            underlying model will be passed to the parent `AutoModel` parent class.
+            underlying model will be passed to the parent `AutoModel` class.
     """
 
     _auto_model_parent_class: transformers.AutoModel = None
@@ -86,9 +86,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         supported_kwargs = {}
         unsupported_kwargs = {}
         for key, value in kwargs.items():
-            # from_pretrained_args = inspect.signature(
-            #     cls._auto_model_parent_class.from_pretrained
-            # ).parameters.keys()
             if key in cls._supported_args:
                 supported_kwargs[key] = value
             else:
@@ -105,7 +102,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         """
         Instantiate a pretrained pytorch model from a pretrained model configuration.
         This method is a wrapper around `transformers.PreTrainedModel.from_pretrained`.
-        Please refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
+        Pleas refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
         for more information.
 
         Args:

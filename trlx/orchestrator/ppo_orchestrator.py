@@ -39,6 +39,7 @@ class PPOOrchestrator(Orchestrator):
         if not hasattr(self.trainer.model, "frozen_head"):
             self.ref_model = self.trainer.get_arch(self.trainer.config)
             self.ref_model.to(self.trainer.accelerator.device)
+            self.ref_model.eval()
 
         self.trainer.orch = self
 
