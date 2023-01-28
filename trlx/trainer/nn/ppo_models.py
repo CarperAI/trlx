@@ -450,8 +450,9 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
                 self.pretrained_model, self.num_layers_unfrozen
             )
 
-    def forward_hydra(self, *args, **kwargs) -> CausalLMOutputWithValue:
+    def forward_hydra(self, *args, **kwargs) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(**kwargs)
+        return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["return_dict"] = True
         forward_kwargs["output_hidden_states"] = True
 
@@ -460,12 +461,14 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
         input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
 
         # Get size of last hidden state
-        forward_kwargs.pop("input_ids")  # Ignore `input_ids` for branch head
         output_shape = outputs.hidden_states[-1].size()
+        forward_kwargs.pop("input_ids", None)  # Ignore `input_ids` for branch head
         hydra_outputs = self.frozen_head(
             input_hidden_state, output_shape, **forward_kwargs
         )
 
+        if not return_dict:
+            return hydra_outputs.logits
         return hydra_outputs
 
 
@@ -494,8 +497,9 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         **kwargs,
-    ) -> Seq2SeqLMOutputWithValue:
+    ) -> Union[torch.FloatTensor, Seq2SeqLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_args(**kwargs)
+        return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["return_dict"] = True
 
         outputs = self.forward(
@@ -516,6 +520,8 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
             output_attentions=False,
         )
 
+        if not return_dict:
+            return hydra_outputs.logits
         return hydra_outputs
 
 
