@@ -1,10 +1,10 @@
 import unittest
 
+import accelerate
 import pytest
 import torch
 import transformers
 
-import accelerate
 import trlx.utils as utils
 import trlx.utils.modeling as modeling_utils
 
