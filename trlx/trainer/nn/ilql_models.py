@@ -200,7 +200,13 @@ class ILQLHeads(nn.Module):
 
 
 class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
-    """An `AutoModel` that wraps a causal language model and adds ILQL heads on top."""
+    """An `AutoModel` class wrapper `transformers` causal models wtih a language
+    modeling head and ILQL heads.
+
+    References:
+        [1] Snell et al., "Offline RL for Natural Language Generation with Implicit Language Q Learning",
+            https://arxiv.org/abs/2206.11871, 2022
+    """
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["ilql_heads"]
