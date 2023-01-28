@@ -1,4 +1,5 @@
 import os
+import pathlib
 from typing import List
 
 import torch
@@ -91,9 +92,12 @@ if __name__ == "__main__":
         norms_scores = scores - original_scores
         return norms_scores
 
-    config = TRLConfig.load_yaml("configs/ppo_config_summ_gptj.yml")
+    config_path = pathlib.Path(__file__).parent.joinpath(
+        "configs/ppo_config_summ_gptj.yml"
+    )
+    config = TRLConfig.load_yaml(config_path)
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model.tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
     max_length_input = (

@@ -1,4 +1,4 @@
-import os
+import pathlib
 from typing import List
 
 from datasets import load_dataset
@@ -16,9 +16,7 @@ except ImportError:
         "by running `pip install evaluate`"
     )
 
-config_path = os.path.join(
-    os.path.dirname(__file__), "configs/ppo_config_cnn_daily.yml"
-)
+config_path = pathlib.Path(__file__).parent / "configs/ppo_config_cnn_daily.yml"
 config = TRLConfig.load_yaml(config_path)
 
 meteor = evaluate.load("meteor")  # use meteor as the reward function

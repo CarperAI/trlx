@@ -135,6 +135,7 @@ class ILQLHeads(nn.Module):
         vocab_size: int,
         two_qs: bool,
         alpha: float,
+        dtype: type,
     ):
         super().__init__()
 
@@ -142,11 +143,11 @@ class ILQLHeads(nn.Module):
         self.vocab_size = vocab_size
         self.two_qs = two_qs
         self.alpha = alpha
-        self.v_head = make_head(self.hidden_size, 1)
+        self.v_head = make_head(self.hidden_size, 1, dtype)
 
         n_qs = 2 if self.two_qs else 1
         self.q_heads = nn.ModuleList(
-            make_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
+            make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs)
         )
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 

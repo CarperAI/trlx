@@ -241,10 +241,9 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-# PPO Architectures
-
-
-class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["v_head"]
@@ -256,6 +255,62 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     ):
         super().__init__(pretrained_model_name_or_path)
         self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
+
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
+            self.base_model = transformers.AutoModelForCausalLM.from_pretrained(config)
+        else:
+            self.config = config
+            self.base_model = transformers.AutoModelForCausalLM.from_config(config)
+
+        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
+        self.base_model.lm_head = hf_get_lm_head(self.base_model)
+        dtype = next(self.base_model.lm_head.parameters()).dtype
+        self.v_head = make_head(hf_get_hidden_size(self.config), 1, dtype)
+
+        self.num_layers_unfrozen = num_layers_unfrozen
+        if self.num_layers_unfrozen > 0:
+            transformer_blocks = list(hf_get_causal_hidden_layers(self.base_model))
+            branch_class = hf_get_causal_lm_branch_class(self.config)
+            self.frozen_head = branch_class(
+                self.config,
+                transformer_blocks[-self.num_layers_unfrozen :],
+                final_norm=hf_get_causal_final_norm(self.base_model),
+                lm_head=self.base_model.lm_head,
+            )
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_transformer_args = inspect.getfullargspec(
+            self.base_model.transformer.forward
+        ).args
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {
+            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
+        }
+
+    def generate(self, input_ids, **x):
+        return self.base_model.generate(input_ids, **x)
+
+    def forward_hydra(self, input_ids, **forward_kwargs):
+        forward_kwargs = self._get_compatible_forward_kwargs(**forward_kwargs)
+        if forward_kwargs.get("return_dict") is not None:
+            return_dict = forward_kwargs["return_dict"]
+        else:
+            return_dict = True
+        forward_kwargs["return_dict"] = True
+        forward_kwargs["output_hidden_states"] = True
+        output = self.forward(input_ids, **forward_kwargs)
+        all_hidden_states = output.hidden_states
+        # Get output of last frozen hidden layer
+        # Select hidden state before first layer of branch.
+        input_hidden_state = all_hidden_states[-(self.num_layers_unfrozen + 1)]
+        # Get size of last hidden state
+        output_shape = all_hidden_states[-1].size()
+        outputs = self.frozen_head(input_hidden_state, output_shape, **forward_kwargs)
+        if not return_dict:
+            return outputs.logits
+        return outputs
 
     def forward(
         self,
