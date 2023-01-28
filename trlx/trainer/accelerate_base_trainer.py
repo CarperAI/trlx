@@ -279,7 +279,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
-        """A wrapper around `PreTrainedModel.save_pretrained` method."""
+        """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
+        later use.
+
+        Args:
+            directory (str, *optional*): The directory to save the trainer files to.
+                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
+                checkpoint directory as specified by the Trainer's config.
+            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
+                `save_pretrained` method.
+        """
         if directory is None:
             directory = f"{self.config.train.checkpoint_dir}/hf_model"
         self.accelerator.wait_for_everyone()

@@ -1,3 +1,4 @@
+import gc
 import inspect
 from copy import deepcopy
 from dataclasses import dataclass
@@ -15,8 +16,11 @@ from transformers.models.opt import modeling_opt
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     PreTrainedModelWrapper,
+    PreTrainedModelWrapper,
     flatten_dict,
     get_tensor_stats,
+    hf_get_decoder_blocks,
+    hf_get_decoder_final_norm,
     hf_get_decoder_blocks,
     hf_get_decoder_final_norm,
     hf_get_hidden_size,
@@ -239,15 +243,34 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
     encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
     value: Optional[torch.FloatTensor] = None
+@dataclass
+class Seq2SeqLMOutputWithValue(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    value: Optional[torch.FloatTensor] = None
 
 
 # Value Head Architectures
+# PPO Architectures
 
 
 class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     """An `AutoModel` class wrapper for `transformers` causal models that have a 
     language modeling head and a value head.
     """
+
+    _auto_model_parent_class = transformers.AutoModelForCausalLM
+    _supported_modules = ["v_head"]
+    _supported_args = []
+
+class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["v_head"]
@@ -325,17 +348,27 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         head_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         output_hidden_states: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, CausalLMOutputWithValue]:
+        forward_kwargs = self.get_compatible_forward_kwargs(
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
+            past_key_values=past_key_values,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
             return_dict=return_dict,
+            return_dict=return_dict,
         )
+        forward_kwargs["output_hidden_states"] = True
+        forward_kwargs["return_dict"] = True
+
+        outputs = self.pretrained_model(**forward_kwargs)
+        value = self.v_head(outputs.hidden_states[-1]).squeeze(-1)
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
@@ -344,10 +377,17 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
         if not return_dict:
             outputs = (outputs.logits,) + outputs[1:] + (value,)
+            outputs = (outputs.logits,) + outputs[1:] + (value,)
             return outputs
 
         return CausalLMOutputWithValue(
+        return CausalLMOutputWithValue(
             loss=None,
+            logits=outputs.logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            cross_attentions=outputs.get("cross_attentions", None),
             logits=outputs.logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
@@ -358,7 +398,19 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.pretrained_model.generate(*args, **kwargs)
+    def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
+        return self.pretrained_model.generate(*args, **kwargs)
 
+    def state_dict(self, *args, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
+        for k, v in v_head_state_dict.items():
+            pretrained_model_state_dict[f"v_head.{k}"] = v
+        return pretrained_model_state_dict
     def state_dict(self, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
@@ -392,6 +444,9 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["v_head"]
     _supported_args = []
+    _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
+    _supported_modules = ["v_head"]
+    _supported_args = []
 
     def __init__(
         self,
@@ -419,6 +474,8 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         return_dict: Optional[bool] = None,
     ) -> Seq2SeqLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_kwargs(
+    ) -> Seq2SeqLMOutputWithValue:
+        forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
@@ -439,10 +496,24 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
         outputs = self.pretrained_model(**forward_kwargs)
         last_hidden_state = outputs.decoder_hidden_states[-1]
+        forward_kwargs["output_hidden_states"] = True
+        forward_kwargs["return_dict"] = True
+
+        outputs = self.pretrained_model(**forward_kwargs)
+        last_hidden_state = outputs.decoder_hidden_states[-1]
         value = self.v_head(last_hidden_state).squeeze(-1)
 
         return Seq2SeqLMOutputWithValue(
+        return Seq2SeqLMOutputWithValue(
             loss=None,
+            logits=outputs.lm_logits,
+            decoder_hidden_states=outputs.decoder_hidden_states,
+            decoder_attentions=outputs.decoder_attentions,
+            cross_attentions=outputs.cross_attentions,
+            encoder_last_hidden_state=outputs.encoder_last_hidden_state,
+            encoder_hidden_states=outputs.encoder_hidden_states,
+            encoder_attentions=outputs.encoder_attentions,
+            past_key_values=outputs.past_key_values,
             logits=outputs.lm_logits,
             decoder_hidden_states=outputs.decoder_hidden_states,
             decoder_attentions=outputs.decoder_attentions,
@@ -456,7 +527,19 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.pretrained_model.generate(*args, **kwargs)
+    def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
+        return self.pretrained_model.generate(*args, **kwargs)
 
+    def state_dict(self, *args, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
+        for k, v in v_head_state_dict.items():
+            pretrained_model_state_dict[f"v_head.{k}"] = v
+        return pretrained_model_state_dict
     def state_dict(self, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
@@ -482,6 +565,15 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         import gc; gc.collect()  # noqa: E702
 
 
+# Hydra Architectures
+
+
+class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
+
+    _supported_modules = ["v_head", "frozen_head"]
+    _supported_args = ["num_layers_unfrozen"]
+
+    def __init__(
 # Hydra Architectures
 
 
@@ -560,7 +652,23 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
         input_hidden_state = outputs.decoder_hidden_states[
             -(self.num_layers_unfrozen + 1)
         ]
+        outputs = self.forward(
+            input_ids, attention_mask, decoder_input_ids, **forward_kwargs
+        )
+        # Select the hidden state right before the first branching layer
+        input_hidden_state = outputs.decoder_hidden_states[
+            -(self.num_layers_unfrozen + 1)
+        ]
 
+        encoder_hidden_states = outputs.encoder_last_hidden_state
+        hydra_outputs = self.frozen_head(
+            decoder_input_ids,
+            input_hidden_state,
+            encoder_hidden_states,
+            attention_mask,
+            use_cache=False,
+            output_attentions=False,
+        )
         encoder_hidden_states = outputs.encoder_last_hidden_state
         hydra_outputs = self.frozen_head(
             decoder_input_ids,
@@ -586,6 +694,8 @@ class ModelBranch(transformers.PreTrainedModel):
         self,
         pretrained_model: transformers.PreTrainedModel,
         num_layers_unfrozen: int,
+        pretrained_model: transformers.PreTrainedModel,
+        num_layers_unfrozen: int,
     ):
         """
         Args:
@@ -596,7 +706,13 @@ class ModelBranch(transformers.PreTrainedModel):
                 Defaults to `pretrained_model.dtype` if `None`.
         """
         super().__init__(pretrained_model.config)
+        super().__init__()
 
+        # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
+        decoder_blocks = deepcopy(hf_get_decoder_blocks(pretrained_model))
+        self.decoder_blocks = nn.ModuleList(list(decoder_blocks)[-num_layers_unfrozen:])
+        self.final_norm = deepcopy(hf_get_decoder_final_norm(pretrained_model))
+        self.lm_head = deepcopy(hf_get_lm_head(pretrained_model))
         # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
         decoder_blocks = deepcopy(hf_get_decoder_blocks(pretrained_model))
         self.decoder_blocks = nn.ModuleList(list(decoder_blocks)[-num_layers_unfrozen:])
@@ -604,15 +720,21 @@ class ModelBranch(transformers.PreTrainedModel):
         self.lm_head = deepcopy(hf_get_lm_head(pretrained_model))
 
         self.hidden_size = hf_get_hidden_size(self.config)
+        self.config = pretrained_model.config
+        self.hidden_size = hf_get_hidden_size(self.config)
         self.model_parallel = False
         self.device_map = None
+        self.last_device = None
         self.last_device = None
         self.gradient_checkpointing = False
 
         # Freeze the entire branch
+        # Freeze the entire branch
         for parameter in self.parameters():
             parameter.requires_grad_(False)
 
+
+class GPTModelBranch(ModelBranch):
 
 class GPTModelBranch(ModelBranch):
     def forward(  # noqa: max-complexity
@@ -653,6 +775,7 @@ class GPTModelBranch(ModelBranch):
 
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.decoder_blocks))
+            past_key_values = tuple([None] * len(self.decoder_blocks))
 
         if attention_mask is not None:
             if batch_size <= 0:
@@ -684,6 +807,7 @@ class GPTModelBranch(ModelBranch):
         )
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(
+            zip(self.decoder_blocks, past_key_values)
             zip(self.decoder_blocks, past_key_values)
         ):
 
@@ -784,7 +908,9 @@ class OPTModelBranch(ModelBranch):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
-        """Reference: https://github.com/huggingface/transformers/blob/bdb84e2bada3658f99c6a81c963ec562f8485151/src/transformers/models/opt/modeling_opt.py#L840"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/bdb84e2bada3658f99c6a81c963ec562f8485151/src/transformers/models/opt/modeling_opt.py#L840  # noqa: E501
+        """
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -836,11 +962,14 @@ class OPTModelBranch(ModelBranch):
         for attn_mask, mask_name in zip([head_mask], ["head_mask"]):
             if attn_mask is not None:
                 if attn_mask.size()[0] != (len(self.decoder_blocks)):
+                if attn_mask.size()[0] != (len(self.decoder_blocks)):
                     raise ValueError(
+                        f"The `{mask_name}` should be specified for {len(self.decoder_blocks)} layers, but it is for"
                         f"The `{mask_name}` should be specified for {len(self.decoder_blocks)} layers, but it is for"
                         f" {head_mask.size()[0]}."
                     )
 
+        for idx, decoder_layer in enumerate(self.decoder_blocks):
         for idx, decoder_layer in enumerate(self.decoder_blocks):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -907,6 +1036,8 @@ class OPTModelBranch(ModelBranch):
 
 class BloomModelBranch(ModelBranch):
     def forward(  # noqa: max-complexity
+class BloomModelBranch(ModelBranch):
+    def forward(  # noqa: max-complexity
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -921,7 +1052,9 @@ class BloomModelBranch(ModelBranch):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
-        """Reference: https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/bloom/modeling_bloom.py#L623"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/bloom/modeling_bloom.py#L623  # noqa: E501
+        """
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -940,6 +1073,7 @@ class BloomModelBranch(ModelBranch):
         batch_size, seq_length = hidden_states.shape[:2]
 
         if past_key_values is None:
+            past_key_values = tuple([None] * len(self.decoder_blocks))
             past_key_values = tuple([None] * len(self.decoder_blocks))
 
         head_mask = self.get_head_mask(head_mask, hf_get_num_hidden_layers(self.config))
@@ -988,6 +1122,7 @@ class BloomModelBranch(ModelBranch):
 
         for i, (block, layer_past) in enumerate(
             zip(self.decoder_blocks, past_key_values)
+            zip(self.decoder_blocks, past_key_values)
         ):
 
             if output_hidden_states:
@@ -1033,6 +1168,7 @@ class BloomModelBranch(ModelBranch):
             )
 
         return CausalLMOutputWithValue(
+        return CausalLMOutputWithValue(
             loss=None,
             logits=lm_logits,
             past_key_values=presents,
@@ -1053,7 +1189,9 @@ class T5Branch(ModelBranch):
         use_cache: bool = False,
         output_attentions: bool = False,
     ):
-        """Reference: https://github.com/huggingface/transformers/blob/bc21aaca789f1a366c05e8b5e111632944886393/src/transformers/models/t5/modeling_t5.py#L899"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/bc21aaca789f1a366c05e8b5e111632944886393/src/transformers/models/t5/modeling_t5.py#L899  # noqa: E501
+        """
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
 

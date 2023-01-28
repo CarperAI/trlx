@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 from torchtyping import TensorType

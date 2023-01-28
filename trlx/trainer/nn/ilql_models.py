@@ -1,4 +1,3 @@
-import inspect
 import os
 from copy import deepcopy
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from torch import nn
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
+    PreTrainedModelWrapper,
     PreTrainedModelWrapper,
     flatten_dict,
     get_tensor_stats,
@@ -146,6 +146,7 @@ class ILQLHeads(nn.Module):
         self.v_head = make_head(self.hidden_size, 1, dtype)
 
         n_qs = 2 if self.two_qs else 1
+        n_qs = 2 if self.two_qs else 1
         self.q_heads = nn.ModuleList(
             make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs)
         )
@@ -195,10 +196,18 @@ class ILQLHeads(nn.Module):
             with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
                     self._sync_target_q_heads(self.alpha)
+                    self._sync_target_q_heads(self.alpha)
         else:
+            self._sync_target_q_heads(self.alpha)
             self._sync_target_q_heads(self.alpha)
 
 
+class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
+    """An `AutoModel` that wraps a causal language model and adds ILQL heads on top."""
+
+    _auto_model_parent_class = transformers.AutoModelForCausalLM
+    _supported_modules = ["ilql_heads"]
+    _supported_args = ["two_qs", "alpha"]
 class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     """An `AutoModel` that wraps a causal language model and adds ILQL heads on top."""
 
@@ -211,7 +220,16 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         pretrained_model_name_or_path: str,
         two_qs: bool = True,
         alpha: float = 0.99,
+        pretrained_model_name_or_path: str,
+        two_qs: bool = True,
+        alpha: float = 0.99,
     ):
+        super().__init__(pretrained_model_name_or_path)
+        self.two_qs = two_qs
+        self.alpha = alpha
+        hidden_size = hf_get_hidden_size(self.pretrained_model.config)
+        vocab_size = self.pretrained_model.config.vocab_size
+        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha)
         super().__init__(pretrained_model_name_or_path)
         self.two_qs = two_qs
         self.alpha = alpha
@@ -229,13 +247,16 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         states_ixs=None,
     ):
         forward_kwargs = self.get_compatible_forward_kwargs(
+        forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
         )
         forward_kwargs["output_hidden_states"] = True
+        forward_kwargs["output_hidden_states"] = True
 
+        outputs = self.pretrained_model(**forward_kwargs)
         outputs = self.pretrained_model(**forward_kwargs)
         qs, target_qs, vs = self.ilql_heads(
             outputs.hidden_states[-1],
@@ -243,6 +264,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
             actions_ixs=actions_ixs
         )
 
+        return outputs.logits, qs, target_qs, vs, outputs.past_key_values
         return outputs.logits, qs, target_qs, vs, outputs.past_key_values
 
     def generate(
@@ -265,8 +287,16 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
-        pad_token_id = pad_token_id if pad_token_id is not None else self.pretrained_model.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.pretrained_model.config.eos_token_id
+        pad_token_id = (
+            pad_token_id
+            if pad_token_id is not None
+            else self.pretrained_model.config.pad_token_id
+        )
+        eos_token_id = (
+            eos_token_id
+            if eos_token_id is not None
+            else self.pretrained_model.config.eos_token_id
+        )
 
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)
