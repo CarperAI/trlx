@@ -304,7 +304,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Adds pipeline from with validation prompts"""
         self.eval_pipeline = eval_pipeline
 
-    def evaluate(self):  # noqa: max-complexity
+    def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         table = []
@@ -440,7 +440,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.nth_evaluation += 1
         return stats
 
-    def learn(self):  # noqa: max-complexity
+    def learn(self):  # noqa: C901
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
