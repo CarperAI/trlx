@@ -41,8 +41,6 @@ trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'),
 trainer.save_pretrained('/path/to/output/folder/')
 ```
 
-🩹 Warning: Only the `AcceleratePPOTrainer` can write HuggingFace transformers to disk with `save_pretrained` at the moment, as ILQL trainers require inference behavior currently unsupported by available `transformers` architectures.
-
 #### Use 🤗 Accelerate to launch distributed training
 
 ```bash
