@@ -234,7 +234,7 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
 
 
 class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
-    """An `AutoModel` class wrapper for `transformers` causal models that have a 
+    """An `AutoModel` class wrapper for `transformers` causal models that have a
     language modeling head and a value head.
     """
 

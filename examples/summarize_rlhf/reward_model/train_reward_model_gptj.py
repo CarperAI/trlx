@@ -118,7 +118,7 @@ if __name__ == "__main__":
     # Initialize the reward model from the (supervised) fine-tuned GPT-J
     model = GPTRewardModel("CarperAI/openai_summarize_tldr_sft")
 
-    # Freeze the first 70% of the hidden layers of the reward model pretrained_model
+    # Freeze the first 70% of the hidden layers of the reward model backbone
     layers = model.transformer.h
     num_layers = len(layers)
     num_unfrozen = int(0.3 * num_layers)

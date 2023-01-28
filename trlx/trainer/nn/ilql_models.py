@@ -1,9 +1,9 @@
+import gc
 import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
-from typing import Any, Dict
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -15,7 +15,6 @@ from torch import nn
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
-    PreTrainedModelWrapper,
     PreTrainedModelWrapper,
     flatten_dict,
     get_tensor_stats,
@@ -208,29 +207,14 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["ilql_heads"]
     _supported_args = ["two_qs", "alpha"]
-class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
-    """An `AutoModel` that wraps a causal language model and adds ILQL heads on top."""
-
-    _auto_model_parent_class = transformers.AutoModelForCausalLM
-    _supported_modules = ["ilql_heads"]
-    _supported_args = ["two_qs", "alpha"]
 
     def __init__(
         self,
-        pretrained_model_name_or_path: str,
-        two_qs: bool = True,
-        alpha: float = 0.99,
-        pretrained_model_name_or_path: str,
+        pretrained_model: transformers.PreTrainedModel,
         two_qs: bool = True,
         alpha: float = 0.99,
     ):
-        super().__init__(pretrained_model_name_or_path)
-        self.two_qs = two_qs
-        self.alpha = alpha
-        hidden_size = hf_get_hidden_size(self.pretrained_model.config)
-        vocab_size = self.pretrained_model.config.vocab_size
-        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha)
-        super().__init__(pretrained_model_name_or_path)
+        super().__init__(pretrained_model)
         self.two_qs = two_qs
         self.alpha = alpha
         hidden_size = hf_get_hidden_size(self.pretrained_model.config)
@@ -247,24 +231,18 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         states_ixs=None,
     ):
         forward_kwargs = self.get_compatible_forward_kwargs(
-        forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
         )
         forward_kwargs["output_hidden_states"] = True
-        forward_kwargs["output_hidden_states"] = True
 
-        outputs = self.pretrained_model(**forward_kwargs)
         outputs = self.pretrained_model(**forward_kwargs)
         qs, target_qs, vs = self.ilql_heads(
-            outputs.hidden_states[-1],
-            states_ixs=states_ixs,
-            actions_ixs=actions_ixs
+            outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs
         )
 
-        return outputs.logits, qs, target_qs, vs, outputs.past_key_values
         return outputs.logits, qs, target_qs, vs, outputs.past_key_values
 
     def generate(
@@ -377,3 +355,4 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
                 state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
         self.ilql_heads.load_state_dict(state_dict, strict=False)
         del state_dict
+        gc.collect()

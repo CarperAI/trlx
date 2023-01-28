@@ -69,7 +69,9 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     # `transformers.PreTrainedModel`s.
     _supported_args: List[str] = None
 
-    def __init__(self, pretrained_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
+    def __init__(
+        self, pretrained_model: Optional[transformers.PreTrainedModel] = None, **kwargs
+    ):
         super().__init__()
         self.pretrained_model = pretrained_model
         # cache `pre_trained.forward` args for general use (avoids incompatible args across architectures)
