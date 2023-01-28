@@ -1,8 +1,10 @@
-import accelerate
+import unittest
+
 import pytest
 import torch
 import transformers
 
+import accelerate
 import trlx.utils as utils
 import trlx.utils.modeling as modeling_utils
 
@@ -130,3 +132,31 @@ def test_parse_delta_kwargs(model_name):
         [m.split(".", 1)[1] for m in delta_kwargs["modified_modules"]]
         == ["a", "b"]
     ), "Modified modules should be ['a', 'b']"
+
+
+class TestStatistics(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = modeling_utils.RunningMoments()
+        cls.a1 = torch.arange(100, dtype=float)
+        cls.a2 = torch.ones(100, dtype=float)
+        cls.a3 = torch.exp(torch.arange(10, dtype=float))
+        cls.a4 = torch.tensor([-10, -1, 0, 1, 10], dtype=float)
+
+    def test_running_moments(self):
+        assert torch.isclose(
+            self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6
+        )
+        assert torch.isclose(
+            self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6
+        )
+        assert torch.isclose(
+            self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6
+        )
+        assert torch.isclose(
+            self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6
+        )
+
+        a = torch.hstack((self.a1, self.a2, self.a3, self.a4))
+        assert torch.isclose(self.m.mean, a.mean(), atol=1e-6)
+        assert torch.isclose(self.m.std, a.std(unbiased=True), atol=1e-6)
