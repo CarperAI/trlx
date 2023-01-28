@@ -217,9 +217,10 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         self.alpha = alpha
         hidden_size = hf_get_hidden_size(self.pretrained_model.config)
         vocab_size = self.pretrained_model.config.vocab_size
-        lm_head_dtype = hf_get_lm_head(self.pretrained_model).dtype
+        dtype = hf_get_lm_head(self.pretrained_model).dtype
         self.ilql_heads = ILQLHeads(
-            hidden_size, vocab_size, self.two_qs, self.alpha, dtype=lm_head_dtype)
+            hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype
+        )
 
     def forward(
         self,

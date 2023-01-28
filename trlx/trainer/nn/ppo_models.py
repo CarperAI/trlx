@@ -563,7 +563,9 @@ class GPTModelBranch(ModelBranch):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
-        """Reference: https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/gpt2/modeling_gpt2.py#L743"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/gpt2/modeling_gpt2.py#L743  # noqa: E501
+        """
 
         batch_size = hidden_states.size()[0]
 
@@ -717,7 +719,9 @@ class OPTModelBranch(ModelBranch):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
-        """Reference: https://github.com/huggingface/transformers/blob/bdb84e2bada3658f99c6a81c963ec562f8485151/src/transformers/models/opt/modeling_opt.py#L840"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/bdb84e2bada3658f99c6a81c963ec562f8485151/src/transformers/models/opt/modeling_opt.py#L840  # noqa: E501
+        """
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -854,7 +858,9 @@ class BloomModelBranch(ModelBranch):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
-        """Reference: https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/bloom/modeling_bloom.py#L623"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/bloom/modeling_bloom.py#L623  # noqa: E501
+        """
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -986,7 +992,9 @@ class T5Branch(ModelBranch):
         use_cache: bool = False,
         output_attentions: bool = False,
     ):
-        """Reference: https://github.com/huggingface/transformers/blob/bc21aaca789f1a366c05e8b5e111632944886393/src/transformers/models/t5/modeling_t5.py#L899"""
+        """Reference:
+        https://github.com/huggingface/transformers/blob/bc21aaca789f1a366c05e8b5e111632944886393/src/transformers/models/t5/modeling_t5.py#L899  # noqa: E501
+        """
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
 
