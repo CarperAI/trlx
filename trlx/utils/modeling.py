@@ -33,18 +33,22 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     https://github.com/lvwerra/trl/blob/4f5c16fafde42d9aca971952bcdcc1f5a0a68cf0/trl/models/modeling_base.py#L2
 
     Class Attributes:
-        _auto_model_parent_class (transformers.AutoModel): The `transformers.AutoModel` type
-            to base the wrapping behavior off of, e.g. `transformers.AutoModelForCausalLM`.
-        _supported_modules (List[str]): A list of attribute names for modules of the wrapped model.
-            This is used to save and load any additional modules by manipulating the state dict.
-        _supported_args (List[str]): A list of arguments specific to the wrapped model to separate from
-            the arguments that are supported by the parent `AutoModel` class.
+        _auto_model_parent_class (transformers.AutoModel): The `transformers.AutoModel`
+            type to base the wrapping behavior off of, e.g. `transformers.AutoModelForCausalLM`.
+        _supported_modules (List[str]): A list of attribute names for modules of
+            the underlying architecture model. This is used, for example, to save
+            and load any additional modules by manipulating the state dict.
+        _supported_args (List[str]): A list of arguments specific to the underlying
+            architecture model separate from the arguments that are supported by the
+            parent `AutoModel` class. Any arguments that are not supported by the
+            underlying model will be passed to the parent `AutoModel` parent class.
     """
 
     _auto_model_parent_class: transformers.AutoModel = None
     _supported_modules: List[str] = None
-    # TODO (jon-tow): Supported args should come from a `Config` of the specific child type similar to
-    # how config classes are used to instantiate `transformers.PreTrainedModel`s.
+    # TODO (jon-tow): Supported args should come from a `Config` of the specific
+    # underlying type similar to how config classes are used to instantiate
+    # `transformers.PreTrainedModel`s.
     _supported_args: List[str] = None
 
     def __init__(self, pretrained_model: Optional[nn.Module] = None, **kwargs):
@@ -56,16 +60,16 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     @classmethod
     def _split_kwargs(cls, kwargs):
         """
-        Separates the kwargs from the arguments that with support inside `supported_args`
-        and the ones that we don't.
+        Separates the kwargs from the arguments that with support inside
+        `supported_args` and the ones that we don't.
         """
         supported_kwargs = {}
         unsupported_kwargs = {}
         for key, value in kwargs.items():
-            from_pretrained_args = inspect.signature(
-                cls._auto_model_parent_class.from_pretrained
-            ).parameters.keys()
-            if key in cls._supported_args or key not in from_pretrained_args:
+            # from_pretrained_args = inspect.signature(
+            #     cls._auto_model_parent_class.from_pretrained
+            # ).parameters.keys()
+            if key in cls._supported_args:
                 supported_kwargs[key] = value
             else:
                 unsupported_kwargs[key] = value
@@ -79,14 +83,14 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         **kwargs,
     ):
         """
-        Instantiate a pretrained pytorch model from a pre-trained model configuration.
+        Instantiate a pretrained pytorch model from a pretrained model configuration.
         This method is a wrapper around `transformers.PreTrainedModel.from_pretrained`.
         Please refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
         for more information.
 
         Args:
             pretrained_model_name_or_path (str or `transformers.PreTrainedModel`):
-                The identifier of the pre-trained model to load or the pre-trained model itself.
+                The identifier of the pretrained model to load or the pretrained model itself.
             *model_args (sequence of positional arguments, *optional*):
                 All remaining positional arguments will be passed to the `_auto_model_parent_class`.
             **kwargs (dict, *optional*):
@@ -96,7 +100,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
         NOTE: You must pass in arguments specific to the wrapped model as keyword arguments.
         """
-
         if kwargs is not None:
             wrapped_model_kwargs, from_pretrained_kwargs = cls._split_kwargs(kwargs)
         else:
@@ -295,6 +298,7 @@ def hf_get_decoder_final_norm(model: nn.Module) -> float:
     norm_attrs = (
         "transformer.ln_f",
         "model.decoder.final_layer_norm",
+        "decoder.final_layer_norm",
         "gpt_neox.final_layer_norm",
     )
     return findattr(model, norm_attrs)

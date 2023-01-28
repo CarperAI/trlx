@@ -241,9 +241,13 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-        self.base_model.transformer = hf_get_causal_base_model(self.base_model)
-        self.base_model.lm_head = hf_get_lm_head(self.base_model)
-        self.v_head = make_head(hf_get_hidden_size(self.config), 1)
+# Value Head Architectures
+
+
+class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
+    """An `AutoModel` class wrapper for `transformers` causal models that have a 
+    language modeling head and a value head.
+    """
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["v_head"]
@@ -251,9 +255,9 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
 
     def __init__(
         self,
-        pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        pretrained_model: transformers.PreTrainedModel,
     ):
-        super().__init__(pretrained_model_name_or_path)
+        super().__init__(pretrained_model)
         self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
 
         if isinstance(config, str):
@@ -381,6 +385,9 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
 
 
 class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
+    """An `AutoModel` class wrapper for `transformers` sequence-to-sequence
+    models that have a language modeling head and a value head.
+    """
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["v_head"]
@@ -388,9 +395,9 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     def __init__(
         self,
-        pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        pretrained_model: transformers.PreTrainedModel,
     ):
-        super().__init__(pretrained_model_name_or_path)
+        super().__init__(pretrained_model)
         self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
 
     def forward(
@@ -485,52 +492,55 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
 
     def __init__(
         self,
-        pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        pretrained_model: transformers.PreTrainedModel,
+        *,
         num_layers_unfrozen: int = -1,
     ):
-        super().__init__(pretrained_model_name_or_path)
+        super().__init__(pretrained_model)
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             config = self.pretrained_model.config
             branch_class = hf_get_decoder_branch_class(config)
             self.frozen_head = branch_class(
-                config, self.pretrained_model, self.num_layers_unfrozen
+                self.pretrained_model, self.num_layers_unfrozen
             )
 
-    def forward_hydra(self, *args, **kwargs) -> torch.FloatTensor:
+    def forward_hydra(self, *args, **kwargs) -> CausalLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_kwargs(**kwargs)
         forward_kwargs["return_dict"] = True
         forward_kwargs["output_hidden_states"] = True
 
         outputs = self.forward(*args, **forward_kwargs)
-        # Select the hidden state right before the first branching layer
+        # Select the hidden state immediately before the first branching layer
         input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
 
         # Get size of last hidden state
+        forward_kwargs.pop("input_ids")  # Ignore `input_ids` for branch head
         output_shape = outputs.hidden_states[-1].size()
         hydra_outputs = self.frozen_head(
             input_hidden_state, output_shape, **forward_kwargs
         )
 
-        return hydra_outputs.logits
+        return hydra_outputs
 
 
-class AutoModelForSeq2SeqLMHydraWithValueHead(PreTrainedModelWrapper):
+class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead):
 
     _supported_modules = ["v_head", "frozen_head"]
     _supported_args = ["num_layers_unfrozen"]
 
     def __init__(
         self,
-        pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        pretrained_model: transformers.PreTrainedModel,
+        *,
         num_layers_unfrozen: int = -1,
     ):
-        super().__init__(pretrained_model_name_or_path)
+        super().__init__(pretrained_model)
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
-                self.config, self.pretrained_model, self.num_layers_unfrozen
+                self.pretrained_model, self.num_layers_unfrozen
             )
 
     def forward_hydra(
@@ -539,7 +549,7 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(PreTrainedModelWrapper):
         attention_mask: Optional[torch.Tensor] = None,
         decoder_input_ids: Optional[torch.LongTensor] = None,
         **kwargs,
-    ) -> torch.FloatTensor:
+    ) -> Seq2SeqLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_args(**kwargs)
         forward_kwargs["return_dict"] = True
 
@@ -561,13 +571,13 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(PreTrainedModelWrapper):
             output_attentions=False,
         )
 
-        return hydra_outputs.logits
+        return hydra_outputs
 
 
 # Hydra Branches
 
 
-class ModelBranch(nn.Module):
+class ModelBranch(transformers.PreTrainedModel):
     """Implements the frozen upper trunk of the pretrained reference model used
     when computing the PPO KL-divergence penalty.
     """
@@ -577,7 +587,15 @@ class ModelBranch(nn.Module):
         pretrained_model: transformers.PreTrainedModel,
         num_layers_unfrozen: int,
     ):
-        super().__init__()
+        """
+        Args:
+            pretrained_model (transformers.PreTrainedModel): The pretrained model
+                to extract upper trunk from.
+            num_layers_unfrozen (int): The number of trainable layers.
+            dtype (torch.dtype, *optional*): The dtype to use for the branch.
+                Defaults to `pretrained_model.dtype` if `None`.
+        """
+        super().__init__(pretrained_model.config)
 
         # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
         decoder_blocks = deepcopy(hf_get_decoder_blocks(pretrained_model))
@@ -585,7 +603,6 @@ class ModelBranch(nn.Module):
         self.final_norm = deepcopy(hf_get_decoder_final_norm(pretrained_model))
         self.lm_head = deepcopy(hf_get_lm_head(pretrained_model))
 
-        self.config = pretrained_model.config
         self.hidden_size = hf_get_hidden_size(self.config)
         self.model_parallel = False
         self.device_map = None
