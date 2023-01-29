@@ -388,7 +388,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
         return Seq2SeqLMOutputWithValue(
             loss=None,
-            logits=outputs.lm_logits,
+            logits=outputs.logits,
             decoder_hidden_states=outputs.decoder_hidden_states,
             decoder_attentions=outputs.decoder_attentions,
             cross_attentions=outputs.cross_attentions,
@@ -447,10 +447,13 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
             config = self.pretrained_model.config
             branch_class = hf_get_decoder_branch_class(config)
             self.frozen_head = branch_class(
-                self.pretrained_model, self.num_layers_unfrozen
+                self.pretrained_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
-    def forward_hydra(self, *args, **kwargs) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
+    def forward_hydra(
+        self, *args, **kwargs
+    ) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(**kwargs)
         return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["return_dict"] = True
@@ -488,7 +491,8 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
         if self.num_layers_unfrozen > 0:
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
-                self.pretrained_model, self.num_layers_unfrozen
+                self.pretrained_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
     def forward_hydra(
@@ -536,6 +540,7 @@ class ModelBranch(transformers.PreTrainedModel):
     def __init__(
         self,
         pretrained_model: transformers.PreTrainedModel,
+        *,
         num_layers_unfrozen: int,
     ):
         """
@@ -543,8 +548,6 @@ class ModelBranch(transformers.PreTrainedModel):
             pretrained_model (transformers.PreTrainedModel): The pretrained model
                 to extract upper trunk from.
             num_layers_unfrozen (int): The number of trainable layers.
-            dtype (torch.dtype, *optional*): The dtype to use for the branch.
-                Defaults to `pretrained_model.dtype` if `None`.
         """
         super().__init__(pretrained_model.config)
 
