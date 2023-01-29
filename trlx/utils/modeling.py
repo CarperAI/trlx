@@ -339,17 +339,6 @@ MODIFIED_MODULES_DICT = {
             "EncDecAttention.v",
             "EncDecAttention.o",
         ],
-        "attention_with_bias": [
-            "SelfAttention.q",
-            "SelfAttention.k",
-            "SelfAttention.v",
-            "SelfAttention.o",
-            "EncDecAttention.q",
-            "EncDecAttention.k",
-            "EncDecAttention.v",
-            "EncDecAttention.o",
-            "SelfAttention.relative_attention_bias",
-        ],
         "mlp": ["DenseReluDense.wo", "DenseReluDense.wi_0", "DenseReluDense.wi_1"],
         "all": [
             "SelfAttention.q",

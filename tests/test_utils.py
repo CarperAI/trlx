@@ -97,6 +97,8 @@ def test_hf_attr_getters(model_name: str):
         "EleutherAI/gpt-neox-20b",
         "facebook/opt-1.3b",
         "bigscience/bloom-560m",
+        "google/flan-t5-large",
+        "google/flan-t5-xxl"
     ],
 )
 def test_parse_delta_kwargs(model_name):
