@@ -264,7 +264,7 @@ class RunningMoments:
 
         new_sum = xs_var * xs_count
         # correct old_sum deviation accounting for the new mean
-        old_sum = self.var * self.count + delta**2 * self.count * xs_count / tot_count
+        old_sum = self.var * self.count + delta ** 2 * self.count * xs_count / tot_count
         tot_sum = old_sum + new_sum
 
         self.mean += delta * xs_count / tot_count
@@ -330,16 +330,23 @@ MODIFIED_MODULES_DICT = {
     },
     "t5": {
         "attention": [
-            "SelfAttention.q",
-            "SelfAttention.k",
-            "SelfAttention.v",
-            "SelfAttention.o",
-            "EncDecAttention.q",
-            "EncDecAttention.k",
-            "EncDecAttention.v",
-            "EncDecAttention.o",
+            "layer.0.SelfAttention.q",
+            "layer.0.SelfAttention.k",
+            "layer.0.SelfAttention.v",
+            "layer.0.SelfAttention.o",
+            "layer.1.EncDecAttention.q",
+            "layer.1.EncDecAttention.k",
+            "layer.1.EncDecAttention.v",
+            "layer.1.EncDecAttention.o",
         ],
-        "mlp": ["DenseReluDense.wo", "DenseReluDense.wi_0", "DenseReluDense.wi_1"],
+        "mlp": [
+            "layer.1.DenseReluDense.wo",
+            "layer.1.DenseReluDense.wi_0",
+            "layer.1.DenseReluDense.wi_1",
+            "layer.2.DenseReluDense.wo",
+            "layer.2.DenseReluDense.wi_0",
+            "layer.2.DenseReluDense.wi_1",
+        ],
         "all": [
             "layer.0.SelfAttention.q",
             "layer.0.SelfAttention.k",
@@ -476,7 +483,7 @@ def regex_for_range(min_: int, max_: int) -> str:  # noqa
         return int(str(integer)[:-nines_count] + "9" * nines_count)
 
     def fill_by_zeros(integer, zeros_count):
-        return integer - integer % 10**zeros_count
+        return integer - integer % 10 ** zeros_count
 
     def range_to_pattern(start, stop):
         pattern = ""
