@@ -111,7 +111,7 @@ class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithVal
                     return_dict=True,
                     output_hidden_states=True
                 )
-                unfrozen_last_hidden_states = unfrozen_outputs.hidden_states[-1]
+                unfrozen_last_hidden_state = unfrozen_outputs.hidden_states[-1]
                 unfrozen_logits = unfrozen_outputs.logits
 
                 frozen_outputs = model.forward_hydra(
@@ -119,11 +119,11 @@ class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithVal
                     return_dict=True,
                     output_hidden_states=True
                 )
-                frozen_last_hidden_states = frozen_outputs.hidden_states[-1]
+                frozen_last_hidden_state = frozen_outputs.hidden_states[-1]
                 frozen_logits = frozen_outputs.logits
 
                 hs_diff = torch.sum(
-                    unfrozen_last_hidden_states - frozen_last_hidden_states
+                    unfrozen_last_hidden_state - frozen_last_hidden_state
                 ).item()
                 logits_diff = torch.sum(unfrozen_logits - frozen_logits).item()
 
@@ -162,8 +162,8 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
     _supported_args = {}
 
     def setUp(self):
-        self.dummy_text = "Translate this text to French: Hello, my dog is cute"
-        self.dummy_label = "Bonjour, mon chien est mignon"
+        self.dummy_encoder_text = "Translate this text to French: Hello, my dog is cute"
+        self.dummy_decoder_text = "Bonjour, mon chien est mignon"
 
     def tearDown(self):
         gc.collect()  # Try to free up memory
@@ -173,18 +173,19 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
         tokenizer.sep_token = "<sep>"
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
+
+        encoder_inputs = tokenizer(
+            self.dummy_encoder_text,
+            truncation=True,
+            padding="max_length",
+            max_length=10,
+            return_tensors="pt"
+        )
+        decoder_inputs = tokenizer(self.dummy_decoder_text, return_tensors="pt")
         return {
-            **tokenizer(
-                self.dummy_text,
-                truncation=True,
-                padding="max_length",
-                max_length=10,
-                return_tensors="pt"
-            ),
-            "decoder_input_ids": tokenizer.encode(
-                self.dummy_label,
-                return_tensors="pt"
-            )
+            **encoder_inputs,
+            "decoder_input_ids": decoder_inputs.input_ids,
+            "decoder_attention_mask": decoder_inputs.attention_mask,
         }
 
     def test_forward(self):
@@ -250,7 +251,7 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
                     return_dict=True,
                     output_hidden_states=True
                 )
-                unfrozen_last_hidden_states = unfrozen_outputs.hidden_states[-1]
+                unfrozen_last_hidden_state = unfrozen_outputs.decoder_hidden_states[-1]
                 unfrozen_logits = unfrozen_outputs.logits
 
                 frozen_outputs = model.forward_hydra(
@@ -258,11 +259,11 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
                     return_dict=True,
                     output_hidden_states=True
                 )
-                frozen_last_hidden_states = frozen_outputs.hidden_states[-1]
+                frozen_last_hidden_state = frozen_outputs.decoder_hidden_states[-1]
                 frozen_logits = frozen_outputs.logits
 
                 hs_diff = torch.sum(
-                    unfrozen_last_hidden_states - frozen_last_hidden_states
+                    unfrozen_last_hidden_state - frozen_last_hidden_state
                 ).item()
                 logits_diff = torch.sum(unfrozen_logits - frozen_logits).item()
 
@@ -282,9 +283,8 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
                     output_hidden_states=True
                 )
                 unfrozen_logits = unfrozen_outputs.logits
-                frozen_logits = model.frozen_head.lm_head(
-                    unfrozen_outputs.hidden_states[-1].to(torch.float32)
-                )
+                last_hidden_state = unfrozen_outputs.decoder_hidden_states[-1]
+                frozen_logits = model.frozen_head.lm_head(last_hidden_state)
                 diff = torch.sum(unfrozen_logits - frozen_logits).item()
                 self.assertEqual(diff, 0)
 

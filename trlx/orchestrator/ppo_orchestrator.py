@@ -142,7 +142,8 @@ class PPOOrchestrator(Orchestrator):
                             input_ids=query_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=response_tensors,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
                         ref_logits = self.ref_model(
                             input_ids=query_tensors,
@@ -168,14 +169,14 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = self.trainer.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
-                        ref_logits, _, *_ = self.ref_model(
+                        ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                         ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":

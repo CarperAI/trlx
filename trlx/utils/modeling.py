@@ -93,6 +93,19 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         return supported_kwargs, unsupported_kwargs
 
     @classmethod
+    def from_config(cls, config):
+        """Instantiates the underlying base model classes of the library
+        from a configuration.
+
+        Note:
+            Loading a model from its configuration file does **not** load the model weights.
+            It only affects the model's configuration. Use :func:`~transformers.AutoModel.from_pretrained` to load
+            the model weights
+        """
+        pretrained_model = cls._auto_model_parent_class.from_pretrained(config)
+        return pretrained_model
+
+    @classmethod
     def from_pretrained(  # noqa: max-complexity
         cls,
         pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
@@ -305,6 +318,19 @@ def findattr(obj, attrs: Tuple[str]) -> Union[object, None]:
     raise ValueError(f"Could not find an attribute from `{attrs}` in `{obj}`")
 
 
+def hf_get_decoder(model: nn.Module) -> nn.Module:
+    """Returns the causal decoder backbone of the specified HuggingFace transformers
+    model.
+    NOTE: Different model configurations have different causal decoder attribute
+    names.
+        - transformer: (GPT2LMHeadModel, GPTJConfig)
+        - model.decoder: (OPTConfig, BloomConfig)
+        - gpt_neox: (GPTNeoXConfig)
+    """
+    decoder_attrs = ("transformer", "model.decoder", "gpt_neox", "decoder")
+    return findattr(model, decoder_attrs)
+
+
 def hf_get_decoder_final_norm(model: nn.Module) -> float:
     """Returns the final (layer) norm of the specified decoder.
     NOTE: Different model configurations have different final norm attribute names.
@@ -338,7 +364,7 @@ def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
     return findattr(model, hidden_layers_attrs)
 
 
-def hf_get_lm_head(model: transformers.AutoModelForCausalLM) -> nn.Module:
+def hf_get_lm_head(model: nn.Module) -> nn.Module:
     """Returns the language modeling (lm) head of the specified HuggingFace
     transformers model.
     NOTE: Different model configurations have different `lm_head` attribute names.
