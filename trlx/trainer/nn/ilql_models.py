@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
+from torchtyping import TensorType
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
@@ -33,11 +34,13 @@ def topk_mask(xs: torch.FloatTensor, k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
 
-def batched_index_select(x, idxs, dim):
+def batched_index_select(
+    x: TensorType["batch", "seq_len", "hidden"],
+    idxs: TensorType["batch", "index_len"],
+    dim: int,
+) -> TensorType["batch", "index_len", "hidden"]:
     """
-    x: [batch, seq, hidden]
-    idxs: [batch, idxs_seq]
-    returns: [batch, idxs_seq, hidden]
+    Gather vectors at idxs along dim from x
     """
     idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
     return x.gather(dim=dim, index=idxs)
