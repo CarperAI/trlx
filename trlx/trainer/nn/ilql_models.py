@@ -107,9 +107,7 @@ class ILQLConfig(MethodConfig):
         loss_cql = sum(cql_loss(q) for q in qs)
 
         # select logits from continuations
-        action_logits = logits.gather(
-            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, dsize)
-        )
+        action_logits = batched_index_select(logits, labels.actions_ixs, dim=1)
         cross_entropy = F.cross_entropy(
             action_logits.reshape(-1, dsize),
             actions.reshape(-1),

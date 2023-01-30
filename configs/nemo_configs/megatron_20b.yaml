@@ -47,7 +47,7 @@ exp_manager:
 
 model:
   micro_batch_size: 2
-  global_batch_size:  128 #2048
+  global_batch_size:  16 #2048
   tensor_model_parallel_size: 4
   pipeline_model_parallel_size: 1
   resume_from_checkpoint: null # manually set the checkpoint file to load from
@@ -72,12 +72,12 @@ model:
 
 
   ## Activation Checkpointing
-  activations_checkpoint_granularity: null # 'selective' #'selective' #'selective'  # 'selective' or 'full'
-  activations_checkpoint_method: null # 'uniform' #'uniform' # 'uniform' # 'block' # 'uniform', 'block', not used with 'selective'
+  activations_checkpoint_granularity:  'selective' #'selective'  # 'selective' or 'full'
+  activations_checkpoint_method: 'uniform' # 'uniform', 'block', not used with 'selective'
   activations_checkpoint_num_layers: null # not used with 'selective'
 
   ## Sequence Parallelism
-  sequence_parallel: False # True
+  sequence_parallel: True
 
   tokenizer:
     library: 'megatron'
