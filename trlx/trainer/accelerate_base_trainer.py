@@ -76,11 +76,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if (
-            config.train.tracker is not None
-            and self.accelerator.is_main_process
-            and not ray.is_initialized()
-        ):
+        if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -114,6 +110,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 self.accelerator.init_trackers(
                     project_name=self.config.train.project_name,
                     config=config_dict_flat,
+                )
+            elif config.train.tracker is None:
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name
                 )
             else:
                 raise ValueError(
