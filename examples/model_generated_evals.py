@@ -6,8 +6,8 @@ EVAL_PATH = "https://raw.githubusercontent.com/anthropics/evals/main/advanced-ai
 PERSONA_PATH = "https://raw.githubusercontent.com/anthropics/evals/main/persona/anti-immigration.jsonl"
 evals = pandas.read_json(EVAL_PATH, lines=True)
 
-from transformers import pipeline
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
 
 def run_eval(model_name="gpt2", eval_path=EVAL_PATH):
     nlp = pipeline("text-generation", model=model_name)
