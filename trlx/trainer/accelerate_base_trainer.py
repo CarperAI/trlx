@@ -518,7 +518,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             do_save = torch.tensor(do_save, device=self.accelerator.device)
                             torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
-                                self.save("best_checkpoint")
+                                best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
+                                print_rank_0(f"saving the best state so far into {best_path}")
+                                self.save(best_path)
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():
