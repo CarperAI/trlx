@@ -503,16 +503,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         results = self.evaluate()
                         stats.update(results)
 
-                        # FIXME: seems to not work with zero and barriers don't seem to help
-                        if (
-                            self.config.train.save_best
-                            and int(os.environ.get("DEEPSPEED_ZERO_STAGE", -1)) == -1
-                        ):
-                            if (
-                                "reward/mean" in stats
-                                and stats["reward/mean"] > best_reward
-                            ):
-                                best_reward = stats["reward/mean"]
+                        # always save checkpoint with the greatest mean reward
+                        if self.config.train.save_best:
+                            if stats.get("reward/mean", -float("inf")) > best_reward:
+                                best_reward = stats.get("reward/mean")
+                                do_save = True
+                            # in case ILQL reports reward estimate as one of its metrics
+                            elif stats.get("metrics/reward", -float("inf")) > best_reward:
+                                best_reward = stats.get("metrics/reward")
+                                do_save = True
+                            else:
+                                do_save = False
+
+                            do_save = torch.tensor(do_save, device=self.accelerator.device)
+                            torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                            if do_save:
                                 self.save("best_checkpoint")
 
                         # Report the metrics to Ray Tune.
