@@ -661,22 +661,28 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(True)
 
-        # # NeMo generate resets the microbatch calculator
-        # from apex.transformer.pipeline_parallel.utils import (
-        #     _reconfigure_microbatch_calculator,
-        # )
-        # from nemo.utils import AppState
+        # NeMo generate resets the microbatch calculator
+        from apex.transformer.pipeline_parallel.utils import (
+            _reconfigure_microbatch_calculator,
+        )
+        from nemo.utils import AppState
 
-        # _reconfigure_microbatch_calculator(
-        #     rank=AppState().global_rank,
-        #     rampup_batch_size=None,
-        #     global_batch_size=self.cfg.global_batch_size,
-        #     micro_batch_size=self.cfg.micro_batch_size,
-        #     data_parallel_size=AppState().data_parallel_size,
-        # )
+        _reconfigure_microbatch_calculator(
+            rank=AppState().global_rank,
+            rampup_batch_size=None,
+            global_batch_size=self.cfg.global_batch_size,
+            micro_batch_size=self.cfg.micro_batch_size,
+            data_parallel_size=AppState().data_parallel_size,
+        )
 
         avg_metric = list(avg_metrics.values())[0]
         return -torch.as_tensor(avg_metric).cuda()
+
+    def validation_epoch_end(self, outputs: List[torch.Tensor]):
+        avg_metric = torch.stack(outputs).mean()
+        self.log(
+            "val_loss", avg_metric, prog_bar=True, rank_zero_only=True, sync_dist=True
+        )
 
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
