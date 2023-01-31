@@ -312,7 +312,9 @@ class ILQLGPT(MegatronGPTModel):
         return torch.utils.data.DataLoader(
             dataset,
             batch_sampler=batch_sampler,
-            num_workers=self.cfg.data.num_workers,
+            # For some reason this causes a crash when using >0 workers
+            # with grad accumulation > 1
+            num_workers=0,
             pin_memory=True,
             collate_fn=collate_fn,
         )
