@@ -383,7 +383,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # additionally log any other metrics
                 if self.metric_fn:
                     metric_time = time()
-                    metrics = self.metric_fn(str_samples)
+                    metrics = self.metric_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
