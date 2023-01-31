@@ -509,17 +509,24 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 best_reward = stats.get("reward/mean")
                                 do_save = True
                             # in case ILQL reports reward estimate as one of its metrics
-                            elif stats.get("metrics/reward", -float("inf")) > best_reward:
+                            elif (
+                                stats.get("metrics/reward", -float("inf")) > best_reward
+                            ):
                                 best_reward = stats.get("metrics/reward")
                                 do_save = True
                             else:
                                 do_save = False
-
-                            do_save = torch.tensor(do_save, device=self.accelerator.device)
-                            torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                            do_save = torch.tensor(
+                                do_save, device=self.accelerator.device
+                            )
+                            torch.distributed.all_reduce(
+                                do_save, torch.distributed.ReduceOp.MAX
+                            )
                             if do_save:
                                 best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
-                                print_rank_0(f"saving the best state so far into {best_path}")
+                                print_rank_0(
+                                    f"saving the best state so far into {best_path}"
+                                )
                                 self.save(best_path)
 
                         # Report the metrics to Ray Tune.
