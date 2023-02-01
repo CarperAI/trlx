@@ -1,12 +1,14 @@
+import logging
 import math
 import os
 import random
 import subprocess
+import sys
 import time
 from dataclasses import is_dataclass
 from enum import Enum
 from numbers import Number
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Optional
 
 import numpy as np
 import torch
@@ -21,6 +23,57 @@ def print_rank_0(*message):
     """
     if os.environ.get("RANK", "0") == "0":
         print(*message)
+
+
+class MultiProcessAdapter(logging.LoggerAdapter):
+    """A logger adapter for handling multi-process logging"""
+
+    def log(self, level, msg, *args, **kwargs):
+        """
+        Consumes an additional kwarg called `ranks` to determine which processes should log.
+        NOTE: To specify all processes, pass in an empty list `ranks=[]`
+
+        Default: ["0"], i.e. only the main process logs
+        """
+        # By default, silence all non-main processes
+        ranks = kwargs.pop("ranks", ["0"])
+        should_log = os.environ.get("RANK", "0") in ranks or len(ranks) == 0
+        if self.isEnabledFor(level) and should_log:
+            msg, kwargs = self.process(msg, kwargs)
+            self.logger._log(level, msg, args, **kwargs)
+
+    def process(self, msg, kwargs):
+        this_rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        return f"[RANK {this_rank}] {msg}", kwargs
+
+
+def get_logger(name: str, level: Optional[int] = None) -> MultiProcessAdapter:
+    """
+    Returns a `logging.Logger` for `name` that can handle multiple processes
+
+    Args:
+        name: Name of the logger
+        level: Logging level. Default: `TRLX_LOG_LEVEL` environment variable if
+            present, otherwise `logging.INFO`
+
+    Usage:
+
+    >> logger = get_logger(__name__)
+    >> logger.debug("Check the...", ranks=["0", "1"])  # Only main and rank 1 log
+    """
+    logger = logging.getLogger(name)
+    if level is None:
+        level = os.environ.get("TRLX_LOG_LEVEL", logging.INFO)
+        level = logging.getLevelName(level)
+    logger.setLevel(level)
+    logger.propagate = False
+
+    handler = logging.StreamHandler(stream=sys.stdout)
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] " "[%(filename)s:%(lineno)d:%(funcName)s] %(message)s")
+    handler.setLevel(level)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return MultiProcessAdapter(logger, {})
 
 
 def significant(x: Number, ndigits=2) -> Number:

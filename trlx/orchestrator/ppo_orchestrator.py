@@ -1,16 +1,21 @@
+import os
 from time import time
 
 import ray
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.trainer import BaseRLTrainer
-from trlx.utils import Clock
+from trlx.utils import Clock, get_logger
 from trlx.utils.modeling import RunningMoments, logprobs_from_logits
+
+
+logger = get_logger(__name__)
 
 
 @register_orchestrator
@@ -55,9 +60,18 @@ class PPOOrchestrator(Orchestrator):
         Takes `num_rollouts` prompts from `pipeline`, samples model and computes the
         KL againts a reference model. It then appends PPOElements to trainer's `store`
         """
+        logger.info(f"Collecting rollouts")
+        tbar = tqdm(
+            total=num_rollouts,
+            disable=not os.environ.get("RANK", 0) == "0",
+            position=0,
+            leave=False,
+        )
+
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
+        
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:
@@ -229,6 +243,8 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
+            tbar.update(n if n < num_rollouts else num_rollouts)
+        tbar.close()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time

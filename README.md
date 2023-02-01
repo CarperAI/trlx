@@ -63,6 +63,15 @@ accelerate launch examples/simulacra.py
 python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 ```
 
+## Logging
+
+trlX uses the standard Python `logging` library to log training information to the console. The default logger is set to `INFO` level, which means that `INFO`, `WARNING`, `ERROR`, and `CRITICAL` level messages will be printed to standard output. To control the verbosity, you can set the `TRLX_LOG_LEVEL` environment variable to one of the standard logging [level names](https://docs.python.org/3/library/logging.html#logging-levels).
+
+The following example sets the log level to `DEBUG` and prints all messages from trlX to the console.
+
+```
+export TRLX_LOG_LEVEL=DEBUG
+```
 
 ## Contributing
 
