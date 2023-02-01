@@ -14,9 +14,7 @@ class TestHydraHead(unittest.TestCase):
     def setUpClass(cls):
         print("Testing Hydra model...")
         config = TRLConfig.load_yaml("configs/test_config.yml")
-        cls.hydra_model = CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen
-        )
+        cls.hydra_model = CausalLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
 
         tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
         tokenizer.pad_token = tokenizer.eos_token
@@ -33,15 +31,11 @@ class TestHydraHead(unittest.TestCase):
     def test_lm_heads(self):
         with torch.no_grad():
             unfrozen_outputs = TestHydraHead.hydra_model(
-                **TestHydraHead.dummy_inputs,
-                return_dict=True,
-                output_hidden_states=True
+                **TestHydraHead.dummy_inputs, return_dict=True, output_hidden_states=True
             )
             unfrozen_logits = unfrozen_outputs.logits
             last_hidden_states = unfrozen_outputs.hidden_states[-1].to(torch.float32)
-            frozen_logits = TestHydraHead.hydra_model.frozen_head.lm_head(
-                last_hidden_states
-            )
+            frozen_logits = TestHydraHead.hydra_model.frozen_head.lm_head(last_hidden_states)
             diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(diff, 0)
 
@@ -53,24 +47,18 @@ class TestHydraHead(unittest.TestCase):
     def test_forward(self):
         with torch.no_grad():
             unfrozen_outputs = TestHydraHead.hydra_model(
-                **TestHydraHead.dummy_inputs,
-                return_dict=True,
-                output_hidden_states=True
+                **TestHydraHead.dummy_inputs, return_dict=True, output_hidden_states=True
             )
             unfrozen_last_hidden_states = unfrozen_outputs.hidden_states[-1]
             unfrozen_logits = unfrozen_outputs.logits
 
             frozen_outputs = TestHydraHead.hydra_model.forward_hydra(
-                **TestHydraHead.dummy_inputs,
-                return_dict=True,
-                output_hidden_states=True
+                **TestHydraHead.dummy_inputs, return_dict=True, output_hidden_states=True
             )
             frozen_last_hidden_states = frozen_outputs.hidden_states[-1]
             frozen_logits = frozen_outputs.logits
 
-            hs_diff = torch.sum(
-                unfrozen_last_hidden_states - frozen_last_hidden_states
-            ).item()
+            hs_diff = torch.sum(unfrozen_last_hidden_states - frozen_last_hidden_states).item()
             logits_diff = torch.sum(unfrozen_logits - frozen_logits).item()
             self.assertEqual(hs_diff, 0)
             self.assertEqual(logits_diff, 0)
@@ -86,18 +74,10 @@ class TestStatistics(unittest.TestCase):
         cls.a4 = torch.tensor([-10, -1, 0, 1, 10], dtype=float)
 
     def test_running_moments(self):
-        assert torch.isclose(
-            self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6
-        )
+        assert torch.isclose(self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6)
 
         a = torch.hstack((self.a1, self.a2, self.a3, self.a4))
         assert torch.isclose(self.m.mean, a.mean(), atol=1e-6)

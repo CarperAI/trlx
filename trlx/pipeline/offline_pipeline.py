@@ -17,16 +17,11 @@ class PromptPipeline(BasePipeline):
 
     def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
         super().__init__()
-        model_inputs = tokenizer(
-            prompts, truncation=True, padding=False, max_length=max_prompt_length
-        )
+        model_inputs = tokenizer(prompts, truncation=True, padding=False, max_length=max_prompt_length)
         prompts = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]
         self.tokenizer = tokenizer
-        self.prompts = [
-            {"input_ids": prompt, "attention_mask": mask}
-            for prompt, mask in zip(prompts, attention_mask)
-        ]
+        self.prompts = [{"input_ids": prompt, "attention_mask": mask} for prompt, mask in zip(prompts, attention_mask)]
 
     def __getitem__(self, ix: int):
         return self.prompts[ix]
@@ -35,12 +30,8 @@ class PromptPipeline(BasePipeline):
         return len(self.prompts)
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
-        collate_fn = (
-            DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
-        )
-        return DataLoader(
-            self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle
-        )
+        collate_fn = DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
+        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 
 class ILQLRolloutStorage(BaseRolloutStore):
@@ -48,9 +39,7 @@ class ILQLRolloutStorage(BaseRolloutStore):
     Rollout storage for training ILQL
     """
 
-    def __init__(
-        self, input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones
-    ):
+    def __init__(self, input_ids, attention_mask, rewards, states_ixs, actions_ixs, dones):
         super().__init__()
 
         self.input_ids = input_ids
@@ -76,26 +65,12 @@ class ILQLRolloutStorage(BaseRolloutStore):
     def create_loader(self, batch_size: int):
         def collate_fn(elems: Iterable[ILQLElement]):
             return ILQLBatch(
-                pad_sequence(
-                    [x.input_ids for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.attention_mask for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.rewards for x in elems], batch_first=True, padding_value=0.0
-                ),
-                pad_sequence(
-                    [x.states_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.actions_ixs for x in elems], batch_first=True, padding_value=0
-                ),
-                pad_sequence(
-                    [x.dones for x in elems], batch_first=True, padding_value=0
-                ),
+                pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
+                pad_sequence([x.attention_mask for x in elems], batch_first=True, padding_value=0),
+                pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
+                pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
+                pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
+                pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
             )
 
-        return DataLoader(
-            self, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
-        )
+        return DataLoader(self, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)

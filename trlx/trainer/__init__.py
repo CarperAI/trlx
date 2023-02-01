@@ -70,9 +70,7 @@ class BaseRLTrainer:
         pass
 
     @abstractmethod
-    def sample(
-        self, prompts: Iterable[str], length: int, n_samples: int
-    ) -> Iterable[str]:
+    def sample(self, prompts: Iterable[str], length: int, n_samples: int) -> Iterable[str]:
         """
         Sample from the language. Takes prompts and maximum length to generate.
 

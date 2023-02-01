@@ -12,16 +12,12 @@ from trlx.ray_tune import get_param_space, get_tune_config
 from trlx.ray_tune.wandb import create_report, log_trials
 
 
-def tune_function(
-    train_function, param_space: dict, tune_config: dict, resources: dict
-):
+def tune_function(train_function, param_space: dict, tune_config: dict, resources: dict):
     tuner = tune.Tuner(
         tune.with_resources(train_function, resources=resources),
         param_space=param_space,
         tune_config=tune.TuneConfig(**tune_config),
-        run_config=ray.air.RunConfig(
-            local_dir="ray_results", callbacks=[CSVLoggerCallback()]
-        ),
+        run_config=ray.air.RunConfig(local_dir="ray_results", callbacks=[CSVLoggerCallback()]),
     )
 
     results = tuner.fit()
@@ -52,15 +48,9 @@ if __name__ == "__main__":
         required=True,
         help="The config file defining the param_space.",
     )
-    parser.add_argument(
-        "--num-cpus", type=int, default=4, help="Number of CPUs to use per exp."
-    )
-    parser.add_argument(
-        "--num-gpus", type=int, default=1, help="Number of GPUs to use per exp."
-    )
-    parser.add_argument(
-        "-y", "--assume-yes", action="store_true", help="Don't ask for confirmation"
-    )
+    parser.add_argument("--num-cpus", type=int, default=4, help="Number of CPUs to use per exp.")
+    parser.add_argument("--num-gpus", type=int, default=1, help="Number of GPUs to use per exp.")
+    parser.add_argument("-y", "--assume-yes", action="store_true", help="Don't ask for confirmation")
     parser.add_argument(
         "--server-address",
         type=str,

@@ -272,9 +272,7 @@ class TRLConfig:
 
         for param in config:
             if param not in updates:
-                raise ValueError(
-                    f"parameter {param} is not present in the config (typo or a wrong config)"
-                )
+                raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 
         return cls.from_dict(merged)
 

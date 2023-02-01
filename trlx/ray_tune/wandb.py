@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import wandb
-
 from trlx.utils import significant
 
 import wandb.apis.reports as wb  # isort: skip
@@ -31,11 +30,7 @@ ray_info = [
 def parse_result(result):
     out = {}
     for k, v in result.items():
-        if (
-            isinstance(v, (int, float))
-            and not k.startswith("config.")
-            and k not in ray_info
-        ):
+        if isinstance(v, (int, float)) and not k.startswith("config.") and k not in ray_info:
             out[k] = v
 
     return out
@@ -152,11 +147,7 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
                 get_param_importance(tune_config["metric"]),
                 get_scatter_plot(tune_config["metric"]),
             ],
-            runsets=[
-                wb.Runset(project=project_name).set_filters_with_python_expr(
-                    f'group == "{trial_path}"'
-                )
-            ],
+            runsets=[wb.Runset(project=project_name).set_filters_with_python_expr(f'group == "{trial_path}"')],
         ),
     ]
 
@@ -189,11 +180,7 @@ def create_report(project_name, param_space, tune_config, trial_path, best_confi
         ),
         wb.PanelGrid(
             panels=line_plot_panels,
-            runsets=[
-                wb.Runset(project=project_name).set_filters_with_python_expr(
-                    f'group == "{trial_path}"'
-                )
-            ],
+            runsets=[wb.Runset(project=project_name).set_filters_with_python_expr(f'group == "{trial_path}"')],
         ),
     ]
 

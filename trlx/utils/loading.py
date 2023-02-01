@@ -23,9 +23,7 @@ def get_trainer(name: str) -> Callable:
     if name in _TRAINERS:
         return _TRAINERS[name]
     else:
-        raise Exception(
-            "Error: Trying to access a trainer that has not been registered"
-        )
+        raise Exception("Error: Trying to access a trainer that has not been registered")
 
 
 def get_pipeline(name: str) -> Callable:
@@ -36,9 +34,7 @@ def get_pipeline(name: str) -> Callable:
     if name in _DATAPIPELINE:
         return _DATAPIPELINE[name]
     else:
-        raise Exception(
-            "Error: Trying to access a pipeline that has not been registered"
-        )
+        raise Exception("Error: Trying to access a pipeline that has not been registered")
 
 
 def get_orchestrator(name: str) -> Callable:
@@ -49,6 +45,4 @@ def get_orchestrator(name: str) -> Callable:
     if name in _ORCH:
         return _ORCH[name]
     else:
-        raise Exception(
-            "Error: Trying to access an orchestrator that has not been registered"
-        )
+        raise Exception("Error: Trying to access an orchestrator that has not been registered")

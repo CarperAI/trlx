@@ -372,9 +372,7 @@ def basic_stats(dataset, tokenizer):
     """
     length_list = []
     for examples in tqdm(dataset):
-        datapoint = tokenizer(
-            examples["input"] + " " + examples["output"] + "<|endoftext|>"
-        )
+        datapoint = tokenizer(examples["input"] + " " + examples["output"] + "<|endoftext|>")
         length_list.append(len(datapoint["input_ids"]))
     return {
         "max": max(length_list),

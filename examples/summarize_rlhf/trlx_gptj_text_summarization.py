@@ -3,12 +3,12 @@ import pathlib
 from typing import List
 
 import torch
-from datasets import load_dataset
 from reward_model.reward_model import GPTRewardModel
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
+from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
@@ -38,9 +38,7 @@ if __name__ == "__main__":
         batch_size = 2
         for i in range(0, len(samples), batch_size):
             sub_samples = samples[i : i + batch_size]
-            sub_samples = [
-                "<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples
-            ]
+            sub_samples = ["<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples]
             encodings_dict = rw_tokenizer(
                 sub_samples,
                 truncation=True,
@@ -69,8 +67,7 @@ if __name__ == "__main__":
                 tokenizer(
                     prompts[i].split("TL;DR:")[0],
                     truncation=True,
-                    max_length=max_length
-                    - 5,  # to make sure "TL;DR" dont get truncated
+                    max_length=max_length - 5,  # to make sure "TL;DR" dont get truncated
                 )["input_ids"],
                 skip_special_tokens=True,
             ).strip()
@@ -84,25 +81,19 @@ if __name__ == "__main__":
 
     def reward_fn(samples: List[str], **kwargs):
         original_samples = [text.split("TL;DR:")[0] + "TL;DR: " for text in samples]
-        original_samples = [
-            text + post_summary_dict[text.strip()] for text in original_samples
-        ]
+        original_samples = [text + post_summary_dict[text.strip()] for text in original_samples]
         original_scores = get_scores(original_samples)
         scores = get_scores(samples)
         norms_scores = scores - original_scores
         return norms_scores
 
-    config_path = pathlib.Path(__file__).parent.joinpath(
-        "configs/ppo_config_summ_gptj.yml"
-    )
+    config_path = pathlib.Path(__file__).parent.joinpath("configs/ppo_config_summ_gptj.yml")
     config = TRLConfig.load_yaml(config_path)
 
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
-    max_length_input = (
-        config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
-    )
+    max_length_input = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
     dataset = load_dataset("CarperAI/openai_summarize_tldr")
 
@@ -127,8 +118,6 @@ if __name__ == "__main__":
         config.model.model_path,
         reward_fn=reward_fn,
         prompts=train_prompts,
-        eval_prompts=val_prompts[
-            0:1000
-        ],  # sampling 1000 validation prompts for evaluation speed in training
+        eval_prompts=val_prompts[0:1000],  # sampling 1000 validation prompts for evaluation speed in training
         config=config,
     )

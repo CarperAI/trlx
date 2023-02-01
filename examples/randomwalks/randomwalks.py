@@ -5,9 +5,7 @@ import numpy as np
 import torch
 
 
-def generate_rand_int_excluding(
-    rng: np.random.RandomState, max: int, exclude: int
-) -> int:
+def generate_rand_int_excluding(rng: np.random.RandomState, max: int, exclude: int) -> int:
     """Random integer generator, excluding a specific number
 
     Args:
@@ -35,12 +33,7 @@ def generate_random_walks(  # noqa: max-complexity
     p_edge: float = 0.1,
     seed: int = 1002,
     gpt2_tokenizer: bool = False,
-) -> Tuple[
-    Callable[[List[str]], Dict[str, List[float]]],
-    List[str],
-    List[str],
-    torch.Tensor,
-]:
+) -> Tuple[Callable[[List[str]], Dict[str, List[float]]], List[str], List[str], torch.Tensor,]:
     """Generate random walks
 
     Args:
@@ -143,9 +136,7 @@ def generate_random_walks(  # noqa: max-complexity
     for start in set(range(n_nodes)) - {goal}:
         try:
             # Find the shortest path (up to the max_length)
-            shortest_path = nx.shortest_path(directional_graph, start, goal)[
-                :max_length
-            ]
+            shortest_path = nx.shortest_path(directional_graph, start, goal)[:max_length]
             shortest_lengths.append(len(shortest_path))
         except Exception:
             # If there is no path, use the maximum length instead
@@ -186,11 +177,7 @@ def generate_random_walks(  # noqa: max-complexity
             for node in range(len(sample)):
                 # If an invalid path is taken, set the length to the invalid
                 # path score
-                if (
-                    sample[node] >= n_nodes
-                    or node > 0
-                    and not adjacency_matrix[sample[node - 1], sample[node]]
-                ):
+                if sample[node] >= n_nodes or node > 0 and not adjacency_matrix[sample[node - 1], sample[node]]:
                     length = invalid_path_length
                     break
 

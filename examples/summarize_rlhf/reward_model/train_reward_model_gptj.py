@@ -1,16 +1,15 @@
 import os
 
 import torch
-from datasets import load_dataset
 from reward_model import GPTRewardModel
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
+from datasets import load_dataset
 
-def create_comparison_dataset(
-    path="CarperAI/openai_summarize_comparisons", split="train"
-):
+
+def create_comparison_dataset(path="CarperAI/openai_summarize_comparisons", split="train"):
     dataset = load_dataset(path, split=split)
     pairs = []
     for sample in tqdm(dataset):

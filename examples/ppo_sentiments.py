@@ -7,10 +7,10 @@ from typing import List
 
 import torch
 import yaml
-from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
+from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 
