@@ -648,15 +648,15 @@ class ILQLGPT(MegatronGPTModel):
             f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
         }
 
-        for k, v in avg_metrics.items():
-            self.log(
-                f"metrics/{k}",
-                v,
-                prog_bar=True,
-                rank_zero_only=True,
-                batch_size=len(input_ids),
-                sync_dist=True,
-            )
+        # for k, v in avg_metrics.items():
+        #     self.log(
+        #         f"metrics/{k}",
+        #         v,
+        #         prog_bar=True,
+        #         rank_zero_only=True,
+        #         batch_size=len(input_ids),
+        #         sync_dist=True,
+        #     )
 
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(True)
@@ -679,13 +679,21 @@ class ILQLGPT(MegatronGPTModel):
         )
 
         avg_metric = list(avg_metrics.values())[0]
-        return -torch.as_tensor(avg_metric).cuda()
+        return avg_metrics
 
-    def validation_epoch_end(self, outputs: List[torch.Tensor]):
-        avg_metric = torch.stack(outputs).mean()
-        self.log(
-            "val_loss", avg_metric, prog_bar=True, rank_zero_only=True, sync_dist=True
-        )
+    def validation_epoch_end(self, outputs: List[dict]):
+        outputs_soa = {
+            k: torch.as_tensor([d[k] for d in outputs]) for k in outputs[0].keys()
+        }
+        avg_outputs = {k: v.mean() for k, v in outputs_soa.items()}
+        for k, v in avg_outputs.items():
+            self.log(
+                f"val_metrics/{k}",
+                v,
+                prog_bar=True,
+                rank_zero_only=True,
+                sync_dist=True,
+            )
 
     def setup_optimizer_param_groups(self):
         # To support parameters without gradients, we need to manually
@@ -777,7 +785,7 @@ class ILQLGPT(MegatronGPTModel):
                 mp_rank = parallel_state.get_tensor_model_parallel_rank()
                 mp_size = parallel_state.get_tensor_model_parallel_world_size()
                 mp_group = parallel_state.get_tensor_model_parallel_group()
-                
+
                 if mp_rank == (mp_size - 1):
                     loss_for_mb = loss_for_mb * 1.0
                 else:

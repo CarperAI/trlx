@@ -25,7 +25,7 @@ class PromptPipeline(BasePipeline):
         self.str_prompts = prompts
         self.tokenizer = tokenizer
         self.prompts = [
-            { "prompt": prompt, "input_ids": tokens, "attention_mask": mask }
+            {"prompt": prompt, "input_ids": tokens, "attention_mask": mask}
             for prompt, tokens, mask in zip(prompts, prompt_tokens, attention_mask)
         ]
 

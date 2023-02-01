@@ -200,9 +200,12 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
             context_lengths = [len(x) for x in context_tokens]
             max_context = max(context_lengths)
-            
+
             pad_id = self.tokenizer.eos_token_id
-            padded = [x + [pad_id] * (max_context + max_new_tokens - len(x)) for x in context_tokens]
+            padded = [
+                x + [pad_id] * (max_context + max_new_tokens - len(x))
+                for x in context_tokens
+            ]
 
             return [
                 torch.as_tensor(padded, device="cpu"),
