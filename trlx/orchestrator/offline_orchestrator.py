@@ -61,10 +61,7 @@ class OfflineOrchestrator(Orchestrator):
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
         if self.trainer.tokenizer:
-            samples = [
-                tokenize_dialogue(s, self.trainer.tokenizer, max_length)
-                for s in samples
-            ]
+            samples = [tokenize_dialogue(s, self.trainer.tokenizer, max_length) for s in samples]
 
         all_input_ids = []
         all_actions_ixs = []
@@ -77,9 +74,7 @@ class OfflineOrchestrator(Orchestrator):
             actions_ixs = []
             for phrase in sample:
                 if isoutput:
-                    actions_ixs.append(
-                        torch.arange(length - 1, length + len(phrase) - 1)
-                    )
+                    actions_ixs.append(torch.arange(length - 1, length + len(phrase) - 1))
 
                 length += len(phrase)
                 isoutput = not isoutput
@@ -90,12 +85,8 @@ class OfflineOrchestrator(Orchestrator):
             all_states_ixs.append(states_ixs)
 
         if self.trainer.tokenizer:
-            prompt = self.trainer.tokenizer.decode(
-                all_input_ids[0][: all_states_ixs[0][1]]
-            )
-            response = self.trainer.tokenizer.decode(
-                all_input_ids[0][all_states_ixs[0][1] :]
-            )
+            prompt = self.trainer.tokenizer.decode(all_input_ids[0][: all_states_ixs[0][1]])
+            response = self.trainer.tokenizer.decode(all_input_ids[0][all_states_ixs[0][1] :])
             print_rank_0("[Sample example]")
             print_rank_0("Prompt: ", prompt)
             print_rank_0("Response: ", response)
