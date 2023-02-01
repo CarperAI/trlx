@@ -3,12 +3,12 @@ import pathlib
 from typing import List
 
 import torch
+from datasets import load_dataset
 from reward_model.reward_model import GPTRewardModel
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
-from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"

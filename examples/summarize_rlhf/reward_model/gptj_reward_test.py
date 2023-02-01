@@ -2,12 +2,11 @@ import random
 
 import numpy as np
 import torch
+from datasets import load_dataset
 from reward_model import GPTRewardModel
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
-
-from datasets import load_dataset
 
 
 def set_seed(seed_val=42):

@@ -1,11 +1,11 @@
 import pathlib
 from typing import List
 
+from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
-from datasets import load_dataset
 from trlx.data.configs import TRLConfig
 
 try:

@@ -2,9 +2,8 @@ import json
 
 import pandas as pd
 import torch
-from torch.utils.data import Dataset
-
 from datasets import load_dataset
+from torch.utils.data import Dataset
 
 
 def get_dataset_from_jsonl(jsonl_file, return_summary=True):
