@@ -104,7 +104,7 @@ class AllSummDataset(Dataset):
         if split == "valid":
             df = df.sample(n=5000)
         self.summarizes = []
-        for (i, row) in df.iterrows():
+        for i, row in df.iterrows():
             self.summarizes.append(f"Summarize: {row['text']}. TL;DR: {row['summary']}")
         self.tokenizer = tokenizer
         self.max_length = max_length

@@ -99,7 +99,6 @@ def generate_random_walks(  # noqa: max-complexity
 
     # Create n_walks samples
     for _ in range(n_walks):
-
         # Create a random starting node (that isn't already at the goal state)
         node: int = generate_rand_int_excluding(rng, n_nodes, goal)
 
@@ -109,7 +108,6 @@ def generate_random_walks(  # noqa: max-complexity
         # Do a series of steps, until we hit the maximum number of steps or the
         # goal state (whichever comes first)
         for _step in range(max_length - 1):
-
             # From the starting node, get all the nodes we can move to. Pick one
             # of these at random, and add it to the list of visited nodes
             node = rng.choice(np.nonzero(adjacency_matrix[node])[0])

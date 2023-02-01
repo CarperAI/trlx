@@ -550,7 +550,6 @@ class T5Branch(transformers.PreTrainedModel):
         use_cache: bool = False,
         output_attentions: bool = False,
     ):
-
         input_shape = input_ids.size()
         batch_size, seq_length = input_shape
 
@@ -564,7 +563,6 @@ class T5Branch(transformers.PreTrainedModel):
         encoder_decoder_position_bias = None
 
         for i, layer_module in enumerate(self.decoder.block):
-
             layer_outputs = layer_module(
                 hidden_states,  # size: (batch_size, seq_length, hidden_size)
                 attention_mask=extended_attention_mask,  # size: (batch_size, 1, seq_length, seq_length)
@@ -645,7 +643,6 @@ class GPTModelBranch(transformers.PreTrainedModel):
         return_dict: Optional[bool] = False,
         position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
-
         batch_size = hidden_states.size()[0]
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -706,7 +703,6 @@ class GPTModelBranch(transformers.PreTrainedModel):
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(zip(self.transformer_blocks, past_key_values)):
-
             # Model parallel
             if self.model_parallel:
                 torch.cuda.set_device(hidden_states.device)
@@ -1067,7 +1063,6 @@ class BloomModelBranch(transformers.PreTrainedModel):
         causal_mask = combined_attention_mask
 
         for i, (block, layer_past) in enumerate(zip(self.transformer_blocks, past_key_values)):
-
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 

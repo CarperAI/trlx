@@ -140,7 +140,6 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
 
 
 if __name__ == "__main__":
-
     model, tokenizer = load_model("CarperAI/openai_summarize_tldr_ppo")
 
     test_post_list = [sample["prompt"] for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")]
