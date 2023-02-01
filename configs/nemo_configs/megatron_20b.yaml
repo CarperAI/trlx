@@ -12,7 +12,7 @@ trainer:
   max_epochs: -1 # PTL default. In practice, max_steps will be reached first.
   max_steps: 1000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
   log_every_n_steps: 1
-  val_check_interval: 100
+  val_check_interval: 50
   # check_val_every_n_epoch: null
   limit_val_batches: 2
   limit_test_batches: 0

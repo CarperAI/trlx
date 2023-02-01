@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Iterable, Sequence, Union, cast
 
 import torch
-from nemo.collections.nlp.modules.common.text_generation_strategy import pad_batch
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
@@ -197,13 +196,16 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
-            context_tokens, context_lengths = pad_batch(
-                context_tokens,
-                self.tokenizer.eos_token_id,
-                self.model.cfg.encoder_seq_length,
-            )
+            max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
+
+            context_lengths = [len(x) for x in context_tokens]
+            max_context = max(context_lengths)
+            
+            pad_id = self.tokenizer.eos_token_id
+            padded = [x + [pad_id] * (max_context + max_new_tokens - len(x)) for x in context_tokens]
+
             return [
-                torch.as_tensor(context_tokens, device="cpu"),
+                torch.as_tensor(padded, device="cpu"),
                 torch.as_tensor(context_lengths, device="cpu"),
             ]
 

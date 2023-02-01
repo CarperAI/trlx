@@ -627,6 +627,7 @@ class ILQLGPT(MegatronGPTModel):
 
         input_ids, lengths = batch
         input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
+
         input_ids, lengths = to_device(
             (input_ids, lengths), torch.cuda.current_device(), non_blocking=True
         )
@@ -728,9 +729,6 @@ class ILQLGPT(MegatronGPTModel):
                     eod_mask_loss=False,
                 )
 
-                mp_rank = parallel_state.get_tensor_model_parallel_rank()
-                mp_size = parallel_state.get_tensor_model_parallel_world_size()
-
                 model_output = model(
                     input_ids=inputs,
                     position_ids=position_ids.long(),
@@ -776,13 +774,16 @@ class ILQLGPT(MegatronGPTModel):
                 # for k, v in stats.items():
                 #     print(f"STATS: {k} {v}")
                 #     self.log(k, v)
-
+                mp_rank = parallel_state.get_tensor_model_parallel_rank()
+                mp_size = parallel_state.get_tensor_model_parallel_world_size()
+                mp_group = parallel_state.get_tensor_model_parallel_group()
+                
                 if mp_rank == (mp_size - 1):
                     loss_for_mb = loss_for_mb * 1.0
                 else:
                     loss_for_mb = loss_for_mb * 0.0
 
-                torch.distributed.barrier()
+                torch.distributed.barrier(mp_group)
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 

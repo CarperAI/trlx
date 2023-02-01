@@ -20,13 +20,13 @@ class PromptPipeline(BasePipeline):
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length
         )
-        prompts = model_inputs["input_ids"]
+        prompt_tokens = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]
         self.str_prompts = prompts
         self.tokenizer = tokenizer
         self.prompts = [
-            {"input_ids": prompt, "attention_mask": mask}
-            for prompt, mask in zip(prompts, attention_mask)
+            { "prompt": prompt, "input_ids": tokens, "attention_mask": mask }
+            for prompt, tokens, mask in zip(prompts, prompt_tokens, attention_mask)
         ]
 
     def __getitem__(self, ix: int):
