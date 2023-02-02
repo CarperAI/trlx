@@ -283,7 +283,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
-        logger.info("Evaluating the model...")
+        logger.info("Evaluating model")
 
         stats = {}
         table = []
@@ -360,7 +360,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
-                    logger.info("Computing rewards...")
+                    logger.info("Computing rewards")
                     rewards = torch.tensor(
                         self.reward_fn(
                             samples=str_samples,
@@ -378,7 +378,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 # additionally log any other metrics
                 if self.metric_fn:
-                    logger.info("Computing metrics...")
+                    logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(
                         samples=str_samples,
@@ -407,7 +407,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 table.append(list(zip(*columns_data)))
 
         # Log and display evaluation metrics
-        logger.info("Summarizing evaluation...")
+        logger.info("Summarizing evaluation")
         if self.accelerator.is_main_process:
             rows = sum(list(map(list, zip(*table))), [])
 
@@ -435,7 +435,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
-        logger.info("Starting learning...")
+        logger.info("Starting training")
 
         self.generate_sweep_kwarg = None
         for k, v in self.config.method.gen_kwargs.items():
