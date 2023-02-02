@@ -401,7 +401,7 @@ class ILQLGPT(MegatronGPTModel):
 
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
-    def training_step(self, batch: ILQLBatch, batch_idx: int):
+    def training_step(self, batch: ILQLBatch, batch_idx: int):  # noqa: C901
         """
         Our dataloaders produce a micro-batch and then we fetch
         a number of microbatches depending on the global batch size and model parallel size
@@ -438,14 +438,14 @@ class ILQLGPT(MegatronGPTModel):
         if self.with_distributed_adam:
             if self.megatron_amp_o2:
                 # copy grads to main grad
-                custom_sync_context_handler = lambda: self._optimizer.no_sync(
-                    greedy_grad_copy=True
-                )
+                def custom_sync_context_handler():
+                    self._optimizer.no_sync(greedy_grad_copy=True)
+
             else:
                 # keep grad tensors around
-                custom_sync_context_handler = lambda: self._optimizer.no_sync(
-                    greedy_grad_copy=False
-                )
+                def custom_sync_context_handler():
+                    self._optimizer.no_sync(greedy_grad_copy=False)
+
         else:
             if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
                 custom_sync_context_handler = self._optimizer.no_sync
@@ -523,7 +523,6 @@ class ILQLGPT(MegatronGPTModel):
             # when using pipeline parallelism the first and last stage must keep embeddings in sync
             self.allreduce_first_last_embeddings()
 
-        ## logging
         # we can only log on one rank if it is rank zero so we broadcast from last rank
         # we can avoid this broadcast by updating the PTL log function to accept specific ranks
         torch.distributed.broadcast(loss_mean, get_last_rank())
@@ -683,7 +682,6 @@ class ILQLGPT(MegatronGPTModel):
             data_parallel_size=AppState().data_parallel_size,
         )
 
-        avg_metric = list(avg_metrics.values())[0]
         return avg_metrics
 
     def validation_epoch_end(self, outputs: List[dict]):
