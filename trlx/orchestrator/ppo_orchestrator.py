@@ -14,7 +14,6 @@ from trlx.trainer import BaseRLTrainer
 from trlx.utils import Clock, get_logger
 from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 
-
 logger = get_logger(__name__)
 
 
@@ -60,7 +59,7 @@ class PPOOrchestrator(Orchestrator):
         Takes `num_rollouts` prompts from `pipeline`, samples model and computes the
         KL againts a reference model. It then appends PPOElements to trainer's `store`
         """
-        logger.info(f"Collecting rollouts")
+        logger.info("Collecting rollouts")
         tbar = tqdm(
             total=num_rollouts,
             disable=not os.environ.get("RANK", 0) == "0",
@@ -71,7 +70,7 @@ class PPOOrchestrator(Orchestrator):
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
-        
+
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             try:

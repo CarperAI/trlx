@@ -65,7 +65,7 @@ class OfflineOrchestrator(Orchestrator):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
-        logger.info(f"Collecting rollouts")
+        logger.info("Collecting rollouts")
 
         if self.trainer.tokenizer:
             samples = [tokenize_dialogue(s, self.trainer.tokenizer, max_length) for s in samples]
