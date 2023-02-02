@@ -194,8 +194,18 @@ class NeMoILQLTrainer(BaseRLTrainer):
         )
         self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
 
+        def add_bos_if_not_present(x):
+            if len(x) == 0:
+                return [self.tokenizer.bos_token_id]
+            elif x[0] != self.tokenizer.bos_token_id:
+                return [self.tokenizer.bos_token_id] + x
+            else:
+                return x
+
         def eval_collate(elems):
             context_tokens = [e["input_ids"] for e in elems]
+            context_tokens = [add_bos_if_not_present(x) for x in context_tokens]
+
             max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
 
             context_lengths = [len(x) for x in context_tokens]

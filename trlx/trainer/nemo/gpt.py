@@ -459,7 +459,7 @@ class ILQLGPT(MegatronGPTModel):
         # parallelism configuration
         fwd_bwd_function = self._get_fwd_bwd_function()
 
-        losses_reduced_per_micro_batch = fwd_bwd_function(
+        last_stage_output = fwd_bwd_function(
             forward_step_func=self.get_forward_output_and_loss_func(),
             batch=batch_for_pipeline,
             model=self.model,
@@ -478,14 +478,22 @@ class ILQLGPT(MegatronGPTModel):
         )
 
         # only the last stages of the pipeline return losses
-        if losses_reduced_per_micro_batch:
+        if last_stage_output:
             # average loss across micro batches
-            loss_tensors_list = [
-                loss_reduced["avg"] for loss_reduced in losses_reduced_per_micro_batch
-            ]
-            loss_tensor = torch.concat(loss_tensors_list)
-            loss_mean = loss_tensor.mean()
+            outputs = {
+                k: [output[k] for output in last_stage_output]
+                for k in last_stage_output[0].keys()
+            }
+            outputs = {
+                k: torch.concat([torch.as_tensor(vi).unsqueeze(0) for vi in v])
+                for k, v in outputs.items()
+            }
+
+            mean_outputs = {k: v.mean() for k, v in outputs.items()}
+            loss_mean = mean_outputs["avg_loss"]
         else:
+
+            mean_outputs = {}
             loss_mean = torch.tensor(0.0).cuda()
 
         # when using sequence parallelism, the sequence parallel layernorm grads must be all-reduced
@@ -531,6 +539,10 @@ class ILQLGPT(MegatronGPTModel):
             prog_bar=True,
             rank_zero_only=True,
         )
+
+        for k, v in mean_outputs.items():
+            if k != "avg_loss":
+                self.log(k, v)
 
         self.log(
             "global_step",
@@ -633,12 +645,15 @@ class ILQLGPT(MegatronGPTModel):
         )
 
         max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
+
         gen = self.generate(
             (input_ids, lengths), dict(max_length=max_new_tokens, min_length=0)
         )
+
         metrics = self.metric_fn(gen["sentences"])
 
         metric_keys, metric_values = zip(*metrics.items())
+
         columns = ["sentences", *metric_keys]
         rows = list(zip(gen["sentences"], *metric_values))
 
@@ -647,16 +662,6 @@ class ILQLGPT(MegatronGPTModel):
         avg_metrics = {
             f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
         }
-
-        # for k, v in avg_metrics.items():
-        #     self.log(
-        #         f"metrics/{k}",
-        #         v,
-        #         prog_bar=True,
-        #         rank_zero_only=True,
-        #         batch_size=len(input_ids),
-        #         sync_dist=True,
-        #     )
 
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(True)
@@ -779,9 +784,6 @@ class ILQLGPT(MegatronGPTModel):
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
 
-                # for k, v in stats.items():
-                #     print(f"STATS: {k} {v}")
-                #     self.log(k, v)
                 mp_rank = parallel_state.get_tensor_model_parallel_rank()
                 mp_size = parallel_state.get_tensor_model_parallel_world_size()
                 mp_group = parallel_state.get_tensor_model_parallel_group()
@@ -798,7 +800,7 @@ class ILQLGPT(MegatronGPTModel):
                 # TODO: figure out why this sync is needed (crashes otherwise)
                 torch.cuda.synchronize()
 
-                return loss_for_mb, {"avg": reduced_loss, **stats}
+                return loss_for_mb, {"avg_loss": reduced_loss, **stats}
 
             return model_output, loss_func
 
@@ -836,7 +838,6 @@ class ILQLGPT(MegatronGPTModel):
                     extra_arg[
                         "inference_max_sequence_len"
                     ] = inference_max_sequence_len[0].item()
-                    # extra_arg['inference_max_sequence_len'] = inference_max_sequence_len[0].item()
 
                 model_output = model(
                     input_ids=tokens,
@@ -850,15 +851,17 @@ class ILQLGPT(MegatronGPTModel):
                 )
 
             def ilql_postprocess(model_output):
+
+                model_output = tree_map(lambda t: t.float(), model_output)
+
                 logits, (_, target_qs, vs) = model_output
-                last_qs = [q[:, -1] for q in target_qs]
-                target_q = reduce(torch.minimum, last_qs)
-                advantage = target_q - vs[:, -1]
-                pi_beta = F.log_softmax(logits[:, -1], -1)
+
+                target_q = reduce(torch.minimum, target_qs)
+                advantage = target_q - vs
+                pi_beta = F.log_softmax(logits, -1)
                 beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
 
-                pi_adjusted = pi_beta + advantage * beta
-                logits[:, -1] = pi_adjusted
+                logits = pi_beta + beta * advantage
 
                 return logits, {"logits": logits}
 
@@ -877,9 +880,9 @@ class ILQLGPT(MegatronGPTModel):
                 "use_greedy": False,
                 "temperature": self.ilql_config.gen_kwargs.get("temperature", 1.0),
                 "top_k": self.ilql_config.gen_kwargs.get("top_k", 0),
-                "top_p": 1.0,
-                "repetition_penalty": 1.0,
-                "add_BOS": True,
+                "top_p": 0.9,
+                "repetition_penalty": 1.2,
+                "add_BOS": False,
                 "all_probs": False,
                 "compute_logprob": False,
             }

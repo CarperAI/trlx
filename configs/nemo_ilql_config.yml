@@ -1,5 +1,5 @@
 train:
-  seq_length: 1024
+  seq_length: 64
   batch_size: 128
   epochs: 100
   total_steps: 1000
@@ -46,9 +46,9 @@ method:
   alpha: 0.001
   beta: 0
   steps_for_target_q_sync: 5
-  two_qs: False
+  two_qs: True
   gen_kwargs:
     max_new_tokens: 56
     top_k: 20
-    beta: 4
-    temperature: 1.0
+    beta: 2
+    temperature: 0.9
