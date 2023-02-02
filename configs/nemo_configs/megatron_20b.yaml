@@ -131,7 +131,7 @@ model:
 
   optim:
     name: distributed_fused_adam
-    lr: 5.0e-5
+    lr: 1.0e-6
     weight_decay: 1.0e-6
     betas:
     - 0.9
@@ -139,4 +139,4 @@ model:
     sched:
       name: CosineAnnealing
       max_steps: 1000
-      min_lr: 5.0e-5
+      min_lr: 1.0e-6

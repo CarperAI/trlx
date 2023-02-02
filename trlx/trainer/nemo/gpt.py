@@ -439,12 +439,12 @@ class ILQLGPT(MegatronGPTModel):
             if self.megatron_amp_o2:
                 # copy grads to main grad
                 def custom_sync_context_handler():
-                    self._optimizer.no_sync(greedy_grad_copy=True)
+                    return self._optimizer.no_sync(greedy_grad_copy=True)
 
             else:
                 # keep grad tensors around
                 def custom_sync_context_handler():
-                    self._optimizer.no_sync(greedy_grad_copy=False)
+                    return self._optimizer.no_sync(greedy_grad_copy=False)
 
         else:
             if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
@@ -656,8 +656,6 @@ class ILQLGPT(MegatronGPTModel):
         columns = ["sentences", *metric_keys]
         rows = list(zip(gen["sentences"], *metric_values))
 
-        self.logger.log_text(key="samples", columns=columns, data=rows)
-
         avg_metrics = {
             f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
         }
@@ -682,12 +680,21 @@ class ILQLGPT(MegatronGPTModel):
             data_parallel_size=AppState().data_parallel_size,
         )
 
-        return avg_metrics
+        return avg_metrics, (rows, columns)
 
-    def validation_epoch_end(self, outputs: List[dict]):
+    def validation_epoch_end(
+        self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]
+    ):
+        metrics, tables = zip(*outputs)
+        _, columns = tables[0]
+        rows = [r for trows, _ in tables for r in trows]
+
+        self.logger.log_text(key="samples", columns=columns, data=rows)
+
         outputs_soa = {
-            k: torch.as_tensor([d[k] for d in outputs]) for k in outputs[0].keys()
+            k: torch.as_tensor([d[k] for d in metrics]) for k in metrics[0].keys()
         }
+        # this assumes all validation microbatches are the same size
         avg_outputs = {k: v.mean() for k, v in outputs_soa.items()}
         for k, v in avg_outputs.items():
             self.log(
