@@ -62,9 +62,8 @@ class PPOOrchestrator(Orchestrator):
         logger.info("Collecting rollouts")
         tbar = tqdm(
             total=num_rollouts,
-            disable=not os.environ.get("RANK", 0) == "0",
+            disable=os.environ.get("RANK", 0) != "0",
             position=0,
-            leave=False,
         )
 
         ppo_rl_elements = []
@@ -242,7 +241,7 @@ class PPOOrchestrator(Orchestrator):
             ]
             ppo_rl_elements += new_ppo_rl_elements
             exp_time = clock.tick()
-            tbar.update(n if n < num_rollouts else num_rollouts)
+            tbar.update(min(n, num_rollouts))
         tbar.close()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
