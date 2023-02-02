@@ -136,7 +136,7 @@ class PPOConfig(MethodConfig):
         response_length: int,
         use_whitening: Optional[bool] = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """ Function that computes advantages and returns from rewards and values.
+        """Function that computes advantages and returns from rewards and values.
         Calculated as in the original PPO paper: https://arxiv.org/abs/1707.06347
         Note that rewards may include a KL divergence loss term.
 
