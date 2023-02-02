@@ -94,7 +94,7 @@ def megatron_trainer(cfg):
     return trainer
 
 
-class ShuffledCycicSequence:
+class ShuffledCyclicSequence:
     def __init__(self, new_length: int, data: Sequence, seed: int):
         self.data = data
         self.new_length = new_length
@@ -189,7 +189,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
             return flatten_dataclass(ILQLBatch)(batch)
 
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
-        train_dataset = ShuffledCycicSequence(
+        train_dataset = ShuffledCyclicSequence(
             train_samples, self.store, self.config.train.seed
         )
         self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
@@ -228,7 +228,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
         ) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size
 
-        eval_dataset = ShuffledCycicSequence(
+        eval_dataset = ShuffledCyclicSequence(
             eval_samples, self.eval_pipeline, self.config.train.seed
         )
 
