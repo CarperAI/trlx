@@ -17,7 +17,14 @@ import logging
 import os
 import sys
 import threading
-from logging import DEBUG, ERROR, INFO, WARNING
+from logging import CRITICAL  # NOQA
+from logging import DEBUG  # NOQA
+from logging import ERROR  # NOQA
+from logging import FATAL  # NOQA
+from logging import INFO  # NOQA
+from logging import NOTSET  # NOQA
+from logging import WARN  # NOQA
+from logging import WARNING  # NOQA
 from typing import Optional
 
 import torch
@@ -147,7 +154,8 @@ def get_verbosity() -> int:
     - 30: `trlx.logging.WARNING` or `trlx.logging.WARN`
     - 20: `trlx.logging.INFO`
     - 10: `trlx.logging.DEBUG`
-    </Tip>"""
+    </Tip>
+    """
 
     _configure_library_root_logger()
     return _get_library_root_logger().getEffectiveLevel()
@@ -155,39 +163,19 @@ def get_verbosity() -> int:
 
 def set_verbosity(verbosity: int) -> None:
     """
-    Set the verbosity level for the trlX's root logger.
+    Set the verbosity level for trlX's root logger.
     Args:
         verbosity (`int`):
             Logging level, e.g., one of:
             - `trlx.logging.CRITICAL` or `trlx.logging.FATAL`
             - `trlx.logging.ERROR`
-            - `trlx.logging.WARNING`
+            - `trlx.logging.WARNING` or `trlx.logging.WARN`
             - `trlx.logging.INFO`
             - `trlx.logging.DEBUG`
     """
 
     _configure_library_root_logger()
     _get_library_root_logger().setLevel(verbosity)
-
-
-def set_verbosity_info():
-    """Set the verbosity to the `INFO` level."""
-    return set_verbosity(INFO)
-
-
-def set_verbosity_warning():
-    """Set the verbosity to the `WARNING` level."""
-    return set_verbosity(WARNING)
-
-
-def set_verbosity_debug():
-    """Set the verbosity to the `DEBUG` level."""
-    return set_verbosity(DEBUG)
-
-
-def set_verbosity_error():
-    """Set the verbosity to the `ERROR` level."""
-    return set_verbosity(ERROR)
 
 
 def disable_default_handler() -> None:
