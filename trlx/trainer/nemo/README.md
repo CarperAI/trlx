@@ -1,5 +1,5 @@
 ## Using pretrained NeMo models
-To use a NeMo models in `.nemo` format, un-tar it:
+To use a NeMo models in `.nemo` format, like [NeMo Megatron-GPT-20B](https://huggingface.co/nvidia/nemo-megatron-gpt-20B), download and un-tar it:
 ```
 tar xvf nemo_gpt20B_bf16_tp4.nemo
 ```

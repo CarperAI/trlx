@@ -705,20 +705,8 @@ class ILQLGPT(MegatronGPTModel):
                 sync_dist=True,
             )
 
-    def setup_optimizer_param_groups(self):
-        # To support parameters without gradients, we need to manually
-        # set the optimizer param groups to exclude them
-        super().setup_optimizer_param_groups()
-        param_groups = self._optimizer_param_groups
-
-        def unfrozen_params_only(params):
-            return [p for p in params if p.requires_grad]
-
-        param_groups = [
-            {**pg, "params": unfrozen_params_only(pg["params"])} for pg in param_groups
-        ]
-
-        self._optimizer_param_groups = tuple(param_groups)
+    def parameters(self):
+        return (p for p in self.model.parameters() if p.requires_grad)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(
@@ -788,17 +776,6 @@ class ILQLGPT(MegatronGPTModel):
 
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
-
-                mp_rank = parallel_state.get_tensor_model_parallel_rank()
-                mp_size = parallel_state.get_tensor_model_parallel_world_size()
-                mp_group = parallel_state.get_tensor_model_parallel_group()
-
-                if mp_rank == (mp_size - 1):
-                    loss_for_mb = loss_for_mb * 1.0
-                else:
-                    loss_for_mb = loss_for_mb * 0.0
-
-                torch.distributed.barrier(mp_group)
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 

@@ -1,11 +1,10 @@
 train:
-  seq_length: 64
-  batch_size: 128
+  seq_length: 1024
+  batch_size: 512
   epochs: 100
-  total_steps: 1000
-
-  checkpoint_interval: 1000
-  eval_interval: 100
+  total_steps: 200
+  checkpoint_interval: 200
+  eval_interval: 20
 
   pipeline: "PromptPipeline"
   orchestrator: "OfflineOrchestrator"
@@ -34,8 +33,8 @@ optimizer:
 scheduler:
   name: "cosine_annealing"
   kwargs:
-    T_max: 1000 # train.total_steps
-    eta_min: 5.0e-5
+    T_max: 2000 # train.total_steps
+    eta_min: 1.0e-6
 
 method:
   name: "ilqlconfig"
