@@ -35,7 +35,7 @@ class PPOOrchestrator(Orchestrator):
         self.chunk_size = chunk_size
 
         self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle=True)
-        self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
+        self.pipeline_loader = self.trainer.accelerator.prepare_data_loader(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
         if not hasattr(self.trainer.model, "frozen_head"):
