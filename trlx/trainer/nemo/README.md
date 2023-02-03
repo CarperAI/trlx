@@ -27,11 +27,11 @@ exp_manager:
 ```
 
 ## NeMo Megatron setup
-This setup pertains to CoreWeave cluster, but should also work if you clone the `r1.14.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.14.0 and apex from `nemo_v1.14.0` from https://github.com/ericharper/apex/tree/nemo_v1.14.0
+Clone https://github.com/NVIDIA/NeMo/ and apex from https://github.com/NVIDIA/apex/.
 
 1) install conda (or mamba/micromamba)
 
-2) srun into a compute node
+2) srun into a compute node with a gpu (if running on HPC cluster)
 ```
 srun --pty bash -i
 ```
@@ -41,22 +41,16 @@ srun --pty bash -i
 conda env create -f env.yaml
 ```
 
-4) copy the nemo r1.13 repo to your home folder (or clone the github)
+4) install nemo
 ```
-cp -R /mnt/nvme/jobs/NeMo-113-release ~/NeMo-113-release
-```
-
-
-5) pip install it
-```
-cd ~/NeMo-113-release && pip install '.[all]'
+git clone https://github.com/NVIDIA/NeMo/
+cd NeMo && pip install '.[all]'
 ```
 
 6) install apex (or clone the github)
 ```
-cd ~/NeMo-113-release/apex
-```
-```
+git clone https://github.com/NVIDIA/apex/
+cd apex
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" --global-option="--fast_layer_norm" --global-option="--distributed_adam" --global-option="--deprecated_fused_adam" ./
 ```
 
