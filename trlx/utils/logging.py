@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2023 Optuna, Hugging Face, CarperAI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,15 +17,11 @@ import logging
 import os
 import sys
 import threading
-from logging import DEBUG  
-from logging import ERROR 
-from logging import INFO  
-from logging import WARNING 
+from logging import DEBUG, ERROR, INFO, WARNING
 from typing import Optional
 
 import torch
 from tqdm import auto as tqdm_lib
-
 
 _lock = threading.Lock()
 _default_handler: Optional[logging.Handler] = None
@@ -53,8 +48,7 @@ def _get_default_logging_level():
             return log_levels[env_level_str.lower()]
         else:
             logging.getLogger().warning(
-                f"Unknown option TRLX_VERBOSITY={env_level_str}, "
-                f"has to be one of: { ', '.join(log_levels.keys()) }"
+                f"Unknown option TRLX_VERBOSITY={env_level_str}, " f"has to be one of: { ', '.join(log_levels.keys()) }"
             )
     return _default_log_level
 
@@ -68,7 +62,6 @@ def _get_library_root_logger() -> logging.Logger:
 
 
 def _configure_library_root_logger() -> None:
-
     global _default_handler
 
     with _lock:
@@ -86,7 +79,6 @@ def _configure_library_root_logger() -> None:
 
 
 def _reset_library_root_logger() -> None:
-
     global _default_handler
 
     with _lock:
@@ -131,7 +123,7 @@ def get_logger(name: Optional[str] = None) -> MultiProcessAdapter:
 
     Args:
         name: Name of the logger
-    
+
     Usage:
         >> logger = get_logger(__name__)
         >> logger.debug("Check the...", ranks=["0", "1"])  # Only main and rank 1 log
@@ -264,7 +256,9 @@ def enable_explicit_format() -> None:
     handlers = _get_library_root_logger().handlers
 
     for handler in handlers:
-        formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d:%(funcName)s] %(message)s")
+        formatter = logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d:%(funcName)s] %(message)s"
+        )
         handler.setFormatter(formatter)
 
 
