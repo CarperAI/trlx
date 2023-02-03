@@ -50,6 +50,16 @@ accelerate config # choose DeepSpeed option
 accelerate launch examples/simulacra.py
 ```
 
+#### Use NeMo-Megatron to launch distributed training
+
+Follow the setup instructions in the [NeMo README](./trlx/trainer/nemo).
+
+```bash
+python examples/nemo_ilql_sentiments.py
+```
+
+For more usage see the [NeMo README](./trlx/trainer/nemo)
+
 #### Use Ray Tune to launch hyperparameter sweep
 ```bash
 python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
