@@ -198,27 +198,22 @@ class PPOOrchestrator(Orchestrator):
                 rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
-            # Compute rewards
-            all_rewards = [None] * n
-
             for ix in range(n):
-                rs = rewards[ix]
-                if len(rs) == 0:
-                    rs = torch.tensor([0.0])
-                rs[-1] += scores[ix].cpu()
-                all_rewards[ix] = rs
+                if len(rewards[ix]) == 0:
+                    continue
 
-            new_ppo_rl_elements = [
-                PPORLElement(
-                    query_tensor=query_tensors[i],
-                    response_tensor=response_tensors[i],
-                    logprobs=all_logprobs[i],
-                    values=all_values[i],
-                    rewards=all_rewards[i],
+                rewards[ix][-1] += scores[ix].cpu()
+
+                ppo_rl_elements.append(
+                    PPORLElement(
+                        query_tensor=query_tensors[ix],
+                        response_tensor=response_tensors[ix],
+                        logprobs=all_logprobs[ix],
+                        values=all_values[ix],
+                        rewards=rewards[ix],
+                    )
                 )
-                for i in range(n)
-            ]
-            ppo_rl_elements += new_ppo_rl_elements
+
             exp_time = clock.tick()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
