@@ -7,8 +7,7 @@ This will extract the model weights and the model config.
 
 Then set `train.trainer_kwargs.pretrained_model` to the path to the directory containing the parameters. The model hyperparameters in the `train.trainer_kwargs.megatron_cfg` should match the ones in the model config.
 
-## Using ILQL trained NeMo models
-
+## Inference ILQL trained NeMo models
 To load a checkpoint, run
 ```
 python examples/nemo_ilql_inference.py configs/nemo_configs/megatron_20b.yaml "/path/to/ilql_sentiments_logs/checkpoints"
@@ -16,10 +15,15 @@ python examples/nemo_ilql_inference.py configs/nemo_configs/megatron_20b.yaml "/
 To save checkpoints, ensure the following is set in the NeMo config:
 ```
 exp_manager:
-  # set this to save checkpoints
   explicit_log_dir: ilql_sentiments_logs
-  # set this to save checkpoints
   create_checkpoint_callback: True
+```
+
+## Resume Training
+To resume training, ensure the following is set in the NeMo config:
+```
+exp_manager:
+  resume_if_exists: True
 ```
 
 ## NeMo Megatron setup
