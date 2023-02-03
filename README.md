@@ -67,13 +67,14 @@ python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentimen
 
 trlX uses the standard Python `logging` library to log training information to the console. The default logger is set to `INFO` level, which means that `INFO`, `WARNING`, `ERROR`, and `CRITICAL` level messages will be printed to standard output. To control the verbosity, you can set the `TRLX_LOG_LEVEL` environment variable to one of the standard logging [level names](https://docs.python.org/3/library/logging.html#logging-levels).
 
-The following example sets the log level to `WARNING` for trlX logging events.
+The following example sets the log level to `WARNING` for trlX logging events which will suppress `INFO` level messages, but will still print `WARNING`, `ERROR`, and `CRITICAL` level messages.
 
 ```
 export TRLX_LOG_LEVEL=WARNING
 ```
 
-> 💡 Tip: To reduce the amount of logging output, you might find it helpful to change log levels of third-party libraries. For the `transformers` library, try setting `transformers.logging.set_verbosity_error()`.
+> 💡 Tip: To reduce the amount of logging output, you might find it helpful to change log levels of third-party libraries used by trlX.
+For example, try adding `transformers.logging.set_verbosity_error()` to the top of your trlX scripts to suppress verbose messages from the `transformers` library (see their [logging docs](https://huggingface.co/docs/transformers/main_classes/logging#logging) for more details).
 
 ## Contributing
 
