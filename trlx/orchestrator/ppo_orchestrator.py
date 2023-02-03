@@ -64,6 +64,11 @@ class PPOOrchestrator(Orchestrator):
             total=num_rollouts,
             disable=os.environ.get("RANK", 0) != "0",
             desc=f"[rollout 0 / {num_rollouts}]",
+            # Lower progress bar by 1 if we're in WARNING mode or above to avoid hiding high priority progress
+            # bars (e.g. loss progress in trainers)
+            position=logging.get_verbosity() >= logging.WARNING,
+            # Leave progress bar if we're in INFO mode or lower to avoid spamming in suppressed verbosity levels
+            leave=logging.get_verbosity() < logging.WARNING,
         )
 
         ppo_rl_elements = []
