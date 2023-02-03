@@ -511,7 +511,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             else:
                                 do_save = False
                             do_save = torch.tensor(do_save, device=self.accelerator.device)
-                            torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                            if torch.distributed.is_initialized():
+                                torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
                                 best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
                                 logger.info(f"Saving the best state so far into {best_path}")
