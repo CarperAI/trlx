@@ -8,9 +8,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 
-def create_comparison_dataset(
-    path="CarperAI/openai_summarize_comparisons", split="train"
-):
+def create_comparison_dataset(path="CarperAI/openai_summarize_comparisons", split="train"):
     dataset = load_dataset(path, split=split)
     pairs = []
     for sample in tqdm(dataset):

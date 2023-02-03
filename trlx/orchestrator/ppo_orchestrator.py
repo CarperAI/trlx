@@ -30,9 +30,7 @@ class PPOOrchestrator(Orchestrator):
         self.trainer = trainer
         self.chunk_size = chunk_size
 
-        self.pipeline_loader = self.pipeline.create_loader(
-            self.chunk_size, shuffle=True
-        )
+        self.pipeline_loader = self.pipeline.create_loader(self.chunk_size, shuffle=True)
         self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
@@ -74,9 +72,7 @@ class PPOOrchestrator(Orchestrator):
 
             query_tensors = batch.input_ids
             device = samples.device
-            str_samples, str_prompts, str_outputs = self.trainer.decode(
-                query_tensors, samples
-            )
+            str_samples, str_prompts, str_outputs = self.trainer.decode(query_tensors, samples)
 
             # Convert trimmed samples back into tensors for another head pass
             # This can be defered, instead letting the pass to made over the original samples
@@ -149,14 +145,8 @@ class PPOOrchestrator(Orchestrator):
                             decoder_input_ids=response_tensors,
                         ).logits
             else:
-                all_tokens = torch.cat(
-                    (query_tensors.to(device), response_tensors), dim=1
-                )
-                attention_mask = (
-                    all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
-                    .long()
-                    .to(device)
-                )
+                all_tokens = torch.cat((query_tensors.to(device), response_tensors), dim=1)
+                attention_mask = all_tokens.not_equal(self.trainer.tokenizer.pad_token_id).long().to(device)
                 with torch.no_grad():
                     logits, *_, values = self.trainer.model(
                         all_tokens,
@@ -178,15 +168,11 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_from_logits(
-                    logits[:, :-1, :], response_tensors[:, 1:]
-                )
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], response_tensors[:, 1:]
-                )
+                logprobs = logprobs_from_logits(logits[:, :-1, :], response_tensors[:, 1:])
+                ref_logprobs = logprobs_from_logits(ref_logits[:, :-1, :], response_tensors[:, 1:])
             else:
-                logprobs = logprobs_from_logits(logits, all_tokens)
-                ref_logprobs = logprobs_from_logits(ref_logits, all_tokens)
+                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_from_logits(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
             n = samples.shape[0]
             logprobs = logprobs.cpu()
@@ -199,26 +185,11 @@ class PPOOrchestrator(Orchestrator):
                 all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n)]
                 all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n)]
                 rewards = [
-                    -self.trainer.kl_ctl.value
-                    * (
-                        logprobs[ix, start : ends[ix]]
-                        - ref_logprobs[ix, start : ends[ix]]
-                    )
+                    -self.trainer.kl_ctl.value * (logprobs[ix, start : ends[ix]] - ref_logprobs[ix, start : ends[ix]])
                     for ix in range(n)
                 ]
             else:
-                logprobs = logprobs_from_logits(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_from_logits(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
-
-                n = samples.shape[0]
                 values = values.cpu()[:, :-1]
-                logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
-                query_tensors = query_tensors.cpu()
-                response_tensors = response_tensors.cpu()
-
                 start = query_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
                 all_values = [values[ix, start : ends[ix]] for ix in range(n)]
@@ -227,27 +198,22 @@ class PPOOrchestrator(Orchestrator):
                 rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
-            # Compute rewards
-            all_rewards = [None] * n
-
             for ix in range(n):
-                rs = rewards[ix]
-                if len(rs) == 0:
-                    rs = torch.tensor([0.0])
-                rs[-1] += scores[ix].cpu()
-                all_rewards[ix] = rs
+                if len(rewards[ix]) == 0 or len(all_logprobs[ix]) == 0:
+                    continue
 
-            new_ppo_rl_elements = [
-                PPORLElement(
-                    query_tensor=query_tensors[i],
-                    response_tensor=response_tensors[i],
-                    logprobs=all_logprobs[i],
-                    values=all_values[i],
-                    rewards=all_rewards[i],
+                rewards[ix][-1] += scores[ix].cpu()
+
+                ppo_rl_elements.append(
+                    PPORLElement(
+                        query_tensor=query_tensors[ix],
+                        response_tensor=response_tensors[ix],
+                        logprobs=all_logprobs[ix],
+                        values=all_values[ix],
+                        rewards=rewards[ix],
+                    )
                 )
-                for i in range(n)
-            ]
-            ppo_rl_elements += new_ppo_rl_elements
+
             exp_time = clock.tick()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value

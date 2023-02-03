@@ -28,6 +28,7 @@ from trlx.utils import (
     significant,
 )
 from trlx.utils.modeling import (
+    flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     get_delta_model_class,
@@ -44,7 +45,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
-        self.accelerator = Accelerator(log_with=config.train.trackers)
+        self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
@@ -78,7 +79,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
             init_trackers_kwargs = {}
-            if "wandb" in config.train.trackers:
+
+            if config.train.tracker == "wandb":
                 init_trackers_kwargs["wandb"] = {
                     "name": run_name,
                     "entity": self.config.train.entity_name,
@@ -86,11 +88,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "tags": ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
-            self.accelerator.init_trackers(
-                project_name=self.config.train.project_name,
-                config=config_dict,
-                init_kwargs=init_trackers_kwargs,
-            )
+
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict,
+                    init_kwargs=init_trackers_kwargs,
+                )
+            elif config.train.tracker == "tensorboard":
+                # flatten config for tensorboard, split list in hparams into flatten config
+                config_dict_flat = flatten_dict(config_dict)
+                config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
+                config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
+                config_dict_flat.pop("optimizer/kwargs/betas", None)
+                self.accelerator.init_trackers(
+                    project_name=self.config.train.project_name,
+                    config=config_dict_flat,
+                )
+            elif config.train.tracker is None:
+                self.accelerator.init_trackers(project_name=self.config.train.project_name)
+            else:
+                raise ValueError(
+                    f"Only supported trackers are `wandb` and `tensorboard`. Got: `{config.train.tracker}`. "
+                    "Set `tracker` to `None` to disable tracking."
+                )
 
     def setup_model(self):
         """
@@ -99,13 +119,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
         if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(
-                model.base_model, self.config.model.num_layers_unfrozen
-            )
+            freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
         else:
-            freeze_bottom_causal_layers(
-                model.base_model, self.config.model.num_layers_unfrozen
-            )
+            freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
         # Set the delta tuning strategies
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(
@@ -138,9 +154,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             manager = GlobalOptimManager.get_instance()
             for module in self.model.modules():
                 if isinstance(module, torch.nn.Embedding):
-                    manager.register_module_override(
-                        module, "weight", {"optim_bits": 32}
-                    )
+                    manager.register_module_override(module, "weight", {"optim_bits": 32})
 
         return optimizer
 
@@ -191,12 +205,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             else:
                 output_start_ix = prompt_size
 
-            str_prompt = self.tokenizer.decode(
-                prompt[:prompt_size], skip_special_tokens=True
-            )
-            str_output = self.tokenizer.decode(
-                sample[output_start_ix:], skip_special_tokens=True
-            )
+            str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
+            str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
 
             # Trim outputs up to `self.stop_sequences` if any are present
             if self.stop_sequences:
@@ -291,9 +301,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             generate_time = time()
             for prompts in self.eval_dataloader:
                 if self.generate_sweep_kwarg:
-                    samples = self.generate_eval(
-                        **prompts, **{gen_sweep_arg: gen_sweep_value}
-                    )
+                    samples = self.generate_eval(**prompts, **{gen_sweep_arg: gen_sweep_value})
                 else:
                     samples = self.generate_eval(**prompts)
 
@@ -315,9 +323,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     ).to(samples.device)
                 )
                 prompt_sizes.append(
-                    torch.tensor(
-                        prompts.input_ids.shape[1], device=samples.device
-                    ).repeat(len(prompts.input_ids))
+                    torch.tensor(prompts.input_ids.shape[1], device=samples.device).repeat(len(prompts.input_ids))
                 )
 
             stats["time/generate"] = time() - generate_time
@@ -327,9 +333,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs = self.decode(
-                    prompts, samples, prompt_sizes
-                )
+                str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
 
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
@@ -354,12 +358,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # additionally log any other metrics
                 if self.metric_fn:
                     metric_time = time()
-                    metrics = self.metric_fn(str_samples)
+                    metrics = self.metric_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1)
-                        for k, xs in metrics.items()
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1) for k, xs in metrics.items()
                     }
 
                     stats.update(mean_metrics)
@@ -393,7 +400,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
 
             if not ray.is_initialized():
-                if "wandb" in self.config.train.trackers:
+                if self.config.train.tracker == "wandb":
                     import wandb
 
                     stats["samples"] = wandb.Table(columns, rows)
@@ -411,9 +418,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
-                    print_rank_0(
-                        "Only a single sweep is allowed, {k} is going to be set to {v[0]}"
-                    )
+                    print_rank_0("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
                     self.generate_kwargs[k] = v[0]
                 else:
                     self.generate_sweep_kwarg = (k, v)
@@ -470,17 +475,24 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         results = self.evaluate()
                         stats.update(results)
 
-                        # FIXME: seems to not work with zero and barriers don't seem to help
-                        if (
-                            self.config.train.save_best
-                            and int(os.environ.get("DEEPSPEED_ZERO_STAGE", -1)) == -1
-                        ):
-                            if (
-                                "reward/mean" in stats
-                                and stats["reward/mean"] > best_reward
-                            ):
-                                best_reward = stats["reward/mean"]
-                                self.save("best_checkpoint")
+                        # always save checkpoint with the greatest mean reward
+                        if self.config.train.save_best:
+                            if stats.get("reward/mean", -float("inf")) > best_reward:
+                                best_reward = stats.get("reward/mean")
+                                do_save = True
+                            # in case ILQL reports reward estimate as one of its metrics
+                            elif stats.get("metrics/reward", -float("inf")) > best_reward:
+                                best_reward = stats.get("metrics/reward")
+                                do_save = True
+                            else:
+                                do_save = False
+                            do_save = torch.tensor(do_save, device=self.accelerator.device)
+                            if torch.distributed.is_initialized():
+                                torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                            if do_save:
+                                best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
+                                print_rank_0(f"saving the best state so far into {best_path}")
+                                self.save(best_path)
 
                         # Report the metrics to Ray Tune.
                         if ray.is_initialized():
@@ -488,18 +500,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             with open("state/state.json", "w") as f:
                                 json.dump(dict(iter_count=self.iter_count), f)
                             checkpoint = Checkpoint.from_directory("state")
-                            session.report(
-                                filter_non_scalars(stats), checkpoint=checkpoint
-                            )
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                     if not ray.is_initialized():
                         self.accelerator.log(stats, step=self.iter_count)
 
-                    desc = ", ".join(
-                        f"{k}: {v:.2f}"
-                        for k, v in stats.items()
-                        if k.startswith("loss")
-                    )
+                    desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(desc)
                     tbar.update()
 

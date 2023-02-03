@@ -41,9 +41,7 @@ def reward_fn(samples):
     batch_size = 2
     for i in range(0, len(samples), batch_size):
         sub_samples = samples[i : i + batch_size]
-        sub_samples = [
-            "<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples
-        ]
+        sub_samples = ["<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples]
         encodings_dict = rw_tokenizer(
             sub_samples,
             truncation=True,
@@ -71,18 +69,12 @@ def inference(model, tokenizer):
     post_list = []
     rouge = evaluate.load("rouge")
     count = 0
-    for post, summarize in tqdm(
-        zip(test_post_list, test_summ_list), total=len(test_post_list)
-    ):
-        encode_dict = tokenizer(
-            post, return_tensors="pt", padding=False, truncation=True
-        )
+    for post, summarize in tqdm(zip(test_post_list, test_summ_list), total=len(test_post_list)):
+        encode_dict = tokenizer(post, return_tensors="pt", padding=False, truncation=True)
         txt_tokens = encode_dict["input_ids"].cuda()
         attention_mask = encode_dict["attention_mask"].cuda()
         kwargs = {"max_new_tokens": 50, "eos_token_id": 50256, "pad_token_id": 50256}
-        summ_tokens = model.generate(
-            txt_tokens, attention_mask=attention_mask, **kwargs
-        )
+        summ_tokens = model.generate(txt_tokens, attention_mask=attention_mask, **kwargs)
         pred = tokenizer.batch_decode(summ_tokens)[0]
         pred = pred.split("TL;DR:")[1].replace("<|endoftext|>", "")
         pred_list.append(pred)
@@ -92,9 +84,7 @@ def inference(model, tokenizer):
             result = rouge.compute(predictions=pred_list, references=summarize_list)
             print(result)
         count += 1
-    df = pd.DataFrame.from_dict(
-        {"pred": pred_list, "truth": summarize_list, "post": post_list}
-    )
+    df = pd.DataFrame.from_dict({"pred": pred_list, "truth": summarize_list, "post": post_list})
     result = rouge.compute(predictions=pred_list, references=summarize_list)
     print(result)
     return df
@@ -127,9 +117,7 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
 
         # Perform inference on the batch
         kwargs = {"max_new_tokens": 50, "eos_token_id": 50256, "pad_token_id": 50256}
-        summ_tokens = model.generate(
-            txt_tokens, attention_mask=attention_mask, **kwargs
-        )
+        summ_tokens = model.generate(txt_tokens, attention_mask=attention_mask, **kwargs)
 
         # Decode output tokens
         preds = tokenizer.batch_decode(summ_tokens)
@@ -146,24 +134,15 @@ def inference_batches(model, tokenizer, test_post_list, test_summ_list, batch_si
     # Compute final rouge scores and create a dataframe
     result = rouge.compute(predictions=pred_list, references=summarize_list)
     print(result)
-    df = pd.DataFrame.from_dict(
-        {"pred": pred_list, "truth": summarize_list, "post": post_list}
-    )
+    df = pd.DataFrame.from_dict({"pred": pred_list, "truth": summarize_list, "post": post_list})
     return df
 
 
 if __name__ == "__main__":
-
     model, tokenizer = load_model("CarperAI/openai_summarize_tldr_ppo")
 
-    test_post_list = [
-        sample["prompt"]
-        for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")
-    ]
-    test_summ_list = [
-        sample["label"]
-        for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")
-    ]
+    test_post_list = [sample["prompt"] for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")]
+    test_summ_list = [sample["label"] for sample in load_dataset("CarperAI/openai_summarize_tldr", split="test")]
 
     df_result = inference(model, tokenizer)
     sup_pred = df_result["pred"].values

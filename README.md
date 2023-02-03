@@ -19,6 +19,14 @@ pip install torch --extra-index-url https://download.pytorch.org/whl/cu116 # for
 pip install -e .
 ```
 
+## Examples
+For more usage see [examples](./examples). You can also try the colab notebooks below:
+| Description      | Link |
+| ----------- | ----------- |
+| Simulacra Example | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1vrmCLoHNlKvDVqJjMig-8tKDCfIEoym4?usp=sharing)|
+
+
+
 ## How to Train
 You can train a model using a reward function or a reward-labeled dataset.
 
@@ -65,7 +73,6 @@ For more usage see the [NeMo README](./trlx/trainer/nemo)
 python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 ```
 
-For more usage see [examples](./examples)
 
 ## Contributing
 

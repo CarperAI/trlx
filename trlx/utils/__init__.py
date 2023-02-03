@@ -119,10 +119,7 @@ def get_optimizer_class(name: OptimizerName):
     if name == OptimizerName.SGD.value:
         return torch.optim.SGD
     supported_optimizers = [o.value for o in OptimizerName]
-    raise ValueError(
-        f"`{name}` is not a supported optimizer. "
-        f"Supported optimizers are: {supported_optimizers}"
-    )
+    raise ValueError(f"`{name}` is not a supported optimizer. " f"Supported optimizers are: {supported_optimizers}")
 
 
 class SchedulerName(str, Enum):
@@ -141,10 +138,7 @@ def get_scheduler_class(name: SchedulerName):
     if name == SchedulerName.LINEAR:
         return LinearLR
     supported_schedulers = [s.value for s in SchedulerName]
-    raise ValueError(
-        f"`{name}` is not a supported scheduler. "
-        f"Supported schedulers are: {supported_schedulers}"
-    )
+    raise ValueError(f"`{name}` is not a supported scheduler. " f"Supported schedulers are: {supported_schedulers}")
 
 
 # Stats

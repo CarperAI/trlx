@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
@@ -9,8 +9,9 @@ from trlx.data.method_configs import MethodConfig, get_method
 def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     "Recursively updates a nested dictionary with new values"
     for k, v in base.items():
-        if isinstance(v, dict):
-            base[k] = merge(v, update, updated)
+        if k in update and isinstance(v, dict):
+            base[k] = merge(v, update[k], updated)
+            updated.add(k)
         elif k in update:
             base[k] = update[k]
             updated.add(k)
@@ -35,13 +36,15 @@ class ModelConfig:
 
     :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
         Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
-        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
-            {"delta_type": "lora", "modified_modules": "all", "lora_a": 0.5}
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_r`)
+            {"delta_type": "lora", "modified_modules": "all", "lora_r": 8, "lora_alpha": 16, "lora_dropout": 0.0}
         or in YAML format:
             delta_kwargs:
                 delta_type: lora
                 modified_modules: "all"
-                lora_a: 0.5
+                lora_r: 8
+                lora_alpha: 16
+                lora_dropout: 0.0
         See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
     :type delta_kwargs: Optional[Dict[str, Any]]
     """
@@ -137,8 +140,8 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
-    :param trackers: Tuple of trackers to use for logging. Default: ("wandb",)
-    :type trackers: Tuple[str]
+    :param tracker: Tracker to use for logging. Default: "wandb"
+    :type tracker: str
 
     :param checkpoint_interval: Save model every checkpoint_interval steps
     :type checkpoint_interval: int
@@ -199,7 +202,9 @@ class TrainConfig:
     rollout_logging_dir: Optional[str] = None
     save_best: bool = True
 
-    trackers: Tuple[str] = ("wandb",)
+    tracker: Optional[str] = "wandb"
+    logging_dir: Optional[str] = None
+
     seed: int = 1000
 
     @classmethod
@@ -215,9 +220,9 @@ class TRLConfig:
 
     method: MethodConfig
     model: ModelConfig
-    tokenizer: TokenizerConfig
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig
+    tokenizer: TokenizerConfig
     train: TrainConfig
 
     @classmethod
@@ -241,6 +246,7 @@ class TRLConfig:
             "model": self.model.__dict__,
             "optimizer": self.optimizer.__dict__,
             "scheduler": self.scheduler.__dict__,
+            "tokenizer": self.tokenizer.__dict__,
             "train": self.train.__dict__,
         }
 
@@ -267,9 +273,7 @@ class TRLConfig:
 
         for param in config:
             if param not in updates:
-                raise ValueError(
-                    f"parameter {param} is not present in the config (typo or a wrong config)"
-                )
+                raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 
         return cls.from_dict(merged)
 
