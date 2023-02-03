@@ -271,6 +271,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         stats = {}
         table = []
+        print("TURNED OFF EVALUATION\n")
+        return stats
 
         # Do multiple evaluations over a single list in `gen_kwargs` if present
         if self.generate_sweep_kwarg is not None:

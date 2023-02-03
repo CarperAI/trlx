@@ -1,4 +1,4 @@
-# Trains a model to encode and decode a number in a poem.
+# Trains a model to encode and decode a number.
 
 import os
 import yaml
@@ -59,19 +59,18 @@ def encoder_decoder_experience_fn(trainer, batch):
              stats
             
     Use model.generate_and_calc_logprobs to return all data needed for PPO for a complex trajectory.
+    We completely ignore the dataset (the query tensors).
+    
+
     The trajectory for each poem is as follows:
     Sample a digit from {0, 1}.
     First run:
-    f"Fact: x = {digit}
-    Continue the poem:\n
-    {poem}
-    The"
-    --> poem_continuation
+    f"digit={digit}
+    digit="
+    --> continuation
     Second run:
-    f"{poem}
-    The{poem_continuation}\n
-    Recall fact: x is either 0 or 1.
-    Answer: x ="
+    f"digit={continuation}
+    Answer: digit="
     --> answer
     """
 
@@ -81,32 +80,22 @@ def encoder_decoder_experience_fn(trainer, batch):
     batch_size = batch.input_ids.shape[0]
     print(f"batch_size = {batch_size}")
     device = batch.input_ids.device
-    prompt_tensors = batch.input_ids
     digits = list(np.random.randint(0, 2, batch_size)) # sample a digit from {0, 1}
 
     # The key architectural constraint is that alll trainer.orch.generate_and_calc_logprobs should be parallel over the batch
     # Do everything in string space 
-    fact_strs = [f"Fact: x = {digits[i]}\nContinue the poem:\n\n" for i in range(batch_size)]
-    recall_str = f"\nRecall fact: x is either 0 or 1.\nAnswer: x ="
-
-    # Detokenize the text
-    _, str_prompts, _ = trainer.decode(
-        prompt_tensors, prompt_tensors, # this is a hack to get the text, we are doing redundant tokenization
-    )
 
     first_run_strs = [""] * batch_size
     # First run
     for i in range(batch_size):
-        first_run_strs[i] = fact_strs[i] + str_prompts[i] + "\nThe"
+        first_run_strs[i] = "digit=" + str(digits[i]) + "\ndigit="
 
     # Encode the first run
-    #first_run_batch = trainer.tokenizer(first_run_strs)
-    # but tensors
     first_run_batch = trainer.tokenizer(first_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the first run
     #import code; print("first_run_data"); code.interact(local=locals())
-    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch)
+    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1)
 
     first_run_str_prompts = first_run_data['str_prompts']
     first_run_str_outputs = first_run_data['str_outputs']
@@ -114,7 +103,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = str_prompts[i] + "\nThe" + first_run_str_outputs[i] + recall_str
+        second_run_strs[i] = "digit=" + first_run_str_outputs[i] + "\nAnswer: digit="
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
@@ -127,11 +116,10 @@ def encoder_decoder_experience_fn(trainer, batch):
     second_run_str_outputs = second_run_data['str_outputs']
 
     print("AAAAAAAAAAAAAAAAAa")
-    if digits[0] == 0 and digits[1] == 0 and digits[2] == 0 and digits[3] == 0: # prob 1/16
-        print("first_run_str_prompts\n", first_run_str_prompts)
-        print("first_run_str_outputs\n", first_run_str_outputs)
-        print("second_run_str_prompts\n", second_run_str_prompts)
-        print("second_run_str_outputs\n", second_run_str_outputs)
+    print("first_run_str_prompts\n", first_run_str_prompts)
+    print("first_run_str_outputs\n", first_run_str_outputs)
+    print("second_run_str_prompts\n", second_run_str_prompts)
+    print("second_run_str_outputs\n", second_run_str_outputs)
     #import code; print("just before data concatenation"); code.interact(local=locals())
 
     # RunElementBatch has an __add__ method which should do the right thing
