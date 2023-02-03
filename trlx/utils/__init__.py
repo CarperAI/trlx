@@ -6,7 +6,7 @@ import time
 from dataclasses import is_dataclass
 from enum import Enum
 from numbers import Number
-from typing import Dict, Iterable
+from typing import Any, Dict
 
 import numpy as np
 import torch
@@ -200,18 +200,7 @@ def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
 
 
-# Sentiment/scores
-
-
-def sentiment_score(sentiments: Iterable[float]):
-    """
-    Return tensor of scores in [-1, 1] from sentiment analysis pipeline output
-    """
-    sentiments = torch.tensor([-s["score"] if s["label"] == "NEGATIVE" else s["score"] for s in sentiments])
-    return sentiments
-
-
-def tree_map(f, tree):
+def tree_map(f, tree: Any) -> Any:
     """
     Apply function f to all leaves in tree
     """
@@ -225,11 +214,11 @@ def tree_map(f, tree):
         return f(tree)
 
 
-def to_device(tree, device):
+def to_device(tree, device, non_blocking=False):
     """
     Move all tensors in tree to device
     """
-    return tree_map(lambda x: x.to(device), tree)
+    return tree_map(lambda x: x.to(device, non_blocking=non_blocking), tree)
 
 
 def filter_non_scalars(xs: Dict) -> Dict:

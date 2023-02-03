@@ -34,6 +34,17 @@ class PromptPipeline(BasePipeline):
         return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 
+def ilql_collate_fn(elems: Iterable[ILQLElement]):
+    return ILQLBatch(
+        pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.attention_mask for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
+        pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
+        pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
+    )
+
+
 class ILQLRolloutStorage(BaseRolloutStore):
     """
     Rollout storage for training ILQL
@@ -62,15 +73,11 @@ class ILQLRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int):
-        def collate_fn(elems: Iterable[ILQLElement]):
-            return ILQLBatch(
-                pad_sequence([x.input_ids for x in elems], batch_first=True, padding_value=0),
-                pad_sequence([x.attention_mask for x in elems], batch_first=True, padding_value=0),
-                pad_sequence([x.rewards for x in elems], batch_first=True, padding_value=0.0),
-                pad_sequence([x.states_ixs for x in elems], batch_first=True, padding_value=0),
-                pad_sequence([x.actions_ixs for x in elems], batch_first=True, padding_value=0),
-                pad_sequence([x.dones for x in elems], batch_first=True, padding_value=0),
-            )
-
-        return DataLoader(self, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    def create_loader(self, batch_size: int, drop_last=True):
+        return DataLoader(
+            self,
+            batch_size=batch_size,
+            shuffle=True,
+            collate_fn=ilql_collate_fn,
+            drop_last=drop_last,
+        )

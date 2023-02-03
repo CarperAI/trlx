@@ -158,6 +158,9 @@ class TrainConfig:
     :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
     :type trainer: str
 
+    :param trainer_kwargs: Extra keyword arguments for the trainer
+    :type trainer: Dict[str, Any]
+
     :param project_name: Project name for wandb
     :type project_name: str
 
@@ -192,6 +195,7 @@ class TrainConfig:
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
     trainer: str  # One of the trainers
+    trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None
