@@ -199,7 +199,7 @@ class PPOOrchestrator(Orchestrator):
                 rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
             for ix in range(n):
-                if len(rewards[ix]) == 0:
+                if len(rewards[ix]) == 0 or len(all_logprobs[ix]) == 0:
                     continue
 
                 rewards[ix][-1] += scores[ix].cpu()
