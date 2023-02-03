@@ -4,17 +4,17 @@ from time import time
 import ray
 import torch
 import torch.nn.functional as F
-from tqdm import tqdm
 
+import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline import BasePipeline
 from trlx.trainer import BaseRLTrainer
-from trlx.utils import Clock, get_logger
+from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_from_logits
 
-logger = get_logger(__name__)
+logger = logging.get_logger(__name__)
 
 
 @register_orchestrator
@@ -60,10 +60,10 @@ class PPOOrchestrator(Orchestrator):
         KL againts a reference model. It then appends PPOElements to trainer's `store`
         """
         logger.info("Collecting rollouts")
-        tbar = tqdm(
+        tbar = logging.tqdm(
             total=num_rollouts,
             disable=os.environ.get("RANK", 0) != "0",
-            position=0,
+            desc=f"[rollout 0 / {num_rollouts}]",
         )
 
         ppo_rl_elements = []
@@ -210,6 +210,7 @@ class PPOOrchestrator(Orchestrator):
                 rewards = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 rewards = [rs[start : ends[ix]] for ix, rs in enumerate(rewards)]
 
+            rollout_count = 0
             for ix in range(n):
                 if len(rewards[ix]) == 0 or len(all_logprobs[ix]) == 0:
                     continue
@@ -225,9 +226,10 @@ class PPOOrchestrator(Orchestrator):
                         rewards=rewards[ix],
                     )
                 )
-
+                rollout_count += 1
             exp_time = clock.tick()
-            tbar.update(min(n, num_rollouts))
+            tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
+            tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value

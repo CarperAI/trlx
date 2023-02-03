@@ -6,11 +6,11 @@ import torch
 from rich.console import Console
 from rich.table import Table
 
+import trlx.utils.logging as logging
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
-from trlx.utils import get_logger
 
-logger = get_logger(__name__)
+logger = logging.get_logger(__name__)
 
 
 def tokenize_dialogue(  # noqa: C901

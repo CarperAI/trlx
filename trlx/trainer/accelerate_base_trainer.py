@@ -13,16 +13,15 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
-from tqdm import tqdm
 from transformers import AutoTokenizer
 
+import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
     get_distributed_config,
     get_git_tag,
-    get_logger,
     get_optimizer_class,
     get_scheduler_class,
     significant,
@@ -35,7 +34,7 @@ from trlx.utils.modeling import (
     parse_delta_kwargs,
 )
 
-logger = get_logger(__name__)
+logger = logging.get_logger(__name__)
 
 
 @register_trainer
@@ -285,20 +284,26 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         logger.info("Evaluating model")
 
-        stats = {}
-        table = []
-
         # Do multiple evaluations over a single list in `gen_kwargs` if present
         if self.generate_sweep_kwarg is not None:
             gen_sweep_arg, gen_sweep_values = self.generate_sweep_kwarg
         else:
             gen_sweep_values = [None]
 
-        tbar = tqdm(
+        desc = [
+            f"generation sweep 0/{len(gen_sweep_values)}",
+            f"eval batch 0/{len(self.eval_dataloader)}",
+        ]
+        tbar = logging.tqdm(
             total=len(self.eval_dataloader) * len(gen_sweep_values),
+            desc=f"[{' | '.join(desc)}]",
             disable=not self.accelerator.is_main_process,
             position=0,
+            leave=True,
         )
+
+        stats = {}
+        table = []
 
         for i_sweep, gen_sweep_value in enumerate(gen_sweep_values):
             # A dedicated suffix for wandb logging
@@ -463,10 +468,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             results = self.evaluate()
             self.accelerator.log(results, step=self.iter_count)
 
-        tbar = tqdm(
+        tbar = logging.tqdm(
             initial=self.iter_count,
             total=self.total_steps,
             disable=not self.accelerator.is_local_main_process,
+            position=0,
             leave=True,
         )
 

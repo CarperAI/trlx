@@ -65,16 +65,39 @@ python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentimen
 
 ## Logging
 
-trlX uses the standard Python `logging` library to log training information to the console. The default logger is set to `INFO` level, which means that `INFO`, `WARNING`, `ERROR`, and `CRITICAL` level messages will be printed to standard output. To control the verbosity, you can set the `TRLX_LOG_LEVEL` environment variable to one of the standard logging [level names](https://docs.python.org/3/library/logging.html#logging-levels).
+trlX uses the standard Python `logging` library to log training information to the console. The default logger is set to the `INFO` level, which means that `INFO`, `WARNING`, `ERROR`, and `CRITICAL` level messages will be printed to standard output.
 
-The following example sets the log level to `WARNING` for trlX logging events which will suppress `INFO` level messages, but will still print `WARNING`, `ERROR`, and `CRITICAL` level messages.
+To change the log level, you can use one of the direct setters. For example, to set the log level to `WARNING` you can use:
 
+```python
+import trlx
+
+trlx.logging.set_verbosity_warning()
 ```
-export TRLX_LOG_LEVEL=WARNING
+
+This will suppress `INFO` level messages, but still print `WARNING`, `ERROR`, and `CRITICAL` level messages.
+
+You can also control logging verbosity by setting the `TRLX_VERBOSITY` environment variable to one of the standard logging [level names](https://docs.python.org/3/library/logging.html#logging-levels):
+
+* `CRITICAL` (`trlx.logging.CRITICAL`)
+* `ERROR` (`trlx.logging.ERROR`)
+* `WARNING` (`trlx.logging.WARNING`)
+* `INFO` (`trlx.logging.INFO`)
+* `DEBUG` (`trlx.logging.DEBUG`)
+
+```sh
+export TRLX_VERBOSITY=WARNING
 ```
 
-> 💡 Tip: To reduce the amount of logging output, you might find it helpful to change log levels of third-party libraries used by trlX.
-For example, try adding `transformers.logging.set_verbosity_error()` to the top of your trlX scripts to suppress verbose messages from the `transformers` library (see their [logging docs](https://huggingface.co/docs/transformers/main_classes/logging#logging) for more details).
+By default, [`tqdm`](https://tqdm.github.io/docs/tqdm/) progress bars are used to display training progress. You can disable them by calling `trlx.logging.disable_progress_bar()`, otherwise `trlx.logging.enable_progress_bar()` to enable.
+
+Messages can be formatted with greater detail by setting `trlx.logging.enable_explicit_format()`. This will inject call-site information into each log which may be helpful for debugging.
+
+```sh
+[2023-01-01 05:00:00,000] [INFO] [ppo_orchestrator.py:63:make_experience] [RANK 0] Message...
+```
+
+> 💡 Tip: To reduce the amount of logging output, you might find it helpful to change log levels of third-party libraries used by trlX. For example, try adding `transformers.logging.set_verbosity_error()` to the top of your trlX scripts to silence verbose messages from the `transformers` library (see their [logging docs](https://huggingface.co/docs/transformers/main_classes/logging#logging) for more details).
 
 ## Contributing
 
