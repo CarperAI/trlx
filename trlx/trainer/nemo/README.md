@@ -11,9 +11,8 @@ Then set `train.trainer_kwargs.pretrained_model` to the path to the directory co
 
 To load a checkpoint, run
 ```
-python examples/nemo_ilql_inference.py configs/nemo_configs/megatron_20b.yaml "/path/to/ilql_sentiments_logs/checkpoints/megatron_gpt-reduced_train_loss=11.37-step=60-consumed_samples=0.ckpt"
+python examples/nemo_ilql_inference.py configs/nemo_configs/megatron_20b.yaml "/path/to/ilql_sentiments_logs/checkpoints"
 ```
-
 To save checkpoints, ensure the following is set in the NeMo config:
 ```
 exp_manager:
