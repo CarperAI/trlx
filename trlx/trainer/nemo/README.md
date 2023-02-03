@@ -7,6 +7,22 @@ This will extract the model weights and the model config.
 
 Then set `train.trainer_kwargs.pretrained_model` to the path to the directory containing the parameters. The model hyperparameters in the `train.trainer_kwargs.megatron_cfg` should match the ones in the model config.
 
+## Using ILQL trained NeMo models
+
+To load a checkpoint, run
+```
+python examples/nemo_ilql_inference.py configs/nemo_configs/megatron_20b.yaml "/path/to/ilql_sentiments_logs/checkpoints/megatron_gpt-reduced_train_loss=11.37-step=60-consumed_samples=0.ckpt"
+```
+
+To save checkpoints, ensure the following is set in the NeMo config:
+```
+exp_manager:
+  # set this to save checkpoints
+  explicit_log_dir: ilql_sentiments_logs
+  # set this to save checkpoints
+  create_checkpoint_callback: True
+```
+
 ## NeMo Megatron setup
 This setup pertains to CoreWeave cluster, but should also work if you clone the `r1.14.0` branch of NeMo from https://github.com/NVIDIA/NeMo/tree/r1.14.0 and apex from `nemo_v1.14.0` from https://github.com/ericharper/apex/tree/nemo_v1.14.0
 

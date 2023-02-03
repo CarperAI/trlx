@@ -705,6 +705,8 @@ class ILQLGPT(MegatronGPTModel):
                 sync_dist=True,
             )
 
+    # Need to override this otherwise distributed fused adam won't work
+    # with frozen layers
     def parameters(self):
         return (p for p in self.model.parameters() if p.requires_grad)
 
