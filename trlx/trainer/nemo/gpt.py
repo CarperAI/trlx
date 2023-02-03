@@ -63,8 +63,7 @@ class ParallelLinear(nn.Module):
         super().__init__()
 
         no_async_tensor_model_parallel_allreduce = (
-            parallel_state.get_tensor_model_parallel_world_size() == 1
-            or sequence_parallel
+            parallel_state.get_tensor_model_parallel_world_size() == 1 or sequence_parallel
         )
 
         if in_size < out_size:
@@ -131,16 +130,12 @@ class ParallelILQLHeads(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.v_head = make_parallel_head(
-            hidden_size, 1, sequence_parallel=sequence_parallel
-        )
+        self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel)
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
 
-        self.q_heads = nn.ModuleList(
-            make_parallel_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
-        )
+        self.q_heads = nn.ModuleList(make_parallel_head(self.hidden_size, self.vocab_size) for _ in range(n_qs))
 
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
         self.target_q_heads.requires_grad_(False)
@@ -150,20 +145,14 @@ class ParallelILQLHeads(nn.Module):
         target_qs = tuple(q_head(hidden_states) for q_head in self.target_q_heads)
         vs = self.v_head(hidden_states)
 
-        qs, target_qs, vs = tree_map(
-            lambda t: rearrange(t, "T N ... -> N T ..."), (qs, target_qs, vs)
-        )
+        qs, target_qs, vs = tree_map(lambda t: rearrange(t, "T N ... -> N T ..."), (qs, target_qs, vs))
 
         return qs, target_qs, vs
 
     def _sync_target_q_heads(self, alpha: float):
         for target_q_head, q_head in zip(self.target_q_heads, self.q_heads):
-            for target_param, copy_param in zip(
-                target_q_head.parameters(), q_head.parameters()
-            ):
-                target_param.data.copy_(
-                    (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
-                )
+            for target_param, copy_param in zip(target_q_head.parameters(), q_head.parameters()):
+                target_param.data.copy_((alpha * copy_param.data) + (1.0 - alpha) * target_param.data)
 
     def sync_target_q_heads(self):
         self._sync_target_q_heads(self.config.alpha)
@@ -243,9 +232,7 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
         if key.startswith(encoder_layers_key):
             layer_idx = int(key.split(".")[4])
             return pp_offset <= layer_idx < (pp_offset + stage_layers)
-        elif key.startswith(
-            "model.language_model.encoder.final_layernorm"
-        ) and not pp_rank == (pp_size - 1):
+        elif key.startswith("model.language_model.encoder.final_layernorm") and not pp_rank == (pp_size - 1):
             return False
         else:
             return True
@@ -259,9 +246,7 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
         else:
             return key
 
-    state_dict = {
-        shift_layer_idx(k): v for k, v in state_dict.items() if filter_in_pp_rank(k)
-    }
+    state_dict = {shift_layer_idx(k): v for k, v in state_dict.items() if filter_in_pp_rank(k)}
 
     return state_dict
 
@@ -276,15 +261,9 @@ class ILQLGPT(MegatronGPTModel):
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
 
-        self._ori_activations_checkpoint_granularity = self.cfg.get(
-            "activations_checkpoint_granularity", None
-        )
-        self._ori_activations_checkpoint_method = self.cfg.get(
-            "activations_checkpoint_method", None
-        )
-        self._ori_activations_checkpoint_num_layers = self.cfg.get(
-            "activations_checkpoint_num_layers", None
-        )
+        self._ori_activations_checkpoint_granularity = self.cfg.get("activations_checkpoint_granularity", None)
+        self._ori_activations_checkpoint_method = self.cfg.get("activations_checkpoint_method", None)
+        self._ori_activations_checkpoint_num_layers = self.cfg.get("activations_checkpoint_num_layers", None)
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -330,15 +309,11 @@ class ILQLGPT(MegatronGPTModel):
     # Called by superclass to build data loaders
     def setup_training_data(self, _):
         if hasattr(self, "_train_dataset"):
-            self._train_dl = self.build_data_loader(
-                self._train_dataset, self._train_collate_fn
-            )
+            self._train_dl = self.build_data_loader(self._train_dataset, self._train_collate_fn)
 
     def setup_validation_data(self, _):
         if hasattr(self, "_valid_dataset"):
-            self._validation_dl = self.build_data_loader(
-                self._valid_dataset, self._valid_collate_fn
-            )
+            self._validation_dl = self.build_data_loader(self._valid_dataset, self._valid_collate_fn)
 
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
@@ -350,20 +325,12 @@ class ILQLGPT(MegatronGPTModel):
         state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
 
         def trim_key(key, prefix):
-            assert key.startswith(
-                prefix
-            ), f"key {key} in state_dict does not start with {prefix}"
+            assert key.startswith(prefix), f"key {key} in state_dict does not start with {prefix}"
             return key[len(prefix) :]
 
-        lm_state_dict = {
-            trim_key(k, "model.language_model."): v for k, v in state_dict.items()
-        }
+        lm_state_dict = {trim_key(k, "model.language_model."): v for k, v in state_dict.items()}
 
-        encoder_state_dict = {
-            trim_key(k, "encoder."): v
-            for k, v in lm_state_dict.items()
-            if k.startswith("encoder.")
-        }
+        encoder_state_dict = {trim_key(k, "encoder."): v for k, v in lm_state_dict.items() if k.startswith("encoder.")}
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
@@ -413,9 +380,9 @@ class ILQLGPT(MegatronGPTModel):
         # we zero grads here because we also call backward in the apex fwd/bwd functions
         self._optimizer.zero_grad()
 
-        if parallel_state.is_pipeline_first_stage(
+        if parallel_state.is_pipeline_first_stage(ignore_virtual=True) or parallel_state.is_pipeline_last_stage(
             ignore_virtual=True
-        ) or parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+        ):
             # we prepare the micro batches for the apex fwd/bwd function
             batch_for_pipeline = batch
         else:
@@ -466,9 +433,7 @@ class ILQLGPT(MegatronGPTModel):
             forward_only=False,
             tensor_shape=tensor_shape,
             dtype=self.autocast_dtype,
-            grad_scaler=self.trainer.precision_plugin.scaler
-            if self.cfg.precision == 16
-            else None,
+            grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
             custom_sync_context_handler=custom_sync_context_handler,
             sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
             sync_batch_comm=self.cfg.get("sync_batch_comm", False),
@@ -480,26 +445,17 @@ class ILQLGPT(MegatronGPTModel):
         # only the last stages of the pipeline return losses
         if last_stage_output:
             # average loss across micro batches
-            outputs = {
-                k: [output[k] for output in last_stage_output]
-                for k in last_stage_output[0].keys()
-            }
-            outputs = {
-                k: torch.concat([torch.as_tensor(vi).unsqueeze(0) for vi in v])
-                for k, v in outputs.items()
-            }
+            outputs = {k: [output[k] for output in last_stage_output] for k in last_stage_output[0].keys()}
+            outputs = {k: torch.concat([torch.as_tensor(vi).unsqueeze(0) for vi in v]) for k, v in outputs.items()}
 
             mean_outputs = {k: v.mean() for k, v in outputs.items()}
             loss_mean = mean_outputs["avg_loss"]
         else:
-
             mean_outputs = {}
             loss_mean = torch.tensor(0.0).cuda()
 
         # when using sequence parallelism, the sequence parallel layernorm grads must be all-reduced
-        if self.cfg.get("tensor_model_parallel_size", 1) > 1 and self.cfg.get(
-            "sequence_parallel", False
-        ):
+        if self.cfg.get("tensor_model_parallel_size", 1) > 1 and self.cfg.get("sequence_parallel", False):
             self.allreduce_sequence_parallel_gradients()
         if self.with_distributed_adam:
             # launch grad reductions
@@ -509,9 +465,7 @@ class ILQLGPT(MegatronGPTModel):
                 self.reduce_overlap_gradients()
         elif self.megatron_amp_o2:
             # when using pipeline parallelism grads must be all-reduced after the pipeline (not asynchronously)
-            if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get(
-                "sequence_parallel", False
-            ):
+            if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get("sequence_parallel", False):
                 # main grads are stored in the MainParamsOptimizer wrapper
                 self._optimizer.allreduce_main_grads()
         else:
@@ -550,10 +504,7 @@ class ILQLGPT(MegatronGPTModel):
             rank_zero_only=True,
         )
 
-        if (
-            self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0
-            and self.trainer.global_step > 0
-        ):
+        if self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0 and self.trainer.global_step > 0:
             if parallel_state.is_pipeline_last_stage():
                 unwrap_float16_module(self.model).other_heads.sync_target_q_heads()
 
@@ -563,40 +514,28 @@ class ILQLGPT(MegatronGPTModel):
         def toggle_checkpointing(module):
             if hasattr(module, "activations_checkpoint_granularity"):
                 if enable:
-                    module.activations_checkpoint_granularity = (
-                        self._ori_activations_checkpoint_granularity
-                    )
+                    module.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
                 else:
                     module.activations_checkpoint_granularity = None
 
             if hasattr(module, "activations_checkpoint_method"):
                 if enable:
-                    module.activations_checkpoint_method = (
-                        self._ori_activations_checkpoint_method
-                    )
+                    module.activations_checkpoint_method = self._ori_activations_checkpoint_method
                 else:
                     module.activations_checkpoint_method = None
 
             if hasattr(module, "activations_checkpoint_num_layers"):
                 if enable:
-                    module.activations_checkpoint_num_layers = (
-                        self._ori_activations_checkpoint_num_layers
-                    )
+                    module.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
                 else:
                     module.activations_checkpoint_num_layers = None
 
         self.model.apply(toggle_checkpointing)
 
         if enable:
-            self.cfg.activations_checkpoint_granularity = (
-                self._ori_activations_checkpoint_granularity
-            )
-            self.cfg.activations_checkpoint_method = (
-                self._ori_activations_checkpoint_method
-            )
-            self.cfg.activations_checkpoint_num_layers = (
-                self._ori_activations_checkpoint_num_layers
-            )
+            self.cfg.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
+            self.cfg.activations_checkpoint_method = self._ori_activations_checkpoint_method
+            self.cfg.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
         else:
             self.cfg.activations_checkpoint_granularity = None
             self.cfg.activations_checkpoint_method = None
@@ -629,9 +568,7 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(False)
 
-        activations_checkpointing_was_enabled = (
-            self.cfg.get("activations_checkpoint_granularity", None) is not None
-        )
+        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
 
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(False)
@@ -639,15 +576,11 @@ class ILQLGPT(MegatronGPTModel):
         input_ids, lengths = batch
         input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
 
-        input_ids, lengths = to_device(
-            (input_ids, lengths), torch.cuda.current_device(), non_blocking=True
-        )
+        input_ids, lengths = to_device((input_ids, lengths), torch.cuda.current_device(), non_blocking=True)
 
         max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
 
-        gen = self.generate(
-            (input_ids, lengths), dict(max_length=max_new_tokens, min_length=0)
-        )
+        gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
         metrics = self.metric_fn(gen["sentences"])
 
@@ -656,9 +589,7 @@ class ILQLGPT(MegatronGPTModel):
         columns = ["sentences", *metric_keys]
         rows = list(zip(gen["sentences"], *metric_values))
 
-        avg_metrics = {
-            f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()
-        }
+        avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
 
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(True)
@@ -682,18 +613,14 @@ class ILQLGPT(MegatronGPTModel):
 
         return avg_metrics, (rows, columns)
 
-    def validation_epoch_end(
-        self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]
-    ):
+    def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]):
         metrics, tables = zip(*outputs)
         _, columns = tables[0]
         rows = [r for trows, _ in tables for r in trows]
 
         self.logger.log_text(key="samples", columns=columns, data=rows)
 
-        outputs_soa = {
-            k: torch.as_tensor([d[k] for d in metrics]) for k in metrics[0].keys()
-        }
+        outputs_soa = {k: torch.as_tensor([d[k] for d in metrics]) for k in metrics[0].keys()}
         # this assumes all validation microbatches are the same size
         avg_outputs = {k: v.mean() for k, v in outputs_soa.items()}
         for k, v in avg_outputs.items():
@@ -711,9 +638,7 @@ class ILQLGPT(MegatronGPTModel):
         return (p for p in self.model.parameters() if p.requires_grad)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
-        def fwd_output_and_loss_func(
-            batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None
-        ):
+        def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:
                 batch = unflatten_dataclass(ILQLBatch)(batch)
@@ -721,9 +646,7 @@ class ILQLGPT(MegatronGPTModel):
 
                 inputs = batch.input_ids
                 pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
-                inputs = torch.nn.functional.pad(
-                    inputs, (0, pad_by), value=self.tokenizer.eos_id
-                )
+                inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
 
                 (
                     attention_mask,
@@ -745,9 +668,7 @@ class ILQLGPT(MegatronGPTModel):
             else:
                 # In-between stages are given data via the pipeline engine
                 # Still need to specify thes arguments to avoid errors
-                model_output = model(
-                    input_ids=None, position_ids=None, attention_mask=None
-                )
+                model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
             def gather_ntc(t: torch.Tensor):
                 """Gather sequence parallel tensor [batch, seq, hidden]"""
@@ -757,7 +678,6 @@ class ILQLGPT(MegatronGPTModel):
                 return t
 
             def loss_func(model_output):
-
                 # # TODO: implement this in a sequence parallel way
                 logits, (qs, target_qs, vs) = model_output
 
@@ -816,12 +736,8 @@ class ILQLGPT(MegatronGPTModel):
                         inference_max_sequence_len,
                     ) = batch
 
-                    extra_arg[
-                        "set_inference_key_value_memory"
-                    ] = set_inference_key_value_memory[0].item()
-                    extra_arg[
-                        "inference_max_sequence_len"
-                    ] = inference_max_sequence_len[0].item()
+                    extra_arg["set_inference_key_value_memory"] = set_inference_key_value_memory[0].item()
+                    extra_arg["inference_max_sequence_len"] = inference_max_sequence_len[0].item()
 
                 model_output = model(
                     input_ids=tokens,
@@ -830,12 +746,9 @@ class ILQLGPT(MegatronGPTModel):
                     **extra_arg,
                 )
             else:
-                model_output = model(
-                    input_ids=None, position_ids=None, attention_mask=None
-                )
+                model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
             def ilql_postprocess(model_output):
-
                 model_output = tree_map(lambda t: t.float(), model_output)
 
                 logits, (_, target_qs, vs) = model_output

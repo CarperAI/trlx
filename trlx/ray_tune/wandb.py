@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import wandb
-
 from trlx.utils import significant
 
 import wandb.apis.reports as wb  # isort: skip

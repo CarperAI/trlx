@@ -14,9 +14,7 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-default_config = yaml.safe_load(
-    open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
-)
+default_config = yaml.safe_load(open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml"))
 
 
 def main(hparams={}):

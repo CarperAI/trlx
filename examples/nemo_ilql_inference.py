@@ -13,9 +13,7 @@ from omegaconf.omegaconf import OmegaConf
 from trlx.data.configs import TRLConfig
 from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer
 
-default_config = yaml.safe_load(
-    open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml")
-)
+default_config = yaml.safe_load(open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml"))
 
 
 def find_checkpoints(checkpoint_dir):
@@ -40,13 +38,10 @@ def main(megatron_cfg_path, checkpoint_path):
     # Manually set up the TP and PP groups
     app_state = AppState()
     app_state.model_parallel_size = (
-        megatron_cfg.model.tensor_model_parallel_size
-        * megatron_cfg.model.pipeline_model_parallel_size
+        megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
     )
     app_state.tensor_model_parallel_size = megatron_cfg.model.tensor_model_parallel_size
-    app_state.pipeline_model_parallel_size = (
-        megatron_cfg.model.pipeline_model_parallel_size
-    )
+    app_state.pipeline_model_parallel_size = megatron_cfg.model.pipeline_model_parallel_size
     (
         app_state.tensor_model_parallel_rank,
         app_state.pipeline_model_parallel_rank,
@@ -66,9 +61,7 @@ def main(megatron_cfg_path, checkpoint_path):
     checkpoint_name = next(iter(checkpoint_names))
     print(f"Loading checkpoint {checkpoint_name}, found {checkpoint_names} checkpoints")
 
-    checkpoint_path = inject_model_parallel_rank(
-        os.path.join(checkpoint_path, checkpoint_name)
-    )
+    checkpoint_path = inject_model_parallel_rank(os.path.join(checkpoint_path, checkpoint_name))
 
     model = ILQLGPT.load_from_checkpoint(
         checkpoint_path,

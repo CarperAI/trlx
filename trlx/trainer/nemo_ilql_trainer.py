@@ -49,38 +49,24 @@ def megatron_trainer(cfg):
                 hysteresis=cfg.model.get("hysteresis", 2),
             )
         if megatron_amp_o2 and not with_distributed_adam:
-            plugins.append(
-                MegatronHalfPrecisionPlugin(
-                    precision=cfg.trainer.precision, device="cuda", scaler=scaler
-                )
-            )
+            plugins.append(MegatronHalfPrecisionPlugin(precision=cfg.trainer.precision, device="cuda", scaler=scaler))
         else:
-            plugins.append(
-                PipelineMixedPrecisionPlugin(
-                    precision=cfg.trainer.precision, device="cuda", scaler=scaler
-                )
-            )
+            plugins.append(PipelineMixedPrecisionPlugin(precision=cfg.trainer.precision, device="cuda", scaler=scaler))
 
     trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
     try:
         exp_manager(trainer, cfg.exp_manager)
     except FileNotFoundError:
-        print(
-            f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}"
-        )
+        print(f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}")
     # update resume from checkpoint found by exp_manager
     if cfg.model.resume_from_checkpoint is not None:
         resume_from_checkpoint = cfg.model.resume_from_checkpoint
     else:
-        resume_from_checkpoint = (
-            trainer._checkpoint_connector.resume_from_checkpoint_fit_path
-        )
+        resume_from_checkpoint = trainer._checkpoint_connector.resume_from_checkpoint_fit_path
 
     logging.info(f"Resuming training from checkpoint: {resume_from_checkpoint}")
 
-    trainer._checkpoint_connector = CheckpointConnector(
-        trainer, resume_from_checkpoint=resume_from_checkpoint
-    )
+    trainer._checkpoint_connector = CheckpointConnector(trainer, resume_from_checkpoint=resume_from_checkpoint)
     # Override timer callback to a stateless one
     for idx, callback in enumerate(trainer.callbacks):
         if isinstance(callback, Timer):
@@ -134,12 +120,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         self.ilql_config: ILQLConfig = cast(ILQLConfig, config.method)
         if isinstance(megatron_cfg, str):
-            cfg_path = (
-                Path(__file__).parent.parent.parent
-                / "configs"
-                / "nemo_configs"
-                / megatron_cfg
-            )
+            cfg_path = Path(__file__).parent.parent.parent / "configs" / "nemo_configs" / megatron_cfg
             logging.info(f"Loading NeMo config from {cfg_path=}")
             megatron_cfg = OmegaConf.load(cfg_path)
 
@@ -189,9 +170,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
             return flatten_dataclass(ILQLBatch)(batch)
 
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
-        train_dataset = ShuffledCyclicSequence(
-            train_samples, self.store, self.config.train.seed
-        )
+        train_dataset = ShuffledCyclicSequence(train_samples, self.store, self.config.train.seed)
         self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
 
         def add_bos_if_not_present(x):
@@ -212,10 +191,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
             max_context = max(context_lengths)
 
             pad_id = self.tokenizer.eos_token_id
-            padded = [
-                x + [pad_id] * (max_context + max_new_tokens - len(x))
-                for x in context_tokens
-            ]
+            padded = [x + [pad_id] * (max_context + max_new_tokens - len(x)) for x in context_tokens]
 
             return [
                 torch.as_tensor(padded, device="cpu"),
@@ -223,14 +199,10 @@ class NeMoILQLTrainer(BaseRLTrainer):
             ]
 
         max_train_steps = self.trainer.max_steps
-        eval_iters = (
-            max_train_steps // self.trainer.val_check_interval + 1
-        ) * self.trainer.limit_val_batches
+        eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size
 
-        eval_dataset = ShuffledCyclicSequence(
-            eval_samples, self.eval_pipeline, self.config.train.seed
-        )
+        eval_dataset = ShuffledCyclicSequence(eval_samples, self.eval_pipeline, self.config.train.seed)
 
         self.model.set_valid_dataset(eval_dataset, collate_fn=eval_collate)
 
