@@ -16,7 +16,7 @@ The following RL algorithms are currently implemented:
 
 📖 **[Documentation](https://trlX.readthedocs.io)**
 
-🧀 **[CHEESE](https://github.com/carperai/cheese)** Collect human annotations for your RL application with our human-in-the-loop data collection library
+🧀 **[CHEESE](https://github.com/carperai/cheese)** Collect human annotations for your RL application with our human-in-the-loop data collection library.
 
 ## Installation
 
