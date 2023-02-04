@@ -372,7 +372,7 @@ def generate_layer_regex(
 ) -> str:
     """Generates a regex range for the specified number of learnable layers."""
     if num_layers_unfrozen == -1:
-        return "[r](\d)+."
+        return "(\d)+."
     num_hidden_layers = hf_get_num_hidden_layers(config)
     start_layer = num_hidden_layers - num_layers_unfrozen
     if start_layer < 0:
@@ -380,7 +380,7 @@ def generate_layer_regex(
             "Number of layers unfrozen cannot be greater than number of layers in the model"
         )
     pattern = f"(?:{regex_for_range(start_layer, num_hidden_layers - 1)})."
-    return f"[r]{pattern}"
+    return f"{pattern}"
 
 
 def get_delta_modified_modules(
@@ -390,8 +390,14 @@ def get_delta_modified_modules(
 ) -> List[str]:
     """Returns a list of module names to be modified for a given delta method with
     the specified number of learnable layers."""
-    prefix = generate_layer_regex(config, num_layers_unfrozen)
-    module_list = [prefix + module for module in modified_modules]
+    unfrozen_layers_pattern = generate_layer_regex(config, num_layers_unfrozen)
+
+    # [r] for regex as per https://github.com/thunlp/OpenDelta/blob/main/opendelta/utils/name_based_addressing.py#L20
+    regex_prefix = "[r]"
+    decoder_prefix = "decoder.block." if config.is_encoder_decoder else ""
+    module_list = [
+        regex_prefix + decoder_prefix + unfrozen_layers_pattern + module for module in modified_modules
+    ]
     return module_list
 
 
