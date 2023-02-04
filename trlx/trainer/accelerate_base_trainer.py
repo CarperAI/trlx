@@ -353,9 +353,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather(torch.vstack(all_samples))
-            prompts = self.accelerator.gather(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
+            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
+            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
+            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
