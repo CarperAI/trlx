@@ -102,7 +102,7 @@ class PPOOrchestrator(Orchestrator):
                 prompt_tensors, samples
             )
 
-            # Pad the samples
+            # Pad the sample outputs
             outputs = self.trainer.tokenizer(str_outputs).input_ids
             outputs = list(map(torch.LongTensor, outputs))
             maxsize = max(map(len, outputs))
@@ -114,7 +114,7 @@ class PPOOrchestrator(Orchestrator):
                 )
                 for output in outputs
             ]
-            padded_samples = torch.vstack(outputs).to(device)
+            sample_outputs = torch.vstack(outputs).to(device)
 
             exp_score_time = time()
 
@@ -154,7 +154,7 @@ class PPOOrchestrator(Orchestrator):
                     outputs = self.trainer.model(
                         input_ids=prompt_tensors,
                         attention_mask=attention_mask,
-                        decoder_input_ids=padded_samples,
+                        decoder_input_ids=sample_outputs,
                     )
                     logits = outputs.logits
                     values = outputs.value
@@ -162,17 +162,17 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = self.trainer.model.forward_hydra(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=padded_samples,
+                            decoder_input_ids=sample_outputs,
                         )
                     else:
                         ref_logits = self.ref_model(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
-                            decoder_input_ids=padded_samples,
+                            decoder_input_ids=sample_outputs,
                         ).logits
             else:
                 all_tokens = torch.cat(
-                    (prompt_tensors.to(device), padded_samples), dim=1
+                    (prompt_tensors.to(device), sample_outputs), dim=1
                 )
                 attention_mask = (
                     all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
@@ -200,9 +200,9 @@ class PPOOrchestrator(Orchestrator):
                         ref_logits = ref_logits.to(device)
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_of_labels(logits[:, :-1, :], padded_samples[:, 1:])
+                logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
                 ref_logprobs = logprobs_of_labels(
-                    ref_logits[:, :-1, :], padded_samples[:, 1:]
+                    ref_logits[:, :-1, :], sample_outputs[:, 1:]
                 )
             else:
                 logprobs = logprobs_of_labels(logits, all_tokens)
@@ -212,7 +212,7 @@ class PPOOrchestrator(Orchestrator):
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             prompt_tensors = prompt_tensors.cpu()
-            padded_samples = padded_samples.cpu()
+            sample_outputs = sample_outputs.cpu()
 
             # Estimate the KL divergence between the model and reference model
             if self.trainer.config.model.model_arch_type == "seq2seq":
@@ -222,7 +222,7 @@ class PPOOrchestrator(Orchestrator):
                 # Get the number of non-padding tokens for each sample
                 # This assumes all padding is on the right side
                 padding_token: int = 0
-                ends = (padded_samples[:, start:] != padding_token).sum(1)
+                ends = (sample_outputs[:, start:] != padding_token).sum(1)
 
                 # Get the logprobs and values, for tokens that are not padding
                 # or beginning of sequences tokens. These are from the model
@@ -255,7 +255,7 @@ class PPOOrchestrator(Orchestrator):
                 logprobs = logprobs.cpu()
                 ref_logprobs = ref_logprobs.cpu()
                 prompt_tensors = prompt_tensors.cpu()
-                padded_samples = padded_samples.cpu()
+                sample_outputs = sample_outputs.cpu()
 
                 start = prompt_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
@@ -286,7 +286,7 @@ class PPOOrchestrator(Orchestrator):
             new_ppo_rl_elements = [
                 PPORLElement(
                     query_tensor=prompt_tensors[i],
-                    response_tensor=padded_samples[i],
+                    response_tensor=sample_outputs[i],
                     logprobs=all_logprobs[i],
                     values=all_values[i],
                     rewards=all_rewards[i],
