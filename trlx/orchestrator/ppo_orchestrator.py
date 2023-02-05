@@ -253,9 +253,6 @@ class PPOOrchestrator(Orchestrator):
                 kl_divergence_estimate = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
                 kl_divergence_estimate = [rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)]
 
-            # Compute rewards
-            all_rewards = []
-
             rollout_count = 0
 
             for sample_idx in range(n_samples):
@@ -264,16 +261,16 @@ class PPOOrchestrator(Orchestrator):
                 if len(sample_kl_divergence_estimate) == 0 or len(all_logprobs[sample_idx]) == 0:
                     continue
 
-                sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
-                all_rewards.append(sample_kl_divergence_estimate)
+                rewards = sample_kl_divergence_estimate
+                rewards[-1] += scores[sample_idx].cpu()
 
                 ppo_rl_elements.append(
                     PPORLElement(
-                        query_tensor=prompt_tensors[i],
-                        response_tensor=sample_outputs[i],
-                        logprobs=all_logprobs[i],
-                        values=all_values[i],
-                        rewards=all_rewards[i],
+                        query_tensor=prompt_tensors[sample_idx],
+                        response_tensor=sample_outputs[sample_idx],
+                        logprobs=all_logprobs[sample_idx],
+                        values=all_values[sample_idx],
+                        rewards=rewards,
                     )
                 )
 
