@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 import transformers
 from torch import nn
+from torchtyping import TensorType
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
@@ -33,6 +34,18 @@ def topk_mask(xs: torch.FloatTensor, k: int):
     return torch.where(xs < mintop, -np.inf * torch.ones_like(xs, dtype=xs.dtype), xs)
 
 
+def batched_index_select(
+    x: TensorType["batch", "seq_len", "hidden"],
+    idxs: TensorType["batch", "index_len"],
+    dim: int,
+) -> TensorType["batch", "index_len", "hidden"]:
+    """
+    Gather vectors at idxs along dim from x
+    """
+    idxs = idxs.unsqueeze(-1).expand(idxs.shape[0], idxs.shape[1], x.shape[-1])
+    return x.gather(dim=dim, index=idxs)
+
+
 @dataclass
 @register_method
 class ILQLConfig(MethodConfig):
@@ -46,19 +59,15 @@ class ILQLConfig(MethodConfig):
     two_qs: bool
     gen_kwargs: dict
 
-    def heads(self, hidden_size: int, vocab_size: int):
-        return ILQLHeads(self, hidden_size, vocab_size)
+    def heads(self, hidden_size: int, vocab_size: int, dtype: type):
+        return ILQLHeads(self, hidden_size, vocab_size, dtype)
 
     def loss(self, outputs, labels: ILQLBatch):
         logits, (qs, target_qs, vs) = outputs
         terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
 
-        actions = (
-            labels.input_ids[:, 1:]
-            .gather(dim=1, index=labels.actions_ixs)
-            .unsqueeze(-1)
-        )
+        actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
         nactions = actions.shape[1]
         bsize, _, dsize = logits.shape
 
@@ -87,9 +96,7 @@ class ILQLConfig(MethodConfig):
         ).sum() / n_nonterminal
 
         def cql_loss(q):
-            loss = F.cross_entropy(
-                q.reshape(-1, dsize), actions.reshape(-1), reduction="none"
-            )
+            loss = F.cross_entropy(q.reshape(-1, dsize), actions.reshape(-1), reduction="none")
             loss = loss.reshape(bsize, nactions) * terminal_mask
             loss = loss.sum() / n_nonterminal
             return loss
@@ -97,9 +104,7 @@ class ILQLConfig(MethodConfig):
         loss_cql = sum(cql_loss(q) for q in qs)
 
         # select logits from continuations
-        action_logits = logits.gather(
-            dim=1, index=labels.actions_ixs.unsqueeze(-1).repeat(1, 1, dsize)
-        )
+        action_logits = batched_index_select(logits, labels.actions_ixs, dim=1)
         cross_entropy = F.cross_entropy(
             action_logits.reshape(-1, dsize),
             actions.reshape(-1),
@@ -109,9 +114,7 @@ class ILQLConfig(MethodConfig):
         with torch.no_grad():
             awac_weight = torch.exp(self.beta * (targetQ - V))
 
-        loss_awac = (
-            torch.sum(cross_entropy * awac_weight * terminal_mask) / n_nonterminal
-        )
+        loss_awac = torch.sum(cross_entropy * awac_weight * terminal_mask) / n_nonterminal
         loss = loss_q + loss_v + self.cql_scale * loss_cql + self.awac_scale * loss_awac
 
         stats = dict(
@@ -123,10 +126,7 @@ class ILQLConfig(MethodConfig):
                 loss_awac=loss_awac.item(),
             ),
             values=get_tensor_stats(V, terminal_mask, n_nonterminal),
-            qvalues={
-                str(ix): get_tensor_stats(Q[ix], terminal_mask, n_nonterminal)
-                for ix in range(len(Q))
-            },
+            qvalues={str(ix): get_tensor_stats(Q[ix], terminal_mask, n_nonterminal) for ix in range(len(Q))},
             awac_weight=get_tensor_stats(awac_weight, terminal_mask, n_nonterminal),
         )
 
@@ -134,37 +134,32 @@ class ILQLConfig(MethodConfig):
 
 
 class ILQLHeads(nn.Module):
-    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int):
+    def __init__(self, config: ILQLConfig, hidden_size: int, vocab_size: int, dtype: type):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.v_head = make_head(self.hidden_size, 1)
+        self.v_head = make_head(self.hidden_size, 1, dtype)
         self.config = config
 
         n_qs = 2 if self.config.two_qs else 1
 
-        self.q_heads = nn.ModuleList(
-            make_head(self.hidden_size, self.vocab_size) for _ in range(n_qs)
-        )
+        self.q_heads = nn.ModuleList(make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs))
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
-        for q_head in self.target_q_heads:
-            q_head.requires_grad_(False)
+        for target_q_head in self.target_q_heads:
+            target_q_head.requires_grad_(False)
 
     def forward(
         self,
         hs: torch.Tensor,
         states_ixs: torch.Tensor = None,
         actions_ixs: torch.Tensor = None,
+        **kwargs,
     ):
         if states_ixs is not None:
-            states_hs = hs.gather(
-                dim=1, index=states_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
-            actions_hs = hs.gather(
-                dim=1, index=actions_ixs.unsqueeze(-1).repeat(1, 1, hs.shape[-1])
-            )
+            states_hs = batched_index_select(hs, states_ixs, 1)
+            actions_hs = batched_index_select(hs, actions_ixs, 1)
         else:
             states_hs = actions_hs = hs
 
@@ -176,12 +171,8 @@ class ILQLHeads(nn.Module):
 
     def _sync_target_q_heads(self, alpha):
         for target_q_head, q_head in zip(self.target_q_heads, self.q_heads):
-            for target_param, copy_param in zip(
-                target_q_head.parameters(), q_head.parameters()
-            ):
-                target_param.data.copy_(
-                    (alpha * copy_param.data) + (1.0 - alpha) * target_param.data
-                )
+            for target_param, copy_param in zip(target_q_head.parameters(), q_head.parameters()):
+                target_param.data.copy_((alpha * copy_param.data) + (1.0 - alpha) * target_param.data)
 
     def sync_target_q_heads(self):
         if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
@@ -212,9 +203,7 @@ class CausalLMWithValueHeads(nn.Module):
         if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
             config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
             if config_path:
-                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(  # noqa: F841
-                    config_path
-                )
+                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)  # noqa: F841
 
         if isinstance(config, str):
             self.config = transformers.AutoConfig.from_pretrained(config)
@@ -228,19 +217,16 @@ class CausalLMWithValueHeads(nn.Module):
         freeze_bottom_causal_layers(self.base_model, num_layers_unfrozen)
 
         # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
-        self.base_model_transformer_args = inspect.getfullargspec(
-            self.base_model.transformer.forward
-        ).args
+        self.base_model_transformer_args = inspect.getfullargspec(self.base_model.transformer.forward).args
 
+        dtype = next(self.base_model.lm_head.parameters()).dtype
         self.hidden_size = hf_get_hidden_size(self.config)
-        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size, dtype)
         self.ilql_config = ilql_config
 
     def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        return {
-            k: v for k, v in kwargs.items() if k in self.base_model_transformer_args
-        }
+        return {k: v for k, v in kwargs.items() if k in self.base_model_transformer_args}
 
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
@@ -264,9 +250,7 @@ class CausalLMWithValueHeads(nn.Module):
         hs = out.last_hidden_state
 
         logits = self.base_model.lm_head(hs)
-        qs, target_qs, vs = self.ilql_heads(
-            hs, states_ixs=states_ixs, actions_ixs=actions_ixs
-        )
+        qs, target_qs, vs = self.ilql_heads(hs, states_ixs=states_ixs, actions_ixs=actions_ixs)
 
         return logits, qs, target_qs, vs, out.past_key_values
 
@@ -300,9 +284,7 @@ class CausalLMWithValueHeads(nn.Module):
         samples = input_ids.clone()
         max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
 
-        finished = torch.zeros(
-            input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device
-        )
+        finished = torch.zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
         for _ in range(max_new_tokens):
             out = self.forward(
                 input_ids=input_ids,
@@ -334,9 +316,7 @@ class CausalLMWithValueHeads(nn.Module):
             finished = (input_ids == eos_token_id).long()
 
             samples = torch.hstack((samples, input_ids))
-            attention_mask = torch.hstack(
-                (attention_mask, (input_ids != eos_token_id).long())
-            )
+            attention_mask = torch.hstack((attention_mask, (input_ids != eos_token_id).long()))
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
             if torch.all(finished):
@@ -346,11 +326,7 @@ class CausalLMWithValueHeads(nn.Module):
 
     @property
     def dummy_inputs(self):
-        return {
-            "input_ids": torch.ones(
-                1, 1, device=self.base_model.device, dtype=torch.long
-            )
-        }
+        return {"input_ids": torch.ones(1, 1, device=self.base_model.device, dtype=torch.long)}
 
     @property
     def device(self):

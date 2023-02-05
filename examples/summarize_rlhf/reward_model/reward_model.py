@@ -9,11 +9,7 @@ class GPTRewardModel(nn.Module):
         model = AutoModelForCausalLM.from_pretrained(model_path)
         self.config = model.config
         # `gpt-neo(x)` models use `hidden_size` attribute names instead of `n_embd``
-        self.config.n_embd = (
-            self.config.hidden_size
-            if hasattr(self.config, "hidden_size")
-            else self.config.n_embd
-        )
+        self.config.n_embd = self.config.hidden_size if hasattr(self.config, "hidden_size") else self.config.n_embd
         self.transformer = model.transformer
         self.v_head = nn.Linear(self.config.n_embd, 1, bias=False)
         self.tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
@@ -91,10 +87,8 @@ class GPTRewardModel(nn.Module):
             rejected_end_scores.append(r_truncated_reward[-1])
 
             # Compute loss
-            loss += -torch.log(
-                torch.sigmoid(c_truncated_reward - r_truncated_reward)
-            ).mean()
-            loss = loss / bs
+            loss += -torch.log(torch.sigmoid(c_truncated_reward - r_truncated_reward)).mean()
+        loss = loss / bs
 
         if not inference:
             chosen_end_scores = torch.stack(chosen_end_scores)

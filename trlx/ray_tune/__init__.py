@@ -98,9 +98,7 @@ def get_search_alg(tune_config: dict):
         try:
             from ray.tune.search.bayesopt import BayesOptSearch
         except ImportError:
-            raise ImportError(
-                "Please pip install bayesian-optimization to use BayesOptSearch."
-            )
+            raise ImportError("Please pip install bayesian-optimization to use BayesOptSearch.")
 
         assert "metric" in tune_config.keys() and "mode" in tune_config.keys()
         "Please specify metric and mode for BayesOptSearch."
@@ -110,9 +108,7 @@ def get_search_alg(tune_config: dict):
         try:
             from ray.tune.search.bohb import TuneBOHB
         except ImportError:
-            raise ImportError(
-                "Please pip install hpbandster and ConfigSpace to use TuneBOHB."
-            )
+            raise ImportError("Please pip install hpbandster and ConfigSpace to use TuneBOHB.")
 
         assert "metric" in tune_config.keys() and "mode" in tune_config.keys()
         "Please specify metric and mode for TuneBOHB."

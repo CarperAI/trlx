@@ -22,10 +22,12 @@ except ModuleNotFoundError:
     HAS_OPENDELTA = False
 
 
-def make_head(n_embd: int, out: int) -> nn.Sequential:
+def make_head(n_embd: int, out: int, dtype: type = torch.float32) -> nn.Sequential:
     """Returns a generic sequential MLP head."""
     return nn.Sequential(
-        nn.Linear(n_embd, n_embd * 2), nn.ReLU(), nn.Linear(n_embd * 2, out)
+        nn.Linear(n_embd, n_embd * 2, dtype=dtype),
+        nn.ReLU(),
+        nn.Linear(n_embd * 2, out, dtype=dtype),
     )
 
 
@@ -331,18 +333,14 @@ MODIFIED_MODULES_DICT = {
 }
 
 
-def generate_layer_regex(
-    config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1
-) -> str:
+def generate_layer_regex(config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1) -> str:
     """Generates a regex range for the specified number of learnable layers."""
     if num_layers_unfrozen == -1:
         return "[r](\d)+."
     num_hidden_layers = hf_get_num_hidden_layers(config)
     start_layer = num_hidden_layers - num_layers_unfrozen
     if start_layer < 0:
-        raise Exception(
-            "Number of layers unfrozen cannot be greater than number of layers in the model"
-        )
+        raise Exception("Number of layers unfrozen cannot be greater than number of layers in the model")
     pattern = f"(?:{regex_for_range(start_layer, num_hidden_layers - 1)})."
     return f"[r]{pattern}"
 
@@ -361,9 +359,7 @@ def get_delta_modified_modules(
 
 def get_delta_model_class(model_type: str):
     if not HAS_OPENDELTA:
-        raise ValueError(
-            "OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta."
-        )
+        raise ValueError("OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta.")
     delta_models = {
         "bitfit": BitFitModel,
         "adapter": AdapterModel,
@@ -478,16 +474,8 @@ def regex_for_range(min_: int, max_: int) -> str:  # noqa
     if max_ >= 0:
         positive_subpatterns = split_to_patterns(min_, max_)
 
-    negative_only_subpatterns = [
-        "-" + val for val in negative_subpatterns if val not in positive_subpatterns
-    ]
-    positive_only_subpatterns = [
-        val for val in positive_subpatterns if val not in negative_subpatterns
-    ]
-    intersected_subpatterns = [
-        "-?" + val for val in negative_subpatterns if val in positive_subpatterns
-    ]
-    subpatterns = (
-        negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
-    )
+    negative_only_subpatterns = ["-" + val for val in negative_subpatterns if val not in positive_subpatterns]
+    positive_only_subpatterns = [val for val in positive_subpatterns if val not in negative_subpatterns]
+    intersected_subpatterns = ["-?" + val for val in negative_subpatterns if val in positive_subpatterns]
+    subpatterns = negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
     return "|".join(subpatterns)

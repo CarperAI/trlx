@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.4.0
     hooks:
         - id: check-case-conflict
         - id: check-json
@@ -19,12 +19,12 @@ repos:
         - id: requirements-txt-fixer
         - id: trailing-whitespace
 -   repo: https://github.com/psf/black
-    rev: 22.10.0
+    rev: 23.1.0
     hooks:
     -   id: black
         files: ^(trlx|examples|tests|setup.py)/
 -   repo: https://github.com/pycqa/isort
-    rev: 5.11.2
+    rev: 5.12.0
     hooks:
     -   id: isort
         name: isort (python)

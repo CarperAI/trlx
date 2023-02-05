@@ -73,9 +73,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Setup the KL controller
         # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(
-                config.method.init_kl_coef, config.method.target, config.method.horizon
-            )
+            self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
@@ -114,12 +112,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def get_arch(self, config: TRLConfig):
         """Get the model"""
         if config.model.model_arch_type == "seq2seq":
-            return Seq2SeqLMHydraWithValueHead(
-                config.model.model_path, config.model.num_layers_unfrozen
-            )
-        return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen
-        )
+            return Seq2SeqLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
+        return CausalLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
 
     def loss(self, batch: PPORLBatch):
         """Forward pass & loss
@@ -135,9 +129,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_rewards = batch.rewards.to(self.accelerator.device)
         response_length = old_rewards.shape[1]
 
-        advantages, returns = self.config.method.get_advantages_and_returns(
-            old_values, old_rewards, response_length
-        )
+        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
 
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
@@ -157,24 +149,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
-            mask = (
-                decoder_input_ids.ne(self.tokenizer.pad_token_id)
-                .long()
-                .to(self.accelerator.device)
-            )
+            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             start = 1
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start - 1 : end - 1],
+                values_pred[:, start - 1: end - 1],
                 mask[:, start:end],
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
-            attention_mask = (
-                tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            )
+            attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
             outputs = self.model(tokens, attention_mask, return_dict=True)
             logits = outputs.logits
             values_pred = outputs.value
@@ -208,9 +194,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         assert exists and isdir
 
         self.run_id = f"run-{uuid.uuid4()}"
-        self.rollout_logging_dir = os.path.join(
-            config.train.rollout_logging_dir, self.run_id
-        )
+        self.rollout_logging_dir = os.path.join(config.train.rollout_logging_dir, self.run_id)
         os.mkdir(self.rollout_logging_dir)
 
         with open(os.path.join(self.rollout_logging_dir, "config.json"), "w") as f:
@@ -233,21 +217,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-
-        train_dataloader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True
-        )
-
-        self.train_dataloader, self.eval_dataloader = self.accelerator.prepare(
-            train_dataloader, eval_dataloader
-        )
+        self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
+        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = (
-            self.config.train.epochs
-            * self.n_updates_per_batch
-            * len(self.train_dataloader)
-        )
+        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def save_pretrained(self, directory: Optional[str] = None):

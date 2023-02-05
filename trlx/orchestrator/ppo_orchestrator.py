@@ -1,3 +1,4 @@
+import os
 from time import time
 from typing import List
 
@@ -6,6 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.ppo_types import PPORLElement
 from trlx.orchestrator import Orchestrator, register_orchestrator
@@ -13,6 +15,8 @@ from trlx.pipeline import BasePipeline
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
+
+logger = logging.get_logger(__name__)
 
 
 @register_orchestrator
@@ -49,7 +53,7 @@ class PPOOrchestrator(Orchestrator):
         self.pipeline_loader: DataLoader = self.pipeline.create_loader(
             self.chunk_size, shuffle=True
         )
-        self.pipeline_loader = self.trainer.accelerator.prepare(self.pipeline_loader)
+        self.pipeline_loader = self.trainer.accelerator.prepare_data_loader(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
         if not hasattr(self.trainer.model, "frozen_head"):
@@ -76,6 +80,18 @@ class PPOOrchestrator(Orchestrator):
             iter_count: Total number of updates run (i.e. number of updates run
             for all batches & epochs)
         """
+        logger.info("Collecting rollouts")
+        tbar = logging.tqdm(
+            total=num_rollouts,
+            disable=os.environ.get("RANK", 0) != "0",
+            desc=f"[rollout 0 / {num_rollouts}]",
+            # Lower progress bar by 1 if we're in WARNING mode or above to avoid hiding high priority progress
+            # bars (e.g. loss progress in trainers)
+            position=logging.get_verbosity() >= logging.WARNING,
+            # Leave progress bar if we're in INFO mode or lower to avoid spamming in suppressed verbosity levels
+            leave=logging.get_verbosity() < logging.WARNING,
+        )
+
         ppo_rl_elements = []
         stats = {}
         clock = Clock()
@@ -201,12 +217,10 @@ class PPOOrchestrator(Orchestrator):
 
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
-                ref_logprobs = logprobs_of_labels(
-                    ref_logits[:, :-1, :], sample_outputs[:, 1:]
-                )
+                ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], sample_outputs[:, 1:])
             else:
-                logprobs = logprobs_of_labels(logits, all_tokens)
-                ref_logprobs = logprobs_of_labels(ref_logits, all_tokens)
+                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
+                ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
             n_samples: int = samples.shape[0]
             logprobs = logprobs.cpu()
@@ -245,18 +259,7 @@ class PPOOrchestrator(Orchestrator):
 
             # Else if not seq2seq (i.e. causal)
             else:
-                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_of_labels(
-                    ref_logits[:, :-1, :], all_tokens[:, 1:]
-                )
-
-                n_samples = samples.shape[0]
                 values = values.cpu()[:, :-1]
-                logprobs = logprobs.cpu()
-                ref_logprobs = ref_logprobs.cpu()
-                prompt_tensors = prompt_tensors.cpu()
-                sample_outputs = sample_outputs.cpu()
-
                 start = prompt_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
                 all_values = [values[ix, start: ends[ix]] for ix in range(n_samples)]
@@ -272,29 +275,34 @@ class PPOOrchestrator(Orchestrator):
                 ]
 
             # Compute rewards
-            all_rewards = [None] * n_samples
+            all_rewards = []
+
+            rollout_count = 0
 
             for sample_idx in range(n_samples):
                 sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
 
-                if len(sample_kl_divergence_estimate) == 0:
-                    sample_kl_divergence_estimate = torch.tensor([0.0])
+                if len(sample_kl_divergence_estimate) == 0 or len(all_logprobs[sample_idx]) == 0:
+                    continue
 
                 sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
-                all_rewards[sample_idx] = sample_kl_divergence_estimate
+                all_rewards.append(sample_kl_divergence_estimate)
 
-            new_ppo_rl_elements = [
-                PPORLElement(
-                    query_tensor=prompt_tensors[i],
-                    response_tensor=sample_outputs[i],
-                    logprobs=all_logprobs[i],
-                    values=all_values[i],
-                    rewards=all_rewards[i],
+                ppo_rl_elements.append(
+                    PPORLElement(
+                        query_tensor=prompt_tensors[i],
+                        response_tensor=sample_outputs[i],
+                        logprobs=all_logprobs[i],
+                        values=all_values[i],
+                        rewards=all_rewards[i],
+                    )
                 )
-                for i in range(n_samples)
-            ]
-            ppo_rl_elements += new_ppo_rl_elements
+
+                rollout_count += 1
             exp_time = clock.tick()
+            tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
+            tbar.update(min(rollout_count, num_rollouts))
+        tbar.close()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time
