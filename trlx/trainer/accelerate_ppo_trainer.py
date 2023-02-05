@@ -53,7 +53,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             self.log_rollouts = False
 
         # Setup the rollout store
-        # Rollouts contain the query & response, log probs, values
+        # Rollouts contain the prompt & response, log probs, values
         # and rewards - from each rollout
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 

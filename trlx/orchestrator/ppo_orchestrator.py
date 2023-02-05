@@ -96,10 +96,10 @@ class PPOOrchestrator(Orchestrator):
             samples = self.trainer.generate(**batch)
             stats["time/exp_generate"] = time() - exp_generate_time
 
-            query_tensors = batch.input_ids
+            prompt_tensors = batch.input_ids
             device = samples.device
             str_samples, str_prompts, str_outputs = self.trainer.decode(
-                query_tensors, samples
+                prompt_tensors, samples
             )
 
             # Pad the samples
@@ -149,10 +149,10 @@ class PPOOrchestrator(Orchestrator):
             # Precompute logprobs, values
             if self.trainer.config.model.model_arch_type == "seq2seq":
                 attention_mask = batch.attention_mask.to(device)
-                query_tensors = batch.input_ids.to(device)
+                prompt_tensors = batch.input_ids.to(device)
                 with torch.no_grad():
                     outputs = self.trainer.model(
-                        input_ids=query_tensors,
+                        input_ids=prompt_tensors,
                         attention_mask=attention_mask,
                         decoder_input_ids=padded_samples,
                     )
@@ -160,19 +160,19 @@ class PPOOrchestrator(Orchestrator):
                     values = outputs.value
                     if hasattr(self.trainer.model, "frozen_head"):
                         ref_logits = self.trainer.model.forward_hydra(
-                            input_ids=query_tensors,
+                            input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=padded_samples,
                         )
                     else:
                         ref_logits = self.ref_model(
-                            input_ids=query_tensors,
+                            input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=padded_samples,
                         ).logits
             else:
                 all_tokens = torch.cat(
-                    (query_tensors.to(device), padded_samples), dim=1
+                    (prompt_tensors.to(device), padded_samples), dim=1
                 )
                 attention_mask = (
                     all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
@@ -211,7 +211,7 @@ class PPOOrchestrator(Orchestrator):
             n_samples: int = samples.shape[0]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
-            query_tensors = query_tensors.cpu()
+            prompt_tensors = prompt_tensors.cpu()
             padded_samples = padded_samples.cpu()
 
             # Estimate the KL divergence between the model and reference model
@@ -228,17 +228,17 @@ class PPOOrchestrator(Orchestrator):
                 # or beginning of sequences tokens. These are from the model
                 # (not the reference model)
                 all_logprobs = [
-                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+                    logprobs[ix, start: ends[ix]] for ix in range(n_samples)
                 ]
                 all_values = [
-                    values[ix, start - 1 : ends[ix] - 1] for ix in range(n_samples)
+                    values[ix, start - 1: ends[ix] - 1] for ix in range(n_samples)
                 ]
 
                 kl_divergence_estimate: List[torch.Tensor] = [
                     -self.trainer.kl_ctl.value
                     * (
-                        logprobs[sample_idx, start : ends[sample_idx]]
-                        - ref_logprobs[sample_idx, start : ends[sample_idx]]
+                        logprobs[sample_idx, start: ends[sample_idx]]
+                        - ref_logprobs[sample_idx, start: ends[sample_idx]]
                     )
                     for sample_idx in range(n_samples)
                 ]
@@ -254,21 +254,21 @@ class PPOOrchestrator(Orchestrator):
                 values = values.cpu()[:, :-1]
                 logprobs = logprobs.cpu()
                 ref_logprobs = ref_logprobs.cpu()
-                query_tensors = query_tensors.cpu()
+                prompt_tensors = prompt_tensors.cpu()
                 padded_samples = padded_samples.cpu()
 
-                start = query_tensors.shape[1] - 1
+                start = prompt_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+                all_values = [values[ix, start: ends[ix]] for ix in range(n_samples)]
                 all_logprobs = [
-                    logprobs[ix, start : ends[ix]] for ix in range(n_samples)
+                    logprobs[ix, start: ends[ix]] for ix in range(n_samples)
                 ]
 
                 kl_divergence_estimate = -self.trainer.kl_ctl.value * (
                     logprobs - ref_logprobs
                 )
                 kl_divergence_estimate = [
-                    rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
+                    rs[start: ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
                 ]
 
             # Compute rewards
@@ -285,7 +285,7 @@ class PPOOrchestrator(Orchestrator):
 
             new_ppo_rl_elements = [
                 PPORLElement(
-                    query_tensor=query_tensors[i],
+                    query_tensor=prompt_tensors[i],
                     response_tensor=padded_samples[i],
                     logprobs=all_logprobs[i],
                     values=all_values[i],
