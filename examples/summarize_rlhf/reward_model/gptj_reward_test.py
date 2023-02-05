@@ -16,9 +16,7 @@ def set_seed(seed_val=42):
     torch.cuda.manual_seed_all(seed_val)
 
 
-def create_comparison_dataset(
-    path="CarperAI/openai_summarize_comparisons", split="train"
-):
+def create_comparison_dataset(path="CarperAI/openai_summarize_comparisons", split="train"):
     dataset = load_dataset(path, split=split)
     if split == "test":
         dataset = dataset.select(range(5000))
@@ -95,16 +93,12 @@ if __name__ == "__main__":
     model = GPTRewardModel("CarperAI/openai_summarize_tldr_sft")
     model.load_state_dict(torch.load("rm_checkpoint/pytorch_model.bin"))
     max_length = 550
-    val_pairs = create_comparison_dataset(
-        "CarperAI/openai_summarize_comparisons", "test"
-    )
+    val_pairs = create_comparison_dataset("CarperAI/openai_summarize_comparisons", "test")
     dev_dataset = PairwiseDataset(val_pairs, tokenizer, max_length=max_length)
 
     from torch.utils.data import DataLoader
 
-    dev_dataloader = DataLoader(
-        dev_dataset, shuffle=False, batch_size=6, collate_fn=DataCollatorReward()
-    )
+    dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=6, collate_fn=DataCollatorReward())
     model.cuda()
     model.eval()
     model.half()
@@ -116,9 +110,7 @@ if __name__ == "__main__":
             for x in batch:
                 batch[x] = batch[x].cuda()
             outputs = model(**batch)
-            correct += sum(
-                outputs["chosen_end_scores"] > outputs["rejected_end_scores"]
-            )
+            correct += sum(outputs["chosen_end_scores"] > outputs["rejected_end_scores"])
             chosen_list.append(outputs["chosen_end_scores"].cpu())
             reject_list.append(outputs["rejected_end_scores"].cpu())
     print("Total accuracy: ", correct / len(dev_dataset))

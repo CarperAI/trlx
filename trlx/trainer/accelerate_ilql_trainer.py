@@ -76,9 +76,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             self.opt,
             self.train_dataloader,
             self.eval_dataloader,
-        ) = self.accelerator.prepare(
-            self.model, self.opt, train_dataloader, eval_dataloader
-        )
+        ) = self.accelerator.prepare(self.model, self.opt, train_dataloader, eval_dataloader)
 
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
