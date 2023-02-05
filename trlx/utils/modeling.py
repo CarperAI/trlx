@@ -390,7 +390,8 @@ def get_delta_modified_modules(
     regex_prefix = "[r]"
     decoder_prefix = "decoder.block." if config.is_encoder_decoder else ""
     module_list = [
-        regex_prefix + decoder_prefix + unfrozen_layers_pattern + module for module in modified_modules
+        regex_prefix + decoder_prefix + unfrozen_layers_pattern + module
+        for module in modified_modules
     ]
     return module_list
 
