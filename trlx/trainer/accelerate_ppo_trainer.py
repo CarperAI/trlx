@@ -58,9 +58,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
         # Create the rollout store dataloader (for batching up rollouts)
-        rollout_loader: DataLoader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True
-        )
+        rollout_loader: DataLoader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
 
         # Prepare multi-GPU acceleration
         self.model, self.opt, self.scheduler, rollout_loader = self.accelerator.prepare(
@@ -134,11 +132,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
             decoder_input_ids = response_tensors
-            attention_mask = (
-                input_ids.ne(self.tokenizer.pad_token_id)
-                .long()
-                .to(self.accelerator.device)
-            )
+            attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
 
             # Forward pass
             outputs = self.model(
@@ -155,7 +149,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start - 1: end - 1],
+                values_pred[:, start - 1 : end - 1],
                 mask[:, start:end],
             )
         else:

@@ -50,9 +50,7 @@ class PPOOrchestrator(Orchestrator):
         self.chunk_size = chunk_size
 
         # Create the dataloader (for batches of prompts)
-        self.pipeline_loader: DataLoader = self.pipeline.create_loader(
-            self.chunk_size, shuffle=True
-        )
+        self.pipeline_loader: DataLoader = self.pipeline.create_loader(self.chunk_size, shuffle=True)
         self.pipeline_loader = self.trainer.accelerator.prepare_data_loader(self.pipeline_loader)
         self.pipeline_iterator = iter(self.pipeline_loader)
 
@@ -97,7 +95,6 @@ class PPOOrchestrator(Orchestrator):
         clock = Clock()
 
         while len(ppo_rl_elements) < num_rollouts:
-
             # Get next batch in prompt dataset and refresh if exhausted
             try:
                 batch: PromptBatch = next(self.pipeline_iterator)
@@ -114,9 +111,7 @@ class PPOOrchestrator(Orchestrator):
 
             prompt_tensors = batch.input_ids
             device = samples.device
-            str_samples, str_prompts, str_outputs = self.trainer.decode(
-                prompt_tensors, samples
-            )
+            str_samples, str_prompts, str_outputs = self.trainer.decode(prompt_tensors, samples)
 
             # Pad the sample outputs
             outputs = self.trainer.tokenizer(str_outputs).input_ids
@@ -187,14 +182,8 @@ class PPOOrchestrator(Orchestrator):
                             decoder_input_ids=sample_outputs,
                         ).logits
             else:
-                all_tokens = torch.cat(
-                    (prompt_tensors.to(device), sample_outputs), dim=1
-                )
-                attention_mask = (
-                    all_tokens.not_equal(self.trainer.tokenizer.pad_token_id)
-                    .long()
-                    .to(device)
-                )
+                all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
+                attention_mask = all_tokens.not_equal(self.trainer.tokenizer.pad_token_id).long().to(device)
                 with torch.no_grad():
                     logits, *_, values = self.trainer.model(
                         all_tokens,
@@ -241,18 +230,14 @@ class PPOOrchestrator(Orchestrator):
                 # Get the logprobs and values, for tokens that are not padding
                 # or beginning of sequences tokens. These are from the model
                 # (not the reference model)
-                all_logprobs = [
-                    logprobs[ix, start: ends[ix]] for ix in range(n_samples)
-                ]
-                all_values = [
-                    values[ix, start - 1: ends[ix] - 1] for ix in range(n_samples)
-                ]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
+                all_values = [values[ix, start - 1 : ends[ix] - 1] for ix in range(n_samples)]
 
                 kl_divergence_estimate: List[torch.Tensor] = [
                     -self.trainer.kl_ctl.value
                     * (
-                        logprobs[sample_idx, start: ends[sample_idx]]
-                        - ref_logprobs[sample_idx, start: ends[sample_idx]]
+                        logprobs[sample_idx, start : ends[sample_idx]]
+                        - ref_logprobs[sample_idx, start : ends[sample_idx]]
                     )
                     for sample_idx in range(n_samples)
                 ]
@@ -262,17 +247,11 @@ class PPOOrchestrator(Orchestrator):
                 values = values.cpu()[:, :-1]
                 start = prompt_tensors.shape[1] - 1
                 ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start: ends[ix]] for ix in range(n_samples)]
-                all_logprobs = [
-                    logprobs[ix, start: ends[ix]] for ix in range(n_samples)
-                ]
+                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
-                kl_divergence_estimate = -self.trainer.kl_ctl.value * (
-                    logprobs - ref_logprobs
-                )
-                kl_divergence_estimate = [
-                    rs[start: ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
-                ]
+                kl_divergence_estimate = -self.trainer.kl_ctl.value * (logprobs - ref_logprobs)
+                kl_divergence_estimate = [rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)]
 
             # Compute rewards
             all_rewards = []
