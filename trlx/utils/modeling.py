@@ -386,6 +386,7 @@ def get_delta_modified_modules(
 
     # [r] for regex as per https://github.com/thunlp/OpenDelta/blob/main/opendelta/utils/name_based_addressing.py#L20
     regex_prefix = "[r]"
+    # TODO (jon-tow): `decoder.block.` is hardcoded to support T5 layer naming.
     decoder_prefix = "decoder.block." if config.is_encoder_decoder else ""
     module_list = [
         regex_prefix + decoder_prefix + unfrozen_layers_pattern + module
