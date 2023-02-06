@@ -112,9 +112,9 @@ def test_parse_delta_kwargs(model_name):
         )
         # Ensure the parsed module regex patterns capture the default module names
         for kwarg_mod, default_mod in zip(delta_kwargs["modified_modules"], default_modified_modules):
-            assert kwarg_mod.endswith(default_mod), (
-                f"Parsed modified module `{kwarg_mod}` should contain the trlx default `{default_mod}`."
-            )
+            assert kwarg_mod.endswith(
+                default_mod
+            ), f"Parsed modified module `{kwarg_mod}` should contain the trlx default `{default_mod}`."
         assert delta_type == "lora", "Delta type should be lora"
 
     # Ensure the defaults don't get used if the user specifies a list of `modified_modules`

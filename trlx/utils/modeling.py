@@ -266,7 +266,7 @@ class RunningMoments:
 
         new_sum = xs_var * xs_count
         # correct old_sum deviation accounting for the new mean
-        old_sum = self.var * self.count + delta ** 2 * self.count * xs_count / tot_count
+        old_sum = self.var * self.count + delta**2 * self.count * xs_count / tot_count
         tot_sum = old_sum + new_sum
 
         self.mean += delta * xs_count / tot_count
@@ -388,10 +388,7 @@ def get_delta_modified_modules(
     regex_prefix = "[r]"
     # TODO (jon-tow): `decoder.block.` is hardcoded to support T5 layer naming.
     decoder_prefix = "decoder.block." if config.is_encoder_decoder else ""
-    module_list = [
-        regex_prefix + decoder_prefix + unfrozen_layers_pattern + module
-        for module in modified_modules
-    ]
+    module_list = [regex_prefix + decoder_prefix + unfrozen_layers_pattern + module for module in modified_modules]
     return module_list
 
 
@@ -481,7 +478,7 @@ def regex_for_range(min_: int, max_: int) -> str:  # noqa
         return int(str(integer)[:-nines_count] + "9" * nines_count)
 
     def fill_by_zeros(integer, zeros_count):
-        return integer - integer % 10 ** zeros_count
+        return integer - integer % 10**zeros_count
 
     def range_to_pattern(start, stop):
         pattern = ""
