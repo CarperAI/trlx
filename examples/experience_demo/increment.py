@@ -1,11 +1,11 @@
-# Trains a model to encode and decode a number.
+# Trains a model to increment a number by 2, in two steps.
 
 import os
 import yaml
-
-import yaml
-import trlx
+import itertools
 from typing import List
+
+import trlx
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import RunElementBatch
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
@@ -35,15 +35,13 @@ def get_last_digit(sample: List[str]) -> int:
 def reward_fn(trajectories: List[List]) -> List[float]:
     """
     trajectories is a list of lists having the form [digit, prompt_1, output_1, prompt_2, output_2]
-    Return if the last digit of output_2 is the same as the digit
+    Return if the last digit of output_2 is digit + 2
     """
     for sample in trajectories:
         assert len(sample) == 5
-    #reconstructed_digits = list(map(get_last_digit, trajectories[:, 2]))
-    # can't do that with list of lists
     reconstructed_digits = list(map(get_last_digit, [sample[4] for sample in trajectories]))
-    #return [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip(trajectories[:, 0], reconstructed_digits)]
-    reward_list = [1 if digit == reconstructed_digit else 0 for digit, reconstructed_digit in zip([sample[0] for sample in trajectories], reconstructed_digits)]
+    reward_list = [1 if digit + 2 == reconstructed_digit else -1] 
+                   for digit, reconstructed_digit in zip([sample[0] for sample in trajectories], reconstructed_digits)]
     print(f"reward_mean = {np.mean(reward_list)}")
     return reward_list
 
@@ -63,16 +61,15 @@ def encoder_decoder_experience_fn(trainer, batch):
     Use model.generate_and_calc_logprobs to return all data needed for PPO for a complex trajectory.
     We completely ignore the dataset (the query tensors).
     
-
+    We use max_new_tokens=1 in all calls to generate_and_calc_logprobs.
     The trajectory for each poem is as follows:
-    Sample a digit from {0, 1}.
     First run:
-    f"digit={digit}
-    digit="
+    f"{digit}
+    next="
     --> continuation
     Second run:
-    f"digit={continuation}
-    Answer: digit="
+    f"{continuation}
+    next="
     --> answer
     """
 
@@ -82,15 +79,15 @@ def encoder_decoder_experience_fn(trainer, batch):
     batch_size = batch.input_ids.shape[0]
     print(f"batch_size = {batch_size}")
     device = batch.input_ids.device
-    digits = list(np.random.randint(0, 2, batch_size)) # sample a digit from {0, 1}
+    digits = list(np.random.randint(0, 8, batch_size))
 
-    # The key architectural constraint is that alll trainer.orch.generate_and_calc_logprobs should be parallel over the batch
+    # The key architectural constraint is that all trainer.orch.generate_and_calc_logprobs should be parallel over the batch
     # Do everything in string space 
 
     first_run_strs = [""] * batch_size
     # First run
     for i in range(batch_size):
-        first_run_strs[i] = "digit=" + str(digits[i]) + "\ndigit="
+        first_run_strs[i] = f"{digits[i]}\nnext="
 
     # Encode the first run
     first_run_batch = trainer.tokenizer(first_run_strs, return_tensors="pt", padding=True, truncation=True)
@@ -105,7 +102,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = "digit=" + first_run_str_outputs[i] + "\nAnswer: digit="
+        second_run_strs[i] = f"{first_run_str_outputs[i]}\nnext="
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
@@ -129,7 +126,6 @@ def encoder_decoder_experience_fn(trainer, batch):
     stats = {k: first_run_stats[k] + second_run_stats[k] for k in first_run_stats}
 
     trajectories = [] # list of lists, of the form [digit, prompt_1, output_1, prompt_2, output_2]
-    # convert to a list of lists
     for i in range(batch_size):
         trajectories.append([digits[i], first_run_str_prompts[i], first_run_str_outputs[i], second_run_str_prompts[i], second_run_str_outputs[i]])
 
@@ -149,13 +145,13 @@ def main(hparams={}):
 
     train_path = "examples/experience_demo/poems/poetry_big_train_qa.csv"
     data = pd.read_csv(train_path)
-    prompts = data["question"].tolist() # everthing else goes in the trajectory function
+    prompts = data["question"].tolist() # we don't use this, we just need a list of strings
 
     np.random.seed(42)
     trlx.train(
         reward_fn=reward_fn,
         experience_fn=encoder_decoder_experience_fn,
-        prompts=prompts,
+        prompts=prompts, 
         config=config,
     )
 
