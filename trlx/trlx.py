@@ -6,10 +6,11 @@ from trlx.utils import set_seed
 from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 
-def train(
+def train(  # noqa: C901
     model_path: Optional[str] = None,
     reward_fn: Optional[Callable[[List[str], List[str], List[str]], List[float]]] = None,
     dataset: Optional[Iterable[Tuple[str, float]]] = None,
+    samples: Optional[List[str]] = None,
     prompts: Optional[List[str]] = None,
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
@@ -102,6 +103,31 @@ def train(
 
         orch = get_orchestrator(config.train.orchestrator)(trainer)
         orch.make_experience(samples, rewards, config.train.seq_length)
+        trainer.add_eval_pipeline(eval_pipeline)
+
+    elif samples is not None:
+        if config is None:
+            config = TRLConfig.load_yaml("configs/sft_config.yml")
+        set_seed(config.train.seed)
+
+        if model_path:
+            config.model.model_path = model_path
+
+        trainer = get_trainer(config.train.trainer)(
+            config=config,
+            metric_fn=metric_fn,
+            logit_mask=logit_mask,
+            stop_sequences=stop_sequences,
+            **config.train.trainer_kwargs,
+        )
+        batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
+        max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+
+        if eval_prompts is None:
+            eval_prompts = [trainer.tokenizer.bos_token] * batch_size
+
+        trainer.store = get_pipeline(config.train.pipeline)(samples, max_prompt_length, trainer.tokenizer)
+        eval_pipeline = get_pipeline(config.train.pipeline)(eval_prompts, max_prompt_length, trainer.tokenizer)
         trainer.add_eval_pipeline(eval_pipeline)
 
     else:
