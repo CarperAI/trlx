@@ -1,10 +1,25 @@
+from dataclasses import dataclass
 from typing import Optional
 
 from transformers import AutoModelForCausalLM
 
 from trlx.data.configs import TRLConfig
+from trlx.data.method_configs import MethodConfig, register_method
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+
+
+@dataclass
+@register_method
+class SFTConfig(MethodConfig):
+    """
+    Config for SFT training
+
+    :param gen_kwargs: kwargs for generation
+    :type gen_kwargs: Dict[str, Any]
+    """
+
+    gen_kwargs: dict
 
 
 @register_trainer
