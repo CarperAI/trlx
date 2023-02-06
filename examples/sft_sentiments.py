@@ -22,8 +22,8 @@ def get_positive_score(scores):
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    # Take few words off of movies reviews as prompts
     imdb = load_dataset("imdb", split="train+test")
+    # Finetune on only positive reviews
     imdb = imdb.filter(lambda sample: sample["label"] == 1)
 
     sentiment_fn = pipeline(
