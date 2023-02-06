@@ -43,10 +43,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+
+        if self.accelerator.state.deepspeed_plugin is not None:
+            # by accelerate's default, arguments in `model.forward` would be casted to half
+            if "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config:
+                self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"]["auto_cast"] = False
+
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
