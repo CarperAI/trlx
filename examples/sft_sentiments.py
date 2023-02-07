@@ -39,12 +39,13 @@ def main(hparams={}):
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return {"sentiments": sentiments}
 
-    trlx.train(
+    trainer = trlx.train(
         samples=imdb["text"],
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
         config=config,
     )
+    trainer.save_pretrained("reviews-sft")
 
 
 if __name__ == "__main__":
