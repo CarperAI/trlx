@@ -3,7 +3,7 @@ from typing import Iterable, List
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding
+from transformers import DataCollatorWithPadding, PreTrainedTokenizer
 
 from trlx.data.ilql_types import ILQLBatch, ILQLElement
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
@@ -15,13 +15,26 @@ class PromptPipeline(BasePipeline):
     Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
     """
 
-    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
+    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
         super().__init__()
-        model_inputs = tokenizer(prompts, truncation=True, padding=False, max_length=max_prompt_length)
-        prompts = model_inputs["input_ids"]
+
+        # manually prepend bos token if not already present to match RL trainers tokenization
+        prompts = [
+            f"{tokenizer.bos_token}{prompt}" if not prompt.startswith(tokenizer.bos_token) else prompt
+            for prompt in prompts
+        ]
+
+        model_inputs = tokenizer(
+            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
+        )
+
+        prompts_tokens = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]
+
         self.tokenizer = tokenizer
-        self.prompts = [{"input_ids": prompt, "attention_mask": mask} for prompt, mask in zip(prompts, attention_mask)]
+        self.prompts = [
+            {"input_ids": tokens, "attention_mask": mask} for tokens, mask in zip(prompts_tokens, attention_mask)
+        ]
 
     def __getitem__(self, ix: int):
         return self.prompts[ix]
