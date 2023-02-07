@@ -1,0 +1,52 @@
+train:
+  seq_length: 550
+  epochs: 100
+  total_steps: 10000
+  batch_size: 2
+
+  checkpoint_interval: 100000
+  eval_interval: 100
+
+  pipeline: "PromptPipeline"
+  orchestrator: "OfflineOrchestrator"
+  trainer: "AccelerateILQLTrainer"
+  checkpoint_dir: "gpt-j-ilql-summarize-duy"
+
+model:
+  model_path: "google/flan-t5-large"
+  num_layers_unfrozen: -1
+  model_arch_type: "seq2seq"
+
+tokenizer:
+  tokenizer_path: "google/flan-t5-large"
+  truncation_side: "left"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 1.0e-6
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 10000000 # train.total_steps
+    eta_min: 1.0e-6
+
+method:
+  name: "ilqlconfig"
+  tau: 0.6
+  gamma: 0.99
+  cql_scale: 0.1
+  awac_scale: 1
+  alpha: 0.0001
+  beta: 0
+  steps_for_target_q_sync: 1
+  two_qs: true
+  gen_kwargs:
+    max_new_tokens: 50
+    top_k: 20
+    beta: 1
+    temperature: 1.0

@@ -19,6 +19,7 @@ from trlx.data.method_configs import MethodConfig, register_method
 from trlx.utils.modeling import (
     flatten_dict,
     freeze_bottom_causal_layers,
+    freeze_bottom_seq2seq_layers,
     get_tensor_stats,
     hf_get_causal_base_model,
     hf_get_hidden_size,
@@ -319,6 +320,146 @@ class CausalLMWithValueHeads(nn.Module):
             attention_mask = torch.hstack((attention_mask, (input_ids != eos_token_id).long()))
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
+            if torch.all(finished):
+                break
+
+        return samples
+
+    @property
+    def dummy_inputs(self):
+        return {"input_ids": torch.ones(1, 1, device=self.base_model.device, dtype=torch.long)}
+
+    @property
+    def device(self):
+        return self.base_model.device
+
+
+class Seq2SeqWithValueHeads(nn.Module):
+    """This is a wrapper around huggingface AutoModelForCausalLM with two additional scalar heads"""
+
+    def __init__(
+        self,
+        config: Union[transformers.PretrainedConfig, str],
+        ilql_config: ILQLConfig,
+        num_layers_unfrozen=-1,
+    ):
+        super().__init__()
+
+        # enable zero3 init within from_pretrained
+        if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
+            config_path = os.environ.get("DEEPSPEED_CONFIG_FILE", "")
+            if config_path:
+                _hfconfig = transformers.deepspeed.HfDeepSpeedConfig(config_path)  # noqa: F841
+
+        if isinstance(config, str):
+            self.config = transformers.AutoConfig.from_pretrained(config)
+        else:
+            self.config = config
+        self.base_model = transformers.AutoModelForSeq2SeqLM.from_pretrained(self.config.name_or_path)
+
+        freeze_bottom_seq2seq_layers(self.base_model)
+
+        # Cache `transformer.forward` args for general use (avoids incompatible args across architectures)
+        self.base_model_args = inspect.getfullargspec(self.base_model.forward).args
+
+        dtype = next(self.base_model.lm_head.parameters()).dtype
+        self.hidden_size = hf_get_hidden_size(self.config)
+        self.ilql_heads = ilql_config.heads(self.hidden_size, self.config.vocab_size, dtype)
+        self.ilql_config = ilql_config
+
+    def _get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
+        return {k: v for k, v in kwargs.items() if k in self.base_model_args}
+
+    def sync_target_q_heads(self):
+        self.ilql_heads.sync_target_q_heads()
+
+    def forward(
+        self,
+        input_ids,
+        attention_mask=None,
+        decoder_input_ids=None,
+        past_key_values=None,
+        encoder_outputs=None,
+        actions_ixs=None,
+        states_ixs=None,
+        output_attentions=True,
+        output_hidden_states=True,
+    ):
+        forward_kwargs = self._get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            past_key_values=past_key_values,
+            encoder_outputs=encoder_outputs,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+        )
+        out = self.base_model(**forward_kwargs)
+
+        hs = out.decoder_hidden_states[-1]
+
+        logits = self.base_model.lm_head(hs)
+        qs, target_qs, vs = self.ilql_heads(hs, states_ixs=None, actions_ixs=None)
+        encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
+        return logits, qs, target_qs, vs, out.past_key_values, encoder_outputs
+
+    def generate(
+        self,
+        input_ids,
+        attention_mask=None,
+        decoder_input_ids=None,
+        past_key_values=None,
+        encoder_outputs=None,
+        beta=1,
+        max_new_tokens=32,
+        max_length=1024,
+        temperature=1,
+        top_k=20,
+        logit_mask=None,
+        pad_token_id=None,
+        eos_token_id=None,
+    ):
+        """
+        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        changing token probabilities as to how advantageous they would be
+        according to value functions estimations.
+        """
+        if attention_mask is None:
+            attention_mask = input_ids.not_equal(pad_token_id)
+
+        samples = input_ids.clone()
+        max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
+        if decoder_input_ids is None:
+            decoder_input_ids = input_ids.new_zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
+        finished = torch.zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
+        for _ in range(max_new_tokens):
+            out = self.forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                decoder_input_ids=decoder_input_ids,
+                past_key_values=past_key_values,
+                encoder_outputs=encoder_outputs,
+            )
+            logits, _, target_qs, vs, past_key_values, encoder_outputs = out
+            if self.ilql_config.two_qs:
+                qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
+            else:
+                qs = target_qs[:, -1, :]
+
+            logits = logits[:, -1, :]
+            vs = vs[:, -1, :]
+            adv = qs - vs
+            pi_beta = F.log_softmax(logits, -1)
+            pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
+            pi = F.softmax(pi_top_k / temperature, -1)
+
+            next_tokens = torch.multinomial(pi, num_samples=1)
+            if eos_token_id is not None:
+                next_tokens = (1 - finished) * next_tokens + finished * pad_token_id
+            finished = (next_tokens == eos_token_id).long()
+            decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
+            samples = decoder_input_ids
             if torch.all(finished):
                 break
 

@@ -3,10 +3,14 @@ from typing import Optional, Sequence, Union, cast
 import torch
 
 from trlx.data.configs import TRLConfig
-from trlx.data.ilql_types import ILQLBatch
+from trlx.data.ilql_types import ILQLBatch, ILQLSeq2SeqBatch
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
+from trlx.trainer.nn.ilql_models import (
+    CausalLMWithValueHeads,
+    ILQLConfig,
+    Seq2SeqWithValueHeads,
+)
 from trlx.utils import to_device
 
 
@@ -29,6 +33,12 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
+        if config.model.model_arch_type == "seq2seq":
+            return Seq2SeqWithValueHeads(
+                config.model.model_path,
+                ilql_config=config.method,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
+            )
         return CausalLMWithValueHeads(
             config.model.model_path,
             ilql_config=config.method,
@@ -55,15 +65,23 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         if self.iter_count % self.config.method.steps_for_target_q_sync == 0:
             self.accelerator.unwrap_model(self.model).sync_target_q_heads()
 
-    def loss(self, batch: ILQLBatch):
+    def loss(self, batch: Union[ILQLBatch, ILQLSeq2SeqBatch]):
         batch = to_device(batch, self.accelerator.device)
-
-        logits, qs, target_qs, vs, _ = self.model(
-            input_ids=batch.input_ids,
-            attention_mask=batch.attention_mask,
-            actions_ixs=batch.actions_ixs,
-            states_ixs=batch.states_ixs,
-        )
+        if self.config.model.model_arch_type == "seq2seq":
+            logits, qs, target_qs, vs, _ = self.model(
+                input_ids=batch.input_ids,
+                attention_mask=batch.attention_mask,
+                actions_ixs=batch.actions_ixs,
+                states_ixs=batch.states_ixs,
+                decoder_input_ids=batch.decoder_input_ids,
+            )
+        else:
+            logits, qs, target_qs, vs, _ = self.model(
+                input_ids=batch.input_ids,
+                attention_mask=batch.attention_mask,
+                actions_ixs=batch.actions_ixs,
+                states_ixs=batch.states_ixs,
+            )
 
         return self.ilql.loss((logits, (qs, target_qs, vs)), batch)
 
