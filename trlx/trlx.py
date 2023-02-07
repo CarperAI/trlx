@@ -21,30 +21,34 @@ def train(  # noqa: C901
     stop_sequences: Optional[List[str]] = [],
 ):
     """
-    Dispatches online or offline reinforcement training
-    depending on whether a reward function or a list of samples & rewards is given
+    Dispatches online, offline reinforcement training or supervised finetuning
+    depending on whether a reward function or a list of samples & rewards, or only list of samples is given
 
     Args:
+        config (TRLConfig): TRLX configuration object
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory
         reward_fn (Optional[Callable[[List[str], List[str], List[str]], List[float]]]):
             Function to rate batches of generated samples. Its arguments are
-            (`samples`, `prompts`, `outputs`) and the return is a list of `rewards` per each sample
+            (`samples`, `prompts`, `outputs`) and the return is a list of `rewards`
         dataset (List[Union[str, List[str]]], List[float]):
-            Lists of samples and rewards for offline training. Samples consist of a variable number
-            of prompts (questions, environment states etc.) and outputs which are meant to be optimized.
-            Following form is expected (prompt_0: str, output_0: str, prompt_1: str, output_1: str ...).
+            Lists of samples and rewards for offline training. (Use `samples` and `rewards` instead)
+        samples (List[Union[str, List[str]]]):
+            List of strings or a list of prompts (questions or environment states) and outputs which are
+            meant to be optimized. In the latter case the following form is expected:
+            (prompt_0: str, output_0: str, prompt_1: str, output_1: str ...).
             Giving a single string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
-        prompts (List[str]): Prompts to sample off from during online training
-        eval_prompts (List[str]): Prompts to periodically validate training on
+        rewards (List[float]):
+            List of real numbers measuring the goodness of each sample
+        prompts (List[str]): Prompts to use for generations during online training
+        eval_prompts (List[str]): Prompts to use for periodical validation of training
         metric_fn (Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]]):
-            Function to compute statistics on batches of gnerated samples. Its arguments are the same
+            Function to compute statistics on batches of generated samples. Its arguments are the same
             as in `reward_fn` (`samples`, `prompts`, `outputs`) but the return is dictionary with keys
             as metric's name and values and lists of numeric values per each sample in batch
-        config (TRLConfig): TRL configuration object to override default settings
         logit_mask (Optional[List]): Bigram masking matrix
         stop_sequences (Optional[List[str]]):
             String sequences to trim generations (both for generating of experience and evaluation) up to its
-            encounter in them. Generatations will not contain them and also will be right-stripped
+            encounter in them. Generations will not contain them and also will also be right-stripped
     """
     set_seed(config.train.seed)
 
