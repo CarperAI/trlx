@@ -40,9 +40,7 @@ def tune_function(
         ),
         param_space=param_space_train,
         tune_config=tune.TuneConfig(**tune_config),
-        run_config=ray.air.RunConfig(
-            local_dir="ray_results", callbacks=[CSVLoggerCallback()]
-        ),
+        run_config=ray.air.RunConfig(local_dir="ray_results", callbacks=[CSVLoggerCallback()]),
     )
 
     results = tuner.fit()
@@ -79,18 +77,10 @@ if __name__ == "__main__":
         required=True,
         help="The default config file for the script.",
     )
-    parser.add_argument(
-        "--num-workers", type=int, default=1, help="Number of workers to use per trial."
-    )
-    parser.add_argument(
-        "--num-cpus", type=int, default=4, help="Number of CPUs to use per worker."
-    )
-    parser.add_argument(
-        "--num-gpus", type=int, default=1, help="Number of GPUs to use per worker."
-    )
-    parser.add_argument(
-        "-y", "--assume-yes", action="store_true", help="Don't ask for confirmation"
-    )
+    parser.add_argument("--num-workers", type=int, default=1, help="Number of workers to use per trial.")
+    parser.add_argument("--num-cpus", type=int, default=4, help="Number of CPUs to use per worker.")
+    parser.add_argument("--num-gpus", type=int, default=1, help="Number of GPUs to use per worker.")
+    parser.add_argument("-y", "--assume-yes", action="store_true", help="Don't ask for confirmation")
     parser.add_argument(
         "--server-address",
         type=str,

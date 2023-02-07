@@ -75,20 +75,8 @@ def main(hparams={}):
 
 if __name__ == "__main__":
     # TEST REWARD FUNTION
-    assert (
-        reward_fn(
-            ["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -4]),1)"]
-        )
-    ) == [1]
-    assert (
-        reward_fn(
-            ["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -a]),1)"]
-        )
-    ) == [-1]
-    assert (
-        reward_fn(
-            ["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -3]),1)"]
-        )
-    ) == [-0.5]
+    assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -4]),1)"])) == [1]
+    assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -a]),1)"])) == [-1]
+    assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -3]),1)"])) == [-0.5]
 
     main()

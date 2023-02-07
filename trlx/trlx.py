@@ -8,15 +8,11 @@ from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 def train(
     model_path: Optional[str] = None,
-    reward_fn: Optional[
-        Callable[[List[str], List[str], List[str]], List[float]]
-    ] = None,
+    reward_fn: Optional[Callable[[List[str], List[str], List[str]], List[float]]] = None,
     dataset: Optional[Iterable[Tuple[str, float]]] = None,
     prompts: Optional[List[str]] = None,
     eval_prompts: Optional[List[str]] = None,
-    metric_fn: Optional[
-        Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]
-    ] = None,
+    metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
     logit_mask: Optional[List[List[bool]]] = None,
     stop_sequences: Optional[List[str]] = [],
@@ -69,29 +65,19 @@ def train(
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
-        max_prompt_length = (
-            config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
-        )
-        pipeline = get_pipeline(config.train.pipeline)(
-            prompts, max_prompt_length, trainer.tokenizer
-        )
-        orch = get_orchestrator(config.train.orchestrator)(
-            trainer, pipeline, chunk_size=config.method.chunk_size
-        )
+        max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
+        pipeline = get_pipeline(config.train.pipeline)(prompts, max_prompt_length, trainer.tokenizer)
+        orch = get_orchestrator(config.train.orchestrator)(trainer, pipeline, chunk_size=config.method.chunk_size)
         orch.make_experience(config.method.num_rollouts)
 
-        eval_pipeline = get_pipeline(config.train.pipeline)(
-            eval_prompts, max_prompt_length, trainer.tokenizer
-        )
+        eval_pipeline = get_pipeline(config.train.pipeline)(eval_prompts, max_prompt_length, trainer.tokenizer)
         trainer.add_eval_pipeline(eval_pipeline)
 
     elif dataset is not None:
         samples, rewards = dataset
 
         if len(samples) != len(rewards):
-            raise ValueError(
-                f"Number of samples {len(samples)} should match the number of rewards {len(rewards)}"
-            )
+            raise ValueError(f"Number of samples {len(samples)} should match the number of rewards {len(rewards)}")
 
         if config is None:
             config = TRLConfig.load_yaml("configs/ilql_config.yml")
@@ -105,17 +91,14 @@ def train(
             metric_fn=metric_fn,
             logit_mask=logit_mask,
             stop_sequences=stop_sequences,
+            **config.train.trainer_kwargs,
         )
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
-        max_prompt_length = (
-            config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
-        )
+        max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
         if eval_prompts is None:
             eval_prompts = [trainer.tokenizer.bos_token] * batch_size
-        eval_pipeline = get_pipeline(config.train.pipeline)(
-            eval_prompts, max_prompt_length, trainer.tokenizer
-        )
+        eval_pipeline = get_pipeline(config.train.pipeline)(eval_prompts, max_prompt_length, trainer.tokenizer)
 
         orch = get_orchestrator(config.train.orchestrator)(trainer)
         orch.make_experience(samples, rewards, config.train.seq_length)

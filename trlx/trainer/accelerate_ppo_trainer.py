@@ -1,10 +1,11 @@
 import json
 import os
 import uuid
-from typing import Optional, Tuple
+from typing import Callable, List, Optional
 
 import torch
-from torchtyping import TensorType
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch
@@ -17,37 +18,66 @@ from trlx.trainer.nn.ppo_models import (
     FixedKLController,
     Seq2SeqLMHydraWithValueHead,
 )
-from trlx.utils.modeling import logprobs_from_logits
+from trlx.utils.modeling import logprobs_of_labels
 
 
 @register_trainer
 class AcceleratePPOTrainer(AccelerateRLTrainer):
+    """PPO Accelerate Trainer
+
+    Note this class is intwined with `PPOOrchestrator`. The PPO trainer must be
+    created first and then given as a parameter to the PPO orchestrator. The PPO
+    orchestrator then adds a `orch` property to the trainer and also sets a
+    `trainer` property on itself. This broadly has the effect of the
+    trainer class extending the orchestrator class (and thus having access to
+    the `orch.make_experience` method that creates rollouts).
+    """
+
+    reward_fn: Callable[[List[str], List[str], List[str]], List[float]]
+
+    tokenizer: AutoTokenizer
+
     def __init__(self, config, **kwargs):
+        """PPO Accelerate Trainer initialization
+
+        Args:
+            config: Config
+        """
         super().__init__(config, **kwargs)
 
+        # Setup rollout logging
         if config.train.rollout_logging_dir is not None:
             self.log_rollouts = True
             self.setup_rollout_logging(config)
         else:
             self.log_rollouts = False
 
+        # Setup the rollout store
+        # Rollouts contain the prompt & response, log probs, values
+        # and rewards - from each rollout
         self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
 
-        rollout_loader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True
-        )
+        # Create the rollout store dataloader (for batching up rollouts)
+        rollout_loader: DataLoader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
 
+        # Prepare multi-GPU acceleration
         self.model, self.opt, self.scheduler, rollout_loader = self.accelerator.prepare(
             self.model, self.opt, self.scheduler, rollout_loader
         )
 
+        # Clear the rollout store
         self.store.clear_history()
+
+        # Setup the KL controller
+        # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(
-                config.method.init_kl_coef, config.method.target, config.method.horizon
-            )
+            self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
         else:
             self.kl_ctl = FixedKLController(config.method.init_kl_coef)
+
+        # Create the parameters for the Hugging Face language model's generator
+        # method (that generates new tokens from a prompt).
+        # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
         if config.model.model_arch_type == "seq2seq":
             self.generate_kwargs = dict(
                 config.method.gen_kwargs,
@@ -78,31 +108,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 self.generate_experience_kwargs = None
 
     def get_arch(self, config: TRLConfig):
+        """Get the model"""
         if config.model.model_arch_type == "seq2seq":
-            return Seq2SeqLMHydraWithValueHead(
-                config.model.model_path, config.model.num_layers_unfrozen
-            )
-        return CausalLMHydraWithValueHead(
-            config.model.model_path, config.model.num_layers_unfrozen
-        )
-
-    def get_model_inputs(
-        self,
-        query_tensors: TensorType["batch_size", "query_size"],
-        response_tensors: TensorType["batch_size", "response_size"],
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        tokens = torch.cat((query_tensors, response_tensors), dim=1)[
-            :, -self.max_length :
-        ]
-        attention_mask = (
-            tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-        )
-        # For a proper positional encoding in case of left padding
-        position_ids = attention_mask.cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask.eq(0), 0)
-        return tokens, attention_mask, position_ids
+            return Seq2SeqLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
+        return CausalLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
 
     def loss(self, batch: PPORLBatch):
+        """Forward pass & loss
+
+        Args:
+            batch: Previous batch of episodes
+        """
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
         response_tensors = batch.response_tensors.to(self.accelerator.device)
@@ -111,31 +127,24 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_rewards = batch.rewards.to(self.accelerator.device)
         response_length = old_rewards.shape[1]
 
-        advantages, returns = self.config.method.get_advantages_and_returns(
-            old_values, old_rewards, response_length
-        )
+        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
 
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
             decoder_input_ids = response_tensors
-            attention_mask = (
-                input_ids.ne(self.tokenizer.pad_token_id)
-                .long()
-                .to(self.accelerator.device)
-            )
+            attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+
+            # Forward pass
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 decoder_input_ids=decoder_input_ids,
             )
+
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
-            mask = (
-                decoder_input_ids.ne(self.tokenizer.pad_token_id)
-                .long()
-                .to(self.accelerator.device)
-            )
+            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             start = 1
             end = start + response_length
             logprobs, values_pred, mask = (
@@ -145,14 +154,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
-            attention_mask = (
-                tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            )
+            attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
             outputs = self.model(tokens, attention_mask, return_dict=True)
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
-            logprobs = logprobs_from_logits(logits[:, :-1, :], tokens[:, 1:])
+            logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
 
             start = query_tensors.shape[1] - 1
             end = start + response_length
@@ -181,15 +188,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         assert exists and isdir
 
         self.run_id = f"run-{uuid.uuid4()}"
-        self.rollout_logging_dir = os.path.join(
-            config.train.rollout_logging_dir, self.run_id
-        )
+        self.rollout_logging_dir = os.path.join(config.train.rollout_logging_dir, self.run_id)
         os.mkdir(self.rollout_logging_dir)
 
         with open(os.path.join(self.rollout_logging_dir, "config.json"), "w") as f:
             f.write(json.dumps(config.to_dict(), indent=2))
 
     def post_epoch_callback(self):
+        """Post epoch callback
+
+        Clears the store and creates `num_rollouts` new episodes.
+        """
         if self.log_rollouts:
             self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
@@ -202,21 +211,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
-
-        train_dataloader = self.store.create_loader(
-            self.config.train.batch_size, shuffle=True
-        )
-
-        self.train_dataloader, self.eval_dataloader = self.accelerator.prepare(
-            train_dataloader, eval_dataloader
-        )
+        self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
+        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = (
-            self.config.train.epochs
-            * self.n_updates_per_batch
-            * len(self.train_dataloader)
-        )
+        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def save_pretrained(self, directory: Optional[str] = None):

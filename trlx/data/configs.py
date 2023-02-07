@@ -36,13 +36,15 @@ class ModelConfig:
 
     :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
         Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
-        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_a`)
-            {"delta_type": "lora", "modified_modules": "all", "lora_a": 0.5}
+        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_r`)
+            {"delta_type": "lora", "modified_modules": "all", "lora_r": 8, "lora_alpha": 16, "lora_dropout": 0.0}
         or in YAML format:
             delta_kwargs:
                 delta_type: lora
                 modified_modules: "all"
-                lora_a: 0.5
+                lora_r: 8
+                lora_alpha: 16
+                lora_dropout: 0.0
         See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
     :type delta_kwargs: Optional[Dict[str, Any]]
     """
@@ -156,6 +158,9 @@ class TrainConfig:
     :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
     :type trainer: str
 
+    :param trainer_kwargs: Extra keyword arguments for the trainer
+    :type trainer: Dict[str, Any]
+
     :param project_name: Project name for wandb
     :type project_name: str
 
@@ -193,6 +198,7 @@ class TrainConfig:
     pipeline: str  # One of the pipelines in framework.pipeline
     orchestrator: str  # One of the orchestrators
     trainer: str  # One of the trainers
+    trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None
@@ -274,9 +280,7 @@ class TRLConfig:
 
         for param in config:
             if param not in updates:
-                raise ValueError(
-                    f"parameter {param} is not present in the config (typo or a wrong config)"
-                )
+                raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 
         return cls.from_dict(merged)
 

@@ -67,9 +67,7 @@ def simple_launcher(args):
     try:
         dynamo_backend = DynamoBackend(args.dynamo_backend.upper())
     except ValueError:
-        raise ValueError(
-            f"Unknown dynamo backend: {args.dynamo_backend.upper()}. Choose between {DYNAMO_BACKENDS}."
-        )
+        raise ValueError(f"Unknown dynamo backend: {args.dynamo_backend.upper()}. Choose between {DYNAMO_BACKENDS}.")
     current_env["ACCELERATE_DYNAMO_BACKEND"] = dynamo_backend.value
 
     current_env["OMP_NUM_THREADS"] = str(args.num_cpu_threads_per_process)
@@ -83,9 +81,7 @@ def multi_gpu_launcher(args):
     try:
         mixed_precision = PrecisionType(mixed_precision)
     except ValueError:
-        raise ValueError(
-            f"Unknown mixed_precision mode: {mixed_precision}. Choose between {PrecisionType.list()}."
-        )
+        raise ValueError(f"Unknown mixed_precision mode: {mixed_precision}. Choose between {PrecisionType.list()}.")
 
     if args.fp16:
         warnings.warn(
@@ -99,9 +95,7 @@ def multi_gpu_launcher(args):
     try:
         dynamo_backend = DynamoBackend(args.dynamo_backend.upper())
     except ValueError:
-        raise ValueError(
-            f"Unknown dynamo backend: {args.dynamo_backend.upper()}. Choose between {DYNAMO_BACKENDS}."
-        )
+        raise ValueError(f"Unknown dynamo backend: {args.dynamo_backend.upper()}. Choose between {DYNAMO_BACKENDS}.")
     current_env["ACCELERATE_DYNAMO_BACKEND"] = dynamo_backend.value
 
     if args.use_fsdp:
@@ -112,13 +106,9 @@ def multi_gpu_launcher(args):
         if args.fsdp_auto_wrap_policy is not None:
             current_env["FSDP_AUTO_WRAP_POLICY"] = str(args.fsdp_auto_wrap_policy)
         if args.fsdp_transformer_layer_cls_to_wrap is not None:
-            current_env["FSDP_TRANSFORMER_CLS_TO_WRAP"] = str(
-                args.fsdp_transformer_layer_cls_to_wrap
-            )
+            current_env["FSDP_TRANSFORMER_CLS_TO_WRAP"] = str(args.fsdp_transformer_layer_cls_to_wrap)
         if args.fsdp_backward_prefetch_policy is not None:
-            current_env["FSDP_BACKWARD_PREFETCH"] = str(
-                args.fsdp_backward_prefetch_policy
-            )
+            current_env["FSDP_BACKWARD_PREFETCH"] = str(args.fsdp_backward_prefetch_policy)
         if args.fsdp_state_dict_type is not None:
             current_env["FSDP_STATE_DICT_TYPE"] = str(args.fsdp_state_dict_type)
 
@@ -127,25 +117,15 @@ def multi_gpu_launcher(args):
         current_env["ACCELERATE_USE_MEGATRON_LM"] = "true"
         current_env[prefix + "TP_DEGREE"] = str(args.megatron_lm_tp_degree)
         current_env[prefix + "PP_DEGREE"] = str(args.megatron_lm_pp_degree)
-        current_env[prefix + "GRADIENT_CLIPPING"] = str(
-            args.megatron_lm_gradient_clipping
-        )
+        current_env[prefix + "GRADIENT_CLIPPING"] = str(args.megatron_lm_gradient_clipping)
         if args.megatron_lm_num_micro_batches is not None:
-            current_env[prefix + "NUM_MICRO_BATCHES"] = str(
-                args.megatron_lm_num_micro_batches
-            )
+            current_env[prefix + "NUM_MICRO_BATCHES"] = str(args.megatron_lm_num_micro_batches)
         if args.megatron_lm_sequence_parallelism is not None:
-            current_env[prefix + "SEQUENCE_PARALLELISM"] = str(
-                args.megatron_lm_sequence_parallelism
-            )
+            current_env[prefix + "SEQUENCE_PARALLELISM"] = str(args.megatron_lm_sequence_parallelism)
         if args.megatron_lm_recompute_activations is not None:
-            current_env[prefix + "RECOMPUTE_ACTIVATIONS"] = str(
-                args.megatron_lm_recompute_activations
-            )
+            current_env[prefix + "RECOMPUTE_ACTIVATIONS"] = str(args.megatron_lm_recompute_activations)
         if args.megatron_lm_use_distributed_optimizer is not None:
-            current_env[prefix + "USE_DISTRIBUTED_OPTIMIZER"] = str(
-                args.megatron_lm_use_distributed_optimizer
-            )
+            current_env[prefix + "USE_DISTRIBUTED_OPTIMIZER"] = str(args.megatron_lm_use_distributed_optimizer)
 
     current_env["OMP_NUM_THREADS"] = str(args.num_cpu_threads_per_process)
     if is_torch_version("<", "1.9.0"):
@@ -156,9 +136,7 @@ def multi_gpu_launcher(args):
 
 def deepspeed_launcher(args):
     if not is_deepspeed_available():
-        raise ImportError(
-            "DeepSpeed is not installed => run `pip3 install deepspeed` or build it from source."
-        )
+        raise ImportError("DeepSpeed is not installed => run `pip3 install deepspeed` or build it from source.")
 
     current_env = {}
     try:
@@ -181,16 +159,10 @@ def deepspeed_launcher(args):
     current_env["DEEPSPEED_ZERO_STAGE"] = str(args.zero_stage)
     current_env["GRADIENT_ACCUMULATION_STEPS"] = str(args.gradient_accumulation_steps)
     current_env["GRADIENT_CLIPPING"] = str(args.gradient_clipping).lower()
-    current_env["DEEPSPEED_OFFLOAD_OPTIMIZER_DEVICE"] = str(
-        args.offload_optimizer_device
-    ).lower()
-    current_env["DEEPSPEED_OFFLOAD_PARAM_DEVICE"] = str(
-        args.offload_param_device
-    ).lower()
+    current_env["DEEPSPEED_OFFLOAD_OPTIMIZER_DEVICE"] = str(args.offload_optimizer_device).lower()
+    current_env["DEEPSPEED_OFFLOAD_PARAM_DEVICE"] = str(args.offload_param_device).lower()
     current_env["DEEPSPEED_ZERO3_INIT"] = str(args.zero3_init_flag).lower()
-    current_env["DEEPSPEED_ZERO3_SAVE_16BIT_MODEL"] = str(
-        args.zero3_save_16bit_model
-    ).lower()
+    current_env["DEEPSPEED_ZERO3_SAVE_16BIT_MODEL"] = str(args.zero3_save_16bit_model).lower()
     if args.deepspeed_config_file is not None:
         current_env["DEEPSPEED_CONFIG_FILE"] = str(args.deepspeed_config_file)
 
@@ -208,13 +180,9 @@ def _raise_notimplementederror(*args, **kwargs):
 
 
 def launch_command(args):
-    with patch(
-        "accelerate.commands.launch.deepspeed_launcher", deepspeed_launcher
-    ), patch(
+    with patch("accelerate.commands.launch.deepspeed_launcher", deepspeed_launcher), patch(
         "accelerate.commands.launch.multi_gpu_launcher", multi_gpu_launcher
-    ), patch(
-        "accelerate.commands.launch.simple_launcher", simple_launcher
-    ), patch(
+    ), patch("accelerate.commands.launch.simple_launcher", simple_launcher), patch(
         "accelerate.commands.launch.tpu_launcher", _raise_notimplementederror
     ), patch(
         "accelerate.commands.launch.sagemaker_launcher", _raise_notimplementederror

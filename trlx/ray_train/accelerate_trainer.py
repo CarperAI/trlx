@@ -35,9 +35,7 @@ class _AccelerateConfigWrapper:
     Lets Trainables know to treat this as already loaded file content instead of path.
     """
 
-    def __init__(
-        self, config_raw: str, deepspeed_config_raw: Optional[str] = None
-    ) -> None:
+    def __init__(self, config_raw: str, deepspeed_config_raw: Optional[str] = None) -> None:
         self.config_raw = config_raw
         self.deepspeed_config_raw = deepspeed_config_raw
 
@@ -63,9 +61,7 @@ class AccelerateTrainer(TorchTrainer):
         self.accelerate_config_path = accelerate_config_path or default_config_file
         if isinstance(self.accelerate_config_path, _AccelerateConfigWrapper):
             self._accelerate_config_raw = self.accelerate_config_path.config_raw
-            self._deepspeed_config_file_raw = (
-                self.accelerate_config_path.deepspeed_config_raw
-            )
+            self._deepspeed_config_file_raw = self.accelerate_config_path.deepspeed_config_raw
         else:
             (
                 self._accelerate_config_raw,
@@ -150,17 +146,13 @@ class AccelerateTrainer(TorchTrainer):
                 namespace.num_processes = 1
                 namespace.num_machines = session.get_world_size()
                 namespace.machine_rank = session.get_world_rank()
-                namespace.num_cpu_threads_per_process = (
-                    session.get_trial_resources().bundles[-1]["CPU"]
-                )
+                namespace.num_cpu_threads_per_process = session.get_trial_resources().bundles[-1]["CPU"]
                 namespace.gpu_ids = None
                 namespace.main_process_ip = master_addr
                 namespace.main_process_port = master_port
 
                 if deepspeed_config_file_raw:
-                    deepspeed_config_file = os.path.join(
-                        tempdir, "deepspeed_config.json"
-                    )
+                    deepspeed_config_file = os.path.join(tempdir, "deepspeed_config.json")
                     with open(deepspeed_config_file, "w") as f:
                         f.write(deepspeed_config_file_raw)
                     namespace.deepspeed_config_file = deepspeed_config_file
