@@ -1,3 +1,5 @@
+import os
+
 import torch
 import yaml
 from datasets import load_dataset
@@ -9,6 +11,15 @@ from trlx.data.configs import TRLConfig
 
 config_path = "configs/ilql_summarize_t5.yml"
 default_config = yaml.safe_load(open(config_path))
+
+REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
+if not os.path.exists(REWARD_CHECKPOINT_PATH):
+    os.makedirs("reward_model/rm_checkpoint", exist_ok=True)
+    os.system(
+        f"wget -O {REWARD_CHECKPOINT_PATH} \
+        https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin"
+    )
+SFT_MODEL_PATH = "CarperAI/openai_summarize_tldr_sft"
 
 
 def main(hparams={}):

@@ -55,6 +55,7 @@ class ILQLSeq2SeqElement:
 
     input_ids: TensorType["query_size"]
     attention_mask: TensorType["query_size"]
+    decoder_input_ids: TensorType["reward_size"]
     rewards: TensorType["reward_size"]
     states_ixs: TensorType["states_size"]
     actions_ixs: TensorType["reward_size"]
@@ -101,7 +102,7 @@ class ILQLSeq2SeqBatch:
 
     input_ids: TensorType["batch_size", "query_size"]
     attention_mask: TensorType["batch_size", "query_size"]
-    decoder_input_ids: TensorType["batch_size", "query_size"]
+    decoder_input_ids: TensorType["batch_size", "reward_size"]
     rewards: TensorType["batch_size", "reward_size"]
     states_ixs: TensorType["batch_size", "states_size"]
     actions_ixs: TensorType["batch_size", "reward_size"]
