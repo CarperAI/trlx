@@ -143,7 +143,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_from_logits(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             start = 1
             end = start + response_length
