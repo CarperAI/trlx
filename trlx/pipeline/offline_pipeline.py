@@ -19,10 +19,11 @@ class PromptPipeline(BasePipeline):
         super().__init__()
 
         # manually prepend bos token if not already present to match RL trainers tokenization
-        prompts = [
-            f"{tokenizer.bos_token}{prompt}" if not prompt.startswith(tokenizer.bos_token) else prompt
-            for prompt in prompts
-        ]
+        if tokenizer.bos_token is not None:
+            prompts = [
+                tokenizer.bos_token + prompt if not prompt.startswith(tokenizer.bos_token) else prompt
+                for prompt in prompts
+            ]
 
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
