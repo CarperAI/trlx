@@ -400,7 +400,7 @@ class Seq2SeqWithValueHeads(nn.Module):
         hs = out.decoder_hidden_states[-1]
 
         logits = self.base_model.lm_head(hs)
-        qs, target_qs, vs = self.ilql_heads(hs, states_ixs=None, actions_ixs=None)
+        qs, target_qs, vs = self.ilql_heads(hs, states_ixs=states_ixs, actions_ixs=actions_ixs)
         encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
         return logits, qs, target_qs, vs, out.past_key_values, encoder_outputs
 

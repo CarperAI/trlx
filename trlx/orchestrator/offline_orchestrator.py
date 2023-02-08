@@ -80,12 +80,13 @@ class OfflineOrchestrator(Orchestrator):
             all_output_ids.append(torch.tensor(sample[1]))
             isoutput = False
             actions_ixs = []
+            length = 0
             for phrase in sample:
                 if isoutput:
-                    actions_ixs.append(torch.arange(0, len(phrase)))
+                    length = len(phrase)
+                    actions_ixs.append(torch.arange(0, length - 1))
                 isoutput = not isoutput
-
-            states_ixs = actions_ixs
+            states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
             all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
             all_actions_ixs.append(torch.hstack(actions_ixs))
             all_states_ixs.append(states_ixs)
@@ -120,7 +121,6 @@ class OfflineOrchestrator(Orchestrator):
             rs[-1] = ret
 
         attention_mask = [torch.ones(len(x), dtype=int) for x in all_input_ids]
-
         self.trainer.store = ILQLSeq2SeqRolloutStorage(
             all_input_ids,
             attention_mask,
@@ -158,7 +158,6 @@ class OfflineOrchestrator(Orchestrator):
 
                 length += len(phrase)
                 isoutput = not isoutput
-
             states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
             all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
             all_actions_ixs.append(torch.hstack(actions_ixs))

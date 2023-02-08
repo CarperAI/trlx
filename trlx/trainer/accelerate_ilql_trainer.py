@@ -68,7 +68,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
     def loss(self, batch: Union[ILQLBatch, ILQLSeq2SeqBatch]):
         batch = to_device(batch, self.accelerator.device)
         if self.config.model.model_arch_type == "seq2seq":
-            logits, qs, target_qs, vs, _ = self.model(
+            logits, qs, target_qs, vs, _, _ = self.model(
                 input_ids=batch.input_ids,
                 attention_mask=batch.attention_mask,
                 actions_ixs=batch.actions_ixs,

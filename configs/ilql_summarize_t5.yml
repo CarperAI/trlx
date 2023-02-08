@@ -11,6 +11,7 @@ train:
   orchestrator: "OfflineOrchestrator"
   trainer: "AccelerateILQLTrainer"
   checkpoint_dir: "gpt-j-ilql-summarize-duy"
+  tracker: null
 
 model:
   model_path: "google/flan-t5-large"
