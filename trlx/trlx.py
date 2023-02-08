@@ -8,7 +8,7 @@ from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 
 def train(  # noqa: C901
-    config: TRLConfig,
+    config: Optional[TRLConfig] = None,
     model_path: Optional[str] = None,
     reward_fn: Optional[Callable[[List[str], List[str], List[str]], List[float]]] = None,
     dataset: Optional[Iterable[Tuple[str, float]]] = None,
@@ -25,8 +25,8 @@ def train(  # noqa: C901
     depending on whether a reward function or a list of samples & rewards, or only list of samples is given
 
     Args:
-        config (TRLConfig): TRLX configuration object
         model_path (Optional[str]): Path to either huggingface checkpoint or a local directory
+        config (Optional[TRLConfig]): TRLX configuration object
         reward_fn (Optional[Callable[[List[str], List[str], List[str]], List[float]]]):
             Function to rate batches of generated samples. Its arguments are
             (`samples`, `prompts`, `outputs`) and the return is a list of `rewards`
@@ -50,6 +50,17 @@ def train(  # noqa: C901
             String sequences to trim generations (both for generating of experience and evaluation) up to its
             encounter in them. Generations will not contain them and also will also be right-stripped
     """
+    if config is None:
+        warnings.warn(
+            "Passing the `config` argument implicitly is depreciated, load it from `configs` directory instead"
+        )
+        if reward_fn:
+            config = TRLConfig.load_yaml("configs/ppo_config.yml")
+        elif rewards:
+            config = TRLConfig.load_yaml("configs/ilql_config.yml")
+        else:
+            config = TRLConfig.load_yaml("configs/sft_config.yml")
+
     set_seed(config.train.seed)
 
     if dataset:
