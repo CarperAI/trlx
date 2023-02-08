@@ -67,12 +67,13 @@ if __name__ == "__main__":
                     prompts[i].split("TL;DR:")[0],
                     truncation=True,
                     max_length=max_length - 5,  # to make sure "TL;DR" dont get truncated
+                    add_special_tokens=False,
                 )["input_ids"],
                 skip_special_tokens=True,
             ).strip()
             tmp = tmp + "\nTL;DR:"
             tmp = tokenizer.decode(
-                tokenizer(tmp, truncation=True, max_length=max_length)["input_ids"],
+                tokenizer(tmp, truncation=True, max_length=max_length, add_special_tokens=False)["input_ids"],
                 skip_special_tokens=True,
             ).strip()
             formatted_prompts.append(tmp)
