@@ -8,7 +8,6 @@ from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
 
 
 def train(  # noqa: C901
-    config: Optional[TRLConfig] = None,
     model_path: Optional[str] = None,
     reward_fn: Optional[Callable[[List[str], List[str], List[str]], List[float]]] = None,
     dataset: Optional[Iterable[Tuple[str, float]]] = None,
@@ -17,6 +16,7 @@ def train(  # noqa: C901
     prompts: Optional[List[str]] = None,
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
+    config: Optional[TRLConfig] = None,
     logit_mask: Optional[List[List[bool]]] = None,
     stop_sequences: Optional[List[str]] = [],
 ):
