@@ -32,7 +32,8 @@ pip install -e .
 For more usage see [examples](./examples). You can also try the colab notebooks below:
 | Description | Link |
 | ----------- | ----------- |
-| Simulacra Example | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1vrmCLoHNlKvDVqJjMig-8tKDCfIEoym4?usp=sharing)|
+| Simulacra (GPT2, ILQL) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1vrmCLoHNlKvDVqJjMig-8tKDCfIEoym4?usp=sharing)|
+| Sentiment (GPT2, ILQL) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1lUGxD__nl3OeC0mHVAoew_PzMprRT_2w)
 
 ## How to Train
 
