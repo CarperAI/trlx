@@ -21,8 +21,9 @@ def main(hparams={}):
     walks = [[walk[:1], walk[1:]] for walk in walks]
 
     trlx.train(
-        GPT2Config(n_layer=6, n_embd=144, vocab_size=23),
-        dataset=(walks, rewards),
+        model_path=GPT2Config(n_layer=6, n_embd=144, vocab_size=23),
+        samples=walks,
+        rewards=rewards,
         eval_prompts=eval_prompts,
         metric_fn=lambda samples, **kwargs: metric_fn(samples),
         config=config,
