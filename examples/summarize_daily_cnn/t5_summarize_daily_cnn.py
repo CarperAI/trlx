@@ -64,7 +64,6 @@ if __name__ == "__main__":
         prompt_label[key.strip()] = val_summaries[i]
 
     trlx.train(
-        config.model.model_path,
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=val_prompts,

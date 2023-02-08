@@ -38,7 +38,7 @@ with config_path.open() as f:
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    trlx.train("architext/gptj-162M", reward_fn=reward_fn, prompts=prompts, config=config)
+    trlx.train(model_path="architext/gptj-162M", reward_fn=reward_fn, prompts=prompts, config=config)
 
 
 if __name__ == "__main__":

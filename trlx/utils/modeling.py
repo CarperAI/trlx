@@ -138,6 +138,9 @@ def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
         - gpt_neox.layers: (GPTNeoXForCausalLM)
     """
     hidden_layers_attrs = (
+        "h",
+        "layers",
+        "decoder.layers",
         "transformer.h",
         "model.decoder.layers",
         "gpt_neox.layers",
