@@ -3,7 +3,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
 from trlx.utils import set_seed
-from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
+from trlx.utils.loading import get_pipeline, get_trainer
 
 
 def train(
@@ -62,16 +62,16 @@ def train(
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         prompts = prompts or [trainer.tokenizer.bos_token] * batch_size
 
-        if eval_prompts is None:
-            eval_prompts = prompts[:batch_size]
-
         max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
         pipeline = get_pipeline(config.train.pipeline)(prompts, max_prompt_length, trainer.tokenizer)
-        orch = get_orchestrator(config.train.orchestrator)(trainer, pipeline, chunk_size=config.method.chunk_size)
-        orch.make_experience(config.method.num_rollouts)
+        trainer.add_prompt_pipeline(pipeline)
 
+        if eval_prompts is None:
+            eval_prompts = prompts[:batch_size]
         eval_pipeline = get_pipeline(config.train.pipeline)(eval_prompts, max_prompt_length, trainer.tokenizer)
         trainer.add_eval_pipeline(eval_pipeline)
+
+        trainer.make_experience(config.method.num_rollouts)
 
     elif dataset is not None:
         samples, rewards = dataset
@@ -93,16 +93,16 @@ def train(
             stop_sequences=stop_sequences,
             **config.train.trainer_kwargs,
         )
+
         batch_size = config.train.batch_size * int(os.environ.get("WORLD_SIZE", 1))
         max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
 
         if eval_prompts is None:
             eval_prompts = [trainer.tokenizer.bos_token] * batch_size
         eval_pipeline = get_pipeline(config.train.pipeline)(eval_prompts, max_prompt_length, trainer.tokenizer)
-
-        orch = get_orchestrator(config.train.orchestrator)(trainer)
-        orch.make_experience(samples, rewards, config.train.seq_length)
         trainer.add_eval_pipeline(eval_pipeline)
+
+        trainer.make_experience(samples, rewards, config.train.seq_length)
 
     else:
         raise ValueError(f"Either {dataset=} or {reward_fn=} should be given")

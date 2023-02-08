@@ -7,7 +7,6 @@ train:
   eval_interval: 20
 
   pipeline: "PromptPipeline"
-  orchestrator: "OfflineOrchestrator"
   trainer: "NeMoILQLTrainer"
   trainer_kwargs:
     pretrained_model: "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"

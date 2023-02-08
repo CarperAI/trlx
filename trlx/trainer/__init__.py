@@ -58,16 +58,8 @@ class BaseRLTrainer:
         self.store.push(data)
 
     def add_eval_pipeline(self, eval_pipeline):
-        """Adds pipeline from with validation prompts"""
+        """Adds pipeline for validation prompts"""
         self.eval_pipeline = eval_pipeline
-
-    @abstractmethod
-    def act(self, data: RLElement) -> RLElement:
-        """
-        Given RLElement with state, produce an action and add it to the RLElement.
-        Orchestrator should call this, get reward and push subsequent RLElement to RolloutStore
-        """
-        pass
 
     @abstractmethod
     def sample(self, prompts: Iterable[str], length: int, n_samples: int) -> Iterable[str]:
@@ -113,14 +105,3 @@ class BaseRLTrainer:
     def load(self, directory=None):
         """Loads a checkpoint created from `save`"""
         pass
-
-    def intervals(self, steps: int) -> Dict[str, bool]:
-        """
-        Using config and current step number, returns a dict of whether certain things should be done
-        """
-
-        return {
-            "do_log": (steps + 1) % self.config.train.log_interval == 0,
-            "do_eval": (steps + 1) % self.config.train.eval_interval == 0,
-            "do_save": (steps + 1) % self.config.train.checkpoint_interval == 0,
-        }

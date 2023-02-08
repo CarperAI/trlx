@@ -14,7 +14,6 @@ currently supports training using PPO or ILQL for models up to 20B using Acceler
 
    data
    models
-   orchestrator
    configs
    pipeline
    examples
