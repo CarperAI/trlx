@@ -1,4 +1,4 @@
-from typing import Iterable, List
+from typing import Iterable, List, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -7,6 +7,45 @@ from transformers import DataCollatorWithPadding
 
 from trlx.data.ilql_types import ILQLBatch, ILQLElement
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
+
+
+def tokenize_dialogue(  # noqa: C901
+    dialogue: Union[str, List[str]], tokenizer, max_length=2048
+) -> List[int]:
+    """
+    Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
+    """
+    if isinstance(dialogue, str):
+        dialogue = [tokenizer.bos_token, dialogue]
+    elif isinstance(dialogue, tuple):
+        dialogue = list(dialogue)
+    dialogue[-1] += tokenizer.eos_token
+
+    out = []
+    ctx_length = max_length
+    if tokenizer.truncation_side == "left":
+        for phrase in reversed(dialogue):
+            tokens = tokenizer(phrase).input_ids[-ctx_length:]
+            ctx_length -= len(tokens)
+            out.insert(0, tokens)
+            if ctx_length == 0:
+                break
+
+        # in case of odd number of phrases (possibly due to truncation)
+        # since the first phrase always has to be a prompt, force it to be <bos>
+        if len(out) % 2 == 1:
+            if sum(map(len, out)) == max_length:
+                out[0].pop(0)
+            out.insert(0, [tokenizer.bos_token_id])
+
+    elif tokenizer.truncation_side == "right":
+        for phrase in dialogue:
+            tokens = tokenizer(phrase).input_ids[:ctx_length]
+            ctx_length -= len(tokens)
+            out.append(tokens)
+            if ctx_length == 0:
+                break
+    return out
 
 
 @register_datapipeline
