@@ -244,4 +244,4 @@ def get_git_tag() -> Tuple[str, str]:
         branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
         return branch.decode()[:-1], output.decode()[1:-2]
     except subprocess.CalledProcessError:
-        return 'unknown', 'unknown'
+        return "unknown", "unknown"
