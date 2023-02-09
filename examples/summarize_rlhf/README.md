@@ -37,6 +37,8 @@ For an in-depth description of the example, please refer to our [blog post](http
     ```
     Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
 
+    🩹 Warning: This particular training configuration requires at least 55GB of VRAM and is setup to use two GPUs, decrease `batch_size` in case you're running out of memory.
+
 
 ### Results
 
