@@ -6,7 +6,7 @@ import time
 from dataclasses import is_dataclass
 from enum import Enum
 from numbers import Number
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -235,7 +235,7 @@ def filter_non_scalars(xs: Dict) -> Dict:
     return ys
 
 
-def get_git_tag() -> str:
+def get_git_tag() -> Tuple[str, str]:
     """
     Returns commit's short hash and date
     """
