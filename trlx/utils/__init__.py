@@ -6,7 +6,7 @@ import time
 from dataclasses import is_dataclass
 from enum import Enum
 from numbers import Number
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
@@ -235,10 +235,13 @@ def filter_non_scalars(xs: Dict) -> Dict:
     return ys
 
 
-def get_git_tag() -> str:
+def get_git_tag() -> Tuple[str, str]:
     """
     Returns commit's short hash and date
     """
-    output = subprocess.check_output("git log --format='%h/%as' -n1".split())
-    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
-    return branch.decode()[:-1], output.decode()[1:-2]
+    try:
+        output = subprocess.check_output("git log --format='%h/%as' -n1".split())
+        branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
+        return branch.decode()[:-1], output.decode()[1:-2]
+    except subprocess.CalledProcessError:
+        return "unknown", "unknown"
