@@ -9,9 +9,7 @@ from trlx.data.ilql_types import ILQLBatch, ILQLElement
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
-def tokenize_dialogue(  # noqa: C901
-    dialogue: Union[str, List[str]], tokenizer, max_length=2048
-) -> List[int]:
+def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=2048) -> List[int]:  # noqa: C901
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
