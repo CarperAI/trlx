@@ -103,6 +103,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
     def __init__(
         self,
         config: TRLConfig,
+        reward_fn=None,
         logit_mask=None,
         metric_fn=None,
         stop_sequences=None,
