@@ -13,9 +13,9 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
-from tqdm import tqdm
 from transformers import AutoTokenizer
 
+import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
@@ -24,7 +24,6 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
-    print_rank_0,
     significant,
 )
 from trlx.utils.modeling import (
@@ -35,6 +34,8 @@ from trlx.utils.modeling import (
     parse_delta_kwargs,
 )
 
+logger = logging.get_logger(__name__)
+
 
 @register_trainer
 class AccelerateRLTrainer(BaseRLTrainer):
@@ -42,10 +43,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+
+        if self.accelerator.state.deepspeed_plugin is not None:
+            # by accelerate's default, arguments in `model.forward` would be casted to half
+            if "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config:
+                self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"]["auto_cast"] = False
+
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
@@ -116,6 +123,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         Returns a model derived from an instance's TRLConfig
         """
+        logger.info(f"Initializing model: {self.config.model.model_path}")
+
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
         if self.config.model.model_arch_type == "seq2seq":
@@ -279,8 +288,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
-        stats = {}
-        table = []
+        logger.info("Evaluating model")
 
         # Do multiple evaluations over a single list in `gen_kwargs` if present
         if self.generate_sweep_kwarg is not None:
@@ -288,7 +296,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             gen_sweep_values = [None]
 
-        for gen_sweep_value in gen_sweep_values:
+        desc = [
+            f"generation sweep 0/{len(gen_sweep_values)}",
+            f"eval batch 0/{len(self.eval_dataloader)}",
+        ]
+        tbar = logging.tqdm(
+            total=len(self.eval_dataloader) * len(gen_sweep_values),
+            desc=f"[{' | '.join(desc)}]",
+            disable=not self.accelerator.is_main_process,
+            position=0,
+            leave=True,
+        )
+
+        stats = {}
+        table = []
+
+        for i_sweep, gen_sweep_value in enumerate(gen_sweep_values):
             # A dedicated suffix for wandb logging
             if gen_sweep_value is not None:
                 sweep_suffix = f"@{gen_sweep_arg}={gen_sweep_value}"
@@ -299,7 +322,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             all_prompts = []
             prompt_sizes = []
             generate_time = time()
-            for prompts in self.eval_dataloader:
+            for i_prompt, prompts in enumerate(self.eval_dataloader):
                 if self.generate_sweep_kwarg:
                     samples = self.generate_eval(**prompts, **{gen_sweep_arg: gen_sweep_value})
                 else:
@@ -326,11 +349,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     torch.tensor(prompts.input_ids.shape[1], device=samples.device).repeat(len(prompts.input_ids))
                 )
 
+                desc = [
+                    f"generation sweep {i_sweep + 1}/{len(gen_sweep_values)}",
+                    f"eval batch {i_prompt + 1}/{len(self.eval_dataloader)}",
+                ]
+                tbar.set_description(f"[{' | '.join(desc)}]")
+                tbar.update()
+            tbar.close()
+
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather(torch.vstack(all_samples))
-            prompts = self.accelerator.gather(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
+            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
+            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
+            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
@@ -340,6 +371,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
+                    logger.info("Computing rewards")
                     rewards = torch.tensor(
                         self.reward_fn(
                             samples=str_samples,
@@ -357,6 +389,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 # additionally log any other metrics
                 if self.metric_fn:
+                    logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(
                         samples=str_samples,
@@ -385,6 +418,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 table.append(list(zip(*columns_data)))
 
         # Log and display evaluation metrics
+        logger.info("Summarizing evaluation")
         if self.accelerator.is_main_process:
             rows = sum(list(map(list, zip(*table))), [])
 
@@ -395,17 +429,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     table_title += f" {k}: {significant(x)}"
 
             rich_table = Table(*columns, title=table_title, show_lines=True)
-
             for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
+            Console().print(rich_table)
 
             if not ray.is_initialized():
                 if self.config.train.tracker == "wandb":
                     import wandb
 
                     stats["samples"] = wandb.Table(columns, rows)
-
-            Console().print(rich_table)
 
         self.nth_evaluation += 1
         return stats
@@ -414,11 +446,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
+        logger.info("Starting training")
+
         self.generate_sweep_kwarg = None
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
-                    print_rank_0("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
+                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
                     self.generate_kwargs[k] = v[0]
                 else:
                     self.generate_sweep_kwarg = (k, v)
@@ -440,17 +474,26 @@ class AccelerateRLTrainer(BaseRLTrainer):
             results = self.evaluate()
             self.accelerator.log(results, step=self.iter_count)
 
-        tbar = tqdm(
+        tbar = logging.tqdm(
             initial=self.iter_count,
             total=self.total_steps,
             disable=not self.accelerator.is_local_main_process,
+            position=0,
+            leave=True,
         )
 
         best_reward = -float("inf")
 
+        # For each epoch
         for _ in range(self.config.train.epochs):
+            # For each batch
             for batch in self.train_dataloader:
+                # For each update per batch
                 for _ in range(self.n_updates_per_batch):
+                    # Note that whereas standard policy gradient methods perform one
+                    # gradient update per batch, PPO for example commonly performs
+                    # multiple gradient updates on the same batch of data.
+                    # https://arxiv.org/pdf/1707.06347.pdf
                     forward_time = time()
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
@@ -491,7 +534,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
                                 best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
-                                print_rank_0(f"saving the best state so far into {best_path}")
+                                logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
                         # Report the metrics to Ray Tune.
@@ -505,8 +548,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if not ray.is_initialized():
                         self.accelerator.log(stats, step=self.iter_count)
 
-                    desc = ", ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
-                    tbar.set_description(desc)
+                    desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
+                    tbar.set_description(f"[{desc}]")
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
@@ -516,6 +559,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 self.post_backward_callback()
 
             self.post_epoch_callback()
+        tbar.close()
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):

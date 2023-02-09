@@ -115,7 +115,6 @@ if __name__ == "__main__":
         post_summary_dict[val_prompts[i]] = val_summaries[i]
 
     trainer = trlx.train(
-        config.model.model_path,
         reward_fn=reward_fn,
         prompts=train_prompts,
         eval_prompts=val_prompts[0:1000],  # sampling 1000 validation prompts for evaluation speed in training

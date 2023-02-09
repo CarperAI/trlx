@@ -1,11 +1,16 @@
+import os
 from typing import List, Union
 
 import numpy as np
 import torch
+from rich.console import Console
+from rich.table import Table
 
+import trlx.utils.logging as logging
 from trlx.orchestrator import Orchestrator, register_orchestrator
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage
-from trlx.utils import print_rank_0
+
+logger = logging.get_logger(__name__)
 
 
 def tokenize_dialogue(  # noqa: C901
@@ -60,6 +65,8 @@ class OfflineOrchestrator(Orchestrator):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
+        logger.info("Collecting rollouts")
+
         if self.trainer.tokenizer:
             samples = [tokenize_dialogue(s, self.trainer.tokenizer, max_length) for s in samples]
 
@@ -84,26 +91,29 @@ class OfflineOrchestrator(Orchestrator):
             all_actions_ixs.append(torch.hstack(actions_ixs))
             all_states_ixs.append(states_ixs)
 
-        if self.trainer.tokenizer:
+        if self.trainer.tokenizer and os.environ.get("RANK", "0") == "0":
+            logger.info("Logging sample example")
             prompt = self.trainer.tokenizer.decode(all_input_ids[0][: all_states_ixs[0][1]])
             response = self.trainer.tokenizer.decode(all_input_ids[0][all_states_ixs[0][1] :])
-            print_rank_0("[Sample example]")
-            print_rank_0("Prompt: ", prompt)
-            print_rank_0("Response: ", response)
-            print_rank_0("Reward: ", rewards[0])
+            columns = ["Prompt", "Response", "Reward"]
+            table = Table(*columns, title="Sample Example", show_lines=True)
+            table.add_row(prompt, response, str(rewards[0]))
+            Console().print(table)
 
         sample_lengths = np.array(list(map(len, all_input_ids)))
         output_lengths = np.array(list(map(len, all_actions_ixs)))
         prompt_lengths = sample_lengths - output_lengths
         returns = torch.tensor(rewards, dtype=float)
 
-        def string_stats(name: str, xs: np.array):
-            return f"[Mean {name}] {xs.mean():.2f} ∈ [{min(xs)}, {max(xs)}]"
-
-        print_rank_0(string_stats("prompt length", prompt_lengths))
-        print_rank_0(string_stats("output length", output_lengths))
-        print_rank_0(string_stats("sample length", sample_lengths))
-        print_rank_0(string_stats("return", returns))
+        if os.environ.get("RANK", "0") == "0":
+            logger.info("Logging experience string statistics")
+            columns = ["Prompt Length", "Output Length", "Sample Length"]
+            table = Table(*columns, title="Experience String Stats (mean ∈ \[min, max])", show_lines=True)
+            row = []
+            for lengths in [prompt_lengths, output_lengths, sample_lengths]:
+                row.append(f"{lengths.mean():.2f} ∈ [{min(lengths)}, {max(lengths)}]")
+            table.add_row(*row)
+            Console().print(table)
 
         returns = (returns - returns.mean()) / (returns.std() + 1e-30)
         rewards = [torch.zeros(len(x)) for x in all_actions_ixs]

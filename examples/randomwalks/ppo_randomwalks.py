@@ -17,7 +17,6 @@ def main(hparams={}):
     metric_fn, prompts, *_ = generate_random_walks(seed=config.train.seed)
 
     trlx.train(
-        "CarperAI/randomwalks",
         # An "optimality" reward function is used, with scores in [0,1]
         # depending on how close the path is to the shortest possible path.
         reward_fn=lambda samples, prompts, outputs: metric_fn(samples)["optimality"],
