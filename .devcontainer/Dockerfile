@@ -43,7 +43,6 @@ RUN pip install \
   autopep8 \
   jedi \
   mypy \
-  pylance \
   pytest \
   toml \
   yapf
