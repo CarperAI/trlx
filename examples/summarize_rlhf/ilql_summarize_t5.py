@@ -66,13 +66,13 @@ def main(hparams={}):
         return sample
 
     dataset = load_dataset("CarperAI/openai_summarize_comparisons")
-    dataset["train"] = dataset["train"].select(range(1000))
+    dataset["train"] = dataset["train"]
     dataset = dataset.map(preprocess)
 
     prompts_outputs = sum(dataset["train"]["prompt_output"], [])
     rewards = sum(dataset["train"]["reward"], [])
     val_dataset = load_dataset("CarperAI/openai_summarize_tldr", split="valid")
-    eval_prompts = list(val_dataset["prompt"])[:10]
+    eval_prompts = list(val_dataset["prompt"])[:1000]
 
     trlx.train(
         dataset=(prompts_outputs, rewards),
