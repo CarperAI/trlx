@@ -8,7 +8,6 @@ train:
   eval_interval: 128 # eval interval
 
   pipeline: "PromptPipeline" # prompt pipeline to load
-  orchestrator: "PPOOrchestrator" # orchestrator to load
   trainer: "AcceleratePPOTrainer" # Name of model trainer to load
 
 model:
@@ -36,7 +35,7 @@ scheduler:
 method:
   name: "ppoconfig" # Name of RL method config
   num_rollouts: 128 # Number of rollouts to collect per epoch
-  chunk_size: 128 # Number of rollouts to collect in one loop of orchestrator
+  chunk_size: 128 # Number of rollouts to collect in one loop
   ppo_epochs: 4 # Number of ppo epochs
   init_kl_coef: 0.2 # init kl coefficient
   target: 6 # target kl coefficient, set None for fixed kl coef

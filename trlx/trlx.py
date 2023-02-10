@@ -4,7 +4,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
 from trlx.utils import set_seed
-from trlx.utils.loading import get_orchestrator, get_pipeline, get_trainer
+from trlx.utils.loading import get_pipeline, get_trainer
 
 
 def train(  # noqa: C901
@@ -89,8 +89,12 @@ def train(  # noqa: C901
             eval_prompts = prompts[:batch_size]
 
         pipeline = get_pipeline(config.train.pipeline)(prompts, max_prompt_length, trainer.tokenizer)
-        orch = get_orchestrator(config.train.orchestrator)(trainer, pipeline, chunk_size=config.method.chunk_size)
-        orch.make_experience(config.method.num_rollouts)
+        trainer.add_prompt_pipeline(pipeline)
+
+        if eval_prompts is None:
+            eval_prompts = prompts[:batch_size]
+
+        trainer.make_experience(config.method.num_rollouts)
 
     # Offline training from the collected samples (e.g. SFT, ILQL)
     elif samples:
@@ -102,8 +106,7 @@ def train(  # noqa: C901
             eval_prompts = [trainer.tokenizer.bos_token] * batch_size
 
         if rewards:
-            orch = get_orchestrator(config.train.orchestrator)(trainer)
-            orch.make_experience(samples, rewards, config.train.seq_length)
+            trainer.make_experience(samples, rewards, config.train.seq_length)
         else:
             trainer.store = get_pipeline(config.train.pipeline)(samples, max_prompt_length, trainer.tokenizer)
 

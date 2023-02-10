@@ -8,7 +8,6 @@ train:
   eval_interval: 100
 
   pipeline: "PromptPipeline"
-  orchestrator: "OfflineOrchestrator"
   trainer: "AccelerateILQLTrainer"
   seed: 1000
 
