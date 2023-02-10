@@ -57,14 +57,6 @@ class PromptPipeline(BasePipeline):
     def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
         super().__init__()
 
-        # manually prepend bos token if not already present to match `tokenize_dialog` for ILQL and
-        # default tokenizer behavior for PPO
-        if tokenizer.bos_token is not None:
-            prompts = [
-                tokenizer.bos_token + prompt if not prompt.startswith(tokenizer.bos_token) else prompt
-                for prompt in prompts
-            ]
-
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
         )
