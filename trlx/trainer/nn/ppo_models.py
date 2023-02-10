@@ -138,6 +138,24 @@ class PPOConfig(MethodConfig):
         response_length: int,
         use_whitening: Optional[bool] = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Function that computes advantages and returns from rewards and values.
+        Calculated as in the original PPO paper: https://arxiv.org/abs/1707.06347
+        Note that rewards may include a KL divergence loss term.
+
+        Advantages looks like this:
+        Adv1 =  R1 + γ * λ * R2     + γ^2 * λ^2 * R3       + ...
+              - V1 + γ * (1 - λ) V2 + γ^2 * λ * (1 - λ) V3 + ...
+
+        Returns looks like this:
+        Ret1 =  R1 + γ * λ * R2     + γ^2 * λ^2 * R3       + ...
+                   + γ * (1 - λ) V2 + γ^2 * λ * (1 - λ) V3 + ...
+
+        Input:
+        - values: Tensor of shape (batch_size, response_size)
+        - rewards: Tensor of shape (batch_size, response_size)
+        - response_length: Length of the response sequence
+        - use_whitening: Whether to use whitening (ie. normalize advantages) or not
+        """
         lastgaelam = 0
         advantages_reversed = []
         for t in reversed(range(response_length)):
@@ -600,20 +618,12 @@ class GPTModelBranch(ModelBranch):
 
         batch_size = hidden_states.size()[0]
 
-        output_attentions = (
-            output_attentions
-            if output_attentions is not None
-            else self.config.output_attentions
-        )
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
-            output_hidden_states
-            if output_hidden_states is not None
-            else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = (
-            return_dict if return_dict is not None else self.config.use_return_dict
-        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         device = hidden_states.device
 
@@ -645,9 +655,7 @@ class GPTModelBranch(ModelBranch):
 
         presents = () if use_cache else None
         all_self_attentions = () if output_attentions else None
-        all_cross_attentions = (
-            () if output_attentions and self.config.add_cross_attention else None
-        )
+        all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(
             zip(self.decoder_blocks, past_key_values)
@@ -694,13 +702,9 @@ class GPTModelBranch(ModelBranch):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (
-                    outputs[2 if use_cache else 1],
-                )
+                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
                 if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (
-                        outputs[3 if use_cache else 2],
-                    )
+                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
 
             if self.model_parallel:
                 for k, v in self.device_map.items():
@@ -757,23 +761,17 @@ class OPTModelBranch(ModelBranch):
             else self.config.output_attentions
         )
         output_hidden_states = (
-            output_hidden_states
-            if output_hidden_states is not None
-            else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
 
-        past_key_values_length = (
-            past_key_values[0][0].shape[2] if past_key_values is not None else 0
-        )
+        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
 
         if attention_mask is None:
-            attention_mask = torch.ones(
-                hidden_states.shape[:2], dtype=torch.bool, device=hidden_states.device
-            )
+            attention_mask = torch.ones(hidden_states.shape[:2], dtype=torch.bool, device=hidden_states.device)
 
         input_shape = hidden_states.size()[:-1]
         combined_attention_mask = None
@@ -789,9 +787,7 @@ class OPTModelBranch(ModelBranch):
                 attention_mask, hidden_states.dtype, tgt_len=input_shape[-1]
             ).to(hidden_states.device)
             combined_attention_mask = (
-                expanded_attn_mask
-                if combined_attention_mask is None
-                else expanded_attn_mask + combined_attention_mask
+                expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
             )
         attention_mask = combined_attention_mask
 
@@ -811,9 +807,7 @@ class OPTModelBranch(ModelBranch):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            past_key_value = (
-                past_key_values[idx] if past_key_values is not None else None
-            )
+            past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             layer_outputs = decoder_layer(
                 hidden_states,
@@ -893,9 +887,7 @@ class BloomModelBranch(ModelBranch):
             else self.config.output_attentions
         )
         output_hidden_states = (
-            output_hidden_states
-            if output_hidden_states is not None
-            else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = (
@@ -919,15 +911,11 @@ class BloomModelBranch(ModelBranch):
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
         if attention_mask is None:
-            attention_mask = torch.ones(
-                (batch_size, seq_length_with_past), device=hidden_states.device
-            )
+            attention_mask = torch.ones((batch_size, seq_length_with_past), device=hidden_states.device)
         else:
             attention_mask = attention_mask.to(hidden_states.device)
 
-        alibi = modeling_bloom.build_alibi_tensor(
-            attention_mask, self.config.n_head, dtype=hidden_states.dtype
-        )
+        alibi = modeling_bloom.build_alibi_tensor(attention_mask, self.config.n_head, dtype=hidden_states.dtype)
 
         combined_attention_mask = None
         device = attention_mask.device
@@ -945,9 +933,7 @@ class BloomModelBranch(ModelBranch):
             attention_mask, tgt_length=src_length
         )
         combined_attention_mask = (
-            expanded_attn_mask
-            if combined_attention_mask is None
-            else expanded_attn_mask | combined_attention_mask
+            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask | combined_attention_mask
         )
         causal_mask = combined_attention_mask
 
@@ -973,9 +959,7 @@ class BloomModelBranch(ModelBranch):
                 presents = presents + (outputs[1],)
 
             if output_attentions:
-                all_self_attentions = all_self_attentions + (
-                    outputs[2 if use_cache else 1],
-                )
+                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
 
         hidden_states = self.final_norm(hidden_states)
 

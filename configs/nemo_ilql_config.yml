@@ -1,0 +1,52 @@
+train:
+  seq_length: 1024
+  batch_size: 512
+  epochs: 100
+  total_steps: 200
+  checkpoint_interval: 200
+  eval_interval: 20
+
+  pipeline: "PromptPipeline"
+  trainer: "NeMoILQLTrainer"
+  trainer_kwargs:
+    pretrained_model: "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/"
+    megatron_cfg: "megatron_20b.yaml"
+  seed: 1000
+
+model:
+  model_path: "gpt2"
+  num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "right"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 5.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 2000 # train.total_steps
+    eta_min: 1.0e-6
+
+method:
+  name: "ilqlconfig"
+  tau: 0.7
+  gamma: 0.99
+  cql_scale: 0.1
+  awac_scale: 1
+  alpha: 0.001
+  beta: 0
+  steps_for_target_q_sync: 5
+  two_qs: True
+  gen_kwargs:
+    max_new_tokens: 56
+    top_k: 20
+    beta: 2
+    temperature: 0.9

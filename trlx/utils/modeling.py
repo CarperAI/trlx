@@ -356,6 +356,9 @@ def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
         - decoder.block: (T5ForConditionalGeneration)
     """
     hidden_layers_attrs = (
+        "h",
+        "layers",
+        "decoder.layers",
         "transformer.h",
         "model.decoder.layers",
         "gpt_neox.layers",
@@ -426,8 +429,10 @@ def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
     return whitened
 
 
-def logprobs_from_logits(logits, labels):
-    """Compute log softmax values from logits."""
+def logprobs_of_labels(logits, labels):
+    """Log probabilities of the labels
+
+    These are calculated from the logits."""
     logprobs = F.log_softmax(logits, dim=-1)
     logprobs_labels = torch.gather(logprobs, dim=-1, index=labels.unsqueeze(-1))
     return logprobs_labels.squeeze(-1)
@@ -547,23 +552,49 @@ MODIFIED_MODULES_DICT = {
             "mlp.dense_4h_to_h",
         ],
     },
+    "t5": {
+        "attention": [
+            "layer.0.SelfAttention.q",
+            "layer.0.SelfAttention.k",
+            "layer.0.SelfAttention.v",
+            "layer.0.SelfAttention.o",
+            "layer.1.EncDecAttention.q",
+            "layer.1.EncDecAttention.k",
+            "layer.1.EncDecAttention.v",
+            "layer.1.EncDecAttention.o",
+        ],
+        "mlp": [
+            "layer.2.DenseReluDense.wo",
+            "layer.2.DenseReluDense.wi_0",
+            "layer.2.DenseReluDense.wi_1",
+        ],
+        "all": [
+            "layer.0.SelfAttention.q",
+            "layer.0.SelfAttention.k",
+            "layer.0.SelfAttention.v",
+            "layer.0.SelfAttention.o",
+            "layer.1.EncDecAttention.q",
+            "layer.1.EncDecAttention.k",
+            "layer.1.EncDecAttention.v",
+            "layer.1.EncDecAttention.o",
+            "layer.2.DenseReluDense.wo",
+            "layer.2.DenseReluDense.wi_0",
+            "layer.2.DenseReluDense.wi_1",
+        ],
+    },
 }
 
 
-def generate_layer_regex(
-    config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1
-) -> str:
+def generate_layer_regex(config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1) -> str:
     """Generates a regex range for the specified number of learnable layers."""
     if num_layers_unfrozen == -1:
-        return "[r](\d)+."
+        return "(\d)+."
     num_hidden_layers = hf_get_num_hidden_layers(config)
     start_layer = num_hidden_layers - num_layers_unfrozen
     if start_layer < 0:
-        raise Exception(
-            "Number of layers unfrozen cannot be greater than number of layers in the model"
-        )
+        raise Exception("Number of layers unfrozen cannot be greater than number of layers in the model")
     pattern = f"(?:{regex_for_range(start_layer, num_hidden_layers - 1)})."
-    return f"[r]{pattern}"
+    return f"{pattern}"
 
 
 def get_delta_modified_modules(
@@ -573,16 +604,19 @@ def get_delta_modified_modules(
 ) -> List[str]:
     """Returns a list of module names to be modified for a given delta method with
     the specified number of learnable layers."""
-    prefix = generate_layer_regex(config, num_layers_unfrozen)
-    module_list = [prefix + module for module in modified_modules]
+    unfrozen_layers_pattern = generate_layer_regex(config, num_layers_unfrozen)
+
+    # [r] for regex as per https://github.com/thunlp/OpenDelta/blob/main/opendelta/utils/name_based_addressing.py#L20
+    regex_prefix = "[r]"
+    # TODO (jon-tow): `decoder.block.` is hardcoded to support T5 layer naming.
+    decoder_prefix = "decoder.block." if config.is_encoder_decoder else ""
+    module_list = [regex_prefix + decoder_prefix + unfrozen_layers_pattern + module for module in modified_modules]
     return module_list
 
 
 def get_delta_model_class(model_type: str):
     if not HAS_OPENDELTA:
-        raise ValueError(
-            "OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta."
-        )
+        raise ValueError("OpenDelta package required to train with delta models. https://github.com/thunlp/OpenDelta.")
     delta_models = {
         "bitfit": BitFitModel,
         "adapter": AdapterModel,
@@ -697,16 +731,8 @@ def regex_for_range(min_: int, max_: int) -> str:  # noqa
     if max_ >= 0:
         positive_subpatterns = split_to_patterns(min_, max_)
 
-    negative_only_subpatterns = [
-        "-" + val for val in negative_subpatterns if val not in positive_subpatterns
-    ]
-    positive_only_subpatterns = [
-        val for val in positive_subpatterns if val not in negative_subpatterns
-    ]
-    intersected_subpatterns = [
-        "-?" + val for val in negative_subpatterns if val in positive_subpatterns
-    ]
-    subpatterns = (
-        negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
-    )
+    negative_only_subpatterns = ["-" + val for val in negative_subpatterns if val not in positive_subpatterns]
+    positive_only_subpatterns = [val for val in positive_subpatterns if val not in negative_subpatterns]
+    intersected_subpatterns = ["-?" + val for val in negative_subpatterns if val in positive_subpatterns]
+    subpatterns = negative_only_subpatterns + intersected_subpatterns + positive_only_subpatterns
     return "|".join(subpatterns)

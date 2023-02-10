@@ -1,7 +1,7 @@
 ## Learning to summarize from Human Feedback using `trlx`
 
 This example shows how to use `trlx` to train a summarization model using human feedback
-following the fine-tuning procedures described in Stiennon et al.'s, "[Learning to Summarize from human feedback](https://arxiv.org/abs/2106.00987)".
+following the fine-tuning procedures described in Stiennon et al.'s, "[Learning to Summarize from human feedback](https://arxiv.org/abs/2009.01325)".
 
 
 Before running everything, we need some extra packages not included in the `trlx` dependency list. Specifically, we need HuggingFace's [`evaluate`](https://huggingface.co/docs/evaluate/index) package and Google's re-implementation of ROUGE, [`rouge-score`](https://github.com/google-research/google-research/tree/master/rouge). To install them, run `requirements.txt` in this example's root directory:
@@ -36,6 +36,8 @@ For an in-depth description of the example, please refer to our [blog post](http
     accelerate launch --config_file configs/default_accelerate_config.yaml trlx_gptj_text_summarization.py
     ```
     Checkpoint: [PPO](https://huggingface.co/CarperAI/openai_summarize_tldr_ppo)
+
+    🩹 Warning: This particular training configuration requires at least 55GB of VRAM and is setup to use two GPUs, decrease `batch_size` in case you're running out of memory.
 
 
 ### Results

@@ -21,6 +21,7 @@ def init_random_input(len_range: int = 5, value_gen=5) -> list:
 
 const_integer = [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]
 
+
 # Functions in the DSL
 # Each function defines a transformation in the given DSL Grammar.
 def take(input_list: list, n: int) -> list:
@@ -372,9 +373,7 @@ def basic_stats(dataset, tokenizer):
     """
     length_list = []
     for examples in tqdm(dataset):
-        datapoint = tokenizer(
-            examples["input"] + " " + examples["output"] + "<|endoftext|>"
-        )
+        datapoint = tokenizer(examples["input"] + " " + examples["output"] + "<|endoftext|>")
         length_list.append(len(datapoint["input_ids"]))
     return {
         "max": max(length_list),

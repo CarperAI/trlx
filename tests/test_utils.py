@@ -99,39 +99,34 @@ def test_hf_attr_getters(model_name: str):
         "EleutherAI/gpt-neox-20b",
         "facebook/opt-1.3b",
         "bigscience/bloom-560m",
+        "google/flan-t5-large",
     ],
 )
 def test_parse_delta_kwargs(model_name):
     config = transformers.AutoConfig.from_pretrained(model_name)
 
-    # Ensure the defaults actually get used
-    for default in modeling_utils.MODIFIED_MODULES_DICT[config.model_type].keys():
+    modified_modules_dict = modeling_utils.MODIFIED_MODULES_DICT[config.model_type]
+    for default_modifier, default_modified_modules in modified_modules_dict.items():
         delta_type, delta_kwargs = modeling_utils.parse_delta_kwargs(
-            delta_kwargs={"delta_type": "lora", "modified_modules": default},
+            delta_kwargs={"delta_type": "lora", "modified_modules": default_modifier},
             config=config,
             num_layers_unfrozen=4,
         )
+        # Ensure the parsed module regex patterns capture the default module names
+        for kwarg_mod, default_mod in zip(delta_kwargs["modified_modules"], default_modified_modules):
+            assert kwarg_mod.endswith(
+                default_mod
+            ), f"Parsed modified module `{kwarg_mod}` should contain the trlx default `{default_mod}`"
         assert delta_type == "lora", "Delta type should be lora"
-        assert (
-            # Drop the regex range pattern for comparison
-            [m.split(".", 1)[1] for m in delta_kwargs["modified_modules"]]
-            == modeling_utils.MODIFIED_MODULES_DICT[config.model_type][default]
-        ), (
-            f"Modified modules should match trlx's `{default}` defaults: "
-            f"{modeling_utils.MODIFIED_MODULES_DICT[config.model_type][default]}"
-        )
 
-    # Ensure the defaults don't get used if the user specifies a list
+    # Ensure the defaults don't get used if the user specifies a list of `modified_modules`
     delta_type, delta_kwargs = modeling_utils.parse_delta_kwargs(
         delta_kwargs={"delta_type": "lora", "modified_modules": ["a", "b"]},
         config=config,
         num_layers_unfrozen=2,
     )
-    assert (
-        # Drop the regex range pattern for comparison
-        [m.split(".", 1)[1] for m in delta_kwargs["modified_modules"]]
-        == ["a", "b"]
-    ), "Modified modules should be ['a', 'b']"
+    for kwarg_mod in delta_kwargs["modified_modules"]:
+        assert kwarg_mod.endswith("a") or kwarg_mod.endswith("b"), "Parsed modified module should contain ['a', 'b']"
 
 
 class TestStatistics(unittest.TestCase):

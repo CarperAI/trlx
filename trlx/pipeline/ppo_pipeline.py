@@ -69,9 +69,7 @@ class PPORolloutStorage(BaseRolloutStore):
                     padding_value=0.0,
                     batch_first=True,
                 ),
-                pad_sequence(
-                    [elem.values for elem in elems], padding_value=0.0, batch_first=True
-                ),
+                pad_sequence([elem.values for elem in elems], padding_value=0.0, batch_first=True),
                 pad_sequence(
                     [elem.rewards for elem in elems],
                     padding_value=0.0,

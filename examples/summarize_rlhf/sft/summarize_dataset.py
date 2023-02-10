@@ -43,9 +43,7 @@ class TLDRDataset(Dataset):
 
     def __getitem__(self, idx):
         txt = self.post_list[idx]
-        encodings_dict = self.tokenizer(
-            txt, truncation=True, max_length=self.max_length, padding="max_length"
-        )
+        encodings_dict = self.tokenizer(txt, truncation=True, max_length=self.max_length, padding="max_length")
         input_ids = torch.tensor(encodings_dict["input_ids"])
         attn_masks = torch.tensor(encodings_dict["attention_mask"])
 
@@ -75,19 +73,11 @@ class ComparisonDataset(Dataset):
             self.post_list.append(sample["info"]["post"])
             # NOTE: The chosen summary is always the first one, i.e. `sample["summaries"][0]`
             if sample["choice"] == 0:
-                self.summaries_0.append(
-                    make_text(sample["info"], sample["summaries"][0]["text"])
-                )
-                self.summaries_1.append(
-                    make_text(sample["info"], sample["summaries"][1]["text"])
-                )
+                self.summaries_0.append(make_text(sample["info"], sample["summaries"][0]["text"]))
+                self.summaries_1.append(make_text(sample["info"], sample["summaries"][1]["text"]))
             else:
-                self.summaries_0.append(
-                    make_text(sample["info"], sample["summaries"][1]["text"])
-                )
-                self.summaries_1.append(
-                    make_text(sample["info"], sample["summaries"][0]["text"])
-                )
+                self.summaries_0.append(make_text(sample["info"], sample["summaries"][1]["text"]))
+                self.summaries_1.append(make_text(sample["info"], sample["summaries"][0]["text"]))
             self.labels.append(0)
 
     def __len__(self):
@@ -113,7 +103,7 @@ class AllSummDataset(Dataset):
         if split == "valid":
             df = df.sample(n=5000)
         self.summarizes = []
-        for (i, row) in df.iterrows():
+        for i, row in df.iterrows():
             self.summarizes.append(f"Summarize: {row['text']}. TL;DR: {row['summary']}")
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -125,9 +115,7 @@ class AllSummDataset(Dataset):
 
     def __getitem__(self, idx):
         txt = self.summarizes[idx]
-        encodings_dict = self.tokenizer(
-            txt, truncation=True, max_length=self.max_length, padding="max_length"
-        )
+        encodings_dict = self.tokenizer(txt, truncation=True, max_length=self.max_length, padding="max_length")
         input_ids = torch.tensor(encodings_dict["input_ids"])
         attn_masks = torch.tensor(encodings_dict["attention_mask"])
 

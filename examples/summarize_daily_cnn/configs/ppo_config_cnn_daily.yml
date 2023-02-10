@@ -9,7 +9,6 @@ train:
   save_best: False
 
   pipeline: "PromptPipeline"
-  orchestrator: "PPOOrchestrator"
   trainer: "AcceleratePPOTrainer"
 
 model:

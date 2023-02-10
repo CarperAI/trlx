@@ -58,21 +58,11 @@ class BaseRLTrainer:
         self.store.push(data)
 
     def add_eval_pipeline(self, eval_pipeline):
-        """Adds pipeline from with validation prompts"""
+        """Adds pipeline for validation prompts"""
         self.eval_pipeline = eval_pipeline
 
     @abstractmethod
-    def act(self, data: RLElement) -> RLElement:
-        """
-        Given RLElement with state, produce an action and add it to the RLElement.
-        Orchestrator should call this, get reward and push subsequent RLElement to RolloutStore
-        """
-        pass
-
-    @abstractmethod
-    def sample(
-        self, prompts: Iterable[str], length: int, n_samples: int
-    ) -> Iterable[str]:
+    def sample(self, prompts: Iterable[str], length: int, n_samples: int) -> Iterable[str]:
         """
         Sample from the language. Takes prompts and maximum length to generate.
 
