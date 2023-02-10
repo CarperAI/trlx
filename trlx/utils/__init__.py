@@ -12,7 +12,6 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
-from torchtyping import TensorType
 
 
 def print_rank_0(*message):
@@ -141,9 +140,6 @@ def get_scheduler_class(name: SchedulerName):
     raise ValueError(f"`{name}` is not a supported scheduler. " f"Supported schedulers are: {supported_schedulers}")
 
 
-# Stats
-
-
 class Clock:
     """
     Helper object for keeping track of time for computations.
@@ -183,21 +179,6 @@ class Clock:
             self.total_time = 0
 
         return sec_per_samp * n_samp
-
-
-# Sampling
-
-
-def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
-    """
-    Takes batched distribution over tokens and masks out scores for tokens
-    that are not in the top k for that distribution.
-    """
-
-    # Get topk per distribution
-    # For each dist, getting last value gives k-th largest
-    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
-    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
 
 
 def tree_map(f, tree: Any) -> Any:

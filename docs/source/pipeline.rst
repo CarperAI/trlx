@@ -4,7 +4,7 @@ Pipelines
 ************************
 
 Pipelines are how you read from a dataset with trlX. Rollout stores are how models store experiences created
-for them by the orchestrator. It is these experiences in their rollout store that they are trained on.
+for them. It is these experiences in their rollout store that they are trained on.
 
 **General**
 
