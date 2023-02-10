@@ -34,18 +34,18 @@ def get_last_digit(sample: List[str]) -> int:
 
 def increment_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
     if intermediate == -1 or reconstructed_digit == -1:
-        return -100
+        return -10
     if digit + 2 == reconstructed_digit:
-        return 100
+        return 1
     else:
-        return 0
+        return -1
     
 def fix_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
     if intermediate == -1 or reconstructed_digit == -1:
-        return -100
+        return -10
     #if intermediate == 2: # this worked perfectly
     if reconstructed_digit == 2:
-        return 100
+        return 10
     else:
         return 0
 
@@ -54,7 +54,7 @@ def reward_fn(trajectories: List[List]) -> List[float]:
     trajectories is a list of lists having the form [digit, prompt_1, output_1, prompt_2, output_2]
     Return if the last digit of output_2 is digit + 2
     """
-    score = fix_score
+    score = increment_score
 
     for sample in trajectories:
         assert len(sample) == 5
@@ -142,8 +142,8 @@ def encoder_decoder_experience_fn(trainer, batch):
 
 
     # RunElementBatch has an __add__ method which should do the right thing
-    data : RunElementBatch = first_run_data + second_run_data
-    import code; print("data"); code.interact(local=locals())
+    datas : List[RunElementBatch] = [first_run_data, second_run_data]
+    #import code; print("data"); code.interact(local=locals())
     # sum up a dict over keys 
     stats = {k: first_run_stats[k] + second_run_stats[k] for k in first_run_stats}
 
@@ -151,7 +151,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     for i in range(batch_size):
         trajectories.append([digits[i], first_run_str_prompts[i], first_run_str_outputs[i], second_run_str_prompts[i], second_run_str_outputs[i]])
 
-    return trajectories, data, stats
+    return trajectories, datas, stats
 
 
 

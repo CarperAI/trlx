@@ -89,29 +89,9 @@ class RunElementBatch:
     def __setitem__(self, key, value):
         setattr(self, key, value)
     
-    # Make it so that two RunElements can be added together.
-    # Assume all List attributes are the same length, and add them elementwise
-    # Assume the tensors can be added together
-    def __add__(self, other : RunElementBatch):
-        return RunElementBatch(
-            # need to concatenate tensors: [batch_size, seq_len_1] and [batch_size, seq_len_2] to get [batch_size, seq_len_1 + seq_len_2]
-            query_tensors=torch.cat([self.query_tensors, other.query_tensors], dim=1),
-            padded_samples=torch.cat([self.padded_samples, other.padded_samples], dim=1),
-            # need to concatenate List[torch.Tensor]: [batch_size, seq_len_1] and [batch_size, seq_len_2] to get [batch_size, seq_len_1 + seq_len_2]
-            logprobs=[torch.cat([s, t], dim=0) for s, t in zip(self.logprobs, other.logprobs)],
-            values=[torch.cat([s, t], dim=0) for s, t in zip(self.values, other.values)],
-            kl_divergence_estimate=[torch.cat([s, t], dim=0) for s, t in zip(self.kl_divergence_estimate, other.kl_divergence_estimate)],
-            # need to concatenate List[List[str]]: [[batch_size, seq_len_1], [batch_size, seq_len_2]] to get [[batch_size, seq_len_1 + seq_len_2]]
-            str_samples=[s + t for s, t in zip(self.str_samples, other.str_samples)],
-            str_prompts=[s + t for s, t in zip(self.str_prompts, other.str_prompts)],
-            str_outputs=[s + t for s, t in zip(self.str_outputs, other.str_outputs)],
-        )
-
-    # pretty print method
     def __repr__(self):
         """
-        First print the dimensions of the data
-        then print the data itself, with each thing on a new line
+        First print the dimensions of the data, then print the data itself, with each field on a new line.
         """
         output = f"query_tensors: {self.query_tensors.shape}\n"
         output += f"padded_samples: {self.padded_samples.shape}\n"

@@ -16,13 +16,13 @@ from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
-def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) -> Tuple[Optional[List], RunElementBatch, dict]:
+def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) -> Tuple[Optional[List], List[RunElementBatch], dict]:
     """
     Any experience_fn should use self.generate_and_calc_logprobs(batch) in some way.
     This default_experience_fn is a wrapper around that function that returns the same data as generate_and_calc_logprobs.
 
     If an user-provided experience_fn returns non-None trajectories,
-    passed to the reward function in the List[Any] form, batch_size outer lists, arbitrary inner lists.
+    those are passed to the reward function in the List[Any] form, batch_size outer lists, arbitrary inner lists.
     The user-provided reward function should be able to handle this format.
 
     The default_experience_fn returns None for trajectories, in which case the orchestrator will default
@@ -33,7 +33,7 @@ def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) 
 
     data, stats = trainer.orch.generate_and_calc_logprobs(batch)
     trajectories = None
-    return trajectories, data, stats
+    return trajectories, [data], stats
 
 
 @register_orchestrator
@@ -290,16 +290,15 @@ class PPOOrchestrator(Orchestrator):
 
 
             if self.trainer.experience_fn is None:
-                trajectories, data, stats = default_experience_fn(self.trainer, batch)
+                trajectories, datas, stats = default_experience_fn(self.trainer, batch)
             else:
-                trajectories, data, stats = self.trainer.experience_fn(self.trainer, batch)
+                trajectories, datas, stats = self.trainer.experience_fn(self.trainer, batch)
 
-            query_tensors = data["query_tensors"]
-            device = query_tensors.device
-            padded_samples = data["padded_samples"]
-            all_logprobs = data["logprobs"]
-            all_values = data["values"]
-            kl_divergence_estimate = data["kl_divergence_estimate"]
+            # assert data is a list
+            assert isinstance(datas, list) and len(datas) > 0
+            device = datas[0]["query_tensors"].device
+
+            data = datas[0]
 
             exp_score_time = time()
 
@@ -339,31 +338,37 @@ class PPOOrchestrator(Orchestrator):
 
             # Compute rewards
             n_samples = len(scores)
-            assert query_tensors.shape[0] == n_samples
             all_rewards = [None] * n_samples
 
-            for sample_idx in range(n_samples):
-                sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
+            for data, idx in zip(datas, range(len(datas))):
+                query_tensors = data["query_tensors"]
+                padded_samples = data["padded_samples"]
+                all_logprobs = data["logprobs"]
+                all_values = data["values"]
+                kl_divergence_estimate = data["kl_divergence_estimate"]
+                for sample_idx in range(n_samples):
+                    sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
 
-                if len(sample_kl_divergence_estimate) == 0:
-                    sample_kl_divergence_estimate = torch.tensor([0.0])
+                    if len(sample_kl_divergence_estimate) == 0:
+                        sample_kl_divergence_estimate = torch.tensor([0.0])
 
-                sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
-                # TODO refactor this code, the above line is horrifying
-                all_rewards[sample_idx] = sample_kl_divergence_estimate
+                    # TODO use the discounting factor on the score for earlier PPORLElements
+                    sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu() * (0.5 if idx == 0 else 1.0)
+                    # TODO refactor this code, the above line is horrifying
+                    all_rewards[sample_idx] = sample_kl_divergence_estimate
 
-            new_ppo_rl_elements = [
-                PPORLElement(
-                    query_tensor=query_tensors[i],
-                    response_tensor=padded_samples[i],
-                    logprobs=all_logprobs[i],
-                    values=all_values[i],
-                    rewards=all_rewards[i],
-                )
-                for i in range(n_samples)
-            ]
-            ppo_rl_elements += new_ppo_rl_elements
-            exp_time = clock.tick()
+                new_ppo_rl_elements = [
+                    PPORLElement(
+                        query_tensor=query_tensors[i],
+                        response_tensor=padded_samples[i],
+                        logprobs=all_logprobs[i],
+                        values=all_values[i],
+                        rewards=all_rewards[i],
+                    )
+                    for i in range(n_samples)
+                ]
+                ppo_rl_elements += new_ppo_rl_elements
+                exp_time = clock.tick()
 
         stats["kl_ctl_value"] = self.trainer.kl_ctl.value
         stats["time/exp"] = exp_time
