@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterable, Sequence, Union, cast
+from typing import Iterable, Sequence, cast
 
 import numpy as np
 import torch
@@ -155,22 +155,6 @@ class NeMoILQLTrainer(BaseRLTrainer):
 
         if stop_sequences is not None and len(stop_sequences) > 0:
             logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
-
-    def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
-        if isinstance(texts[0], torch.LongTensor):
-            return texts
-
-        tokenized = self.tokenizer(
-            [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
-            max_length=self.max_length,
-            truncation=True,
-            # NOTE: We manually add special tokens (bos) above so we set this False
-            # to avoid models that automatically add special tokens (e.g. OPT)
-            # adding them twice more.
-            add_special_tokens=False,
-        )
-        input_ids = list(map(torch.as_tensor, tokenized.input_ids))
-        return input_ids
 
     def learn(self):
         def collate_fn(elems: Iterable[ILQLElement]):

@@ -51,14 +51,14 @@ if __name__ == "__main__":
 
     for i in tqdm(range(len(prompts))):
         key = tokenizer.decode(
-            tokenizer(prompts[i], truncation=True, max_length=max_length)["input_ids"],
+            tokenizer(prompts[i], truncation=True, max_length=max_length, add_special_tokens=False)["input_ids"],
             skip_special_tokens=True,
         )  # get prompt like trlx's prompt
         prompt_label[key.strip()] = summaries[i]
 
     for i in tqdm(range(len(val_prompts))):
         key = tokenizer.decode(
-            tokenizer(val_prompts[i], truncation=True, max_length=max_length)["input_ids"],
+            tokenizer(val_prompts[i], truncation=True, max_length=max_length, add_special_tokens=False)["input_ids"],
             skip_special_tokens=True,
         )  # get prompt like trlx's prompt
         prompt_label[key.strip()] = val_summaries[i]

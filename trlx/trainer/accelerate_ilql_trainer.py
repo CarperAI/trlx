@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Sequence, Union, cast
+from typing import Optional, cast
 
 import numpy as np
 import torch
@@ -42,22 +42,6 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             ilql_config=config.method,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
-
-    def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
-        if isinstance(texts[0], torch.LongTensor):
-            return texts
-
-        tokenized = self.tokenizer(
-            [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
-            max_length=self.max_length,
-            truncation=True,
-            # NOTE: We manually add special tokens (bos) above so we set this False
-            # to avoid models that automatically add special tokens (e.g. OPT)
-            # adding them twice more.
-            add_special_tokens=False,
-        )
-        input_ids = list(map(torch.as_tensor, tokenized.input_ids))
-        return input_ids
 
     def post_backward_callback(self):
         if self.iter_count % self.config.method.steps_for_target_q_sync == 0:
