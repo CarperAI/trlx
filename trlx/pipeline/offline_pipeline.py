@@ -23,7 +23,8 @@ def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=204
     ctx_length = max_length
     if tokenizer.truncation_side == "left":
         for phrase in reversed(dialogue):
-            tokens = tokenizer(phrase).input_ids[-ctx_length:]
+            # Manually added BOS and EOS above so we don't want to add special tokens here
+            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[-ctx_length:]
             ctx_length -= len(tokens)
             out.insert(0, tokens)
             if ctx_length == 0:
@@ -38,7 +39,8 @@ def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=204
 
     elif tokenizer.truncation_side == "right":
         for phrase in dialogue:
-            tokens = tokenizer(phrase).input_ids[:ctx_length]
+            # Manually added BOS and EOS above so we don't want to add special tokens here
+            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[:ctx_length]
             ctx_length -= len(tokens)
             out.append(tokens)
             if ctx_length == 0:
