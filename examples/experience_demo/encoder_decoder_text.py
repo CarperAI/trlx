@@ -108,8 +108,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     #import code; print("first_run_data"); code.interact(local=locals())
     first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch)
 
-    first_run_str_prompts = first_run_data['str_prompts']
-    first_run_str_outputs = first_run_data['str_outputs']
+    first_run_str_prompts = first_run_data['str_prompts'][0]
+    first_run_str_outputs = first_run_data['str_outputs'][0]
 
     # Second run
     second_run_strs = [""] * batch_size
@@ -123,8 +123,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
 
     # Decode the second run
-    second_run_str_prompts = second_run_data['str_prompts']
-    second_run_str_outputs = second_run_data['str_outputs']
+    second_run_str_prompts = second_run_data['str_prompts'][0]
+    second_run_str_outputs = second_run_data['str_outputs'][0]
 
     print("AAAAAAAAAAAAAAAAAa")
     if digits[0] == 0 and digits[1] == 0 and digits[2] == 0 and digits[3] == 0: # prob 1/16

@@ -227,6 +227,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
 
+        #import code; code.interact(local=locals());
         with torch.no_grad():
             return self.accelerator.unwrap_model(self.model).generate(
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs

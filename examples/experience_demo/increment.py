@@ -32,16 +32,36 @@ def get_last_digit(sample: List[str]) -> int:
     else:
         return -1
 
+def increment_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
+    if intermediate == -1 or reconstructed_digit == -1:
+        return -100
+    if digit + 2 == reconstructed_digit:
+        return 100
+    else:
+        return 0
+    
+def fix_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
+    if intermediate == -1 or reconstructed_digit == -1:
+        return -100
+    #if intermediate == 2: # this worked perfectly
+    if reconstructed_digit == 2:
+        return 100
+    else:
+        return 0
+
 def reward_fn(trajectories: List[List]) -> List[float]:
     """
     trajectories is a list of lists having the form [digit, prompt_1, output_1, prompt_2, output_2]
     Return if the last digit of output_2 is digit + 2
     """
+    score = fix_score
+
     for sample in trajectories:
         assert len(sample) == 5
+    digits = [sample[0] for sample in trajectories]
     reconstructed_digits = list(map(get_last_digit, [sample[4] for sample in trajectories]))
-    reward_list = [1 if digit + 2 == reconstructed_digit else -1] 
-                   for digit, reconstructed_digit in zip([sample[0] for sample in trajectories], reconstructed_digits)]
+    intermediate_digits = list(map(get_last_digit, [sample[2] for sample in trajectories]))
+    reward_list = [score(digit, intermediate, reconstructed_digit) for digit, intermediate, reconstructed_digit in zip(digits, intermediate_digits, reconstructed_digits)]
     print(f"reward_mean = {np.mean(reward_list)}")
     return reward_list
 
@@ -77,7 +97,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     # batch {'input_ids': tensor([[ 3], [ 8]]), 'attention_mask': tensor([[1], [1]]), 'labels': tensor([[ 8], [10]])}
 
     batch_size = batch.input_ids.shape[0]
-    print(f"batch_size = {batch_size}")
+    print(f"\nbatch_size = {batch_size}")
     device = batch.input_ids.device
     digits = list(np.random.randint(0, 8, batch_size))
 
@@ -96,8 +116,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     #import code; print("first_run_data"); code.interact(local=locals())
     first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1)
 
-    first_run_str_prompts = first_run_data['str_prompts']
-    first_run_str_outputs = first_run_data['str_outputs']
+    first_run_str_prompts = list(itertools.chain.from_iterable(first_run_data['str_prompts']))
+    first_run_str_outputs = list(itertools.chain.from_iterable(first_run_data['str_outputs']))
 
     # Second run
     second_run_strs = [""] * batch_size
@@ -111,8 +131,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
 
     # Decode the second run
-    second_run_str_prompts = second_run_data['str_prompts']
-    second_run_str_outputs = second_run_data['str_outputs']
+    second_run_str_prompts = list(itertools.chain.from_iterable(second_run_data['str_prompts']))
+    second_run_str_outputs = list(itertools.chain.from_iterable(second_run_data['str_outputs']))
 
     print("first_run_str_prompts\n", first_run_str_prompts)
     print("first_run_str_outputs\n", first_run_str_outputs)
@@ -120,8 +140,10 @@ def encoder_decoder_experience_fn(trainer, batch):
     print("second_run_str_outputs\n", second_run_str_outputs)
     #import code; print("just before data concatenation"); code.interact(local=locals())
 
+
     # RunElementBatch has an __add__ method which should do the right thing
-    data = first_run_data + second_run_data
+    data : RunElementBatch = first_run_data + second_run_data
+    import code; print("data"); code.interact(local=locals())
     # sum up a dict over keys 
     stats = {k: first_run_stats[k] + second_run_stats[k] for k in first_run_stats}
 
@@ -147,7 +169,7 @@ def main(hparams={}):
     data = pd.read_csv(train_path)
     prompts = data["question"].tolist() # we don't use this, we just need a list of strings
 
-    np.random.seed(42)
+    np.random.seed(43)
     trlx.train(
         reward_fn=reward_fn,
         experience_fn=encoder_decoder_experience_fn,

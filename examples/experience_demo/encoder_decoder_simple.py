@@ -64,7 +64,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     We completely ignore the dataset (the query tensors).
     
 
-    The trajectory for each poem is as follows:
+    The trajectory is:
     Sample a digit from {0, 1}.
     First run:
     f"digit={digit}

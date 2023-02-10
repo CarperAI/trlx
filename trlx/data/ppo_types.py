@@ -78,9 +78,9 @@ class RunElementBatch:
     logprobs: List[torch.Tensor]
     values: List[torch.Tensor]
     kl_divergence_estimate: List[torch.Tensor]
-    str_samples: List[str]
-    str_prompts: List[str]
-    str_outputs: List[str]
+    str_samples: List[List[str]]
+    str_prompts: List[List[str]]
+    str_outputs: List[List[str]]
 
     # Make it so that it can be accessed as a dict
     def __getitem__(self, key):
@@ -101,8 +101,39 @@ class RunElementBatch:
             logprobs=[torch.cat([s, t], dim=0) for s, t in zip(self.logprobs, other.logprobs)],
             values=[torch.cat([s, t], dim=0) for s, t in zip(self.values, other.values)],
             kl_divergence_estimate=[torch.cat([s, t], dim=0) for s, t in zip(self.kl_divergence_estimate, other.kl_divergence_estimate)],
-            # need to concatenate [batch_size] and [batch_size] to get [batch_size]
+            # need to concatenate List[List[str]]: [[batch_size, seq_len_1], [batch_size, seq_len_2]] to get [[batch_size, seq_len_1 + seq_len_2]]
             str_samples=[s + t for s, t in zip(self.str_samples, other.str_samples)],
             str_prompts=[s + t for s, t in zip(self.str_prompts, other.str_prompts)],
             str_outputs=[s + t for s, t in zip(self.str_outputs, other.str_outputs)],
         )
+
+    # pretty print method
+    def __repr__(self):
+        """
+        First print the dimensions of the data
+        then print the data itself, with each thing on a new line
+        """
+        output = f"query_tensors: {self.query_tensors.shape}\n"
+        output += f"padded_samples: {self.padded_samples.shape}\n"
+        output += f"logprobs: {len(self.logprobs)} x {self.logprobs[0].shape}\n"
+        output += f"values: {len(self.values)} x {self.values[0].shape}\n"
+        output += f"kl_divergence_estimate: {len(self.kl_divergence_estimate)} x {self.kl_divergence_estimate[0].shape}\n"
+        output += f"str_samples: {len(self.str_samples)} x {len(self.str_samples[0])}\n"
+        output += f"str_prompts: {len(self.str_prompts)} x {len(self.str_prompts[0])}\n"
+        output += f"str_outputs: {len(self.str_outputs)} x {len(self.str_outputs[0])}\n"
+        output += "\n"
+
+        output += f"query_tensors:\n {self.query_tensors}\n"
+        output += f"padded_samples:\n {self.padded_samples}\n"
+        output += f"logprobs:\n {self.logprobs}\n"
+        output += f"values:\n {self.values}\n"
+        output += f"kl_divergence_estimate:\n {self.kl_divergence_estimate}\n"
+        output += f"str_samples:\n {self.str_samples}\n"
+        output += f"str_prompts:\n {self.str_prompts}\n"
+        output += f"str_outputs:\n {self.str_outputs}\n"
+
+        return output
+
+
+        
+

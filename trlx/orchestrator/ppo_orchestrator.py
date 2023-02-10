@@ -99,9 +99,6 @@ class PPOOrchestrator(Orchestrator):
             Does almost everything in the inner loop of make_experience, except anything related to the reward function and scores.
         """
 
-        #import code; print("generate_and_calc_logprobs"); code.interact(local=locals())
-
-
         stats = {}
         exp_generate_time = time()
         samples = self.trainer.generate(**batch, **kwargs)
@@ -109,9 +106,7 @@ class PPOOrchestrator(Orchestrator):
 
         query_tensors = batch.input_ids
         device = samples.device
-        str_samples, str_prompts, str_outputs = self.trainer.decode(
-            query_tensors, samples
-        )
+        str_samples, str_prompts, str_outputs = self.trainer.decode(query_tensors, samples)
 
         # Pad the samples
         outputs = self.trainer.tokenizer(str_outputs).input_ids
@@ -252,6 +247,8 @@ class PPOOrchestrator(Orchestrator):
                 rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)
             ]
         
+        str_samples, str_prompts, str_outputs = [[s] for s in str_samples], [[p] for p in str_prompts], [[o] for o in str_outputs]
+
         return RunElementBatch(
             query_tensors=query_tensors,
             padded_samples=padded_samples,
@@ -307,9 +304,10 @@ class PPOOrchestrator(Orchestrator):
             exp_score_time = time()
 
             if trajectories is None:
-                str_samples = data["str_samples"]
-                str_prompts = data["str_prompts"]
-                str_outputs = data["str_outputs"]
+                import itertools
+                str_samples = list(itertools.chain.from_iterable(data["str_samples"]))
+                str_prompts = list(itertools.chain.from_iterable(data["str_prompts"]))
+                str_outputs = list(itertools.chain.from_iterable(data["str_outputs"]))
 
                 scores = torch.tensor(
                     self.trainer.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs),
