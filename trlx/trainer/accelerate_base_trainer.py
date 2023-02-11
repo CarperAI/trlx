@@ -3,7 +3,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
@@ -178,25 +178,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         scheduler_class = get_scheduler_class(self.config.scheduler.name)
         scheduler = scheduler_class(self.opt, **self.config.scheduler.kwargs)
         return scheduler
-
-    def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
-        """
-        Tokenize a batch of text after adding bos token to each of the samples
-        """
-        if isinstance(text[0], torch.LongTensor):
-            return text
-
-        text = [self.tokenizer.bos_token + txt for txt in text]
-        return self.tokenizer(
-            text,
-            truncation=True,
-            max_length=self.config.seq_length,
-            return_tensors="pt",
-            # NOTE: We manually add special tokens (bos) above so we set this False
-            # to avoid models that automatically add special tokens (e.g. OPT)
-            # adding them twice more.
-            add_special_tokens=False,
-        )
 
     def decode(
         self,
