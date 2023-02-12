@@ -964,7 +964,7 @@ class T5Branch(ModelBranch):
         self.dropout = hf_get_decoder(pretrained_model).dropout
         self.is_decoder = True
 
-    def forward(
+    def forward(  # noqa: max-complexity
         self,
         hidden_states: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
@@ -1059,7 +1059,7 @@ class T5Branch(ModelBranch):
 
         if self.config.tie_word_embeddings:
             # Rescale output before projecting on vocab
-            # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586
+            # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586  # noqa: E501
             sequence_output = sequence_output * (self.config.d_model**-0.5)
 
         lm_logits = self.lm_head(sequence_output)
