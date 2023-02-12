@@ -15,8 +15,8 @@ from torchtyping import TensorType
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
+from trlx.models.modeling_base import PreTrainedModelWrapper
 from trlx.utils.modeling import (
-    PreTrainedModelWrapper,
     flatten_dict,
     get_tensor_stats,
     hf_get_hidden_size,
@@ -146,9 +146,7 @@ class ILQLHeads(nn.Module):
         self.v_head = make_head(self.hidden_size, 1, dtype)
 
         n_qs = 2 if self.two_qs else 1
-        self.q_heads = nn.ModuleList(
-            make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs)
-        )
+        self.q_heads = nn.ModuleList(make_head(self.hidden_size, self.vocab_size, dtype) for _ in range(n_qs))
         self.target_q_heads = nn.ModuleList(deepcopy(q_head) for q_head in self.q_heads)
 
         for target_q_head in self.target_q_heads:
@@ -217,9 +215,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         dtype = next(hf_get_lm_head(self.pretrained_model).parameters()).dtype
         self.two_qs = two_qs
         self.alpha = alpha
-        self.ilql_heads = ILQLHeads(
-            hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype
-        )
+        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype)
 
     def forward(
         self,
@@ -239,9 +235,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         forward_kwargs["output_hidden_states"] = True
 
         outputs = self.pretrained_model(**forward_kwargs)
-        qs, target_qs, vs = self.ilql_heads(
-            outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs
-        )
+        qs, target_qs, vs = self.ilql_heads(outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs)
 
         return outputs.logits, qs, target_qs, vs, outputs.past_key_values
 
@@ -265,16 +259,8 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
-        pad_token_id = (
-            pad_token_id
-            if pad_token_id is not None
-            else self.pretrained_model.config.pad_token_id
-        )
-        eos_token_id = (
-            eos_token_id
-            if eos_token_id is not None
-            else self.pretrained_model.config.eos_token_id
-        )
+        pad_token_id = pad_token_id if pad_token_id is not None else self.pretrained_model.config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.pretrained_model.config.eos_token_id
 
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)

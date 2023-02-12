@@ -139,18 +139,10 @@ class TestStatistics(unittest.TestCase):
         cls.a4 = torch.tensor([-10, -1, 0, 1, 10], dtype=float)
 
     def test_running_moments(self):
-        assert torch.isclose(
-            self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6
-        )
-        assert torch.isclose(
-            self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6
-        )
+        assert torch.isclose(self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6)
+        assert torch.isclose(self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6)
 
         a = torch.hstack((self.a1, self.a2, self.a3, self.a4))
         assert torch.isclose(self.m.mean, a.mean(), atol=1e-6)

@@ -9,10 +9,10 @@ from rich.table import Table
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch
+from trlx.models.modeling_ilql import AutoModelForCausalLMWithILQLHeads, ILQLConfig
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, tokenize_dialogue
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import AutoModelForCausalLMWithILQLHeads, ILQLConfig
 from trlx.utils import to_device
 
 logger = logging.get_logger(__name__)
@@ -42,22 +42,6 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             two_qs=config.method.two_qs,
             alpha=config.method.alpha,
         )
-
-    def tokenize(self, texts: Union[Sequence[str], Sequence[torch.LongTensor]]):
-        if isinstance(texts[0], torch.LongTensor):
-            return texts
-
-        tokenized = self.tokenizer(
-            [self.tokenizer.bos_token + x + self.tokenizer.eos_token for x in texts],
-            max_length=self.max_length,
-            truncation=True,
-            # NOTE: We manually add special tokens (bos) above so we set this False
-            # to avoid models that automatically add special tokens (e.g. OPT)
-            # adding them twice more.
-            add_special_tokens=False,
-        )
-        input_ids = list(map(torch.as_tensor, tokenized.input_ids))
-        return input_ids
 
     def post_backward_callback(self):
         if self.iter_count % self.config.method.steps_for_target_q_sync == 0:

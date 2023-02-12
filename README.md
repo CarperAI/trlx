@@ -72,13 +72,13 @@ accelerate launch examples/simulacra.py
 
 #### Use NeMo-Megatron to launch distributed training
 
-Follow the setup instructions in the [NeMo README](./trlx/trainer/nemo).
+Follow the setup instructions in the [NeMo README](./trlx/models/).
 
 ```bash
 python examples/nemo_ilql_sentiments.py
 ```
 
-For more usage see the [NeMo README](./trlx/trainer/nemo)
+For more usage see the [NeMo README](./trlx/models)
 
 #### Use Ray Tune to launch hyperparameter sweep
 

@@ -128,13 +128,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
         if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(
-                model.pretrained_model, self.config.model.num_layers_unfrozen
-            )
+            freeze_bottom_seq2seq_layers(model.pretrained_model, self.config.model.num_layers_unfrozen)
         else:
-            freeze_bottom_causal_layers(
-                model.pretrained_model, self.config.model.num_layers_unfrozen
-            )
+            freeze_bottom_causal_layers(model.pretrained_model, self.config.model.num_layers_unfrozen)
         # Set the delta tuning strategies
         if self.config.model.delta_kwargs is not None:
             delta_type, delta_kwargs = parse_delta_kwargs(

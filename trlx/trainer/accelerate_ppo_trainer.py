@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import ray
 import torch
@@ -14,16 +14,16 @@ import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
-from trlx.pipeline.offline_pipeline import PromptPipeline
-from trlx.pipeline.ppo_pipeline import PPORolloutStorage
-from trlx.trainer import register_trainer
-from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ppo_models import (
+from trlx.models.modeling_ppo import (
     AdaptiveKLController,
     AutoModelForCausalLMHydraWithValueHead,
     AutoModelForSeq2SeqLMHydraWithValueHead,
     FixedKLController,
 )
+from trlx.pipeline.offline_pipeline import PromptPipeline
+from trlx.pipeline.ppo_pipeline import PPORolloutStorage
+from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
@@ -71,6 +71,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if not hasattr(self.model, "frozen_head"):
             self.ref_model = self.get_arch(self.config)
             self.ref_model.to(self.accelerator.device)
+            self.ref_model.eval()
 
         # Setup the KL controller
         # This helps prevent large divergences in the controller (policy)
@@ -119,10 +120,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def get_arch(self, config: TRLConfig):
         """Get the model"""
         if config.model.model_arch_type == "seq2seq":
-            return AutoModelForSeq2SeqLMHydraWithValueHead.from_pretrained(config.model.model_path,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,)
-        return AutoModelForCausalLMHydraWithValueHead.from_pretrained(config.model.model_path,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,)
+            return AutoModelForSeq2SeqLMHydraWithValueHead.from_pretrained(
+                config.model.model_path,
+                num_layers_unfrozen=config.model.num_layers_unfrozen,
+            )
+        return AutoModelForCausalLMHydraWithValueHead.from_pretrained(
+            config.model.model_path,
+            num_layers_unfrozen=config.model.num_layers_unfrozen,
+        )
 
     def loss(self, batch: PPORLBatch):
         """Forward pass & loss
@@ -362,14 +367,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
-                        ref_logits, _, *_ = self.ref_model(
+                        ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                         ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":

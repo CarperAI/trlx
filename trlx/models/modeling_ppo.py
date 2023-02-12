@@ -14,8 +14,8 @@ from transformers.models.bloom import modeling_bloom
 from transformers.models.opt import modeling_opt
 
 from trlx.data.method_configs import MethodConfig, register_method
+from trlx.models.modeling_base import PreTrainedModelWrapper
 from trlx.utils.modeling import (
-    PreTrainedModelWrapper,
     flatten_dict,
     get_tensor_stats,
     hf_get_decoder,
@@ -150,11 +150,11 @@ class PPOConfig(MethodConfig):
         Ret1 =  R1 + γ * λ * R2     + γ^2 * λ^2 * R3       + ...
                    + γ * (1 - λ) V2 + γ^2 * λ * (1 - λ) V3 + ...
 
-        Input:
-        - values: Tensor of shape (batch_size, response_size)
-        - rewards: Tensor of shape (batch_size, response_size)
-        - response_length: Length of the response sequence
-        - use_whitening: Whether to use whitening (ie. normalize advantages) or not
+        Args:
+            values: Tensor of shape (batch_size, response_size)
+            rewards: Tensor of shape (batch_size, response_size)
+            response_length: Length of the response sequence
+            use_whitening: Whether to use whitening (ie. normalize advantages) or not
         """
         lastgaelam = 0
         advantages_reversed = []
@@ -233,7 +233,7 @@ class PPOConfig(MethodConfig):
         return loss, flatten_dict(stats)
 
 
-# Modeling Outputs
+# CausalLM architectures
 
 
 @dataclass
@@ -245,23 +245,6 @@ class CausalLMOutputWithValue(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
     value: Optional[torch.FloatTensor] = None
-
-
-@dataclass
-class Seq2SeqLMOutputWithValue(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
-    logits: Optional[torch.FloatTensor] = None
-    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
-    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    value: Optional[torch.FloatTensor] = None
-
-
-# Value Head Architectures
 
 
 class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
@@ -328,8 +311,8 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     def post_init(self, state_dict):
         """
-        We add the state dictionary of the value head to the state dictionary of the wrapped model
-        by preprending the key with `v_head.`. This function removes the `v_head.` prefix from the
+        Adds the state dictionary of the value head to the state dictionary of the wrapped model
+        by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
         keys of the value head state dictionary.
         """
         for k in list(state_dict.keys()):
@@ -338,97 +321,6 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         self.v_head.load_state_dict(state_dict, strict=False)
         del state_dict
         gc.collect()  # noqa: E702
-
-
-class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
-    """An `AutoModel` class wrapper for `transformers` sequence-to-sequence
-    models that have a language modeling head and a value head.
-    """
-
-    _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
-    _supported_modules = ["v_head"]
-    _supported_args = []
-
-    def __init__(
-        self,
-        pretrained_model: transformers.PreTrainedModel,
-    ):
-        super().__init__(pretrained_model)
-        self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
-
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        decoder_input_ids: Optional[torch.LongTensor] = None,
-        decoder_attention_mask: Optional[torch.FloatTensor] = None,
-        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
-        past_key_values: Optional[Tuple[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        decoder_head_mask: Optional[torch.FloatTensor] = None,
-        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = True,
-        output_hidden_states: Optional[bool] = True,
-        return_dict: Optional[bool] = None,
-    ) -> Seq2SeqLMOutputWithValue:
-        forward_kwargs = self.get_compatible_forward_kwargs(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            decoder_attention_mask=decoder_attention_mask,
-            encoder_outputs=encoder_outputs,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            decoder_inputs_embeds=decoder_inputs_embeds,
-            head_mask=head_mask,
-            decoder_head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        forward_kwargs["output_hidden_states"] = True
-        forward_kwargs["return_dict"] = True
-
-        outputs = self.pretrained_model(**forward_kwargs)
-        last_hidden_state = outputs.decoder_hidden_states[-1]
-        value = self.v_head(last_hidden_state).squeeze(-1)
-
-        return Seq2SeqLMOutputWithValue(**outputs, value=value)
-
-    def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
-        return self.pretrained_model.generate(*args, **kwargs)
-
-    def state_dict(self, *args, **kwargs):
-        """
-        Returns the state dictionary of the model. We add the state dictionary of the value head
-        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
-        """
-        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
-        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
-        for k, v in v_head_state_dict.items():
-            pretrained_model_state_dict[f"v_head.{k}"] = v
-        return pretrained_model_state_dict
-
-    def post_init(self, state_dict):
-        """
-        We add the state dictionary of the value head to the state dictionary of the wrapped model
-        by preprending the key with `v_head.`. This function removes the `v_head.` prefix from the
-        keys of the value head state dictionary.
-        """
-        for k in list(state_dict.keys()):
-            if "v_head." in k:
-                state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
-        self.v_head.load_state_dict(state_dict, strict=False)
-        del state_dict
-        gc.collect()  # noqa: E702
-
-
-# Hydra Architectures
 
 
 class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
@@ -464,7 +356,6 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
         # Select the hidden state immediately before the first branching layer
         input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
 
-        # Get size of last hidden state
         output_shape = outputs.hidden_states[-1].size()
         forward_kwargs.pop("input_ids", None)  # Ignore `input_ids` for branch head
         hydra_outputs = self.frozen_head(
@@ -474,90 +365,6 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
         if not return_dict:
             return hydra_outputs.logits
         return hydra_outputs
-
-
-class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead):
-
-    _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen"]
-
-    def __init__(
-        self,
-        pretrained_model: transformers.PreTrainedModel,
-        *,
-        num_layers_unfrozen: int = -1,
-    ):
-        super().__init__(pretrained_model)
-        self.num_layers_unfrozen = num_layers_unfrozen
-        if self.num_layers_unfrozen > 0:
-            branch_class = T5Branch  # TODO: Add support for other model branches
-            self.frozen_head = branch_class(
-                self.pretrained_model,
-                num_layers_unfrozen=self.num_layers_unfrozen,
-            ).eval()
-
-    def forward_hydra(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
-        decoder_input_ids: Optional[torch.LongTensor] = None,
-        decoder_attention_mask: Optional[torch.FloatTensor] = None,
-        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
-        past_key_values: Optional[Tuple[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        decoder_head_mask: Optional[torch.FloatTensor] = None,
-        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = True,
-        output_hidden_states: Optional[bool] = True,
-        return_dict: Optional[bool] = None,
-    ) -> Seq2SeqLMOutputWithValue:
-        forward_kwargs = self.get_compatible_forward_kwargs(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            decoder_attention_mask=decoder_attention_mask,
-            encoder_outputs=encoder_outputs,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            decoder_inputs_embeds=decoder_inputs_embeds,
-            head_mask=head_mask,
-            decoder_head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            return_dict=return_dict,
-        )
-        forward_kwargs = self.get_compatible_forward_kwargs(**forward_kwargs)
-        return_dict = forward_kwargs.get("return_dict", True)
-        forward_kwargs["output_hidden_states"] = True
-        forward_kwargs["return_dict"] = True
-
-        outputs = self.forward(**forward_kwargs)
-        # Select the hidden state right before the first branching layer
-        input_hidden_state = outputs.decoder_hidden_states[-(self.num_layers_unfrozen + 1)]
-        hydra_outputs = self.frozen_head(
-            hidden_states=input_hidden_state,
-            attention_mask=decoder_attention_mask,
-            past_key_values=past_key_values,
-            encoder_hidden_states=outputs.encoder_last_hidden_state,
-            encoder_attention_mask=attention_mask,
-            head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        if not return_dict:
-            return hydra_outputs.logits
-        return hydra_outputs
-
-
-# Hydra Branches
 
 
 class ModelBranch(transformers.PreTrainedModel):
@@ -610,12 +417,10 @@ class GPTModelBranch(ModelBranch):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
-        position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         """Reference:
         https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/gpt2/modeling_gpt2.py#L743  # noqa: E501
         """
-
         batch_size = hidden_states.size()[0]
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -739,8 +544,8 @@ class GPTModelBranch(ModelBranch):
 class OPTModelBranch(ModelBranch):
     def forward(  # noqa: max-complexity
         self,
-        hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
-        output_shape: torch.Tensor,  # output_size given by main trunk
+        hidden_states: torch.Tensor,
+        output_shape: torch.Tensor,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
@@ -866,7 +671,7 @@ class BloomModelBranch(ModelBranch):
     def forward(  # noqa: max-complexity
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
-        output_shape: torch.Tensor,  # output_size given by main trunk
+        output_shape: torch.Tensor,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
@@ -989,6 +794,191 @@ class BloomModelBranch(ModelBranch):
         )
 
 
+# Seq2Seq architectures
+
+
+@dataclass
+class Seq2SeqLMOutputWithValue(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    value: Optional[torch.FloatTensor] = None
+
+
+class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
+    """An `AutoModel` class wrapper for `transformers` sequence-to-sequence
+    models that have a language modeling head and a value head.
+    """
+
+    _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
+    _supported_modules = ["v_head"]
+    _supported_args = []
+
+    def __init__(
+        self,
+        pretrained_model: transformers.PreTrainedModel,
+    ):
+        super().__init__(pretrained_model)
+        self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.FloatTensor] = None,
+        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
+        past_key_values: Optional[Tuple[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        decoder_head_mask: Optional[torch.FloatTensor] = None,
+        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = True,
+        output_hidden_states: Optional[bool] = True,
+        return_dict: Optional[bool] = None,
+    ) -> Seq2SeqLMOutputWithValue:
+        forward_kwargs = self.get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            encoder_outputs=encoder_outputs,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        forward_kwargs["output_hidden_states"] = True
+        forward_kwargs["return_dict"] = True
+
+        outputs = self.pretrained_model(**forward_kwargs)
+        last_hidden_state = outputs.decoder_hidden_states[-1]
+        value = self.v_head(last_hidden_state).squeeze(-1)
+
+        return Seq2SeqLMOutputWithValue(**outputs, value=value)
+
+    def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
+        return self.pretrained_model.generate(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
+        for k, v in v_head_state_dict.items():
+            pretrained_model_state_dict[f"v_head.{k}"] = v
+        return pretrained_model_state_dict
+
+    def post_init(self, state_dict):
+        """
+        We add the state dictionary of the value head to the state dictionary of the wrapped model
+        by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
+        keys of the value head state dictionary.
+        """
+        for k in list(state_dict.keys()):
+            if "v_head." in k:
+                state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
+        self.v_head.load_state_dict(state_dict, strict=False)
+        del state_dict
+        gc.collect()  # noqa: E702
+
+
+class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead):
+
+    _supported_modules = ["v_head", "frozen_head"]
+    _supported_args = ["num_layers_unfrozen"]
+
+    def __init__(
+        self,
+        pretrained_model: transformers.PreTrainedModel,
+        *,
+        num_layers_unfrozen: int = -1,
+    ):
+        super().__init__(pretrained_model)
+        self.num_layers_unfrozen = num_layers_unfrozen
+        if self.num_layers_unfrozen > 0:
+            branch_class = T5Branch  # TODO: Add support for other model branches
+            self.frozen_head = branch_class(
+                self.pretrained_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
+            ).eval()
+
+    def forward_hydra(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.FloatTensor] = None,
+        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
+        past_key_values: Optional[Tuple[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        decoder_head_mask: Optional[torch.FloatTensor] = None,
+        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = True,
+        output_hidden_states: Optional[bool] = True,
+        return_dict: Optional[bool] = None,
+    ) -> Seq2SeqLMOutputWithValue:
+        forward_kwargs = self.get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            encoder_outputs=encoder_outputs,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            return_dict=return_dict,
+        )
+        return_dict = forward_kwargs.get("return_dict", True)
+        forward_kwargs["output_hidden_states"] = True
+        forward_kwargs["return_dict"] = True
+
+        outputs = self.forward(**forward_kwargs)
+        # Select the hidden state right before the first branching layer
+        input_hidden_state = outputs.decoder_hidden_states[-(self.num_layers_unfrozen + 1)]
+        hydra_outputs = self.frozen_head(
+            hidden_states=input_hidden_state,
+            attention_mask=decoder_attention_mask,
+            past_key_values=past_key_values,
+            encoder_hidden_states=outputs.encoder_last_hidden_state,
+            encoder_attention_mask=attention_mask,
+            head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        if not return_dict:
+            return hydra_outputs.logits
+        return hydra_outputs
+
+
 class T5Branch(ModelBranch):
     """Decoder only T5 branch."""
 
@@ -1009,8 +999,8 @@ class T5Branch(ModelBranch):
         past_key_values: Optional[Tuple[torch.Tensor]] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
-        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
         position_bias: Optional[torch.FloatTensor] = None,
         use_cache: bool = False,
         output_attentions: bool = False,
@@ -1112,6 +1102,9 @@ class T5Branch(ModelBranch):
         )
 
 
+# Branch class utils
+
+
 def hf_get_decoder_branch_class(
     config: transformers.PretrainedConfig,
 ) -> "ModelBranch":
@@ -1144,3 +1137,4 @@ def hf_get_decoder_branch_class(
             f"Unsupported architecture: `{arch}`. The following architectures are "
             f"available for model branching:\n{all_supported_archs}"
         )
+
