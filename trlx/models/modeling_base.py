@@ -21,9 +21,9 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Union
 
-import transformers
 import torch
 import torch.nn as nn
+import transformers
 from huggingface_hub import hf_hub_download
 
 

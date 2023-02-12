@@ -22,7 +22,6 @@ AUTO_SEQ2SEQ_LM_PATHS = ["t5-small", "google/flan-t5-small"]
 
 
 class TestAutoModelForCausalLMWithValueHead(unittest.TestCase):
-
     _auto_model_class = AutoModelForCausalLMWithValueHead
     _supported_args = {}
 
@@ -83,7 +82,6 @@ class TestAutoModelForCausalLMWithValueHead(unittest.TestCase):
 
 
 class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithValueHead):
-
     _auto_model_class = AutoModelForCausalLMHydraWithValueHead
     _supported_args = {"num_layers_unfrozen": 2}  # TODO: Test various values
 
@@ -130,7 +128,6 @@ class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithVal
 
 
 class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
-
     _auto_model_class = AutoModelForSeq2SeqLMWithValueHead
     _supported_args = {}
 
@@ -202,7 +199,6 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
 
 
 class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithValueHead):
-
     _auto_model_class = AutoModelForSeq2SeqLMHydraWithValueHead
     _supported_args = {"num_layers_unfrozen": 2}  # TODO: Test various values
 
@@ -255,7 +251,6 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
 
 
 class TestAutoModelForCausalLMWithILQLHeads(unittest.TestCase):
-
     _auto_model_class = AutoModelForCausalLMWithILQLHeads
     _supported_args = {"two_qs": True, "alpha": 0.8}  # TODO: Test various values
 
