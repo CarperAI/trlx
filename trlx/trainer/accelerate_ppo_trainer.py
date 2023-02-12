@@ -298,7 +298,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
 
-            if torch.distributed.get_rank() == 0:
+            if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
                     gathered_prompts, gathered_samples, gathered_prompt_sizes
                 )
@@ -315,12 +315,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 )
                 stats["time/exp_score"] = time() - exp_score_time
 
-                all_scores = list(all_scores.reshape(torch.distributed.get_world_size(), -1).unbind())
+                all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1).unbind())
             else:
                 all_scores = None
 
-            scores = torch.empty(len(samples), device=device)
-            torch.distributed.scatter(scores, all_scores)
+            if torch.distributed.is_initialized():
+                scores = torch.empty(len(samples), device=device)
+                torch.distributed.scatter(scores, all_scores)
+            else:
+                scores = torch.tensor(all_scores[0])
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
 
