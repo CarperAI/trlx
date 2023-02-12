@@ -56,12 +56,3 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-    def save_pretrained(self, directory: Optional[str] = None):
-        """NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
-        """
-        if directory is None:
-            directory = f"{self.config.train.checkpoint_dir}/hf_model"
-        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
-        self.tokenizer.save_pretrained(directory)
