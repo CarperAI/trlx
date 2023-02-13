@@ -39,6 +39,20 @@ def increment_score(digit : int, intermediate : int, reconstructed_digit : int) 
         return 1
     else:
         return -1
+
+def increment_help_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
+    score_log_file = "examples/experience_demo/increment_log.txt"
+    with open(score_log_file, "a") as f:
+        f.write(f"{digit} {intermediate} {reconstructed_digit}\n")
+
+    if intermediate == -1 or reconstructed_digit == -1:
+        return -10
+    if digit + 2 == reconstructed_digit:
+        return 2
+    elif digit + 1 == intermediate:
+        return 1
+    else:
+        return -1
     
 def fix_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
     if intermediate == -1 or reconstructed_digit == -1:
@@ -66,8 +80,45 @@ def reward_fn(trajectories: List[List]) -> List[float]:
     return reward_list
 
 
+def prompt_example(input : str) -> str:
+    return f"""0
+next=1
 
-def encoder_decoder_experience_fn(trainer, batch):
+1
+next=2
+
+2
+next=3
+
+3
+next=4
+
+4
+next=5
+
+5
+next=6
+
+6
+next=7
+
+7
+next=8
+
+{input}
+next="""
+
+
+def prompt_tell(input : str) -> str:
+    return f"""The next number after {input} is x. x="""
+
+def prompt_think(input : str) -> str:
+    return f"""f is a function. f(f(x))=x+2. f({input})="""
+
+def prompt_arrow(input : str) -> str:
+    return f"""{input}->"""
+
+def increment_experience_fn(trainer, batch):
     """
     :trainer: AccelerateRLTrainer
         (has trainer.orch.generate_and_calc_logprobs, which returns data : RunElementBatch and stats : dict)
@@ -82,19 +133,12 @@ def encoder_decoder_experience_fn(trainer, batch):
     We completely ignore the dataset (the query tensors).
     
     We use max_new_tokens=1 in all calls to generate_and_calc_logprobs.
-    The trajectory for each poem is as follows:
-    First run:
-    f"{digit}
-    next="
-    --> continuation
-    Second run:
-    f"{continuation}
-    next="
-    --> answer
     """
 
     # batch is an object that has .input_ids, .attention_mask, .labels; for example
     # batch {'input_ids': tensor([[ 3], [ 8]]), 'attention_mask': tensor([[1], [1]]), 'labels': tensor([[ 8], [10]])}
+
+    prompt = prompt_think
 
     batch_size = batch.input_ids.shape[0]
     print(f"\nbatch_size = {batch_size}")
@@ -107,14 +151,14 @@ def encoder_decoder_experience_fn(trainer, batch):
     first_run_strs = [""] * batch_size
     # First run
     for i in range(batch_size):
-        first_run_strs[i] = f"{digits[i]}\nnext="
+        first_run_strs[i] = prompt(digits[i])
 
     # Encode the first run
     first_run_batch = trainer.tokenizer(first_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the first run
     #import code; print("first_run_data"); code.interact(local=locals())
-    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1)
+    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1, temperature=0.5)
 
     first_run_str_prompts = list(itertools.chain.from_iterable(first_run_data['str_prompts']))
     first_run_str_outputs = list(itertools.chain.from_iterable(first_run_data['str_outputs']))
@@ -122,13 +166,13 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = f"{first_run_str_outputs[i]}\nnext="
+        second_run_strs[i] = prompt(first_run_str_outputs[i])
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the second run
-    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
+    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1, temperature=0.5)
 
     # Decode the second run
     second_run_str_prompts = list(itertools.chain.from_iterable(second_run_data['str_prompts']))
@@ -165,6 +209,10 @@ def main(hparams={}):
     else:
         device = -1
 
+    # delete score_log_file if it exists
+    score_log_file = "examples/experience_demo/increment_log.txt"
+    if os.path.exists(score_log_file):
+        os.remove(score_log_file)
     train_path = "examples/experience_demo/poems/poetry_big_train_qa.csv"
     data = pd.read_csv(train_path)
     prompts = data["question"].tolist() # we don't use this, we just need a list of strings
@@ -172,7 +220,7 @@ def main(hparams={}):
     np.random.seed(43)
     trlx.train(
         reward_fn=reward_fn,
-        experience_fn=encoder_decoder_experience_fn,
+        experience_fn=increment_experience_fn,
         prompts=prompts, 
         config=config,
     )

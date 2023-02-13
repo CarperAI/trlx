@@ -353,7 +353,7 @@ class PPOOrchestrator(Orchestrator):
                         sample_kl_divergence_estimate = torch.tensor([0.0])
 
                     # TODO use the discounting factor on the score for earlier PPORLElements
-                    sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu() * (0.5 if idx == 0 else 1.0)
+                    sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
                     # TODO refactor this code, the above line is horrifying
                     all_rewards[sample_idx] = sample_kl_divergence_estimate
 
@@ -377,4 +377,5 @@ class PPOOrchestrator(Orchestrator):
             self.trainer.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to trainer's rollout storage
+        print("len(ppo_rl_elements): ", len(ppo_rl_elements))
         self.trainer.push_to_store(ppo_rl_elements)
