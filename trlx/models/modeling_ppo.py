@@ -323,7 +323,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         gc.collect()  # noqa: E702
 
 
-class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
+class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
     _supported_args = ["num_layers_unfrozen"]
 
@@ -872,7 +872,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         gc.collect()  # noqa: E702
 
 
-class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead):
+class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
     _supported_args = ["num_layers_unfrozen"]
 

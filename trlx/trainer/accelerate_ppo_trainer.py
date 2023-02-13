@@ -16,8 +16,8 @@ from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
 from trlx.models.modeling_ppo import (
     AdaptiveKLController,
-    AutoModelForCausalLMHydraWithValueHead,
-    AutoModelForSeq2SeqLMHydraWithValueHead,
+    AutoModelForCausalLMWithHydraValueHead,
+    AutoModelForSeq2SeqLMWithHydraValueHead,
     FixedKLController,
 )
 from trlx.pipeline.offline_pipeline import PromptPipeline
@@ -120,11 +120,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def get_arch(self, config: TRLConfig):
         """Get the model"""
         if config.model.model_arch_type == "seq2seq":
-            return AutoModelForSeq2SeqLMHydraWithValueHead.from_pretrained(
+            return AutoModelForSeq2SeqLMWithHydraValueHead.from_pretrained(
                 config.model.model_path,
                 num_layers_unfrozen=config.model.num_layers_unfrozen,
             )
-        return AutoModelForCausalLMHydraWithValueHead.from_pretrained(
+        return AutoModelForCausalLMWithHydraValueHead.from_pretrained(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )

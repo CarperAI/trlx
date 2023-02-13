@@ -8,9 +8,9 @@ import transformers
 
 from trlx.models.modeling_ilql import AutoModelForCausalLMWithILQLHeads
 from trlx.models.modeling_ppo import (
-    AutoModelForCausalLMHydraWithValueHead,
+    AutoModelForCausalLMWithHydraValueHead,
     AutoModelForCausalLMWithValueHead,
-    AutoModelForSeq2SeqLMHydraWithValueHead,
+    AutoModelForSeq2SeqLMWithHydraValueHead,
     AutoModelForSeq2SeqLMWithValueHead,
 )
 
@@ -81,8 +81,8 @@ class TestAutoModelForCausalLMWithValueHead(unittest.TestCase):
             self.assertFalse(torch.all(torch.isclose(modified_model.v_head[-1].bias, model.v_head[-1].bias)))
 
 
-class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithValueHead):
-    _auto_model_class = AutoModelForCausalLMHydraWithValueHead
+class TestAutoModelForCausalLMWithHydraValueHead(TestAutoModelForCausalLMWithValueHead):
+    _auto_model_class = AutoModelForCausalLMWithHydraValueHead
     _supported_args = {"num_layers_unfrozen": 2}  # TODO: Test various values
 
     def test_forward(self):
@@ -198,8 +198,8 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
             self.assertFalse(torch.all(torch.isclose(modified_model.v_head[-1].bias, model.v_head[-1].bias)))
 
 
-class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithValueHead):
-    _auto_model_class = AutoModelForSeq2SeqLMHydraWithValueHead
+class TestAutoModelForSeq2SeqLMWithHydraValueHead(TestAutoModelForSeq2SeqLMWithValueHead):
+    _auto_model_class = AutoModelForSeq2SeqLMWithHydraValueHead
     _supported_args = {"num_layers_unfrozen": 2}  # TODO: Test various values
 
     @unittest.skip("TODO: Final hidden states are not the same for frozen and unfrozen T5 heads")
