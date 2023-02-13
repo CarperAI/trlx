@@ -1,11 +1,9 @@
-import pathlib
-
-import yaml
 from transformers import GPT2Config
 
 import trlx
 from examples.randomwalks import generate_random_walks
 from trlx.data.default_configs import default_ilql_config
+
 
 def main():
     config = default_ilql_config()

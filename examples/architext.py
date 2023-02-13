@@ -3,6 +3,7 @@
 import trlx
 from trlx.data.default_configs import default_ppo_config
 
+
 def reward_fn(samples, **kwargs):
     "Gives a negative count of rooms for each sample"
     return [-sample.count(":") for sample in samples]
@@ -24,6 +25,7 @@ prompts = [
     "[prompt] the bedroom is not adjacent to the kitchen [layout]",
     "[prompt] the kitchen is not adjacent to the bathroom [layout]",
 ]
+
 
 def main(hparams={}):
     config = default_ppo_config()

@@ -4,7 +4,7 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig, TrainConfig, SchedulerConfig
+from trlx.data.configs import SchedulerConfig, TrainConfig, TRLConfig
 from trlx.data.default_configs import default_ilql_config
 
 
@@ -28,18 +28,13 @@ nemo_ilql_train_cfg = TrainConfig(
 )
 
 scheduler_cfg = SchedulerConfig(
-    name="cosine_annealing",
-    kwargs=dict(
-        T_max=nemo_ilql_train_cfg.total_steps,
-        eta_min=1.0e-6
-    )
+    name="cosine_annealing", kwargs=dict(T_max=nemo_ilql_train_cfg.total_steps, eta_min=1.0e-6)
 )
 
 config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg, scheduler=scheduler_cfg)
 
 
 def main():
-
     sentiment_fn = pipeline(
         "sentiment-analysis",
         "lvwerra/distilbert-imdb",

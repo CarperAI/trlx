@@ -9,9 +9,8 @@ from nemo.utils.app_state import AppState
 from nemo.utils.model_utils import inject_model_parallel_rank
 from omegaconf.omegaconf import OmegaConf
 
-from trlx.data.configs import TRLConfig, TrainConfig, SchedulerConfig
+from trlx.data.configs import TrainConfig, TRLConfig
 from trlx.data.default_configs import default_ilql_config
-
 from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer
 
 default_config = default_ilql_config()
@@ -22,10 +21,11 @@ nemo_ilql_train_cfg = TrainConfig(
     trainer_kwargs=dict(
         pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
         megatron_cfg="megatron_20b.yaml",
-    )
+    ),
 )
 
 trl_config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg)
+
 
 def find_checkpoints(checkpoint_dir):
     checkpoints = glob(os.path.join(checkpoint_dir, "*", "*.ckpt"))

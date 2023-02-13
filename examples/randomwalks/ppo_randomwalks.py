@@ -1,11 +1,7 @@
-import pathlib
-
-import yaml
-
 import trlx
 from examples.randomwalks import generate_random_walks
-from trlx.data.configs import TRLConfig
 from trlx.data.default_configs import default_ppo_config
+
 
 def main(hparams={}):
     config = default_ppo_config()
@@ -20,7 +16,7 @@ def main(hparams={}):
         prompts=prompts,
         eval_prompts=prompts,
         metric_fn=lambda samples, prompts, outputs: metric_fn(samples),
-        config=config
+        config=config,
     )
 
 
