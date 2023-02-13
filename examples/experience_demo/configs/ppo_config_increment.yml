@@ -54,5 +54,5 @@ method:
     max_new_tokens: 1
     top_k: 0
     top_p: 1.0
-    temperature: 1.5
+    temperature: 1.2
     do_sample: True
