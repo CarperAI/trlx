@@ -27,7 +27,7 @@ prompts = [
 ]
 
 
-def main(hparams={}):
+def main():
     config = default_ppo_config()
 
     trlx.train(model_path="architext/gptj-162M", reward_fn=reward_fn, prompts=prompts, config=config)
