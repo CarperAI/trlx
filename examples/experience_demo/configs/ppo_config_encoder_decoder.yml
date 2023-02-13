@@ -51,7 +51,8 @@ method:
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 1
+    max_new_tokens: 8
     top_k: 0
     top_p: 1.0
+    temperature: 1.0
     do_sample: True

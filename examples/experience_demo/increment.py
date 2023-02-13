@@ -18,22 +18,22 @@ import pandas as pd
 
 import wandb
 
-default_config = yaml.safe_load(open("examples/experience_demo/configs/ppo_config.yml"))
+default_config = yaml.safe_load(open("examples/experience_demo/configs/ppo_config_increment.yml"))
 
-def get_last_digit(sample: List[str]) -> int:
-    """
-    Extract last char from a sample, check if it's a digit, otherwise return -1
-    """
+def get_last_digit(sample: str) -> int:
+    sample = sample.lstrip()
     if len(sample) == 0:
         return -2
+    if len(sample) > 1:
+        return -3
     last_word = sample[-1]
     if last_word.isdigit():
         return int(last_word)
     else:
         return -1
 
-def increment_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
-    if intermediate == -1 or reconstructed_digit == -1:
+def double_increment_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
+    if intermediate < 0 or reconstructed_digit < 0:
         return -10
     if digit + 2 == reconstructed_digit:
         return 1
@@ -45,7 +45,7 @@ def increment_help_score(digit : int, intermediate : int, reconstructed_digit : 
     with open(score_log_file, "a") as f:
         f.write(f"{digit} {intermediate} {reconstructed_digit}\n")
 
-    if intermediate == -1 or reconstructed_digit == -1:
+    if intermediate < 0 or reconstructed_digit < 0:
         return -10
     if digit + 2 == reconstructed_digit:
         return 2
@@ -55,9 +55,8 @@ def increment_help_score(digit : int, intermediate : int, reconstructed_digit : 
         return -1
     
 def fix_score(digit : int, intermediate : int, reconstructed_digit : int) -> float:
-    if intermediate == -1 or reconstructed_digit == -1:
+    if intermediate < 0 or reconstructed_digit < 0:
         return -10
-    #if intermediate == 2: # this worked perfectly
     if reconstructed_digit == 2:
         return 10
     else:
@@ -66,9 +65,9 @@ def fix_score(digit : int, intermediate : int, reconstructed_digit : int) -> flo
 def reward_fn(trajectories: List[List]) -> List[float]:
     """
     trajectories is a list of lists having the form [digit, prompt_1, output_1, prompt_2, output_2]
-    Return if the last digit of output_2 is digit + 2
+    Pass the digit, intermediate, and reconstructed digit to the score function.
     """
-    score = increment_score
+    score = double_increment_score
 
     for sample in trajectories:
         assert len(sample) == 5
@@ -138,7 +137,7 @@ def increment_experience_fn(trainer, batch):
     # batch is an object that has .input_ids, .attention_mask, .labels; for example
     # batch {'input_ids': tensor([[ 3], [ 8]]), 'attention_mask': tensor([[1], [1]]), 'labels': tensor([[ 8], [10]])}
 
-    prompt = prompt_think
+    prompt = prompt_arrow
 
     batch_size = batch.input_ids.shape[0]
     print(f"\nbatch_size = {batch_size}")
@@ -148,8 +147,8 @@ def increment_experience_fn(trainer, batch):
     # The key architectural constraint is that all trainer.orch.generate_and_calc_logprobs should be parallel over the batch
     # Do everything in string space 
 
-    first_run_strs = [""] * batch_size
     # First run
+    first_run_strs = [""] * batch_size
     for i in range(batch_size):
         first_run_strs[i] = prompt(digits[i])
 
@@ -158,7 +157,7 @@ def increment_experience_fn(trainer, batch):
 
     # Generate the first run
     #import code; print("first_run_data"); code.interact(local=locals())
-    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1, temperature=0.5)
+    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1)
 
     first_run_str_prompts = list(itertools.chain.from_iterable(first_run_data['str_prompts']))
     first_run_str_outputs = list(itertools.chain.from_iterable(first_run_data['str_outputs']))
@@ -166,22 +165,22 @@ def increment_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = prompt(first_run_str_outputs[i])
+        second_run_strs[i] = prompt(first_run_str_outputs[i].replace(' ', ''))
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the second run
-    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1, temperature=0.5)
+    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
 
     # Decode the second run
     second_run_str_prompts = list(itertools.chain.from_iterable(second_run_data['str_prompts']))
     second_run_str_outputs = list(itertools.chain.from_iterable(second_run_data['str_outputs']))
 
-    print("first_run_str_prompts\n", first_run_str_prompts)
-    print("first_run_str_outputs\n", first_run_str_outputs)
-    print("second_run_str_prompts\n", second_run_str_prompts)
-    print("second_run_str_outputs\n", second_run_str_outputs)
+    print("first_run_str_prompts\n", first_run_str_prompts[:4])
+    print("first_run_str_outputs\n", first_run_str_outputs[:4])
+    print("second_run_str_prompts\n", second_run_str_prompts[:4])
+    print("second_run_str_outputs\n", second_run_str_outputs[:4])
     #import code; print("just before data concatenation"); code.interact(local=locals())
 
 
