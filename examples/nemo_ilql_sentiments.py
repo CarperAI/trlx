@@ -35,6 +35,8 @@ config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg, schedul
 
 
 def main():
+    print(config)
+    return
     sentiment_fn = pipeline(
         "sentiment-analysis",
         "lvwerra/distilbert-imdb",

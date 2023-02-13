@@ -23,7 +23,7 @@ def default_ppo_config():
             pipeline="PromptPipeline",
             trainer="AcceleratePPOTrainer",
         ),
-        model=ModelConfig(model_path="lwerra/gpt2-imdb", num_layers_unfrozen=2),
+        model=ModelConfig(model_path="lvwerra/gpt2-imdb", num_layers_unfrozen=2),
         tokenizer=TokenizerConfig(tokenizer_path="gpt2", truncation_side="right"),
         optimizer=OptimizerConfig(
             name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
@@ -60,7 +60,7 @@ def default_ilql_config():
     return TRLConfig(
         train=TrainConfig(
             seq_length=64,
-            batch_size=128,
+            batch_size=32,
             epochs=100,
             total_steps=1000,
             checkpoint_interval=1000,
