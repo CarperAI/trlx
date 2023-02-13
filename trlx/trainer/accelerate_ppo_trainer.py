@@ -286,6 +286,45 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             prompt_tensors = batch.input_ids
             device = samples.device
+
+            prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
+            padded_samples = self.accelerator.pad_across_processes(
+                samples, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
+            )
+            padded_prompts = self.accelerator.pad_across_processes(
+                prompt_tensors, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
+            )
+            gathered_samples = self.accelerator.gather(padded_samples)
+            gathered_prompts = self.accelerator.gather(padded_prompts)
+            gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
+
+            if self.accelerator.is_main_process:
+                all_str_samples, all_str_prompts, all_str_outputs = self.decode(
+                    gathered_prompts, gathered_samples, gathered_prompt_sizes
+                )
+
+                exp_score_time = time()
+                all_scores = torch.tensor(
+                    self.reward_fn(
+                        samples=all_str_samples,
+                        prompts=all_str_prompts,
+                        outputs=all_str_outputs,
+                    ),
+                    dtype=torch.float,
+                    device=device,
+                )
+                stats["time/exp_score"] = time() - exp_score_time
+
+                all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1).unbind())
+            else:
+                all_scores = None
+
+            if torch.distributed.is_initialized():
+                scores = torch.empty(len(samples), device=device)
+                torch.distributed.scatter(scores, all_scores)
+            else:
+                scores = torch.tensor(all_scores[0])
+
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
 
             # Pad the sample outputs
@@ -301,18 +340,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 for output in outputs
             ]
             sample_outputs = torch.vstack(outputs).to(device)
-
-            exp_score_time = time()
-
-            scores = torch.tensor(
-                self.reward_fn(
-                    samples=str_samples,
-                    prompts=str_prompts,
-                    outputs=str_outputs,
-                ),
-                dtype=torch.float,
-            ).to(device)
-            stats["time/exp_score"] = time() - exp_score_time
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
