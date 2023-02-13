@@ -13,7 +13,7 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def main(hparams={}):
+def main():
     config = default_ilql_config()
 
     sentiment_fn = pipeline(
