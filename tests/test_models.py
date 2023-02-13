@@ -26,36 +26,36 @@ class TestAutoModelForCausalLMWithValueHead(unittest.TestCase):
     _supported_args = {}
 
     def setUp(self):
-        self.dummy_text = "Once upon a time there was a happy goose named Louis. He liked to eat bananas."
+        self.text = "Once upon a time there was a happy goose named Louis. He liked to eat bananas."
 
     def tearDown(self):
         gc.collect()  # Try to free up memory
 
-    def _create_dummy_inputs(self, model_path):
+    def _create_inputs(self, model_path):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
-        return tokenizer(self.dummy_text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
+        return tokenizer(self.text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
 
     def test_forward(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `forward` method doesn't throw an error on generic inputs
             try:
-                model(**dummy_inputs)
+                model(**inputs)
             except Exception as e:
                 self.assertFalse(True, msg=e)
 
     def test_generate(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `generate` method doesn't throw an error on generic inputs
             try:
-                model.generate(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                model.generate(**inputs, return_dict=True, output_hidden_states=True)
             except Exception as e:
                 self.assertFalse(True, msg=e)
 
@@ -88,15 +88,15 @@ class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithVal
     def test_forward(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             with torch.no_grad():
                 # Compare logits and hidden states from frozen and unfrozen heads
-                unfrozen_outputs = model(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                unfrozen_outputs = model(**inputs, return_dict=True, output_hidden_states=True)
                 unfrozen_last_hidden_state = unfrozen_outputs.hidden_states[-1]
                 unfrozen_logits = unfrozen_outputs.logits
 
-                frozen_outputs = model.forward_hydra(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                frozen_outputs = model.forward_hydra(**inputs, return_dict=True, output_hidden_states=True)
                 frozen_last_hidden_state = frozen_outputs.hidden_states[-1]
                 frozen_logits = frozen_outputs.logits
 
@@ -109,11 +109,11 @@ class TestAutoModelForCausalLMHydraWithValueHead(TestAutoModelForCausalLMWithVal
     def test_lm_heads(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Compare frozen and unfrozen logits
             with torch.no_grad():
-                unfrozen_outputs = model(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                unfrozen_outputs = model(**inputs, return_dict=True, output_hidden_states=True)
                 unfrozen_logits = unfrozen_outputs.logits
                 frozen_logits = model.frozen_head.lm_head(unfrozen_outputs.hidden_states[-1].to(torch.float32))
                 diff = torch.sum(unfrozen_logits - frozen_logits).item()
@@ -132,22 +132,22 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
     _supported_args = {}
 
     def setUp(self):
-        self.dummy_encoder_text = "Translate this text to French: Hello, my dog is cute"
-        self.dummy_decoder_text = "Bonjour, mon chien est mignon"
+        self.encoder_text = "Translate this text to French: Hello, my dog is cute"
+        self.decoder_text = "Bonjour, mon chien est mignon"
 
     def tearDown(self):
         gc.collect()  # Try to free up memory
 
-    def _create_dummy_inputs(self, model_path):
+    def _create_inputs(self, model_path):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
         tokenizer.sep_token = "<sep>"
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
 
         encoder_inputs = tokenizer(
-            self.dummy_encoder_text, truncation=True, padding="max_length", max_length=10, return_tensors="pt"
+            self.encoder_text, truncation=True, padding="max_length", max_length=10, return_tensors="pt"
         )
-        decoder_inputs = tokenizer(self.dummy_decoder_text, return_tensors="pt")
+        decoder_inputs = tokenizer(self.decoder_text, return_tensors="pt")
         return {
             **encoder_inputs,
             "decoder_input_ids": decoder_inputs.input_ids,
@@ -157,22 +157,22 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
     def test_forward(self):
         for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `forward` method doesn't throw an error on generic inputs
             try:
-                model(**dummy_inputs)
+                model(**inputs)
             except Exception as e:
                 self.assertFalse(True, msg=e)
 
     def test_generate(self):
         for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `generate` method doesn't throw an error on generic inputs
             try:
-                model.generate(dummy_inputs["input_ids"])
+                model.generate(inputs["input_ids"])
             except Exception as e:
                 self.assertFalse(True, msg=e)
 
@@ -206,15 +206,15 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
     def test_forward(self):
         for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             with torch.no_grad():
                 # Compare logits and hidden states from frozen and unfrozen heads
-                unfrozen_outputs = model(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                unfrozen_outputs = model(**inputs, return_dict=True, output_hidden_states=True)
                 unfrozen_last_hidden_state = unfrozen_outputs.decoder_hidden_states[-1]
                 unfrozen_logits = unfrozen_outputs.logits
 
-                frozen_outputs = model.forward_hydra(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                frozen_outputs = model.forward_hydra(**inputs, return_dict=True, output_hidden_states=True)
                 frozen_last_hidden_state = frozen_outputs.decoder_hidden_states[-1]
                 frozen_logits = frozen_outputs.logits
 
@@ -228,11 +228,11 @@ class TestAutoModelForSeq2SeqLMHydraWithValueHead(TestAutoModelForSeq2SeqLMWithV
     def test_lm_heads(self):
         for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Compare frozen and unfrozen logits
             with torch.no_grad():
-                unfrozen_outputs = model(**dummy_inputs, return_dict=True, output_hidden_states=True)
+                unfrozen_outputs = model(**inputs, return_dict=True, output_hidden_states=True)
                 unfrozen_logits = unfrozen_outputs.logits
                 last_hidden_state = unfrozen_outputs.decoder_hidden_states[-1]
                 frozen_logits = model.frozen_head.lm_head(last_hidden_state)
@@ -255,36 +255,36 @@ class TestAutoModelForCausalLMWithILQLHeads(unittest.TestCase):
     _supported_args = {"two_qs": True, "alpha": 0.8}  # TODO: Test various values
 
     def setUp(self):
-        self.dummy_text = "Once upon a time there was a happy goose named Louis. He liked to eat bananas."
+        self.text = "Once upon a time there was a happy goose named Louis. He liked to eat bananas."
 
     def tearDown(self):
         gc.collect()  # Try to free up memory
 
-    def _create_dummy_inputs(self, model_path):
+    def _create_inputs(self, model_path):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
-        return tokenizer(self.dummy_text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
+        return tokenizer(self.text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
 
     def test_forward(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `forward` method doesn't throw an error on generic inputs
             try:
-                model(**dummy_inputs)
+                model(**inputs)
             except Exception as e:
                 self.assertFalse(True, msg=e)
 
     def test_generate(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
-            dummy_inputs = self._create_dummy_inputs(model_path)
+            inputs = self._create_inputs(model_path)
 
             # Ensure that the `generate` method doesn't throw an error on generic inputs
             try:
-                model.generate(**dummy_inputs)
+                model.generate(**inputs)
             except Exception as e:
                 self.assertFalse(True, msg=e)
 

@@ -205,14 +205,14 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
         two_qs: bool = True,
         alpha: float = 0.99,
     ):
-        super().__init__(pretrained_model)
-        hidden_size = hf_get_hidden_size(self.pretrained_model.config)
-        vocab_size = self.pretrained_model.config.vocab_size
-        dtype = next(hf_get_lm_head(self.pretrained_model).parameters()).dtype
+        super().__init__(base_model)
+        hidden_size = hf_get_hidden_size(self.base_model.config)
+        vocab_size = self.base_model.config.vocab_size
+        dtype = next(hf_get_lm_head(self.base_model).parameters()).dtype
         self.two_qs = two_qs
         self.alpha = alpha
         self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype)
@@ -234,7 +234,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         )
         forward_kwargs["output_hidden_states"] = True
 
-        outputs = self.pretrained_model(**forward_kwargs)
+        outputs = self.base_model(**forward_kwargs)
         qs, target_qs, vs = self.ilql_heads(outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs)
 
         return outputs.logits, qs, target_qs, vs, outputs.past_key_values
@@ -259,8 +259,8 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
-        pad_token_id = pad_token_id if pad_token_id is not None else self.pretrained_model.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.pretrained_model.config.eos_token_id
+        pad_token_id = pad_token_id if pad_token_id is not None else self.base_model.config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.base_model.config.eos_token_id
 
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)
@@ -320,11 +320,11 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
         for k, v in ilql_heads_state_dict.items():
-            pretrained_model_state_dict[f"ilql_heads.{k}"] = v
-        return pretrained_model_state_dict
+            base_model_state_dict[f"ilql_heads.{k}"] = v
+        return base_model_state_dict
 
     def post_init(self, state_dict):
         """

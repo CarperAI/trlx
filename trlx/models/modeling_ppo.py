@@ -258,10 +258,10 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
     ):
-        super().__init__(pretrained_model)
-        self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
+        super().__init__(base_model)
+        self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
         self,
@@ -286,7 +286,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
-        outputs = self.pretrained_model(**forward_kwargs)
+        outputs = self.base_model(**forward_kwargs)
         value = self.v_head(outputs.hidden_states[-1]).squeeze(-1)
 
         if not return_dict:
@@ -296,18 +296,18 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         return CausalLMOutputWithValue(**outputs, value=value)
 
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
-        return self.pretrained_model.generate(*args, **kwargs)
+        return self.base_model.generate(*args, **kwargs)
 
     def state_dict(self, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
         for k, v in v_head_state_dict.items():
-            pretrained_model_state_dict[f"v_head.{k}"] = v
-        return pretrained_model_state_dict
+            base_model_state_dict[f"v_head.{k}"] = v
+        return base_model_state_dict
 
     def post_init(self, state_dict):
         """
@@ -329,17 +329,17 @@ class AutoModelForCausalLMHydraWithValueHead(AutoModelForCausalLMWithValueHead):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int = -1,
     ):
-        super().__init__(pretrained_model)
+        super().__init__(base_model)
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
-            config = self.pretrained_model.config
-            branch_class = hf_get_decoder_branch_class(config)
+            config = self.base_model.config
+            branch_class = hf_get_branch_class(config)
             self.frozen_head = branch_class(
-                self.pretrained_model,
+                self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
@@ -369,23 +369,23 @@ class ModelBranch(transformers.PreTrainedModel):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int,
     ):
         """
         Args:
-            pretrained_model (transformers.PreTrainedModel): The pretrained model
+            base_model (transformers.PreTrainedModel): The pretrained model
                 to extract upper trunk from.
             num_layers_unfrozen (int): The number of trainable layers.
         """
-        super().__init__(pretrained_model.config)
+        super().__init__(base_model.config)
 
         # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
-        decoder_blocks = deepcopy(hf_get_decoder_blocks(pretrained_model))
+        decoder_blocks = deepcopy(hf_get_decoder_blocks(base_model))
         self.decoder_blocks = nn.ModuleList(list(decoder_blocks)[-num_layers_unfrozen:])
-        self.final_norm = deepcopy(hf_get_decoder_final_norm(pretrained_model))
-        self.lm_head = deepcopy(hf_get_lm_head(pretrained_model))
+        self.final_norm = deepcopy(hf_get_decoder_final_norm(base_model))
+        self.lm_head = deepcopy(hf_get_lm_head(base_model))
 
         self.hidden_size = hf_get_hidden_size(self.config)
         self.model_parallel = False
@@ -795,10 +795,10 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
     ):
-        super().__init__(pretrained_model)
-        self.v_head = make_head(hf_get_hidden_size(self.pretrained_model.config), 1)
+        super().__init__(base_model)
+        self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
         self,
@@ -838,25 +838,25 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
-        outputs = self.pretrained_model(**forward_kwargs)
+        outputs = self.base_model(**forward_kwargs)
         last_hidden_state = outputs.decoder_hidden_states[-1]
         value = self.v_head(last_hidden_state).squeeze(-1)
 
         return Seq2SeqLMOutputWithValue(**outputs, value=value)
 
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
-        return self.pretrained_model.generate(*args, **kwargs)
+        return self.base_model.generate(*args, **kwargs)
 
     def state_dict(self, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        pretrained_model_state_dict = self.pretrained_model.state_dict(*args, **kwargs)
+        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
         for k, v in v_head_state_dict.items():
-            pretrained_model_state_dict[f"v_head.{k}"] = v
-        return pretrained_model_state_dict
+            base_model_state_dict[f"v_head.{k}"] = v
+        return base_model_state_dict
 
     def post_init(self, state_dict):
         """
@@ -878,16 +878,16 @@ class AutoModelForSeq2SeqLMHydraWithValueHead(AutoModelForSeq2SeqLMWithValueHead
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int = -1,
     ):
-        super().__init__(pretrained_model)
+        super().__init__(base_model)
         self.num_layers_unfrozen = num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
-                self.pretrained_model,
+                self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
@@ -956,12 +956,12 @@ class T5Branch(ModelBranch):
 
     def __init__(
         self,
-        pretrained_model: transformers.PreTrainedModel,
+        base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int,
     ):
-        super().__init__(pretrained_model, num_layers_unfrozen=num_layers_unfrozen)
-        self.dropout = hf_get_decoder(pretrained_model).dropout
+        super().__init__(base_model, num_layers_unfrozen=num_layers_unfrozen)
+        self.dropout = hf_get_decoder(base_model).dropout
         self.is_decoder = True
 
     def forward(  # noqa: max-complexity
@@ -1077,10 +1077,10 @@ class T5Branch(ModelBranch):
 # Branch class utils
 
 
-def hf_get_decoder_branch_class(
+def hf_get_branch_class(
     config: transformers.PretrainedConfig,
 ) -> "ModelBranch":
-    """Returns the CausalLM branch class for the given config."""
+    """Returns the model branch class for the given config."""
     gpt_branch_supported_archs = [
         "GPTJForCausalLM",
         "GPT2LMHeadModel",

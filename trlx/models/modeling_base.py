@@ -52,11 +52,11 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     # `transformers.PreTrainedModel`s.
     _supported_args: List[str] = None
 
-    def __init__(self, pretrained_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
+    def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
         super().__init__()
-        self.pretrained_model = pretrained_model
+        self.base_model = base_model
         # cache `pre_trained.forward` args for general use (avoids incompatible args across architectures)
-        self.forward_kwargs = inspect.getfullargspec(self.pretrained_model.forward).args
+        self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
 
     @classmethod
     def _split_kwargs(cls, kwargs):
@@ -83,8 +83,8 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             It only affects the model's configuration. Use :func:`~transformers.AutoModel.from_pretrained` to load
             the model weights
         """
-        pretrained_model = cls._auto_model_parent_class.from_pretrained(config)
-        return pretrained_model
+        base_model = cls._auto_model_parent_class.from_pretrained(config)
+        return base_model
 
     @classmethod
     def from_pretrained(  # noqa: max-complexity
@@ -118,19 +118,19 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             wrapped_model_kwargs = {}
 
         if isinstance(pretrained_model_name_or_path, str):
-            # Load the pretrained model using the `transformers` AutoClass (e.g. AutoModelForCausalLM)
-            pretrained_model = cls._auto_model_parent_class.from_pretrained(
+            # Load the base model using the `transformers` AutoClass (e.g. AutoModelForCausalLM)
+            base_model = cls._auto_model_parent_class.from_pretrained(
                 pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
             )
         elif isinstance(pretrained_model_name_or_path, transformers.PreTrainedModel):
-            pretrained_model = pretrained_model_name_or_path
+            base_model = pretrained_model_name_or_path
         else:
             raise ValueError(
-                f"Invalid type for `pretrained_model_name_or_path`: {type(pretrained_model_name_or_path)}"
+                f"Invalid type for `base_model_name_or_path`: {type(pretrained_model_name_or_path)}"
                 "Expected `str` or `transformers.PreTrainedModel`."
             )
 
-        model = cls(pretrained_model, **wrapped_model_kwargs)
+        model = cls(base_model, **wrapped_model_kwargs)
 
         if isinstance(pretrained_model_name_or_path, str):
             filename = os.path.join(pretrained_model_name_or_path, "pytorch_model.bin")
@@ -194,7 +194,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             state_dict = self.state_dict()
             kwargs["state_dict"] = state_dict
 
-        return self.pretrained_model.save_pretrained(*args, **kwargs)
+        return self.base_model.save_pretrained(*args, **kwargs)
 
     def state_dict(self, *args, **kwargs):
         """Return the state_dict of the pretrained model."""
@@ -208,7 +208,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         raise NotImplementedError
 
     def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
-        """Filter out arguments not supported by the specific instance of `pretrained_model.transformer.forward`"""
+        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
         # FIXME: This is a hack to get around the fact that the `transformers` architectures
         # we use don't have an enforced consistent API for `forward` parameters.
         return {k: v for k, v in kwargs.items() if k in self.forward_kwargs}
