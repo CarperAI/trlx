@@ -3,7 +3,7 @@ from examples.randomwalks import generate_random_walks
 from trlx.data.default_configs import default_ppo_config
 
 
-def main(hparams={}):
+def main():
     config = default_ppo_config()
     metric_fn, prompts, *_ = generate_random_walks(seed=config.train.seed)
 
