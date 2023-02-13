@@ -2,7 +2,6 @@ import os.path
 import sys
 from glob import glob
 
-import yaml
 from nemo.collections.nlp.modules.common.megatron.megatron_init import (
     fake_initialize_model_parallel,
 )
@@ -10,11 +9,23 @@ from nemo.utils.app_state import AppState
 from nemo.utils.model_utils import inject_model_parallel_rank
 from omegaconf.omegaconf import OmegaConf
 
-from trlx.data.configs import TRLConfig
+from trlx.data.configs import TRLConfig, TrainConfig, SchedulerConfig
+from trlx.data.default_configs import default_ilql_config
+
 from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer
 
-default_config = yaml.safe_load(open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml"))
+default_config = default_ilql_config()
 
+nemo_ilql_train_cfg = TrainConfig(
+    **default_config.train.__dict__,
+    trainer="NeMoILQLTrainer",
+    trainer_kwargs=dict(
+        pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+        megatron_cfg="megatron_20b.yaml",
+    )
+)
+
+trl_config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg)
 
 def find_checkpoints(checkpoint_dir):
     checkpoints = glob(os.path.join(checkpoint_dir, "*", "*.ckpt"))
@@ -23,7 +34,6 @@ def find_checkpoints(checkpoint_dir):
 
 
 def main(megatron_cfg_path, checkpoint_path):
-    trl_config = TRLConfig.update(default_config, {})
     ilql_config = trl_config.method
 
     megatron_cfg = OmegaConf.load(megatron_cfg_path)
