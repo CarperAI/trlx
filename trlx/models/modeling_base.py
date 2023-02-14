@@ -47,22 +47,21 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
     _auto_model_parent_class: transformers.AutoModel = None
     _supported_modules: List[str] = None
-    # TODO (jon-tow): Supported args should come from a `Config` of the specific
-    # underlying type similar to how config classes are used to instantiate
+    # TODO (jon-tow): Supported args should come from a `PretrainedConfig` of the
+    # specific underlying type similar to how config instances can be used to instantiate
     # `transformers.PreTrainedModel`s.
     _supported_args: List[str] = None
 
     def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
         super().__init__()
         self.base_model = base_model
-        # cache `pre_trained.forward` args for general use (avoids incompatible args across architectures)
+        # cache `forward` args for general use (avoids incompatible args across architectures)
         self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
 
     @classmethod
-    def _split_kwargs(cls, kwargs):
-        """
-        Separates the kwargs from the arguments that with support inside
-        `supported_args` and the ones that we don't.
+    def _split_kwargs(cls, kwargs: Dict[str, Any]):
+        """Separates the kwargs from the supported arguments within `supported_args`
+        and those that are not
         """
         supported_kwargs = {}
         unsupported_kwargs = {}
@@ -75,13 +74,15 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
     @classmethod
     def from_config(cls, config: transformers.PretrainedConfig, **kwargs):
-        """Instantiates the underlying base model classes of the library
-        from a configuration.
+        """Instantiate the pretrained pytorch model from a configuration.
 
-        Note:
-            Loading a model from its configuration file does **not** load the model weights.
-            It only affects the model's configuration. Use :func:`~transformers.AutoModel.from_pretrained` to load
-            the model weights
+        Args:
+            config (transformers.PretrainedConfig): The configuration to use to
+                instantiate the base model.
+
+        NOTE: Loading a model from its configuration file does **not** load the
+        model weights. It only affects the model's configuration. Use
+        `~transformers.AutoModel.from_pretrained` to load the model weights.
         """
         if kwargs is not None:
             wrapped_model_kwargs, from_config_kwargs = cls._split_kwargs(kwargs)
@@ -99,10 +100,9 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         *model_args,
         **kwargs,
     ):
-        """
-        Instantiate a pretrained pytorch model from a pretrained model configuration.
+        """Instantiate a pretrained pytorch model from a pretrained model configuration.
         This method is a wrapper around `transformers.PreTrainedModel.from_pretrained`.
-        Pleas refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
+        Please refer to the documentation of `transformers.PreTrainedModel.from_pretrained`
         for more information.
 
         Args:
@@ -157,7 +157,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                         )
                     with open(index_file_name, "r") as f:
                         index = json.load(f)
-                    # Check filename with supported modules
+                    # Collect files containing weights from supported modules
                     files_to_download = set()
                     for k, v in index["weight_map"].items():
                         if any([module in k for module in cls._supported_modules]):
@@ -183,9 +183,10 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         return model
 
     def save_pretrained(self, *args, **kwargs):
-        """Save the pretrained model to a directory. This method is a wrapper around
-        `transformers.PreTrainedModel.save_pretrained`. Please refer to the documentation
-        of `transformers.PreTrainedModel.save_pretrained` for more information.
+        """Save the pretrained model to a directory. This method is a wrapper
+        around `transformers.PreTrainedModel.save_pretrained`. Please refer to
+        the documentation of `transformers.PreTrainedModel.save_pretrained` for
+        more information.
 
         Args:
             *args (`list`, *optional*):
@@ -214,7 +215,9 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         raise NotImplementedError
 
     def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
-        """Filter out arguments not supported by the specific instance of `base_model.transformer.forward`"""
-        # FIXME: This is a hack to get around the fact that the `transformers` architectures
-        # we use don't have an enforced consistent API for `forward` parameters.
+        """Filter out arguments not supported by the specific instance of
+        `base_model.transformer.forward`
+        """
+        # FIXME: This is a hack to get around the fact that the `transformers`
+        # architectures we use don't have a consistent API for `forward` parameters.
         return {k: v for k, v in kwargs.items() if k in self.forward_kwargs}
