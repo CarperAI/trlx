@@ -206,6 +206,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
+        *,
         two_qs: bool = True,
         alpha: float = 0.99,
     ):

@@ -7,6 +7,7 @@ from typing import Callable, List
 import ray
 import torch
 import torch.nn.functional as F
+import transformers
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -119,12 +120,16 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def get_arch(self, config: TRLConfig):
         """Get the model"""
+        model_class = AutoModelForCausalLMWithHydraValueHead
         if config.model.model_arch_type == "seq2seq":
-            return AutoModelForSeq2SeqLMWithHydraValueHead.from_pretrained(
-                config.model.model_path,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,
-            )
-        return AutoModelForCausalLMWithHydraValueHead.from_pretrained(
+            model_class = AutoModelForSeq2SeqLMWithHydraValueHead
+
+        from_fn = model_class.from_pretrained
+        # backward-compat: Try to create a randomly initialized architecture from a config
+        if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+            from_fn = model_class.from_config
+
+        return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
         )

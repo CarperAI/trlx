@@ -74,7 +74,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         return supported_kwargs, unsupported_kwargs
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config: transformers.PretrainedConfig, **kwargs):
         """Instantiates the underlying base model classes of the library
         from a configuration.
 
@@ -83,8 +83,14 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             It only affects the model's configuration. Use :func:`~transformers.AutoModel.from_pretrained` to load
             the model weights
         """
-        base_model = cls._auto_model_parent_class.from_pretrained(config)
-        return base_model
+        if kwargs is not None:
+            wrapped_model_kwargs, from_config_kwargs = cls._split_kwargs(kwargs)
+        else:
+            from_config_kwargs = {}
+            wrapped_model_kwargs = {}
+        base_model = cls._auto_model_parent_class.from_config(config, **from_config_kwargs)
+        model = cls(base_model, **wrapped_model_kwargs)
+        return model
 
     @classmethod
     def from_pretrained(  # noqa: max-complexity

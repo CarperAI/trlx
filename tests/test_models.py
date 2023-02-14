@@ -80,6 +80,14 @@ class TestAutoModelForCausalLMWithValueHead(unittest.TestCase):
             # Assert loaded states are not the same as the original unmodified pretrained model
             self.assertFalse(torch.all(torch.isclose(modified_model.v_head[-1].bias, model.v_head[-1].bias)))
 
+    def test_from_config(self):
+        for model_path in AUTO_CAUSAL_LM_PATHS:
+            config = transformers.AutoConfig.from_pretrained(model_path)
+            # Modify the config to ensure the model is initialized from the custom config
+            config.vocab_size = 2
+            model = self._auto_model_class.from_config(config, **self._supported_args)
+            self.assertEqual(model.base_model.get_output_embeddings().out_features, config.vocab_size)
+
 
 class TestAutoModelForCausalLMWithHydraValueHead(TestAutoModelForCausalLMWithValueHead):
     _auto_model_class = AutoModelForCausalLMWithHydraValueHead
@@ -196,6 +204,14 @@ class TestAutoModelForSeq2SeqLMWithValueHead(unittest.TestCase):
 
             # Assert loaded states are not the same as the original unmodified pretrained model
             self.assertFalse(torch.all(torch.isclose(modified_model.v_head[-1].bias, model.v_head[-1].bias)))
+
+    def test_from_config(self):
+        for model_path in AUTO_SEQ2SEQ_LM_PATHS:
+            config = transformers.AutoConfig.from_pretrained(model_path)
+            # Modify the config to ensure the model is initialized from the custom config
+            config.vocab_size = 2
+            model = self._auto_model_class.from_config(config, **self._supported_args)
+            self.assertEqual(model.base_model.get_output_embeddings().out_features, config.vocab_size)
 
 
 class TestAutoModelForSeq2SeqLMWithHydraValueHead(TestAutoModelForSeq2SeqLMWithValueHead):
@@ -314,3 +330,11 @@ class TestAutoModelForCausalLMWithILQLHeads(unittest.TestCase):
                     torch.isclose(modified_model.ilql_heads.q_heads[0][0].bias, model.ilql_heads.q_heads[0][0].bias)
                 )
             )
+
+    def test_from_config(self):
+        for model_path in AUTO_CAUSAL_LM_PATHS:
+            config = transformers.AutoConfig.from_pretrained(model_path)
+            # Modify the config to ensure the model is initialized from the custom config
+            config.vocab_size = 2
+            model = self._auto_model_class.from_config(config, **self._supported_args)
+            self.assertEqual(model.base_model.get_output_embeddings().out_features, config.vocab_size)

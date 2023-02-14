@@ -3,6 +3,7 @@ from typing import cast
 
 import numpy as np
 import torch
+import transformers
 from rich.console import Console
 from rich.table import Table
 
@@ -37,7 +38,12 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return AutoModelForCausalLMWithILQLHeads.from_pretrained(
+        from_fn = AutoModelForCausalLMWithILQLHeads.from_pretrained
+        # backward-compat: Try to create a randomly initialized architecture from a config
+        if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+            from_fn = AutoModelForCausalLMWithILQLHeads.from_config
+
+        return from_fn(
             config.model.model_path,
             two_qs=config.method.two_qs,
             alpha=config.method.alpha,
