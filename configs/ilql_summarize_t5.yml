@@ -8,18 +8,17 @@ train:
   eval_interval: 500
 
   pipeline: "PromptPipeline"
-  orchestrator: "OfflineOrchestrator"
   trainer: "AccelerateILQLTrainer"
   checkpoint_dir: "gpt-j-ilql-summarize-duy"
   #  tracker: null
 
 model:
-  model_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3500"
+  model_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3000"
   num_layers_unfrozen: -1
   model_arch_type: "seq2seq"
 
 tokenizer:
-  tokenizer_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3500"
+  tokenizer_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3000"
   truncation_side: "left"
 
 optimizer:
