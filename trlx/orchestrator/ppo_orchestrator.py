@@ -33,7 +33,8 @@ def default_experience_fn(trainer : AcceleratePPOTrainer , batch : PromptBatch) 
 
     data, stats = trainer.orch.generate_and_calc_logprobs(batch)
     trajectories = None
-    return trajectories, [data], stats
+    options = {}
+    return trajectories, [data], stats, options
 
 
 @register_orchestrator
@@ -290,9 +291,9 @@ class PPOOrchestrator(Orchestrator):
 
 
             if self.trainer.experience_fn is None:
-                trajectories, datas, stats = default_experience_fn(self.trainer, batch)
+                trajectories, datas, stats, _ = default_experience_fn(self.trainer, batch)
             else:
-                trajectories, datas, stats = self.trainer.experience_fn(self.trainer, batch)
+                trajectories, datas, stats, options = self.trainer.experience_fn(self.trainer, batch)
 
             # assert data is a list
             assert isinstance(datas, list) and len(datas) > 0
@@ -338,7 +339,11 @@ class PPOOrchestrator(Orchestrator):
 
             # Compute rewards
             n_samples = len(scores)
+            n_inferences = len(datas)
             all_rewards = [None] * n_samples
+
+        
+            reward_scaling = [1.0] * n_inferences if "reward_scaling" not in options else options["reward_scaling"]
 
             for data, idx in zip(datas, range(len(datas))):
                 query_tensors = data["query_tensors"]
@@ -353,7 +358,7 @@ class PPOOrchestrator(Orchestrator):
                         sample_kl_divergence_estimate = torch.tensor([0.0])
 
                     # TODO use the discounting factor on the score for earlier PPORLElements
-                    sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu()
+                    sample_kl_divergence_estimate[-1] += scores[sample_idx].cpu() * reward_scaling[idx]
                     # TODO refactor this code, the above line is horrifying
                     all_rewards[sample_idx] = sample_kl_divergence_estimate
 

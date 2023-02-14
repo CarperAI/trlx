@@ -72,22 +72,28 @@ def prompt_answer(input : str):
 Answer: digit="""
 
 def prompt_poem_the(input : str, poem : str):
-    return f"""
-Fact: x = {input}
+    return f"""Fact: x = {input}
 Continue the poem:
 
 {poem}
 The"""
 
 def prompt_recall_the(poem : str, continuation : str):
-    return f"""
-{poem}
+    return f"""{poem}
 The{continuation}
 
 The poem above encodes a secret digit x.
 Recall fact: x is one of the digits 0, 1, 2. What is x?
 Answer: x ="""
 
+def prompt_recall_sees(input : str, poem : str, continuation : str):
+    return f"""Fact: x = {input}
+{poem}
+The{continuation}
+
+The poem above encodes a secret digit x.
+Recall fact: x is one of the digits 0, 1, 2. What is x?
+Answer: x ="""
 
 def encoder_decoder_experience_fn(trainer, batch):
     """
@@ -104,6 +110,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     We completely ignore the dataset (the query tensors).
     """
 
+    # The key architectural constraint is that alll trainer.orch.generate_and_calc_logprobs should be parallel over the batch
+    # Do everything in string space 
     # batch is an object that has .input_ids, .attention_mask, .labels; for example
     # batch {'input_ids': tensor([[ 3], [ 8]]), 'attention_mask': tensor([[1], [1]]), 'labels': tensor([[ 8], [10]])}
 
@@ -112,9 +120,6 @@ def encoder_decoder_experience_fn(trainer, batch):
     device = batch.input_ids.device
     digits = list(np.random.randint(0, 3, batch_size))
 
-
-    # The key architectural constraint is that alll trainer.orch.generate_and_calc_logprobs should be parallel over the batch
-    # Do everything in string space 
     # Detokenize the text
     _, str_poems, _ = trainer.decode(
         batch.input_ids, batch.input_ids # this is a hack to get the text, we are doing redundant tokenization
@@ -129,7 +134,7 @@ def encoder_decoder_experience_fn(trainer, batch):
     first_run_batch = trainer.tokenizer(first_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the first run
-    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=30)
+    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=15)
 
     first_run_str_prompts = list(itertools.chain.from_iterable(first_run_data['str_prompts']))
     first_run_str_outputs = list(itertools.chain.from_iterable(first_run_data['str_outputs']))
@@ -137,7 +142,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = prompt_recall_the(str_poems[i], first_run_str_outputs[i])
+        second_run_strs[i] = prompt_recall_sees(digits[i], str_poems[i], first_run_str_outputs[i]) # this works
+        #second_run_strs[i] = prompt_recall_the(str_poems[i], first_run_str_outputs[i])
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
@@ -164,7 +170,8 @@ def encoder_decoder_experience_fn(trainer, batch):
     for i in range(batch_size):
         trajectories.append([digits[i], first_run_str_prompts[i], first_run_str_outputs[i], second_run_str_prompts[i], second_run_str_outputs[i]])
 
-    return trajectories, datas, stats
+    options={}
+    return trajectories, datas, stats, options
 
 
 

@@ -1,7 +1,7 @@
 train:
   seq_length: 1024
-  epochs: 100
-  total_steps: 20000
+  epochs: 500
+  total_steps: 123456789
   batch_size: 64
 
   checkpoint_interval: 10000
@@ -13,7 +13,7 @@ train:
 
 model:
   model_path: "gpt2"
-  num_layers_unfrozen: 4
+  num_layers_unfrozen: 2
 
 tokenizer:
   tokenizer_path: "gpt2"
@@ -51,7 +51,7 @@ method:
   ref_std: null
   cliprange_reward: 10
   gen_kwargs:
-    max_new_tokens: 30
+    max_new_tokens: 100
     top_k: 0
     top_p: 1.0
     temperature: 0.5

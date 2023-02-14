@@ -194,7 +194,8 @@ def increment_experience_fn(trainer, batch):
     for i in range(batch_size):
         trajectories.append([digits[i], first_run_str_prompts[i], first_run_str_outputs[i], second_run_str_prompts[i], second_run_str_outputs[i]])
 
-    return trajectories, datas, stats
+    options = {}
+    return trajectories, datas, stats, options
 
 
 
