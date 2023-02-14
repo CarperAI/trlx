@@ -67,8 +67,10 @@ class ILQLConfig(MethodConfig):
         logits, (qs, target_qs, vs) = outputs
         terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
-
-        actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
+        if labels.decoder_input_ids is None:
+            actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
+        else:
+            actions = labels.decoder_input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
         nactions = actions.shape[1]
         bsize, _, dsize = logits.shape
 
