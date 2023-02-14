@@ -9,7 +9,7 @@ train:
 
   pipeline: "PromptPipeline"
   trainer: "AccelerateSFTTrainer"
-  checkpoint_dir: "checkpoints/sft_hh_12"
+  checkpoint_dir: "checkpoints/sft_hh"
 
 model:
   model_path: "EleutherAI/gpt-j-6B"

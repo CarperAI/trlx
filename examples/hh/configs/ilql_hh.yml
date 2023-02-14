@@ -9,7 +9,7 @@ train:
 
   pipeline: "PromptPipeline"
   trainer: "AccelerateILQLTrainer"
-  checkpoint_dir: "checkpoints/ilql_hh_11"
+  checkpoint_dir: "checkpoints/ilql_hh"
 
 model:
   model_path: "EleutherAI/gpt-j-6B"
