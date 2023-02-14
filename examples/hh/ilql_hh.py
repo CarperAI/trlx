@@ -40,7 +40,7 @@ def main(hparams={}):
         rewards=rewards,
         config=config,
         eval_prompts=eval_prompts,
-        metric_fn=lambda **kwargs: {"rewards": reward_fn(**kwargs)},
+        metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
 

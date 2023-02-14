@@ -26,7 +26,7 @@ def main(hparams={}):
         samples=dataset["train"]["chosen"],
         config=config,
         eval_prompts=[split_dialog(sample)[0] for sample in dataset["test"]["chosen"][:280]],
-        metric_fn=lambda **kwargs: {"rewards": reward_fn(**kwargs)},
+        metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
 
