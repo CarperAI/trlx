@@ -9,7 +9,11 @@ from rich.table import Table
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLSeq2SeqBatch
-from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, tokenize_dialogue
+from trlx.pipeline.offline_pipeline import (
+    ILQLRolloutStorage,
+    ILQLSeq2SeqRolloutStorage,
+    tokenize_dialogue,
+)
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.trainer.nn.ilql_models import (
@@ -111,8 +115,8 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
         logger.info("Collecting rollouts")
-        if self.trainer.tokenizer:
-            samples = [tokenize_dialogue(s, self.trainer.tokenizer, max_length) for s in tqdm(samples)]
+        if self.tokenizer:
+            samples = [tokenize_dialogue(s, self.tokenizer, max_length) for s in samples]
 
         all_input_ids = []
         all_output_ids = []
@@ -135,10 +139,10 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             all_actions_ixs.append(torch.hstack(actions_ixs))
             all_states_ixs.append(states_ixs)
 
-        if self.trainer.tokenizer and os.environ.get("RANK", "0") == "0":
+        if self.tokenizer and os.environ.get("RANK", "0") == "0":
             logger.info("Logging sample example")
-            prompt = self.trainer.tokenizer.decode(all_input_ids[0])
-            response = self.trainer.tokenizer.decode(all_output_ids[0])
+            prompt = self.tokenizer.decode(all_input_ids[0])
+            response = self.tokenizer.decode(all_output_ids[0])
             columns = ["Prompt", "Response", "Reward"]
             table = Table(*columns, title="Sample Example", show_lines=True)
             table.add_row(prompt, response, str(rewards[0]))
@@ -165,7 +169,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             rs[-1] = ret
 
         attention_mask = [torch.ones(len(x), dtype=int) for x in all_input_ids]
-        self.trainer.store = ILQLSeq2SeqRolloutStorage(
+        self.store = ILQLSeq2SeqRolloutStorage(
             all_input_ids,
             attention_mask,
             all_output_ids,
@@ -179,8 +183,11 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
-        logger.info("Collecting rollouts")
 
+        if self.config.model.model_arch_type == "seq2seq":
+            return self.make_experience_seq2seq(samples, rewards, max_length)
+
+        logger.info("Collecting rollouts")
         if self.tokenizer:
             samples = [tokenize_dialogue(s, self.tokenizer, max_length) for s in samples]
 
