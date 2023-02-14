@@ -3,7 +3,7 @@ import os
 import sys
 from abc import abstractmethod
 from time import time
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
@@ -43,10 +43,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
     RL model trainer with an `accelerate` based backend
     """
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+
+        if self.accelerator.state.deepspeed_plugin is not None:
+            # by accelerate's default, arguments in `model.forward` would be casted to half
+            if "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config:
+                self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"]["auto_cast"] = False
+
         if int(os.environ.get("WORLD_SIZE", 1)) > 1:
             torch.distributed.barrier(device_ids=[int(os.environ.get("LOCAL_RANK", 0))])
 
@@ -168,25 +174,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         scheduler_class = get_scheduler_class(self.config.scheduler.name)
         scheduler = scheduler_class(self.opt, **self.config.scheduler.kwargs)
         return scheduler
-
-    def tokenize(self, text: Union[Sequence[str], Sequence[torch.LongTensor]]):
-        """
-        Tokenize a batch of text after adding bos token to each of the samples
-        """
-        if isinstance(text[0], torch.LongTensor):
-            return text
-
-        text = [self.tokenizer.bos_token + txt for txt in text]
-        return self.tokenizer(
-            text,
-            truncation=True,
-            max_length=self.config.seq_length,
-            return_tensors="pt",
-            # NOTE: We manually add special tokens (bos) above so we set this False
-            # to avoid models that automatically add special tokens (e.g. OPT)
-            # adding them twice more.
-            add_special_tokens=False,
-        )
 
     def decode(
         self,
@@ -353,9 +340,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather(torch.vstack(all_samples))
-            prompts = self.accelerator.gather(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather(torch.hstack(prompt_sizes))
+            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
+            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
+            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
 
             if self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
@@ -478,9 +465,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         best_reward = -float("inf")
 
+        # For each epoch
         for _ in range(self.config.train.epochs):
+            # For each batch
             for batch in self.train_dataloader:
+                # For each update per batch
                 for _ in range(self.n_updates_per_batch):
+                    # Note that whereas standard policy gradient methods perform one
+                    # gradient update per batch, PPO for example commonly performs
+                    # multiple gradient updates on the same batch of data.
+                    # https://arxiv.org/pdf/1707.06347.pdf
                     forward_time = time()
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time

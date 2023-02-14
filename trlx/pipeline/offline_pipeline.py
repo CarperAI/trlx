@@ -1,9 +1,9 @@
-from typing import Iterable, List
+from typing import Iterable, List, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding
+from transformers import DataCollatorWithPadding, PreTrainedTokenizer
 
 from trlx.data.ilql_types import (
     ILQLBatch,
@@ -14,19 +14,65 @@ from trlx.data.ilql_types import (
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
+def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=2048) -> List[int]:  # noqa: C901
+    """
+    Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
+    """
+    if isinstance(dialogue, str):
+        dialogue = [tokenizer.bos_token, dialogue]
+    elif isinstance(dialogue, tuple):
+        dialogue = list(dialogue)
+    dialogue[-1] += tokenizer.eos_token
+
+    out = []
+    ctx_length = max_length
+    if tokenizer.truncation_side == "left":
+        for phrase in reversed(dialogue):
+            # Manually added BOS and EOS above so we don't want to add special tokens here
+            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[-ctx_length:]
+            ctx_length -= len(tokens)
+            out.insert(0, tokens)
+            if ctx_length == 0:
+                break
+
+        # in case of odd number of phrases (possibly due to truncation)
+        # since the first phrase always has to be a prompt, force it to be <bos>
+        if len(out) % 2 == 1:
+            if sum(map(len, out)) == max_length:
+                out[0].pop(0)
+            out.insert(0, [tokenizer.bos_token_id])
+
+    elif tokenizer.truncation_side == "right":
+        for phrase in dialogue:
+            # Manually added BOS and EOS above so we don't want to add special tokens here
+            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[:ctx_length]
+            ctx_length -= len(tokens)
+            out.append(tokens)
+            if ctx_length == 0:
+                break
+    return out
+
+
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
     Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
     """
 
-    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer=None):
+    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
         super().__init__()
-        model_inputs = tokenizer(prompts, truncation=True, padding=False, max_length=max_prompt_length)
-        prompts = model_inputs["input_ids"]
+
+        model_inputs = tokenizer(
+            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
+        )
+
+        prompts_tokens = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]
+
         self.tokenizer = tokenizer
-        self.prompts = [{"input_ids": prompt, "attention_mask": mask} for prompt, mask in zip(prompts, attention_mask)]
+        self.prompts = [
+            {"input_ids": tokens, "attention_mask": mask} for tokens, mask in zip(prompts_tokens, attention_mask)
+        ]
 
     def __getitem__(self, ix: int):
         return self.prompts[ix]

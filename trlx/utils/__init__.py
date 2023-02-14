@@ -6,13 +6,12 @@ import time
 from dataclasses import is_dataclass
 from enum import Enum
 from numbers import Number
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
-from torchtyping import TensorType
 
 
 def print_rank_0(*message):
@@ -141,9 +140,6 @@ def get_scheduler_class(name: SchedulerName):
     raise ValueError(f"`{name}` is not a supported scheduler. " f"Supported schedulers are: {supported_schedulers}")
 
 
-# Stats
-
-
 class Clock:
     """
     Helper object for keeping track of time for computations.
@@ -185,21 +181,6 @@ class Clock:
         return sec_per_samp * n_samp
 
 
-# Sampling
-
-
-def topk_mask(xs: TensorType["Batch", "Vocab"], k: int):
-    """
-    Takes batched distribution over tokens and masks out scores for tokens
-    that are not in the top k for that distribution.
-    """
-
-    # Get topk per distribution
-    # For each dist, getting last value gives k-th largest
-    mintop = torch.topk(xs, k)[0][:, -1].unsqueeze(-1)
-    return torch.where(xs < mintop, -np.inf * torch.ones_like(xs), xs)
-
-
 def tree_map(f, tree: Any) -> Any:
     """
     Apply function f to all leaves in tree
@@ -235,10 +216,13 @@ def filter_non_scalars(xs: Dict) -> Dict:
     return ys
 
 
-def get_git_tag() -> str:
+def get_git_tag() -> Tuple[str, str]:
     """
     Returns commit's short hash and date
     """
-    output = subprocess.check_output("git log --format='%h/%as' -n1".split())
-    branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
-    return branch.decode()[:-1], output.decode()[1:-2]
+    try:
+        output = subprocess.check_output("git log --format='%h/%as' -n1".split())
+        branch = subprocess.check_output("git rev-parse --abbrev-ref HEAD".split())
+        return branch.decode()[:-1], output.decode()[1:-2]
+    except subprocess.CalledProcessError:
+        return "unknown", "unknown"

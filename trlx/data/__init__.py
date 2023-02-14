@@ -1,29 +1,16 @@
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Iterable
 
 from torchtyping import TensorType
-
-from . import configs
 
 
 @dataclass
 class GeneralElement:
     """
-    General element outputted by data pipeline being read by orchestrator.
+    General element outputted by a data pipeline
     """
 
     pass
-
-
-@dataclass
-class SimElement:
-    """
-    Batch element for Gyarados or Gyarados-like similarity scoring model
-    """
-
-    content: Any = None
-    preference: Any = None
-    score: float = None
 
 
 @dataclass
