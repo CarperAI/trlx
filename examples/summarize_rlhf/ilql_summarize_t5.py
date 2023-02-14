@@ -3,10 +3,10 @@ import os
 import torch
 import yaml
 from datasets import load_dataset
+from reward_model.reward_model import GPTRewardModel
 from transformers import AutoTokenizer
 
 import trlx
-from reward_model.reward_model import GPTRewardModel
 from trlx.data.configs import TRLConfig
 
 config_path = "configs/ilql_summarize_t5.yml"

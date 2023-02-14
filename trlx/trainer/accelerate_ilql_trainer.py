@@ -1,5 +1,5 @@
 import os
-from typing import Optional, cast
+from typing import Optional, cast, Union
 
 import numpy as np
 import torch
