@@ -105,11 +105,7 @@ def create_reward_fn():  # noqa:  C901
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    def preprocess(sample):
-        sample["prompt"] += "Assistant:"
-        return sample
-
-    dataset = load_dataset("Dahoas/rm-static").map(preprocess)
+    dataset = load_dataset("Dahoas/rm-static")
     prompts = dataset["train"]["prompt"]
     eval_prompts = dataset["test"]["prompt"][:280]
     reward_fn = create_reward_fn()
