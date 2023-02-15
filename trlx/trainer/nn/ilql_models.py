@@ -63,11 +63,12 @@ class ILQLConfig(MethodConfig):
     def heads(self, hidden_size: int, vocab_size: int, dtype: type):
         return ILQLHeads(self, hidden_size, vocab_size, dtype)
 
-    def loss(self, outputs, labels: ILQLBatch):
+    def loss(self, outputs, labels):
         logits, (qs, target_qs, vs) = outputs
         terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
-        if labels.decoder_input_ids is None:
+        # check type of labels
+        if isinstance(labels, ILQLBatch):
             actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
         else:
             actions = labels.decoder_input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
@@ -429,7 +430,6 @@ class Seq2SeqWithValueHeads(nn.Module):
         """
         if attention_mask is None:
             attention_mask = input_ids.not_equal(pad_token_id)
-
         samples = input_ids.clone()
         max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
         if decoder_input_ids is None:
@@ -439,7 +439,7 @@ class Seq2SeqWithValueHeads(nn.Module):
             out = self.forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
+                decoder_input_ids=decoder_input_ids[:, -1].unsqueeze(-1),
                 past_key_values=past_key_values,
                 encoder_outputs=encoder_outputs,
             )
@@ -455,11 +455,13 @@ class Seq2SeqWithValueHeads(nn.Module):
             pi_beta = F.log_softmax(logits, -1)
             pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
             pi = F.softmax(pi_top_k / temperature, -1)
-
             next_tokens = torch.multinomial(pi, num_samples=1)
             if eos_token_id is not None:
                 next_tokens = (1 - finished) * next_tokens + finished * pad_token_id
-            finished = (next_tokens == eos_token_id).long()
+                finished = (next_tokens == eos_token_id).long()
+            else:
+                raise ValueError("eos_token_id must be provided")
+
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
             samples = decoder_input_ids
             if torch.all(finished):
