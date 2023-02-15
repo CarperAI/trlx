@@ -1,7 +1,7 @@
 train:
   seq_length: 550
   epochs: 100
-  total_steps: 10000
+  total_steps: 5000
   batch_size: 8
 
   checkpoint_interval: 100000
@@ -9,16 +9,15 @@ train:
 
   pipeline: "PromptPipeline"
   trainer: "AccelerateILQLTrainer"
-  checkpoint_dir: "gpt-j-ilql-summarize-duy"
-  #  tracker: null
+  checkpoint_dir: "ilql_summarize_t5"
 
 model:
-  model_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3000"
+  model_path: "pvduy/flant5-xl_openai_tldr_sft"
   num_layers_unfrozen: -1
   model_arch_type: "seq2seq"
 
 tokenizer:
-  tokenizer_path: "/admin/home-duyphung/software/github/pvd/trlx/examples/summarize_rlhf/flan-t5-qa/checkpoint-3000"
+  tokenizer_path: "pvduy/flant5-xl_openai_tldr_sft"
   truncation_side: "left"
 
 optimizer:
@@ -32,7 +31,7 @@ optimizer:
 scheduler:
   name: "cosine_annealing"
   kwargs:
-    T_max: 100000 # train.total_steps
+    T_max: 5000 # train.total_steps
     eta_min: 1.0e-6
 
 method:
@@ -48,5 +47,5 @@ method:
   gen_kwargs:
     max_new_tokens: 50
     top_k: 50
-    beta: 1
+    beta: [1, 2, 3]
     temperature: 1.0
