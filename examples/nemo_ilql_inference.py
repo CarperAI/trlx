@@ -16,15 +16,17 @@ from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer
 default_config = default_ilql_config()
 
 nemo_ilql_train_cfg = TrainConfig(
-    **default_config.train.__dict__,
-    trainer="NeMoILQLTrainer",
-    trainer_kwargs=dict(
-        pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-        megatron_cfg="megatron_20b.yaml",
+    **dict(
+        default_config.train.__dict__,
+        trainer="NeMoILQLTrainer",
+        trainer_kwargs=dict(
+            pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+            megatron_cfg="megatron_20b.yaml",
+        ),
     ),
 )
 
-trl_config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg)
+trl_config = TRLConfig(**dict(default_config.__dict__, train=nemo_ilql_train_cfg))
 
 
 def find_checkpoints(checkpoint_dir):

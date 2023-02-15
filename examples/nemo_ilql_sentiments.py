@@ -4,7 +4,7 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import SchedulerConfig, TrainConfig, TRLConfig
+from trlx.data.configs import TrainConfig, TRLConfig
 from trlx.data.default_configs import default_ilql_config
 
 
@@ -16,22 +16,20 @@ def get_positive_score(scores):
 default_config = default_ilql_config()
 
 nemo_ilql_train_cfg = TrainConfig(
-    **default_config.train.__dict__,
-    seq_length=1024,
-    batch_size=512,
-    total_steps=200,
-    trainer="NeMoILQLTrainer",
-    trainer_kwargs=dict(
-        pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-        megatron_cfg="megatron_20b.yaml",
+    **dict(
+        default_config.train.__dict__,
+        seq_length=1024,
+        batch_size=512,
+        total_steps=200,
+        trainer="NeMoILQLTrainer",
+        trainer_kwargs=dict(
+            pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+            megatron_cfg="megatron_20b.yaml",
+        ),
     )
 )
 
-scheduler_cfg = SchedulerConfig(
-    name="cosine_annealing", kwargs=dict(T_max=nemo_ilql_train_cfg.total_steps, eta_min=1.0e-6)
-)
-
-config = TRLConfig(**default_config.__dict__, train=nemo_ilql_train_cfg, scheduler=scheduler_cfg)
+config = TRLConfig(**dict(default_config.__dict__, train=nemo_ilql_train_cfg))
 
 
 def main():
