@@ -3,7 +3,7 @@ import tempfile
 from argparse import Namespace
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Union, Type, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple, Type, Union
 
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
@@ -15,10 +15,10 @@ if TYPE_CHECKING:
     from ray.data.preprocessor import Preprocessor
     from ray.tune.trainable import Trainable
 
-
-from ray.train.torch import TorchTrainer
-from .launch import launch_command, launch_command_parser
 from accelerate.commands.config import default_config_file, load_config_from_file
+from ray.train.torch import TorchTrainer
+
+from .launch import launch_command, launch_command_parser
 
 
 class _AccelerateDefaultNamespace(Namespace):

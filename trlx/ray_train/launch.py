@@ -20,6 +20,8 @@ import warnings
 from unittest.mock import patch
 
 from accelerate.commands.config.config_utils import DYNAMO_BACKENDS
+from accelerate.commands.launch import launch_command as original_launch_command
+from accelerate.commands.launch import launch_command_parser
 from accelerate.utils import (
     DynamoBackend,
     PrecisionType,
@@ -27,10 +29,6 @@ from accelerate.utils import (
     is_torch_version,
 )
 from accelerate.utils.launch import env_var_path_add
-from accelerate.commands.launch import (
-    launch_command_parser,
-    launch_command as original_launch_command,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,7 @@ def simple_launcher(args):
     os.environ.update(current_env)
 
 
-def multi_gpu_launcher(args):
+def multi_gpu_launcher(args):  # noqa: C901
     current_env = {}
     mixed_precision = args.mixed_precision.lower()
     try:
@@ -145,13 +143,6 @@ def deepspeed_launcher(args):
         raise ValueError(
             f"Unknown mixed_precision mode: {args.mixed_precision.lower()}. Choose between {PrecisionType.list()}."
         )
-
-    if args.fp16:
-        warnings.warn(
-            '--fp16 flag is deprecated and will be removed in version 0.15.0 of 🤗 Accelerate. Use "--mixed_precision fp16" instead.',
-            FutureWarning,
-        )
-        mixed_precision = "fp16"
 
     current_env["PYTHONPATH"] = env_var_path_add("PYTHONPATH", os.path.abspath("."))
     current_env["ACCELERATE_MIXED_PRECISION"] = str(mixed_precision)
