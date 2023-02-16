@@ -16,6 +16,8 @@ import numpy as np
 import torch
 import pandas as pd
 
+from examples.experience_demo.utils import AllowListLogitsProcessorList
+
 import wandb
 
 default_config = yaml.safe_load(open("examples/experience_demo/configs/ppo_config_increment.yml"))
@@ -117,6 +119,8 @@ def prompt_think(input : str) -> str:
 def prompt_arrow(input : str) -> str:
     return f"""{input}->"""
 
+logits_processor = AllowListLogitsProcessorList()
+
 def increment_experience_fn(trainer, batch):
     """
     :trainer: AccelerateRLTrainer
@@ -157,7 +161,10 @@ def increment_experience_fn(trainer, batch):
 
     # Generate the first run
     #import code; print("first_run_data"); code.interact(local=locals())
-    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(first_run_batch, max_new_tokens=1)
+    first_run_data, first_run_stats = trainer.orch.generate_and_calc_logprobs(
+        first_run_batch, logits_processor=logits_processor,
+        max_new_tokens=1,
+    )
 
     first_run_str_prompts = list(itertools.chain.from_iterable(first_run_data['str_prompts']))
     first_run_str_outputs = list(itertools.chain.from_iterable(first_run_data['str_outputs']))
@@ -171,7 +178,10 @@ def increment_experience_fn(trainer, batch):
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the second run
-    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
+    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(
+        second_run_batch, logits_processor=logits_processor,
+        max_new_tokens=1,
+    )
 
     # Decode the second run
     second_run_str_prompts = list(itertools.chain.from_iterable(second_run_data['str_prompts']))

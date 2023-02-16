@@ -16,6 +16,8 @@ import numpy as np
 import torch
 import pandas as pd
 
+from examples.experience_demo.utils import AllowListLogitsProcessorList
+
 import wandb
 
 default_config = yaml.safe_load(open("examples/experience_demo/configs/ppo_config_encoder_decoder_text.yml"))
@@ -95,6 +97,9 @@ The poem above encodes a secret digit x.
 Recall fact: x is one of the digits 0, 1, 2. What is x?
 Answer: x ="""
 
+
+logits_processor = AllowListLogitsProcessorList()
+
 def encoder_decoder_experience_fn(trainer, batch):
     """
     :trainer: AccelerateRLTrainer
@@ -142,14 +147,16 @@ def encoder_decoder_experience_fn(trainer, batch):
     # Second run
     second_run_strs = [""] * batch_size
     for i in range(batch_size):
-        second_run_strs[i] = prompt_recall_sees(digits[i], str_poems[i], first_run_str_outputs[i]) # this works
-        #second_run_strs[i] = prompt_recall_the(str_poems[i], first_run_str_outputs[i])
+        #second_run_strs[i] = prompt_recall_sees(digits[i], str_poems[i], first_run_str_outputs[i]) # this works
+        second_run_strs[i] = prompt_recall_the(str_poems[i], first_run_str_outputs[i])
 
     # Encode the second run
     second_run_batch = trainer.tokenizer(second_run_strs, return_tensors="pt", padding=True, truncation=True)
 
     # Generate the second run
-    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(second_run_batch, max_new_tokens=1)
+    second_run_data, second_run_stats = trainer.orch.generate_and_calc_logprobs(
+        second_run_batch, logits_processor=logits_processor,
+        max_new_tokens=1)
 
     # Decode the second run
     second_run_str_prompts = list(itertools.chain.from_iterable(second_run_data['str_prompts']))
