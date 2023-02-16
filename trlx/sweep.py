@@ -5,13 +5,13 @@ import json
 from datetime import datetime
 
 import ray
+import wandb
 import wandb.apis.reports as wb
 import yaml
 from ray import tune
 from ray.air import ScalingConfig
 from ray.tune.logger import CSVLoggerCallback
 
-import wandb
 from trlx.ray_train.accelerate_trainer import AccelerateTrainer
 from trlx.utils import get_git_tag
 
