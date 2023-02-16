@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 import yaml
 
@@ -12,6 +12,8 @@ def merge(base: Dict, update: Dict, updated: Set) -> Dict:
         if k in update and isinstance(v, dict):
             base[k] = merge(v, update[k], updated)
             updated.add(k)
+        elif isinstance(v, dict):
+            base[k] = merge(v, update, updated)
         elif k in update:
             base[k] = update[k]
             updated.add(k)
@@ -275,10 +277,24 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
-        updates = set()
-        merged = merge(baseconfig, config, updates)
+        update = {}
+        # unflatten a string variable name into a nested dictionary
+        # key1.key2.key3: value -> {key1: {key2: {key3: value}}}
+        for name, value in config.items():
+            if isinstance(value, dict):
+                update[name] = value
+            else:
+                *layers, var = name.split(".")
+                if layers:
+                    d = update.setdefault(layers[0], {})
+                    for layer in layers[1:]:
+                        d = d.setdefault(layer, {})
+                    d[var] = value
 
-        for param in config:
+        updates = set()
+        merged = merge(baseconfig, update, updates)
+
+        for param in update:
             if param not in updates:
                 raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 
