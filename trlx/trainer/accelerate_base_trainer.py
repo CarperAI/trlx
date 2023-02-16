@@ -82,10 +82,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if ray.is_initialized():
-            logging.set_verbosity(logging.WARNING)
-            logging.disable_progress_bar()
-
         if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
