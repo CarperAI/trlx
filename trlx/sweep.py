@@ -176,52 +176,11 @@ def get_tune_config(tune_config: dict):
     return tune_config
 
 
-def tune_function(
-    train_function,
-    param_space: dict,
-    resources: dict,
-    tune_config: dict,
-    default_config: dict,
-    accelerate_config_path: str = None,
-):
-    num_workers = resources.pop("num_workers")
-    param_space["default_config"] = default_config.copy()
-    param_space["default_config"]["train"]["git_tag"] = get_git_tag()
-    param_space_train = {"train_loop_config": param_space}
-
-    tuner = tune.Tuner(
-        AccelerateTrainer(
-            train_function,
-            # Mandatory arg. None means use Accelerate default path
-            accelerate_config_path=accelerate_config_path,
-            scaling_config=ScalingConfig(
-                trainer_resources={"CPU": 0},
-                num_workers=num_workers,
-                use_gpu=True,
-                resources_per_worker=resources,
-            ),
-        ),
-        param_space=param_space_train,
-        tune_config=tune.TuneConfig(**tune_config),
-        run_config=ray.air.RunConfig(local_dir="ray_results", callbacks=[CSVLoggerCallback()]),
-    )
-
-    results = tuner.fit()
-    project_name = default_config["train"]["project_name"]
-    group_name = default_config["train"]["group_name"]
-    entity_name = default_config["train"].get("entity_name", None)
-
-    column_names = param_space.pop("default_config").keys()
-    target_metric = tune_config["metric"]
-
-    create_report(target_metric, column_names, entity_name, project_name, group_name, results.get_best_result().config)
-
-
 def create_report(target_metric, column_names, entity_name, project_name, group_name, best_config):
     report = wb.Report(
         project=project_name,
-        title=f"Hyperparameter Optimization Report: {group_name}",
-        description="",
+        title=f"Hyperparameter Optimization Report: {project_name}",
+        description=group_name,
     )
 
     report.blocks = [
@@ -254,11 +213,8 @@ def create_report(target_metric, column_names, entity_name, project_name, group_
     entity_project = f"{entity_name}/{project_name}" if entity_name else project_name
     api = wandb.Api()
     runs = api.runs(entity_project)
-    print(f"{entity_project=}")
-    print(f"{len(runs)=}")
 
     for run in runs:
-        print(f"{run.group=}")
         if run.group == group_name:
             history = run.history()
             metrics = history.columns
@@ -321,7 +277,6 @@ if __name__ == "__main__":
         required=False,
         help="The default config file for the script.",
     )
-    parser.add_argument("--project_name", type=str, help="W&B project name to log runs into")
     parser.add_argument("--num_gpus", type=int, default=1, help="Number of GPUs (workers) to use per trial.")
     parser.add_argument("--num_cpus", type=int, default=4, help="Number of CPUs to use per GPU (worker).")
     parser.add_argument("-y", "--assume_yes", action="store_true", help="Don't ask for confirmation")
@@ -342,18 +297,10 @@ if __name__ == "__main__":
     with open(args.default_config) as f:
         default_config = yaml.safe_load(f)
 
-    default_config["train"]["project_name"] = args.project_name
-    default_config["train"]["group_name"] = datetime.now().replace(microsecond=0).isoformat()
-
     if args.server_address:
         ray.init(address=f"ray://{args.server_address}")
     else:
         ray.init()
-
-    resources = {
-        "num_workers": args.num_gpus,
-        "CPU": args.num_cpus,
-    }
 
     print(f'WARNING: Importing main from "{args.script}" and everything along with it')
 
@@ -366,6 +313,39 @@ if __name__ == "__main__":
     # convert a nested path to a module path
     script_path = args.script.replace(".py", "").replace("/", ".")
     script = importlib.import_module(script_path)
-    tune_function(script.main, param_space, resources, tune_config, default_config, args.accelerate_config)
+    project_name = "sweep_" + script_path.split(".")[-1]
+
+    default_config["train"]["project_name"] = project_name
+    default_config["train"]["group_name"] = datetime.now().replace(microsecond=0).isoformat()
+    param_space["default_config"] = default_config.copy()
+    param_space["default_config"]["train"]["git_tag"] = get_git_tag()
+    param_space_train = {"train_loop_config": param_space}
+
+    tuner = tune.Tuner(
+        AccelerateTrainer(
+            script.main,
+            # Mandatory arg. None means use Accelerate default path
+            accelerate_config_path=args.accelerate_config,
+            scaling_config=ScalingConfig(
+                trainer_resources={"CPU": 0},
+                num_workers=args.num_gpus,
+                use_gpu=True,
+                resources_per_worker={"CPU": args.num_cpus},
+            ),
+        ),
+        param_space=param_space_train,
+        tune_config=tune.TuneConfig(**tune_config),
+        run_config=ray.air.RunConfig(local_dir="ray_results", callbacks=[CSVLoggerCallback()]),
+    )
+
+    results = tuner.fit()
+    group_name = default_config["train"]["group_name"]
+    entity_name = default_config["train"].get("entity_name", None)
+
+    column_names = param_space.pop("default_config")
+    column_names = param_space.keys()
+    target_metric = tune_config["metric"]
+
+    create_report(target_metric, column_names, entity_name, project_name, group_name, results.get_best_result().config)
 
     ray.shutdown()
