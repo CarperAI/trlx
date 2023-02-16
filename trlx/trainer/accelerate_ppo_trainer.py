@@ -379,12 +379,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
                         ref_logits = self.ref_model(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
+                            return_dict=True,
                         ).logits
             else:
                 all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)

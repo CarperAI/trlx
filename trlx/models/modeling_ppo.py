@@ -249,7 +249,7 @@ class CausalLMOutputWithValue(ModelOutput):
 
 class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     """An `AutoModel` class wrapper for `transformers` causal models that have a
-    language modeling head and a value head.
+    language modeling head and a value head
     """
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
@@ -786,7 +786,7 @@ class Seq2SeqLMOutputWithValue(ModelOutput):
 
 class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
     """An `AutoModel` class wrapper for `transformers` sequence-to-sequence
-    models that have a language modeling head and a value head.
+    models that have a language modeling head and a value head
     """
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
@@ -905,8 +905,8 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         decoder_head_mask: Optional[torch.FloatTensor] = None,
         cross_attn_head_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = True,
-        output_hidden_states: Optional[bool] = True,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Seq2SeqLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_kwargs(
@@ -923,26 +923,25 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
             cross_attn_head_mask=cross_attn_head_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        forward_kwargs = self.get_compatible_forward_kwargs(**forward_kwargs)
         return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
         outputs = self.forward(**forward_kwargs)
-        # Select the hidden state right before the first branching layer
+        # Select the hidden state before the first branching layer
         input_hidden_state = outputs.decoder_hidden_states[-(self.num_layers_unfrozen + 1)]
         hydra_outputs = self.frozen_head(
             hidden_states=input_hidden_state,
             attention_mask=decoder_attention_mask,
-            past_key_values=past_key_values,
             encoder_hidden_states=outputs.encoder_last_hidden_state,
             encoder_attention_mask=attention_mask,
-            head_mask=decoder_head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
+            use_cache=False,
+            output_attentions=False,
+            output_hidden_states=True,
             return_dict=return_dict,
         )
 
@@ -952,7 +951,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
 
 
 class T5Branch(ModelBranch):
-    """Decoder only T5 branch."""
+    """Decoder only T5 branch"""
 
     def __init__(
         self,
@@ -968,14 +967,10 @@ class T5Branch(ModelBranch):
         self,
         hidden_states: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[torch.Tensor]] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        cross_attn_head_mask: Optional[torch.FloatTensor] = None,
-        position_bias: Optional[torch.FloatTensor] = None,
-        use_cache: bool = False,
-        output_attentions: bool = False,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, Seq2SeqLMOutputWithValue]:
@@ -990,20 +985,13 @@ class T5Branch(ModelBranch):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        # required mask seq length can be calculated via length of past
-        mask_seq_length = past_key_values[0][0].shape[2] + seq_length if past_key_values is not None else seq_length
-
         if attention_mask is None:
-            attention_mask = torch.ones(batch_size, mask_seq_length, device=hidden_states.device)
+            attention_mask = torch.ones(batch_size, seq_length, device=hidden_states.device)
         if self.is_decoder and encoder_attention_mask is None and encoder_hidden_states is not None:
             encoder_seq_length = encoder_hidden_states.shape[1]
             encoder_attention_mask = torch.ones(
                 batch_size, encoder_seq_length, device=hidden_states.device, dtype=torch.long
             )
-
-        # initialize past_key_values with `None` if past does not exist
-        if past_key_values is None:
-            past_key_values = [None] * len(self.decoder_blocks)
 
         extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
 
