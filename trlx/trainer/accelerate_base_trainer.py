@@ -15,7 +15,6 @@ from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
 
-import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
@@ -24,6 +23,7 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
+    logging,
     significant,
 )
 from trlx.utils.modeling import (
@@ -82,7 +82,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process and not ray.is_initialized():
+        if ray.is_initialized():
+            logging.set_verbosity(logging.WARNING)
+            logging.disable_progress_bar()
+
+        if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -423,22 +427,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.accelerator.is_main_process:
             rows = sum(list(map(list, zip(*table))), [])
 
-            # Add metrics/rewards to the table's title
-            table_title = f"Evaluation #{self.nth_evaluation}"
-            for k, x in stats.items():
-                if k.startswith("reward") or k.startswith("metrics"):
-                    table_title += f" {k}: {significant(x)}"
-
-            rich_table = Table(*columns, title=table_title, show_lines=True)
-            for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
-                rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
-            Console().print(rich_table)
-
             if not ray.is_initialized():
-                if self.config.train.tracker == "wandb":
-                    import wandb
+                # Add metrics/rewards to the table's title
+                table_title = f"Evaluation #{self.nth_evaluation}"
+                for k, x in stats.items():
+                    if k.startswith("reward") or k.startswith("metrics"):
+                        table_title += f" {k}: {significant(x)}"
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                rich_table = Table(*columns, title=table_title, show_lines=True)
+                for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
+                    rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
+                Console().print(rich_table)
+
+            if self.config.train.tracker == "wandb":
+                import wandb
+
+                stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
@@ -546,8 +550,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             checkpoint = Checkpoint.from_directory("state")
                             session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
+                    self.accelerator.log(stats, step=self.iter_count)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
