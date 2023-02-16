@@ -8,7 +8,6 @@ train:
   eval_interval: 200
 
   pipeline: "PromptPipeline"
-  orchestrator: "PPOOrchestrator"
   trainer: "AcceleratePPOTrainer"
 
 model:

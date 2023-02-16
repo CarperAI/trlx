@@ -154,9 +154,6 @@ class TrainConfig:
     :param pipeline: Pipeline to use for training. One of the registered pipelines present in trlx.pipeline
     :type pipeline: str
 
-    :param orchestrator: Orchestrator to use for training. One of the registered orchestrators present in trlx.orchestrator
-    :type orchestrator: str
-
     :param trainer: Trainer to use for training. One of the registered trainers present in trlx.trainer
     :type trainer: str
 
@@ -198,7 +195,6 @@ class TrainConfig:
     eval_interval: int
 
     pipeline: str  # One of the pipelines in framework.pipeline
-    orchestrator: str  # One of the orchestrators
     trainer: str  # One of the trainers
     trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
 

@@ -1,10 +1,5 @@
 from typing import Callable
 
-# Register load orchestrators via module import
-from trlx.orchestrator import _ORCH
-from trlx.orchestrator.offline_orchestrator import OfflineOrchestrator
-from trlx.orchestrator.ppo_orchestrator import PPOOrchestrator
-
 # Register load pipelines via module import
 from trlx.pipeline import _DATAPIPELINE
 from trlx.pipeline.offline_pipeline import PromptPipeline
@@ -13,6 +8,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.trainer import _TRAINERS, register_trainer
 from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
+from trlx.trainer.accelerate_sft_trainer import AccelerateSFTTrainer
 
 try:
     from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
@@ -47,14 +43,3 @@ def get_pipeline(name: str) -> Callable:
         return _DATAPIPELINE[name]
     else:
         raise Exception("Error: Trying to access a pipeline that has not been registered")
-
-
-def get_orchestrator(name: str) -> Callable:
-    """
-    Return constructor for specified orchestrator
-    """
-    name = name.lower()
-    if name in _ORCH:
-        return _ORCH[name]
-    else:
-        raise Exception("Error: Trying to access an orchestrator that has not been registered")

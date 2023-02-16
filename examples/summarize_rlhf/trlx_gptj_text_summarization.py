@@ -67,12 +67,13 @@ if __name__ == "__main__":
                     prompts[i].split("TL;DR:")[0],
                     truncation=True,
                     max_length=max_length - 5,  # to make sure "TL;DR" dont get truncated
+                    add_special_tokens=False,
                 )["input_ids"],
                 skip_special_tokens=True,
             ).strip()
             tmp = tmp + "\nTL;DR:"
             tmp = tokenizer.decode(
-                tokenizer(tmp, truncation=True, max_length=max_length)["input_ids"],
+                tokenizer(tmp, truncation=True, max_length=max_length, add_special_tokens=False)["input_ids"],
                 skip_special_tokens=True,
             ).strip()
             formatted_prompts.append(tmp)
@@ -114,7 +115,6 @@ if __name__ == "__main__":
         post_summary_dict[val_prompts[i]] = val_summaries[i]
 
     trainer = trlx.train(
-        config.model.model_path,
         reward_fn=reward_fn,
         prompts=train_prompts,
         eval_prompts=val_prompts[0:1000],  # sampling 1000 validation prompts for evaluation speed in training
