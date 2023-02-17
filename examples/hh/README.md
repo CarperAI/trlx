@@ -4,7 +4,7 @@ As an example, the following setup assumes a single machine with 8xA100 80GB, th
 
 Launch training on 7 GPUs with 8th GPU hosting a reward model:
 ```sh
-accelerate launch --num_processes 7 --config_file ../../configs/deepspeed/zero2-bf16.yaml ppo_hh.py
+accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
 ```
 
 #### Optional steps to setup a reward model (trained with [Dahoas/reward-modeling](https://github.com/Dahoas/reward-modeling)) with Triton Server:
@@ -25,5 +25,5 @@ SINGULARITYENV_CUDA_VISIBLE_DEVICES=7 singularity run --nv --bind model_store:/m
 export TRITON_HOST=localhost:8001/gptj-rm-static
 
 # launch training
-accelerate launch --num_processes 7 --config_file ../../configs/deepspeed/zero2-bf16.yaml ppo_hh.py
+accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
 ```

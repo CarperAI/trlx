@@ -1,16 +1,10 @@
 compute_environment: LOCAL_MACHINE
-deepspeed_config:
-  deepspeed_multinode_launcher: standard
-  gradient_accumulation_steps: 1
-  gradient_clipping: 1.0
-  offload_optimizer_device: none
-  offload_param_device: none
-  zero3_init_flag: false
-  zero_stage: 2
-distributed_type: DEEPSPEED
+deepspeed_config: {}
+distributed_type: MULTI_GPU
 downcast_bf16: no
 dynamo_backend: no
 fsdp_config: {}
+gpu_ids: all
 machine_rank: 0
 main_training_function: main
 megatron_lm_config: {}
