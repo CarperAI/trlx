@@ -9,9 +9,9 @@ import trlx
 from trlx.data.configs import TRLConfig
 
 
-def split_dialog(dialog):
-    dialog = re.split(r"(\n\nHuman:|\n\nAssistant:)", dialog)[1:]
-    return ["".join(dialog[:-1]), dialog[-1]]
+def preprocess(sample):
+    sample["chosen_sample"] = sample["prompt"] + sample["chosen"]
+    return sample
 
 
 def main(hparams={}):
@@ -19,13 +19,13 @@ def main(hparams={}):
     default_config = yaml.safe_load(open(config_path))
     config = TRLConfig.update(default_config, hparams)
 
-    dataset = load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base")
+    dataset = load_dataset("Dahoas/full-hh-rlhf").map(preprocess)
     reward_fn = create_reward_fn()
 
     trlx.train(
-        samples=dataset["train"]["chosen"],
         config=config,
-        eval_prompts=[split_dialog(sample)[0] for sample in dataset["test"]["chosen"][:280]],
+        samples=dataset["train"]["chosen_sample"],
+        eval_prompts=dataset["test"]["prompt"][:280],
         metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
