@@ -30,6 +30,7 @@ from trlx.utils.modeling import (
     flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
+    gather_for_metrics,
     get_delta_model_class,
     parse_delta_kwargs,
 )
@@ -292,6 +293,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         stats = {}
         table = []
 
+        total_size = len(self.eval_dataloader.dataset)
+        batch_size = self.eval_dataloader.batch_sampler.batch_size
+
         for i_sweep, gen_sweep_value in enumerate(gen_sweep_values):
             # A dedicated suffix for wandb logging
             if gen_sweep_value is not None:
@@ -340,9 +344,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
-            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
+            samples = gather_for_metrics(torch.vstack(all_samples), total_size, batch_size, self.max_length)
+            prompts = gather_for_metrics(torch.vstack(all_prompts), total_size, batch_size, self.max_length)
+            prompt_sizes = gather_for_metrics(torch.hstack(prompt_sizes), total_size, batch_size, 1)
 
             if self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
