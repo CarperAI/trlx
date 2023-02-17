@@ -9,15 +9,10 @@ import trlx
 from trlx.data.configs import TRLConfig
 
 
-def split_dialog(dialog):
-    dialog = re.split(r"(\n\nHuman:|\n\nAssistant:)", dialog)[1:]
-    return ["".join(dialog[:-1]), dialog[-1]]
-
-
 def preprocess(sample):
     sample["prompt_output"] = [
-        split_dialog(sample["chosen"]),
-        split_dialog(sample["rejected"]),
+        [sample["prompt"], sample["chosen"]],
+        [sample["prompt"], sample["rejected"]],
     ]
     sample["reward"] = [1, -1]
     return sample
@@ -28,7 +23,7 @@ def main(hparams={}):
     default_config = yaml.safe_load(open(config_path))
     config = TRLConfig.update(default_config, hparams)
 
-    dataset = load_dataset("Anthropic/hh-rlhf", data_dir="helpful-base").map(preprocess)
+    dataset = load_dataset("Dahoas/full-hh-rlhf").map(preprocess)
     prompts_outputs = sum(dataset["train"]["prompt_output"], [])
 
     rewards = sum(dataset["train"]["reward"], [])
