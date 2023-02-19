@@ -7,7 +7,6 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
-from einops import rearrange
 
 try:
     from opendelta import (
@@ -279,24 +278,6 @@ class RunningMoments:
         self.count = tot_count
 
         return xs_mean, (xs_var * xs_count / (xs_count - 1)).sqrt()
-
-
-def gather_for_metrics(tensor, expected_number, batch_size, length):
-    if not dist.is_initialized():
-        return tensor
-
-    if dist.get_rank() == 0:
-        gather_list = [tensor.clone() for _ in range(dist.get_world_size())]
-    else:
-        gather_list = None
-
-    torch.distributed.gather(tensor, gather_list)
-
-    if dist.get_rank() == 0:
-        tensor = torch.vstack(gather_list).view(dist.get_world_size(), -1, batch_size, length)
-        return rearrange(tensor, "n s b l -> (s n b) l")[:expected_number]
-    else:
-        return None
 
 
 # OpenDelta utilities
