@@ -308,8 +308,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 else:
                     samples = self.generate_eval(**prompts)
 
+                # TODO(reciprocated): this should be moved into `decode`
+                # but that needs to be synced with indexing in `make_experience`
                 if self.config.model.model_arch_type == "seq2seq":
-                    samples = samples[:, 1:]
+                    samples = samples[:, 1:].contiguous()
 
                 prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(len(prompts.input_ids))
                 prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
