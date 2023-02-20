@@ -1,7 +1,7 @@
-from ..trainer.accelerate_sft_trainer import SFTConfig
-from ..trainer.nn.ilql_models import ILQLConfig
-from ..trainer.nn.ppo_models import PPOConfig
-from .configs import (
+from trlx.trainer.accelerate_sft_trainer import SFTConfig
+from trlx.trainer.nn.ilql_models import ILQLConfig
+from trlx.trainer.nn.ppo_models import PPOConfig
+from trlx.data.configs import (
     ModelConfig,
     OptimizerConfig,
     SchedulerConfig,
@@ -86,7 +86,7 @@ def default_ilql_config():
             beta=0,
             steps_for_target_q_sync=5,
             two_qs=True,
-            gen_kwargs=dict(max_new_tokens=56, top_k=20, beta=4, temperature=1.0),
+            gen_kwargs=dict(max_new_tokens=56, top_k=20, beta=2, temperature=1.0),
         ),
     )
 

@@ -270,6 +270,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def evaluate(self):  # noqa: C901
         """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
         logger.info("Evaluating model")
+        return {}
 
         # Do multiple evaluations over a single list in `gen_kwargs` if present
         if self.generate_sweep_kwarg is not None:
@@ -340,11 +341,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
-            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
+            # samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
+            # prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
+            # prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
 
-            if self.accelerator.is_main_process:
+            samples = torch.vstack(all_samples)
+            prompts = torch.vstack(all_prompts)
+            prompt_sizes = torch.hstack(prompt_sizes)
+
+            if True: # self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
 
                 columns = ["prompt", "output"]

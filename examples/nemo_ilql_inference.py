@@ -10,8 +10,8 @@ from nemo.utils.model_utils import inject_model_parallel_rank
 from omegaconf.omegaconf import OmegaConf
 
 from trlx.data.configs import TrainConfig, TRLConfig
-from trlx.data.default_configs import default_ilql_config
-from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer
+from trlx.default_configs import default_ilql_config
+from trlx.trainer.nemo_ilql_trainer import ILQLGPT, megatron_trainer, ILQLConfig
 
 default_config = default_ilql_config()
 
