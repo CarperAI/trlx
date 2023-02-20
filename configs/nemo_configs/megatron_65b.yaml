@@ -24,6 +24,7 @@ exp_manager:
   exp_dir: null
   name: megatron_gpt_70b
   create_wandb_logger: True
+  create_tensorboard_logger: False
   wandb_logger_kwargs:
     project: trlx
     name: ilql_sentiments_70b
@@ -44,7 +45,7 @@ exp_manager:
     buffer_size: 5
 
 model:
-  micro_batch_size: 16
+  micro_batch_size: 8
   global_batch_size: 2048
   tensor_model_parallel_size: 8
   pipeline_model_parallel_size: 2

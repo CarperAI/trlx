@@ -19,6 +19,8 @@ def main():
     _20b_cfg.num_hidden_layers = 80
     _20b_cfg.hidden_size = 8192
     _20b_cfg.num_attention_heads = 128
+    _20b_cfg.intermediate_size = 32768
+    
     config.train.seq_length = 512
     config.train.batch_size = 1
     config.train.total_steps = 200
