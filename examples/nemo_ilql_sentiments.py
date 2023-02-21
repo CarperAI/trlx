@@ -24,7 +24,7 @@ nemo_ilql_train_cfg = TrainConfig(
         trainer="NeMoILQLTrainer",
         trainer_kwargs=dict(
             pretrained_model=None, # "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-            megatron_cfg="megatron_65b.yaml",
+            megatron_cfg="megatron_260b.yaml",
         ),
     )
 )

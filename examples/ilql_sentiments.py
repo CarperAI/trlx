@@ -15,18 +15,22 @@ def get_positive_score(scores):
 
 def main():
     config = default_ilql_config()
-    _20b_cfg = GPTNeoXConfig()
-    _20b_cfg.num_hidden_layers = 80
-    _20b_cfg.hidden_size = 8192
-    _20b_cfg.num_attention_heads = 128
-    _20b_cfg.intermediate_size = 32768
-    
-    config.train.seq_length = 512
-    config.train.batch_size = 1
-    config.train.total_steps = 200
-    config.model.model_path = _20b_cfg
-    # config.model.model_path = 'EleutherAI/gpt-neox-20b'
-    config.tokenizer.tokenizer_path = 'EleutherAI/gpt-neox-20b'
+    # _20b_cfg = GPTNeoXConfig()
+    # _20b_cfg.num_hidden_layers = 80
+    # _20b_cfg.hidden_size = 8192
+    # _20b_cfg.num_attention_heads = 128
+    # _20b_cfg.intermediate_size = 32768
+
+    # config.train.seq_length = 512
+    # config.train.batch_size = 1
+    # config.train.total_steps = 200
+    # config.model.model_path = _20b_cfg
+    # # config.model.model_path = 'EleutherAI/gpt-neox-20b'
+    # config.tokenizer.tokenizer_path = 'EleutherAI/gpt-neox-20b'
+    # facebook opt 30b model:
+    config.model.model_path = "facebook/opt-iml-30b"
+    config.tokenizer.tokenizer_path = "facebook/opt-30b"
+
     # print(config)
     # sentiment_fn = pipeline(
     #     "sentiment-analysis",
@@ -44,13 +48,14 @@ def main():
 
     imdb = load_dataset("imdb", split="train+test")
 
-    trlx.train(
+    trainer = trlx.train(
         samples=imdb["text"],
         rewards=imdb["label"],
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
         config=config,
     )
+
 
 
 if __name__ == "__main__":
