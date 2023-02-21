@@ -12,15 +12,16 @@ from trlx.trainer.accelerate_sft_trainer import AccelerateSFTTrainer
 
 try:
     from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
+    from trlx.trainer.nemo_sft_trainer import NeMoSFTTrainer
 except ImportError:
     # NeMo is not installed
-    def _trainer_unavailble(name):
+    def _trainers_unavailble(names: str):
         def log_error(*args, **kwargs):
-            raise ImportError(f"Unable to import NeMo so {name} is unavailable")
+            raise ImportError(f"Unable to import NeMo so {names} are unavailable")
 
-        return register_trainer(name)(log_error)
+        return register_trainer(names)(log_error)
 
-    _trainer_unavailble("NeMoILQLTrainer")
+    _trainers_unavailble("NeMoILQLTrainer and NeMoSFTTrainer")
 
 
 def get_trainer(name: str) -> Callable:
