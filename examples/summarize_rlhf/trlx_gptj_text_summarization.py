@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     def get_scores(samples: List[str]):
         scores_list = []
-        batch_size = 2
+        batch_size = config.train.reward_model_batch_size
         for i in range(0, len(samples), batch_size):
             sub_samples = samples[i : i + batch_size]
             sub_samples = ["<|startoftext|>" + chosen + "<|endoftext|>" for chosen in sub_samples]

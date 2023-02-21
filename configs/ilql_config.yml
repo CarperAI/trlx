@@ -3,6 +3,7 @@ train:
   batch_size: 128
   epochs: 100
   total_steps: 1000
+  reward_model_batch_size: 256
 
   checkpoint_interval: 1000
   eval_interval: 100

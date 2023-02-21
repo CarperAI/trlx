@@ -28,7 +28,7 @@ def main(hparams={}):
         "lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
-        batch_size=256,
+        batch_size=config.train.reward_model_batch_size,
         device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 

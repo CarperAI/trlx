@@ -140,6 +140,9 @@ class TrainConfig:
     :param batch_size: Batch size for training
     :type batch_size: int
 
+    :param reward_model_batch_size: Batch size for the reward model
+    :type reward_model_batch_size: int
+
     :param tracker: Tracker to use for logging. Default: "wandb"
     :type tracker: str
 
@@ -185,6 +188,7 @@ class TrainConfig:
     seq_length: int
     epochs: int
     batch_size: int
+    reward_model_batch_size: int = 0
 
     checkpoint_interval: int
     eval_interval: int
