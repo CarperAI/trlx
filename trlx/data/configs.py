@@ -188,7 +188,6 @@ class TrainConfig:
     seq_length: int
     epochs: int
     batch_size: int
-    reward_model_batch_size: int = 0
 
     checkpoint_interval: int
     eval_interval: int
@@ -197,6 +196,7 @@ class TrainConfig:
     trainer: str  # One of the trainers
     trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
 
+    reward_model_batch_size: int = 0
     project_name: str = "trlx"
     entity_name: Optional[str] = None
     group_name: Optional[str] = None
