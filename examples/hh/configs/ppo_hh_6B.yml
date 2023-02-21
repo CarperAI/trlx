@@ -1,0 +1,56 @@
+train:
+  seq_length: 2048
+  epochs: 10000
+  total_steps: 6000
+  batch_size: 4
+
+  checkpoint_interval: 10000
+  eval_interval: 500
+
+  pipeline: "PromptPipeline"
+  trainer: "AcceleratePPOTrainer"
+
+model:
+  model_path: "Dahoas/pythia-6B-static-sft"
+  num_layers_unfrozen: 2
+
+tokenizer:
+  tokenizer_path: "EleutherAI/gpt-neox-20b"
+  truncation_side: "left"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 8.0e-6 # was 4e-6
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 1000000 # train.total_steps
+    eta_min: 8.0e-6
+
+method:
+  name: "ppoconfig"
+  num_rollouts: 64
+  chunk_size: 8
+  ppo_epochs: 4
+  init_kl_coef: 0.05
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 1
+  scale_reward: "running"
+  ref_mean: null
+  ref_std: null
+  cliprange_reward: 20
+  gen_kwargs:
+    max_new_tokens: 96
+    top_k: 0
+    top_p: 1.0
+    do_sample: True
