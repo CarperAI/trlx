@@ -271,6 +271,8 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         position_ids: Optional[List[torch.FloatTensor]] = None,
         head_mask: Optional[torch.Tensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
@@ -281,6 +283,9 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
             past_key_values=past_key_values,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
         forward_kwargs["output_hidden_states"] = True
@@ -343,18 +348,42 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
-    def forward_hydra(self, *args, **kwargs) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
-        forward_kwargs = self.get_compatible_forward_kwargs(**kwargs)
+    def forward_hydra(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        position_ids: Optional[List[torch.FloatTensor]] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[torch.FloatTensor, CausalLMOutputWithValue]:
+        forward_kwargs = self.get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
         return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["return_dict"] = True
         forward_kwargs["output_hidden_states"] = True
 
-        outputs = self.forward(*args, **forward_kwargs)
-        # Select the hidden state immediately before the first branching layer
+        outputs = self.forward(**forward_kwargs)
+        # Select the hidden state before the first branching layer
         input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
 
         output_shape = outputs.hidden_states[-1].size()
         forward_kwargs.pop("input_ids", None)  # Ignore `input_ids` for branch head
+        forward_kwargs.pop("inputs_embeds", None)  # Ignore `inputs_embeds` for branch head
         hydra_outputs = self.frozen_head(input_hidden_state, output_shape, **forward_kwargs)
 
         if not return_dict:
@@ -375,9 +404,8 @@ class ModelBranch(transformers.PreTrainedModel):
     ):
         """
         Args:
-            base_model (transformers.PreTrainedModel): The pretrained model
-                to extract upper trunk from.
-            num_layers_unfrozen (int): The number of trainable layers.
+            base_model (transformers.PreTrainedModel): The pretrained model to extract upper trunk from
+            num_layers_unfrozen (int): The number of trainable layers
         """
         super().__init__(base_model.config)
 
@@ -405,6 +433,7 @@ class GPTModelBranch(ModelBranch):
         output_shape: torch.Tensor,  # output_size given by main trunk
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
@@ -538,6 +567,7 @@ class OPTModelBranch(ModelBranch):
         output_shape: torch.Tensor,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
@@ -545,7 +575,6 @@ class OPTModelBranch(ModelBranch):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
-        position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         """Reference:
         https://github.com/huggingface/transformers/blob/bdb84e2bada3658f99c6a81c963ec562f8485151/src/transformers/models/opt/modeling_opt.py#L840  # noqa: E501
@@ -658,6 +687,7 @@ class BloomModelBranch(ModelBranch):
         output_shape: torch.Tensor,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
@@ -665,7 +695,6 @@ class BloomModelBranch(ModelBranch):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = False,
-        position_ids: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         """Reference:
         https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/bloom/modeling_bloom.py#L623  # noqa: E501
@@ -926,7 +955,6 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        forward_kwargs = self.get_compatible_forward_kwargs(**forward_kwargs)
         return_dict = forward_kwargs.get("return_dict", True)
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
