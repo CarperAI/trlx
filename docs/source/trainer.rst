@@ -19,22 +19,7 @@ Note that new trainers must be registered with ``trlx.trainer.register_trainer``
 .. autoclass:: trlx.trainer.accelerate_ppo_trainer.AcceleratePPOTrainer
     :members:
 
-.. autoclass:: trlx.trainer.nn.ppo_models.CausalLMWithValueHead
-    :members:
-
-.. autoclass:: trlx.trainer.nn.ppo_models.GPTModelBranch
-    :members:
-
-.. autoclass:: trlx.trainer.nn.ppo_models.OPTModelBranch
-    :members:
-
-.. autoclass:: trlx.trainer.nn.ppo_models.CausalLMHydraWithValueHead
-    :members:
-
 **ILQL**
 
 .. autoclass:: trlx.trainer.accelerate_ilql_trainer.AccelerateILQLTrainer
-    :members:
-
-.. autoclass:: trlx.trainer.nn.ilql_models.CausalLMWithValueHeads
     :members:
