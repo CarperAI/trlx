@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
-import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
@@ -302,7 +301,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             all_samples = []
             all_prompts = []
-            prompt_sizes = []
+            all_prompt_sizes = []
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 if self.generate_sweep_kwarg:
@@ -310,26 +309,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 else:
                     samples = self.generate_eval(**prompts)
 
+                # TODO(reciprocated): this should be moved into `decode`
+                # but that needs to be synced with indexing in `make_experience`
                 if self.config.model.model_arch_type == "seq2seq":
-                    samples = samples[:, 1:]
+                    samples = samples[:, 1:].contiguous()
 
-                all_samples.append(
-                    F.pad(
-                        samples,
-                        (0, self.max_length - samples.shape[1]),
-                        value=self.tokenizer.pad_token_id,
+                prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(len(prompts.input_ids))
+                prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
+                    self.accelerator.pad_across_processes(
+                        [prompts.input_ids, samples, prompt_sizes.to(samples.device)],
+                        dim=1,
+                        pad_index=self.tokenizer.pad_token_id,
                     )
                 )
-                all_prompts.append(
-                    F.pad(
-                        prompts.input_ids,
-                        (0, self.max_length - prompts.input_ids.shape[1]),
-                        value=self.tokenizer.pad_token_id,
-                    ).to(samples.device)
-                )
-                prompt_sizes.append(
-                    torch.tensor(prompts.input_ids.shape[1], device=samples.device).repeat(len(prompts.input_ids))
-                )
+                all_samples.extend(samples.tolist())
+                all_prompts.extend(prompts.tolist())
+                all_prompt_sizes.extend(prompt_sizes.tolist())
 
                 desc = [
                     f"generation sweep {i_sweep + 1}/{len(gen_sweep_values)}",
@@ -341,12 +336,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
-            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
-
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
+                str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
 
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
