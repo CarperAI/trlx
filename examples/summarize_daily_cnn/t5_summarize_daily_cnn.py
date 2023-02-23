@@ -13,7 +13,7 @@ from trlx.data.configs import (
     TrainConfig,
     TRLConfig,
 )
-from trlx.trainer.nn.ppo_models import PPOConfig
+from trlx.models.modeling_ppo import PPOConfig
 
 try:
     import evaluate
