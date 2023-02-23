@@ -1,5 +1,4 @@
-from dataclasses import dataclass
-
+from attrs import define
 from transformers import AutoModelForCausalLM
 
 from trlx.data.configs import TRLConfig
@@ -8,7 +7,7 @@ from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 
 
-@dataclass
+@define
 @register_method
 class SFTConfig(MethodConfig):
     """

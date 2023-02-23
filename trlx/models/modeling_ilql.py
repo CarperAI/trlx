@@ -1,7 +1,6 @@
 import gc
 import os
 from copy import deepcopy
-from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
 
@@ -10,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
+from attrs import define
 from torch import nn
 from torchtyping import TensorType
 
@@ -44,7 +44,7 @@ def batched_index_select(
     return x.gather(dim=dim, index=idxs)
 
 
-@dataclass
+@define
 @register_method
 class ILQLConfig(MethodConfig):
     tau: float

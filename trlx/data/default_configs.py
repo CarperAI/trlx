@@ -1,7 +1,4 @@
-from ..trainer.accelerate_sft_trainer import SFTConfig
-from ..trainer.nn.ilql_models import ILQLConfig
-from ..trainer.nn.ppo_models import PPOConfig
-from .configs import (
+from trlx.data.configs import (
     ModelConfig,
     OptimizerConfig,
     SchedulerConfig,
@@ -9,6 +6,9 @@ from .configs import (
     TrainConfig,
     TRLConfig,
 )
+from trlx.models.modeling_ilql import ILQLConfig
+from trlx.models.modeling_ppo import PPOConfig
+from trlx.trainer.accelerate_sft_trainer import SFTConfig
 
 
 def default_ppo_config():

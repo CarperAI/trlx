@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import transformers
+from attrs import define
 from torchtyping import TensorType
 from transformers.modeling_outputs import ModelOutput
 from transformers.models.bloom import modeling_bloom
@@ -69,7 +70,7 @@ class FixedKLController:
 # PPO Configs
 
 
-@dataclass
+@define
 @register_method
 class PPOConfig(MethodConfig):
     """

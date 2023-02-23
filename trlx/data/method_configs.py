@@ -1,34 +1,22 @@
-import sys
-from dataclasses import dataclass
 from typing import Any, Dict
+
+from attrs import asdict, define
+from cattrs import register_structure_hook, register_unstructure_hook, unstructure
 
 # specifies a dictionary of method configs
 _METHODS: Dict[str, Any] = {}  # registry
 
 
-def register_method(name):
+def register_method(cls):
     """Decorator used register a method config
     Args:
         name: Name of the method
     """
-
-    def register_class(cls, name):
-        _METHODS[name] = cls
-        setattr(sys.modules[__name__], name, cls)
-        return cls
-
-    if isinstance(name, str):
-        name = name.lower()
-        return lambda c: register_class(c, name)
-
-    cls = name
-    name = cls.__name__
-    register_class(cls, name.lower())
-
+    _METHODS[cls.__name__.lower()] = cls
     return cls
 
 
-@dataclass
+@define
 @register_method
 class MethodConfig:
     """
@@ -54,3 +42,7 @@ def get_method(name: str) -> MethodConfig:
         return _METHODS[name]
     else:
         raise Exception("Error: Trying to access a method that has not been registered")
+
+
+register_structure_hook(MethodConfig, lambda obj, _: get_method(obj["name"])(**obj))
+register_unstructure_hook(MethodConfig, lambda obj: {**asdict(obj), "name": obj.__class__.__name__})

@@ -1,8 +1,9 @@
 from copy import deepcopy
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import yaml
 from attrs import define, field
+from cattrs import structure, unstructure
 
 from trlx.data.method_configs import MethodConfig, get_method
 
@@ -80,10 +81,6 @@ class TokenizerConfig:
     padding_side: str = "left"
     truncation_side: str = "right"
 
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]):
-        return cls(**config)
-
 
 @define
 class OptimizerConfig:
@@ -100,10 +97,6 @@ class OptimizerConfig:
     name: str
     kwargs: Dict[str, Any] = field(factory=dict)
 
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]):
-        return cls(**config)
-
 
 @define
 class SchedulerConfig:
@@ -119,10 +112,6 @@ class SchedulerConfig:
 
     name: str
     kwargs: Dict[str, Any] = field(factory=dict)
-
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]):
-        return cls(**config)
 
 
 @define
@@ -208,10 +197,6 @@ class TrainConfig:
 
     seed: int = 1000
 
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]):
-        return cls(**config)
-
 
 @define
 class TRLConfig:
@@ -242,16 +227,7 @@ class TRLConfig:
         """
         Convert TRLConfig to dictionary.
         """
-        data = {
-            "method": self.method.__dict__,
-            "model": self.model.__dict__,
-            "optimizer": self.optimizer.__dict__,
-            "scheduler": self.scheduler.__dict__,
-            "tokenizer": self.tokenizer.__dict__,
-            "train": self.train.__dict__,
-        }
-
-        return data
+        return unstructure(self)
 
     def evolve(self, **kwargs) -> "TRLConfig":
         """
@@ -261,21 +237,14 @@ class TRLConfig:
         >>> config.method.gamma
         0.99
         """
-        return TRLConfig.update(self.to_dict(), kwargs)
+        return TRLConfig.from_dict(merge(self.to_dict(), kwargs))
 
     @classmethod
     def from_dict(cls, config: Dict):
         """
         Convert dictionary to TRLConfig.
         """
-        return cls(
-            method=get_method(config["method"]["name"]).from_dict(config["method"]),
-            model=ModelConfig.from_dict(config["model"]),
-            tokenizer=TokenizerConfig.from_dict(config["tokenizer"]),
-            optimizer=OptimizerConfig.from_dict(config["optimizer"]),
-            scheduler=SchedulerConfig.from_dict(config["scheduler"]),
-            train=TrainConfig.from_dict(config["train"]),
-        )
+        return structure(config, cls)
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
