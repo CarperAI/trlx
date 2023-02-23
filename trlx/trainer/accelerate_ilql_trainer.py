@@ -1,18 +1,19 @@
 import os
-from typing import Optional, cast
+from typing import cast
 
 import numpy as np
 import torch
+import transformers
 from rich.console import Console
 from rich.table import Table
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch
+from trlx.models.modeling_ilql import AutoModelForCausalLMWithILQLHeads, ILQLConfig
 from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, tokenize_dialogue
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import CausalLMWithValueHeads, ILQLConfig
 from trlx.utils import to_device
 
 logger = logging.get_logger(__name__)
@@ -37,10 +38,15 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return CausalLMWithValueHeads(
+        from_fn = AutoModelForCausalLMWithILQLHeads.from_pretrained
+        # backward-compat: Try to create a randomly initialized architecture from a config
+        if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+            from_fn = AutoModelForCausalLMWithILQLHeads.from_config
+
+        return from_fn(
             config.model.model_path,
-            ilql_config=config.method,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,
+            two_qs=config.method.two_qs,
+            alpha=config.method.alpha,
         )
 
     def post_backward_callback(self):
@@ -73,20 +79,6 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-    def save_pretrained(self, directory: Optional[str] = None):
-        """NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
-        """
-        # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
-        # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
-        # requires a custom `generate` method using its (value/q) heads to steer
-        # sampling - something that is not possible with the default
-        # `transformers.PreTrainedModel.generate`.
-        raise NotImplementedError(
-            "`AccelerateILQLTrainer` does not currently support automatic saving "
-            "with `transformers.PreTrainedModel.save_pretrained`."
-        )
 
     def make_experience(self, samples, rewards, max_length=2048):
         """
