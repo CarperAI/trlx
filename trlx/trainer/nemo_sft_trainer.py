@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterable, Sequence, Union, cast
+from typing import Sequence, cast
 
 import torch
 from nemo.collections.nlp.parts.nlp_overrides import (
@@ -9,6 +9,7 @@ from nemo.collections.nlp.parts.nlp_overrides import (
     PipelineMixedPrecisionPlugin,
 )
 from nemo.utils import logging
+
 # from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import MegatronGPTModel
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
@@ -18,10 +19,11 @@ from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
 
-from trlx.data.configs import TRLConfig
 import trlx.utils as utils
+from trlx.data.configs import TRLConfig
+from trlx.models.modeling_nemo_sft import SFTGPT
+
 from . import BaseRLTrainer, register_trainer
-from .nemo.sft_gpt import SFTGPT
 from .accelerate_sft_trainer import SFTConfig
 
 
