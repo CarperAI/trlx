@@ -4,7 +4,6 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TrainConfig, TRLConfig
 from trlx.data.default_configs import default_ilql_config
 
 
@@ -15,24 +14,22 @@ def get_positive_score(scores):
 
 default_config = default_ilql_config()
 
-nemo_ilql_train_cfg = TrainConfig(
-    **dict(
-        default_config.train.__dict__,
-        seq_length=1024,
-        batch_size=512,
-        total_steps=200,
-        trainer="NeMoILQLTrainer",
-        trainer_kwargs=dict(
-            pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-            megatron_cfg="megatron_20b.yaml",
-        ),
+
+def main(hparams={}):
+    config = default_config.evolve(
+        train=dict(
+            seq_length=1024,
+            batch_size=512,
+            total_steps=200,
+            trainer="NeMoILQLTrainer",
+            trainer_kwargs=dict(
+                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+                megatron_cfg="megatron_20b.yaml",
+            ),
+        )
     )
-)
+    config = config.evolve(**hparams)
 
-config = TRLConfig(**dict(default_config.__dict__, train=nemo_ilql_train_cfg))
-
-
-def main():
     sentiment_fn = pipeline(
         "sentiment-analysis",
         "lvwerra/distilbert-imdb",

@@ -4,8 +4,7 @@ from trlx.data.default_configs import default_ppo_config
 
 
 def main():
-    config = default_ppo_config()
-    config.model.model_path = "gpt2"
+    config = default_ppo_config().evolve(model=dict(model_path="gpt2"))
 
     metric_fn, prompts, *_ = generate_random_walks(seed=config.train.seed)
 

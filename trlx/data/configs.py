@@ -251,6 +251,16 @@ class TRLConfig:
 
         return data
 
+    def evolve(self, **kwargs) -> "TRLConfig":
+        """
+        Evolve TRLConfig with new parameters. Can update nested parameters.
+        >>> config = trlx.data.default_configs.default_ilql_config()
+        >>> config = config.evolve(method=dict(gamma=0.99, gen_kwargs=dict(max_new_tokens=100))
+        >>> config.method.gamma
+        0.99
+        """
+        return TRLConfig.update(self.to_dict(), kwargs)
+
     @classmethod
     def from_dict(cls, config: Dict):
         """

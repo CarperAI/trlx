@@ -13,8 +13,8 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def main():
-    config = default_sft_config()
+def main(hparams={}):
+    config = default_sft_config().evolve(**hparams)
 
     imdb = load_dataset("imdb", split="train+test")
     # Finetune on only positive reviews

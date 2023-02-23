@@ -17,8 +17,8 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def main():
-    config = default_ppo_config()
+def main(hparams={}):
+    config = default_ppo_config().evolve(**hparams)
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
