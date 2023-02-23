@@ -1,20 +1,22 @@
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
 
 
-def merge(base: Dict, update: Dict, updated: Set) -> Dict:
+def merge(base: Dict, update: Dict) -> Dict:
     "Recursively updates a nested dictionary with new values"
-    for k, v in base.items():
-        if k in update and isinstance(v, dict):
-            base[k] = merge(v, update[k], updated)
-            updated.add(k)
-        elif k in update:
-            base[k] = update[k]
-            updated.add(k)
+
+    base = deepcopy(base)
+
+    for k, v in update.items():
+        if k in base and isinstance(v, dict) and isinstance(base[k], dict):
+            base[k] = merge(base[k], v)
+        else:
+            base[k] = v
 
     return base
 
@@ -277,12 +279,11 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
-        updates = set()
-        merged = merge(baseconfig, config, updates)
-
         for param in config:
-            if param not in updates:
+            if param not in baseconfig:
                 raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
+
+        merged = merge(baseconfig, config)
 
         return cls.from_dict(merged)
 
