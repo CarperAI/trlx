@@ -1,8 +1,8 @@
 from copy import deepcopy
-from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import yaml
+from attrs import define, field
 
 from trlx.data.method_configs import MethodConfig, get_method
 
@@ -21,7 +21,7 @@ def merge(base: Dict, update: Dict) -> Dict:
     return base
 
 
-@dataclass
+@define
 class ModelConfig:
     """
     Config for a model.
@@ -61,7 +61,7 @@ class ModelConfig:
         return cls(**config)
 
 
-@dataclass
+@define
 class TokenizerConfig:
     """
     Config for a model.
@@ -85,7 +85,7 @@ class TokenizerConfig:
         return cls(**config)
 
 
-@dataclass
+@define
 class OptimizerConfig:
     """
     Config for an optimizer.
@@ -98,14 +98,14 @@ class OptimizerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: Dict[str, Any] = field(factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
 
 
-@dataclass
+@define
 class SchedulerConfig:
     """
     Config for a learning rate scheduler.
@@ -118,14 +118,14 @@ class SchedulerConfig:
     """
 
     name: str
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: Dict[str, Any] = field(factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
 
 
-@dataclass
+@define
 class TrainConfig:
     """
     Config for train job on model.
@@ -193,7 +193,7 @@ class TrainConfig:
 
     pipeline: str  # One of the pipelines in framework.pipeline
     trainer: str  # One of the trainers
-    trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
+    trainer_kwargs: Dict[str, Any] = field(factory=dict)  # Extra keyword arguments for the trainer
 
     project_name: str = "trlx"
     entity_name: Optional[str] = None
@@ -213,7 +213,7 @@ class TrainConfig:
         return cls(**config)
 
 
-@dataclass
+@define
 class TRLConfig:
     """
     Top level config for trlX. Loads configs and can be converted to dictionary.
