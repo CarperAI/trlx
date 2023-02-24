@@ -388,11 +388,6 @@ class SFTGPT(MegatronGPTModel):
             prog_bar=True,
             rank_zero_only=True,
         )
-
-        if self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0 and self.trainer.global_step > 0:
-            if parallel_state.is_pipeline_last_stage():
-                unwrap_float16_module(self.model).other_heads.sync_target_q_heads()
-
         return loss_mean
 
     def validation_step(self, batch: Tuple[List[int], List[int]], batch_idx: int):
