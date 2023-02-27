@@ -5,13 +5,13 @@ import json
 from datetime import datetime
 
 import ray
-import wandb
 import wandb.apis.reports as wb
 import yaml
 from ray import tune
 from ray.air import ScalingConfig
 from ray.tune.logger import CSVLoggerCallback
 
+import wandb
 from trlx.ray_train.accelerate_trainer import AccelerateTrainer
 from trlx.utils import get_git_tag
 
@@ -247,9 +247,19 @@ def create_report(target_metric, column_names, entity_name, project_name, group_
     ]
 
     if best_config:
+        best_config = best_config["train_loop_config"]
+        config = best_config.pop("default_config")
+        for name, value in best_config.items():
+            *layers, var = name.split(".")
+            if layers:
+                d = config[layers[0]]
+                for layer in layers[1:]:
+                    d = d[layer]
+                d[var] = value
+
         report.blocks = report.blocks + [
             wb.H1(text="Best Config"),
-            wb.CodeBlock(code=[json.dumps(best_config, indent=4)], language="json"),
+            wb.CodeBlock(code=[json.dumps(config, indent=4)], language="json"),
         ]
 
     report.save()
