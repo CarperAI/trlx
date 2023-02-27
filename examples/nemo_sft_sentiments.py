@@ -1,11 +1,9 @@
-import os
 import pathlib
 from typing import Dict, List
 
 import yaml
 from datasets import load_dataset
 from transformers import pipeline
-from trlx.trainer.nemo_sft_trainer import NeMoSFTTrainer
 
 import trlx
 from trlx.data.configs import TRLConfig

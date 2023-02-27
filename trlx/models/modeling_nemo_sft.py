@@ -6,22 +6,12 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed
-from apex.transformer import parallel_state
-from apex.transformer.tensor_parallel.mappings import (
-    gather_from_sequence_parallel_region,
-    gather_from_tensor_model_parallel_region,
-)
-from einops import rearrange
 from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingBatchSampler,
 )
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
-)
-from nemo.collections.nlp.modules.common.megatron.module import (
-    Float16Module,
-    # MegatronModule,
 )
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
@@ -34,64 +24,17 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
-import trlx.utils as utils
 from trlx.trainer.accelerate_sft_trainer import SFTConfig
+from trlx.models.modeling_nemo_ilql import unwrap_float16_module, reshard_for_pipeline_parallelism
 from trlx.utils import to_device
-
-# from nemo.utils import logging
-
-
 
 try:
     from apex.transformer import parallel_state
-    from apex.transformer.pipeline_parallel.utils import (
-        _reconfigure_microbatch_calculator,
-        get_num_microbatches,
-    )
+    from apex.transformer.pipeline_parallel.utils import get_micro_batch_size
 
     HAVE_APEX = True
 except (ImportError, ModuleNotFoundError):
     HAVE_APEX = False
-
-
-def unwrap_float16_module(module):
-    if isinstance(module, Float16Module):
-        return module.module
-    return module
-
-
-def reshard_for_pipeline_parallelism(num_layers, state_dict):
-    """Filter out the layers that are not in the current pipeline stage
-    and shift the layer ids to match the local stage layer ids."""
-    pp_rank = parallel_state.get_pipeline_model_parallel_rank()
-    pp_size = parallel_state.get_pipeline_model_parallel_world_size()
-
-    stage_layers = num_layers // pp_size
-    pp_offset = pp_rank * stage_layers
-
-    encoder_layers_key = "model.language_model.encoder.layers."
-
-    def filter_in_pp_rank(key):
-        if key.startswith(encoder_layers_key):
-            layer_idx = int(key.split(".")[4])
-            return pp_offset <= layer_idx < (pp_offset + stage_layers)
-        elif key.startswith("model.language_model.encoder.final_layernorm") and not pp_rank == (pp_size - 1):
-            return False
-        else:
-            return True
-
-    def shift_layer_idx(key):
-        """If the key is for a transformer layer, shift down the layer index to select the
-        correct layer for this pipeline stage."""
-        if key.startswith(encoder_layers_key):
-            layer_idx = int(key.split(".")[4])
-            return f"{encoder_layers_key}{str(layer_idx - pp_offset)}.{'.'.join(key.split('.')[5:])}"
-        else:
-            return key
-
-    state_dict = {shift_layer_idx(k): v for k, v in state_dict.items() if filter_in_pp_rank(k)}
-
-    return state_dict
 
 
 class SFTGPT(MegatronGPTModel):
@@ -109,7 +52,7 @@ class SFTGPT(MegatronGPTModel):
         self._ori_activations_checkpoint_granularity = self.cfg.get("activations_checkpoint_granularity", None)
         self._ori_activations_checkpoint_method = self.cfg.get("activations_checkpoint_method", None)
         self._ori_activations_checkpoint_num_layers = self.cfg.get("activations_checkpoint_num_layers", None)
-        utils.print_rank_0("vocab size", self.tokenizer.tokenizer.vocab_size)
+        print("vocab size", self.tokenizer.tokenizer.vocab_size)
 
     def setup_loss(self):
         return CrossEntropyLoss(logits_ndim=3, ignore_index=-100)  # self.tokenizer.tokenizer.eos_token_id)
@@ -151,7 +94,6 @@ class SFTGPT(MegatronGPTModel):
         self._valid_dataset = valid_dataset
         self._valid_collate_fn = collate_fn
 
-    # Called by superclass to build data loaders
     def setup_training_data(self, _):
         if hasattr(self, "_train_dataset"):
             self._train_dl = self.build_data_loader(self._train_dataset, self._train_collate_fn)
@@ -166,10 +108,8 @@ class SFTGPT(MegatronGPTModel):
 
         # Check if there are rank subfolders
         rank_subfolder = f"mp_rank_{mp_rank:02d}"
-        if (checkpoint_path / rank_subfolder).exists():
-            rank_params = checkpoint_path / rank_subfolder / "model_weights.ckpt"
-        else:
-            rank_params = checkpoint_path / "model_weights.ckpt"
+        rank_params = checkpoint_path / rank_subfolder / "model_weights.ckpt"
+
         print(f"Loading from {rank_params}")
         state_dict = torch.load(rank_params)
 
@@ -187,19 +127,6 @@ class SFTGPT(MegatronGPTModel):
 
         unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
         print(f"Loaded from pretrained {rank_params}")
-
-    def model_provider_func(self, pre_process: bool, post_process: bool):
-        """
-        Model construction for Apex Pipeline Parallelism.
-        Each rank will construct the model but inside the model,
-        only the relevant layers for that rank should be constructed.
-        On the first rank, pre_process will be True
-        On the last rank, post_process will be True
-        """
-        gpt = super().model_provider_func(pre_process, post_process=post_process)
-        # # This enables the final layernorm in the GPT model if there is one
-        gpt.language_model.post_process = post_process
-        return gpt
 
     def activation_checkpointing_(self, enable: bool):
         def toggle_checkpointing(module):
@@ -282,7 +209,7 @@ class SFTGPT(MegatronGPTModel):
         # stage via .set_input_tensor
         tensor_shape = [
             self.cfg.encoder_seq_length,
-            self.cfg.micro_batch_size,
+            get_micro_batch_size(),
             self.cfg.hidden_size,
         ]
 
@@ -410,10 +337,8 @@ class SFTGPT(MegatronGPTModel):
 
         max_new_tokens = self.sft_config.gen_kwargs.get("max_new_tokens", 64)
 
-        gen = self.generate(
-            (input_ids, lengths),
-            dict(max_length=max_new_tokens, min_length=0)
-        )
+        gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
+        print(f"Generated {len(gen['sentences'])} samples:\n{gen['sentences']}")
 
         metrics = self.metric_fn(gen["sentences"])
 
@@ -431,10 +356,11 @@ class SFTGPT(MegatronGPTModel):
             self.sequence_parallel_(True)
 
         # NeMo generate resets the microbatch calculator
+        from nemo.utils import AppState
+
         from apex.transformer.pipeline_parallel.utils import (
             _reconfigure_microbatch_calculator,
         )
-        from nemo.utils import AppState
 
         _reconfigure_microbatch_calculator(
             rank=AppState().global_rank,
@@ -470,53 +396,32 @@ class SFTGPT(MegatronGPTModel):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
-                utils.print_rank_0(f"batch: {batch}")
-                inputs = torch.vstack(batch) if isinstance(batch, list) else batch[0]
-                utils.print_rank_0("inputs: ", inputs.shape, inputs.dtype, inputs.device)
-                pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
-                inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
-                utils.print_rank_0("inputs: ", inputs.shape, inputs.dtype, inputs.device)
-                (
-                    attention_mask,
-                    loss_mask,
-                    position_ids,
-                ) = get_ltor_masks_and_position_ids(
-                    data=inputs,
+                input_ids = batch[0]
+                labels = input_ids[:, 1:].contiguous()
+                input_ids = input_ids[:, :-1].contiguous()
+                attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+                    data=input_ids,
                     eod_token=self.tokenizer.eos_id,
                     reset_position_ids=False,
                     reset_attention_mask=False,
                     eod_mask_loss=False,
                 )
-                utils.print_rank_0("attention_mask: ", attention_mask.shape, attention_mask.dtype, attention_mask.device)
-                utils.print_rank_0("position_ids: ", position_ids.shape, position_ids.dtype, position_ids.device)
-
-                model_output = model(
-                    input_ids=inputs,
-                    position_ids=position_ids.long(),
+                output_tensor = model(
+                    input_ids=input_ids,
+                    position_ids=position_ids,
                     attention_mask=attention_mask,
+                    labels=labels,
+                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
                 )
-                utils.print_rank_0("model_output: ", model_output.shape, model_output.dtype, model_output.device)
             else:
                 # In-between stages are given data via the pipeline engine
                 # Still need to specify these arguments to avoid errors
-                model_output = model(input_ids=None, position_ids=None, attention_mask=None)
-
-            def gather_ntc(t: torch.Tensor):
-                """Gather sequence parallel tensor [batch, seq, hidden]"""
-                t = rearrange(t, "N T ... -> T N ...")
-                t = gather_from_sequence_parallel_region(t, to_model_parallel=False)
-                t = rearrange(t, "T N ... -> N T ...")
-                return t
+                output_tensor = model(input_ids=None, position_ids=None, attention_mask=None, labels=None)
 
             def loss_func(model_output):
                 # TODO: implement this in a sequence parallel way
-                logits = model_output
-                utils.print_rank_0(f"loss logits: {logits}\n logits shape: {logits.shape}")
-                logits = gather_from_tensor_model_parallel_region(logits)
-                utils.print_rank_0(f"gathered loss logits: {logits}\n logits shape: {logits.shape}")
-                utils.print_rank_0(f"loss labels: {inputs}\n labels shape: {inputs.shape}")
-                loss_func = CrossEntropyLoss(logits_ndim=3, ignore_index=self.tokenizer.tokenizer.eos_token_id)
-                loss_for_mb = loss_func(logits=logits, labels=inputs, loss_mask=loss_mask)
+                # utils.(f"{'='*50}\noutput_tensor: {output_tensor}\nshape: {output_tensor.shape}\n{'='*50}\n")
+                loss_for_mb = self.loss_func(loss_mask, output_tensor)
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
                 # TODO: figure out why this sync is needed (crashes otherwise)
@@ -524,7 +429,7 @@ class SFTGPT(MegatronGPTModel):
 
                 return loss_for_mb, {"avg_loss": reduced_loss}
 
-            return model_output, loss_func
+            return output_tensor, loss_func
 
         return fwd_output_and_loss_func
 
@@ -534,10 +439,7 @@ class SFTGPT(MegatronGPTModel):
         inference_max_sequence_len=None,
         checkpoint_activations_all_layers=None,
     ):
-        def fwd_output_only_func(
-            batch: torch.Tensor,
-            model,
-        ):
+        def fwd_output_only_func(batch, model):
             if batch is not None:
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
@@ -557,21 +459,19 @@ class SFTGPT(MegatronGPTModel):
                     extra_arg["set_inference_key_value_memory"] = set_inference_key_value_memory[0].item()
                     extra_arg["inference_max_sequence_len"] = inference_max_sequence_len[0].item()
 
-                model_output = model(
+                output_tensor = model(
                     input_ids=tokens,
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
                     **extra_arg,
                 )
             else:
-                model_output = model(input_ids=None, position_ids=None, attention_mask=None)
+                output_tensor = model(input_ids=None, position_ids=None, attention_mask=None)
 
-            def sft_postprocess(model_output):
-                model_output = utils.tree_map(lambda t: t.float(), model_output)
-                logits = model_output
-                return logits, {"logits": logits}
+            def id_func(output_tensor):
+                return output_tensor, {"logits": output_tensor}
 
-            return model_output, sft_postprocess
+            return output_tensor, id_func
 
         return fwd_output_only_func
 
@@ -592,7 +492,7 @@ class SFTGPT(MegatronGPTModel):
                 "temperature": self.sft_config.gen_kwargs.get("temperature", 1.0),
                 "top_k": self.sft_config.gen_kwargs.get("top_k", 0),
                 "top_p": self.sft_config.gen_kwargs.get("top_p", 0.9),
-                "repetition_penalty": self.sft_config.gen_kwargs.get("repetition_penalty", 1.0),
+                "repetition_penalty": self.sft_config.gen_kwargs.get("repetition_penalty", 1.2),
                 "add_BOS": False,
                 "all_probs": False,
                 "compute_logprob": False,

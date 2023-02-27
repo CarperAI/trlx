@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Sequence, cast
+from typing import List, Sequence, cast
 
 import torch
+import transformers
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
@@ -13,23 +14,22 @@ from nemo.utils import logging
 # from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import MegatronGPTModel
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
 
-import trlx.utils as utils
 from trlx.data.configs import TRLConfig
 from trlx.models.modeling_nemo_sft import SFTGPT
-
-from . import BaseRLTrainer, register_trainer
-from .accelerate_sft_trainer import SFTConfig
+from trlx.trainer import BaseRLTrainer, register_trainer
+from trlx.trainer.accelerate_sft_trainer import SFTConfig
 
 
 def megatron_trainer(cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
+    seed_everything(cfg.model.get("seed", 42))
 
     megatron_amp_o2 = cfg.model.get("megatron_amp_O2", False)
     with_distributed_adam = cfg.model.optim.get("name") == "distributed_fused_adam"
@@ -98,7 +98,6 @@ class ShuffledCyclicSequence:
 
 @register_trainer
 class NeMoSFTTrainer(BaseRLTrainer):
-
     def __init__(
         self,
         config: TRLConfig,
@@ -140,21 +139,25 @@ class NeMoSFTTrainer(BaseRLTrainer):
 
         self.batch_size = megatron_cfg.model.global_batch_size
         self.tokenizer = self.model.tokenizer.tokenizer
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.max_length = megatron_cfg.model.encoder_seq_length
-
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.max_length = megatron_cfg.model.encoder_seq_length
 
         if stop_sequences is not None and len(stop_sequences) > 0:
             logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
 
     def learn(self):
-        def collate_fn(batch):
+        def collate_fn(elems: List[transformers.BatchEncoding]):
             # Pad batch to max length
-            padded = self.tokenizer.pad(batch, return_tensors="pt", padding=True, max_length=self.max_length)
-            # utils.print_rank_0(f"padded: {padded}")
-            # utils.print_rank_0(f"padded['input_ids'].shape={padded['input_ids'].shape}")
-            return padded['input_ids']  # Ignore padded['attention_mask'] b/c we let NeMo handle it
+            input_ids = self.tokenizer.pad(
+                elems,
+                padding='max_length',
+                max_length=self.max_length,
+                return_tensors='pt',
+            )['input_ids']
+            return [input_ids]
+
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
         train_dataset = ShuffledCyclicSequence(train_samples, self.store, self.config.train.seed)
         self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
