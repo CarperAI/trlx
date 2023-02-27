@@ -3,15 +3,18 @@ tune_config:
   metric: "reward/mean"
   search_alg: "random"
   scheduler: "fifo"
-  num_samples: 16
+  num_samples: 8
 
 # https://docs.ray.io/en/latest/tune/api_docs/search_space.html#tune-sample-docs
 optimizer.kwargs.lr:
   strategy: "loguniform"
-  values: [0.000001, 0.0001]
+  values: [0.000001, 0.001]
 method.init_kl_coef:
   strategy: "uniform"
   values: [0, 0.2]
 method.vf_coef:
   strategy: "uniform"
   values: [0.25, 1.5]
+model.num_layers_unfrozen:
+  strategy: "choice"
+  values: [-1, 2, 6]
