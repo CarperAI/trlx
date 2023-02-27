@@ -29,7 +29,7 @@ from trlx.trainer.accelerate_sft_trainer import SFTConfig
 def megatron_trainer(cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
-    seed_everything(cfg.model.get("seed", 42))
+    seed_everything(cfg.model.get("seed", 1000))
 
     megatron_amp_o2 = cfg.model.get("megatron_amp_O2", False)
     with_distributed_adam = cfg.model.optim.get("name") == "distributed_fused_adam"
