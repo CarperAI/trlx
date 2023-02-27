@@ -30,8 +30,8 @@ optimizer:
 scheduler:
   name: "cosine_annealing"
   kwargs:
-    T_max: 1000 # train.total_steps
-    eta_min: 5.0e-5
+    T_max: 100000000000
+    eta_min: 0
 
 method:
   name: "ilqlconfig"
