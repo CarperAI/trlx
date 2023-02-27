@@ -15,13 +15,8 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-config_path = pathlib.Path(__file__).parent.joinpath("../configs/ilql_config.yml")
-with config_path.open() as f:
-    default_config = yaml.safe_load(f)
-
-
 def main(hparams={}):
-    config = TRLConfig.update(default_config, hparams)
+    config = TRLConfig.update(hparams.pop("default_config"), hparams)
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -48,4 +43,8 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    main()
+    config_path = pathlib.Path(__file__).parent.joinpath("../configs/ilql_config.yml")
+    with config_path.open() as f:
+        default_config = yaml.safe_load(f)
+
+    main({"default_config": default_config})
