@@ -66,10 +66,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if config.model.model_arch_type != "seq2seq":
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        if ray.is_initialized():
-            logging.set_verbosity(logging.WARNING)
-            logging.disable_progress_bar()
-
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
             model_name = str(config.model.model_path).split()[0]
