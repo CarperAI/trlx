@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed
+from apex.transformer import tensor_parallel
 from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingBatchSampler,
@@ -47,15 +48,9 @@ class SFTGPT(MegatronGPTModel):
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
 
-        self.loss = self.setup_loss()
-
         self._ori_activations_checkpoint_granularity = self.cfg.get("activations_checkpoint_granularity", None)
         self._ori_activations_checkpoint_method = self.cfg.get("activations_checkpoint_method", None)
         self._ori_activations_checkpoint_num_layers = self.cfg.get("activations_checkpoint_num_layers", None)
-        print("vocab size", self.tokenizer.tokenizer.vocab_size)
-
-    def setup_loss(self):
-        return CrossEntropyLoss(logits_ndim=3, ignore_index=-100)  # self.tokenizer.tokenizer.eos_token_id)
 
     def build_train_valid_test_datasets(self):
         pass
@@ -128,56 +123,6 @@ class SFTGPT(MegatronGPTModel):
         unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
         print(f"Loaded from pretrained {rank_params}")
 
-    def activation_checkpointing_(self, enable: bool):
-        def toggle_checkpointing(module):
-            if hasattr(module, "activations_checkpoint_granularity"):
-                if enable:
-                    module.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
-                else:
-                    module.activations_checkpoint_granularity = None
-
-            if hasattr(module, "activations_checkpoint_method"):
-                if enable:
-                    module.activations_checkpoint_method = self._ori_activations_checkpoint_method
-                else:
-                    module.activations_checkpoint_method = None
-
-            if hasattr(module, "activations_checkpoint_num_layers"):
-                if enable:
-                    module.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
-                else:
-                    module.activations_checkpoint_num_layers = None
-
-        self.model.apply(toggle_checkpointing)
-
-        if enable:
-            self.cfg.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
-            self.cfg.activations_checkpoint_method = self._ori_activations_checkpoint_method
-            self.cfg.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
-        else:
-            self.cfg.activations_checkpoint_granularity = None
-            self.cfg.activations_checkpoint_method = None
-            self.cfg.activations_checkpoint_num_layers = None
-
-    # TODO: replace this with less magical code
-    def sequence_parallel_(self, enabled: bool):
-        self.cfg.sequence_parallel = enabled
-
-        def toggle_sp(m):
-            if hasattr(m, "sequence_parallel"):
-                m.sequence_parallel = enabled
-
-            # for the Row/ColumnParallelLinear layers
-            if hasattr(m, "sequence_parallel_enabled"):
-                if hasattr(m, "input_is_parallel"):
-                    m.sequence_parallel_enabled = enabled and m.input_is_parallel
-                elif hasattr(m, "gather_output"):
-                    m.sequence_parallel_enabled = enabled and not m.gather_output
-                else:
-                    m.sequence_parallel_enabled = enabled
-
-        self.model.apply(toggle_sp)
-
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
     def training_step(self, batch: List[torch.Tensor], batch_idx: int):  # noqa: C901
@@ -209,7 +154,7 @@ class SFTGPT(MegatronGPTModel):
         # stage via .set_input_tensor
         tensor_shape = [
             self.cfg.encoder_seq_length,
-            get_micro_batch_size(),
+            self.cfg.micro_batch_size,
             self.cfg.hidden_size,
         ]
 
@@ -317,6 +262,56 @@ class SFTGPT(MegatronGPTModel):
         )
         return loss_mean
 
+    def activation_checkpointing_(self, enable: bool):
+        def toggle_checkpointing(module):
+            if hasattr(module, "activations_checkpoint_granularity"):
+                if enable:
+                    module.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
+                else:
+                    module.activations_checkpoint_granularity = None
+
+            if hasattr(module, "activations_checkpoint_method"):
+                if enable:
+                    module.activations_checkpoint_method = self._ori_activations_checkpoint_method
+                else:
+                    module.activations_checkpoint_method = None
+
+            if hasattr(module, "activations_checkpoint_num_layers"):
+                if enable:
+                    module.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
+                else:
+                    module.activations_checkpoint_num_layers = None
+
+        self.model.apply(toggle_checkpointing)
+
+        if enable:
+            self.cfg.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
+            self.cfg.activations_checkpoint_method = self._ori_activations_checkpoint_method
+            self.cfg.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
+        else:
+            self.cfg.activations_checkpoint_granularity = None
+            self.cfg.activations_checkpoint_method = None
+            self.cfg.activations_checkpoint_num_layers = None
+
+    # TODO: replace this with less magical code
+    def sequence_parallel_(self, enabled: bool):
+        self.cfg.sequence_parallel = enabled
+
+        def toggle_sp(m):
+            if hasattr(m, "sequence_parallel"):
+                m.sequence_parallel = enabled
+
+            # for the Row/ColumnParallelLinear layers
+            if hasattr(m, "sequence_parallel_enabled"):
+                if hasattr(m, "input_is_parallel"):
+                    m.sequence_parallel_enabled = enabled and m.input_is_parallel
+                elif hasattr(m, "gather_output"):
+                    m.sequence_parallel_enabled = enabled and not m.gather_output
+                else:
+                    m.sequence_parallel_enabled = enabled
+
+        self.model.apply(toggle_sp)
+
     def validation_step(self, batch: Tuple[List[int], List[int]], batch_idx: int):
         if self.metric_fn is None:
             raise ValueError("Must set metric_fn to use validation")
@@ -391,14 +386,17 @@ class SFTGPT(MegatronGPTModel):
                 sync_dist=True,
             )
 
+    # Need to override this otherwise distributed fused adam won't work
+    # with frozen layers
+    def parameters(self):
+        return (p for p in self.model.parameters() if p.requires_grad)
+
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
-            if batch is not None:
-                batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
+            if parallel_state.get_pipeline_model_parallel_world_size() == 1:
+                batch = [x.cuda(non_blocking=True) for x in batch]
                 input_ids = batch[0]
-                labels = input_ids[:, 1:].contiguous()
-                input_ids = input_ids[:, :-1].contiguous()
                 attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
                     data=input_ids,
                     eod_token=self.tokenizer.eos_id,
@@ -406,22 +404,59 @@ class SFTGPT(MegatronGPTModel):
                     reset_attention_mask=False,
                     eod_mask_loss=False,
                 )
-                output_tensor = model(
-                    input_ids=input_ids,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    labels=labels,
-                    checkpoint_activations_all_layers=checkpoint_activations_all_layers,
-                )
+                # attention_mask = attention_mask[0:1]
             else:
-                # In-between stages are given data via the pipeline engine
-                # Still need to specify these arguments to avoid errors
-                output_tensor = model(input_ids=None, position_ids=None, attention_mask=None, labels=None)
+                # GPT3 uses only causal mask, which doesn't need attention mask
+                if parallel_state.is_pipeline_first_stage():
+                    # Fist pipeline stage needs only the tokens and position_ids
+                    input_ids = batch[0].cuda(non_blocking=True)
+                    _, _, position_ids = get_ltor_masks_and_position_ids(
+                        data=input_ids,
+                        eod_token=self.tokenizer.eos_id,
+                        reset_position_ids=False,
+                        reset_attention_mask=False,
+                        eod_mask_loss=False,
+                    )
+                    loss_mask, attention_mask = None, None
+                elif parallel_state.is_pipeline_last_stage():
+                    # Last pipeline stage needs only the labels and loss_mask
+                    input_ids = batch[0].cuda(non_blocking=True)
+                    _, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+                        data=input_ids,
+                        eod_token=self.tokenizer.eos_id,
+                        reset_position_ids=False,
+                        reset_attention_mask=False,
+                        eod_mask_loss=False,
+                    )
+                    input_ids, attention_mask, position_ids = None, None, None
+                else:
+                    # Intermediate pipeline stage doesn't need any inputs
+                    input_ids, loss_mask, attention_mask, position_ids = None, None, None, None
 
-            def loss_func(model_output):
+            output_tensor = model(
+                input_ids=input_ids,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                checkpoint_activations_all_layers=checkpoint_activations_all_layers,
+            )
+
+            def loss_func(output_tensor):
                 # TODO: implement this in a sequence parallel way
-                # utils.(f"{'='*50}\noutput_tensor: {output_tensor}\nshape: {output_tensor.shape}\n{'='*50}\n")
-                loss_for_mb = self.loss_func(loss_mask, output_tensor)
+                logits = output_tensor[:, :-1, :].contiguous()
+                labels = input_ids[:, 1:].contiguous()
+                _loss_mask = loss_mask[:, 1:].contiguous()
+                labels = labels.transpose(0, 1).contiguous()  # [b s] -> [s b]
+                logits = logits.transpose(0, 1).contiguous()  # [b s h] -> [s b h]
+                if self.cfg.fp16_lm_cross_entropy:
+                    assert logits.dtype == torch.half
+                    loss = tensor_parallel.vocab_parallel_cross_entropy(logits, labels)
+                else:
+                    loss = tensor_parallel.vocab_parallel_cross_entropy(logits.float(), labels)
+
+                loss = loss.transpose(0, 1).contiguous().float().view(-1)
+                _loss_mask = _loss_mask.view(-1).float()
+                loss_for_mb = torch.sum(loss * _loss_mask) / _loss_mask.sum()  # sequence level nll
+
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
                 # TODO: figure out why this sync is needed (crashes otherwise)
@@ -474,11 +509,6 @@ class SFTGPT(MegatronGPTModel):
             return output_tensor, id_func
 
         return fwd_output_only_func
-
-    # Need to override this otherwise distributed fused adam won't work
-    # with frozen layers
-    def parameters(self):
-        return (p for p in self.model.parameters() if p.requires_grad)
 
     def generate(
         self,
