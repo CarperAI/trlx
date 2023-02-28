@@ -899,20 +899,13 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         self.v_head.load_state_dict(state_dict, strict=False)
         del state_dict
         gc.collect()  # noqa: E702
-        
-            
+
     def _add_start_token_to_decoder_ids(self, decoder_input_ids, decoder_attention_mask):
         """Add padding to decoder_input_ids"""
         batch_size, seq_len = decoder_input_ids.shape
-        padding = torch.zeros(batch_size, 1, dtype=decoder_input_ids.dtype).to(
-            decoder_input_ids.device
-        )
-        decoder_attention_mask = torch.cat(
-            [1 - padding, decoder_attention_mask], dim=1 # Start token is not masked
-        )
-
+        padding = torch.zeros(batch_size, 1, dtype=decoder_input_ids.dtype).to(decoder_input_ids.device)
+        decoder_attention_mask = torch.cat([1 - padding, decoder_attention_mask], dim=1)  # Start token is not masked
         return torch.cat([padding, decoder_input_ids], dim=1), decoder_attention_mask
-
 
 
 class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead):

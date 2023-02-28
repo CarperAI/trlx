@@ -1,4 +1,5 @@
 import os
+import pathlib
 from typing import Dict, List
 
 import numpy as np
@@ -27,7 +28,7 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-config_path = "configs/ilql_config.yml"
+config_path = pathlib.Path("configs/ilql_config.yml")
 with config_path.open() as f:
     default_config = yaml.safe_load(f)
 
