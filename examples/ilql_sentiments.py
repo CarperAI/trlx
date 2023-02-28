@@ -5,7 +5,7 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.default_configs import default_ilql_config
+from trlx.data.default_configs import TRLConfig, default_ilql_config
 
 
 def get_positive_score(scores):
@@ -13,8 +13,9 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def main():
-    config = default_ilql_config()
+def main(hparams={}):
+    # Merge sweep config with default config if given
+    config = TRLConfig.update(default_ilql_config().to_dict(), hparams)
 
     sentiment_fn = pipeline(
         "sentiment-analysis",

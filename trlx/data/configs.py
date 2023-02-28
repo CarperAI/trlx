@@ -1,20 +1,33 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
 from trlx.data.method_configs import MethodConfig, get_method
 
 
-def merge(base: Dict, update: Dict) -> Dict:
+def merge(base: Dict, update: Dict, updated: Set) -> Dict:
     "Recursively updates a nested dictionary with new values"
+    for k, v in base.items():
+        if k in update and isinstance(v, dict):
+            base[k] = merge(v, update[k], updated)
+            updated.add(k)
+        elif k in update:
+            base[k] = update[k]
+            updated.add(k)
+
+    return base
+
+
+def _merge_dicts(base: Dict, update: Dict) -> Dict:
+    "Merge two dictionaries recursively, returning a new dictionary."
 
     base = deepcopy(base)
 
     for k, v in update.items():
-        if k in base and isinstance(v, dict) and isinstance(base[k], dict):
-            base[k] = merge(base[k], v)
+        if isinstance(v, dict):
+            base[k] = _merge_dicts(base.get(k, {}), v)
         else:
             base[k] = v
 
@@ -261,7 +274,7 @@ class TRLConfig:
         >>> config.method.gamma
         0.99
         """
-        return TRLConfig.update(self.to_dict(), kwargs)
+        return TRLConfig.from_dict(_merge_dicts(self.to_dict(), kwargs))
 
     @classmethod
     def from_dict(cls, config: Dict):
@@ -279,11 +292,12 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
-        for param in config:
-            if param not in baseconfig:
-                raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
+        updates = set()
+        merged = merge(baseconfig, config, updates)
 
-        merged = merge(baseconfig, config)
+        for param in config:
+            if param not in updates:
+                raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 
         return cls.from_dict(merged)
 

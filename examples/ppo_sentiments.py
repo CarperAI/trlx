@@ -9,7 +9,7 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.default_configs import default_ppo_config
+from trlx.data.default_configs import TRLConfig, default_ppo_config
 
 
 def get_positive_score(scores):
@@ -18,7 +18,8 @@ def get_positive_score(scores):
 
 
 def main(hparams={}):
-    config = default_ppo_config().evolve(**hparams)
+    # Merge sweep config with default config if given
+    config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))

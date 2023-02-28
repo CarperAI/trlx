@@ -16,6 +16,8 @@ default_config = default_ilql_config()
 
 
 def main(hparams={}):
+    # Merge sweep config with default config if given
+
     config = default_config.evolve(
         train=dict(
             seq_length=1024,
