@@ -124,7 +124,7 @@ class PPOConfig(MethodConfig):
     cliprange: float
     cliprange_value: float
     vf_coef: float
-    scale_reward: str
+    scale_reward: Optional[str]
     ref_mean: Optional[float]
     ref_std: Optional[float]
     cliprange_reward: float

@@ -2,16 +2,14 @@
 # with a sentiment reward function
 
 import os
-import pathlib
 from typing import List
 
 import torch
-import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig
+from trlx.data.default_configs import TRLConfig, default_ppo_config
 
 
 def get_positive_score(scores):
@@ -19,13 +17,9 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-config_path = pathlib.Path(__file__).parent.joinpath("../configs/ppo_config.yml")
-with config_path.open() as f:
-    default_config = yaml.safe_load(f)
-
-
 def main(hparams={}):
-    config = TRLConfig.update(default_config, hparams)
+    # Merge sweep config with default config if given
+    config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
