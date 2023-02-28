@@ -154,7 +154,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             input_ids = query_tensors
             decoder_input_ids = response_tensors
             attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            decoder_attention_mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+            decoder_attention_mask = (
+                decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+            )
 
             # Forward pass
             outputs = self.model(
@@ -168,12 +170,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             values_pred = outputs.value
             logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            #values_pred = values_pred[:, :-1]
             start = 1
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
-                values_pred[:, start : end ],
+                values_pred[:, start:end],
                 mask[:, start:end],
             )
         else:
@@ -375,6 +376,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         input_ids=prompt_tensors,
                         attention_mask=attention_mask,
                         decoder_input_ids=sample_outputs,
+                        decoder_attention_mask=decoder_attention_mask,
                     )
                     logits = outputs.logits
                     values = outputs.value
@@ -431,7 +433,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
                 # Skip the beginning of sequence token
-                # values = values.cpu()[:, :-1]
                 start = 1
 
                 # Get the number of non-padding tokens for each sample
