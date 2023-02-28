@@ -3,12 +3,18 @@ from typing import Optional, Union, cast
 
 import numpy as np
 import torch
+import transformers
 from rich.console import Console
 from rich.table import Table
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLSeq2SeqBatch
+from trlx.models.modeling_ilql import (
+    AutoModelForCausalLMWithILQLHeads,
+    AutoModelForSeq2SeqLMWithILQLHeads,
+    ILQLConfig,
+)
 from trlx.pipeline.offline_pipeline import (
     ILQLRolloutStorage,
     ILQLSeq2SeqRolloutStorage,
@@ -16,11 +22,6 @@ from trlx.pipeline.offline_pipeline import (
 )
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ilql_models import (
-    CausalLMWithValueHeads,
-    ILQLConfig,
-    Seq2SeqWithValueHeads,
-)
 from trlx.utils import to_device
 
 logger = logging.get_logger(__name__)
@@ -46,15 +47,17 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
 
     def get_arch(self, config):
         if config.model.model_arch_type == "seq2seq":
-            return Seq2SeqWithValueHeads(
-                config.model.model_path,
-                ilql_config=config.method,
-                num_layers_unfrozen=config.model.num_layers_unfrozen,
-            )
-        return CausalLMWithValueHeads(
+            from_fn = AutoModelForSeq2SeqLMWithILQLHeads.from_pretrained
+            if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+                from_fn = AutoModelForSeq2SeqLMWithILQLHeads.from_config
+        else:
+            from_fn = AutoModelForCausalLMWithILQLHeads.from_pretrained
+            if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+                from_fn = AutoModelForCausalLMWithILQLHeads.from_config
+        return from_fn(
             config.model.model_path,
-            ilql_config=config.method,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,
+            two_qs=config.method.two_qs,
+            alpha=config.method.alpha,
         )
 
     def post_backward_callback(self):

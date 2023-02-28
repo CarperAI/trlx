@@ -40,7 +40,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
 from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
-from trlx.trainer.nn.ilql_models import ILQLConfig, batched_index_select
+from trlx.models.modeling_ilql import ILQLConfig, batched_index_select
 from trlx.utils import to_device, tree_map
 
 

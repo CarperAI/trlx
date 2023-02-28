@@ -17,7 +17,6 @@ def train(  # noqa: C901
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
-    logit_mask: Optional[List[List[bool]]] = None,
     stop_sequences: Optional[List[str]] = [],
 ):
     """
@@ -45,7 +44,6 @@ def train(  # noqa: C901
             Function to compute statistics on batches of generated samples. Its arguments are the same
             as in `reward_fn` (`samples`, `prompts`, `outputs`) but the return is dictionary with keys
             as metric's name and values and lists of numeric values per each sample in batch
-        logit_mask (Optional[List]): Bigram masking matrix
         stop_sequences (Optional[List[str]]):
             String sequences to trim generations (both for generating of experience and evaluation) up to its
             encounter in them. Generations will not contain them and also will also be right-stripped

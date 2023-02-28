@@ -22,14 +22,14 @@ from rich.table import Table
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
+from trlx.models.modeling_ilql import ILQLConfig
+from trlx.models.modeling_nemo_ilql import ILQLGPT
 from trlx.pipeline.offline_pipeline import (
     ILQLRolloutStorage,
     ilql_collate_fn,
     tokenize_dialogue,
 )
 from trlx.trainer import register_trainer
-from trlx.trainer.nemo.gpt import ILQLGPT
-from trlx.trainer.nn.ilql_models import ILQLConfig
 
 from . import BaseRLTrainer
 

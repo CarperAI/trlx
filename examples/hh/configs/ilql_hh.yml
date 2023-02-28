@@ -1,0 +1,50 @@
+train:
+  seq_length: 1024
+  epochs: 100
+  total_steps: 10000
+  batch_size: 4
+
+  checkpoint_interval: 100000
+  eval_interval: 1000
+
+  pipeline: "PromptPipeline"
+  trainer: "AccelerateILQLTrainer"
+  checkpoint_dir: "checkpoints/ilql_hh"
+
+model:
+  model_path: "EleutherAI/gpt-j-6B"
+  num_layers_unfrozen: -1
+
+tokenizer:
+  tokenizer_path: "gpt2"
+  truncation_side: "left"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 1.0e-6
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 10000000
+    eta_min: 1.0e-6
+
+method:
+  name: "ilqlconfig"
+  tau: 0.6
+  gamma: 0.99
+  cql_scale: 0.1
+  awac_scale: 1
+  alpha: 0.0001
+  beta: 0
+  steps_for_target_q_sync: 1
+  two_qs: true
+  gen_kwargs:
+    max_new_tokens: 128
+    top_k: 20
+    beta: [1, 4]
+    temperature: 1.0

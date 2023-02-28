@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
-import torch.nn.functional as F
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from ray.air.checkpoint import Checkpoint
@@ -249,15 +248,23 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Creates a checkpoint of the optimizer, scheduler and model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
-    @abstractmethod
-    def save_pretrained(self, directory: Optional[str] = None):
-        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
-        `transformers.PreTrainedModel.from_pretrained` method.
+    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
+        """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
+        later use.
 
-        NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
+        Args:
+            directory (str, *optional*): The directory to save the trainer files to.
+                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
+                checkpoint directory as specified by the Trainer's config.
+            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
+                `save_pretrained` method.
         """
-        pass
+        if directory is None:
+            directory = f"{self.config.train.checkpoint_dir}/hf_model"
+        self.accelerator.wait_for_everyone()
+        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
+        if self.accelerator.is_main_process:
+            self.tokenizer.save_pretrained(directory)
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""
@@ -301,7 +308,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             all_samples = []
             all_prompts = []
-            prompt_sizes = []
+            all_prompt_sizes = []
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 if self.generate_sweep_kwarg:
@@ -309,26 +316,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 else:
                     samples = self.generate_eval(**prompts)
 
+                # TODO(reciprocated): this should be moved into `decode`
+                # but that needs to be synced with indexing in `make_experience`
                 if self.config.model.model_arch_type == "seq2seq":
-                    samples = samples[:, 1:]
+                    samples = samples[:, 1:].contiguous()
 
-                all_samples.append(
-                    F.pad(
-                        samples,
-                        (0, self.max_length - samples.shape[1]),
-                        value=self.tokenizer.pad_token_id,
+                prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(len(prompts.input_ids))
+                prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
+                    self.accelerator.pad_across_processes(
+                        [prompts.input_ids, samples, prompt_sizes.to(samples.device)],
+                        dim=1,
+                        pad_index=self.tokenizer.pad_token_id,
                     )
                 )
-                all_prompts.append(
-                    F.pad(
-                        prompts.input_ids,
-                        (0, self.max_length - prompts.input_ids.shape[1]),
-                        value=self.tokenizer.pad_token_id,
-                    ).to(samples.device)
-                )
-                prompt_sizes.append(
-                    torch.tensor(prompts.input_ids.shape[1], device=samples.device).repeat(len(prompts.input_ids))
-                )
+                all_samples.extend(samples.tolist())
+                all_prompts.extend(prompts.tolist())
+                all_prompt_sizes.extend(prompt_sizes.tolist())
 
                 desc = [
                     f"generation sweep {i_sweep + 1}/{len(gen_sweep_values)}",
@@ -340,12 +343,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            samples = self.accelerator.gather_for_metrics(torch.vstack(all_samples))
-            prompts = self.accelerator.gather_for_metrics(torch.vstack(all_prompts))
-            prompt_sizes = self.accelerator.gather_for_metrics(torch.hstack(prompt_sizes))
-
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs = self.decode(prompts, samples, prompt_sizes)
+                str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
 
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
