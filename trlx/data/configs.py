@@ -292,6 +292,9 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
+        if not isinstance(baseconfig, Dict):
+            baseconfig = baseconfig.to_dict()
+
         updates = set()
         merged = merge(baseconfig, config, updates)
 
