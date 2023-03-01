@@ -1,14 +1,13 @@
 import trlx
 from examples.randomwalks import generate_random_walks
-
 from trlx.data.default_configs import (
     ModelConfig,
     OptimizerConfig,
+    PPOConfig,
     SchedulerConfig,
     TokenizerConfig,
     TrainConfig,
     TRLConfig,
-    PPOConfig,
 )
 
 default_config = TRLConfig(
@@ -24,9 +23,7 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path="CarperAI/randomwalks", num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="CarperAI/randomwalks", truncation_side="right"),
-    optimizer=OptimizerConfig(
-        name="adamw", kwargs=dict(lr=3.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
-    ),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=3.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=3.0e-4)),
     method=PPOConfig(
         name="PPOConfig",
@@ -53,6 +50,7 @@ default_config = TRLConfig(
         ),
     ),
 )
+
 
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)

@@ -1,18 +1,17 @@
 import os
 
-import yaml
 from datasets import load_dataset
 from ppo_hh import create_reward_fn
 
 import trlx
 from trlx.data.default_configs import (
+    ILQLConfig,
     ModelConfig,
     OptimizerConfig,
     SchedulerConfig,
     TokenizerConfig,
     TrainConfig,
     TRLConfig,
-    ILQLConfig,
 )
 
 default_config = TRLConfig(
@@ -29,12 +28,8 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path="EleutherAI/gpt-j-6B", num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="EleutherAI/gpt-j-6B", truncation_side="left"),
-    optimizer=OptimizerConfig(
-        name="adamw", kwargs=dict(lr=1e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
-    ),
-    scheduler=SchedulerConfig(
-        name="cosine_annealing", kwargs=dict(T_max=1000000000, eta_min=1e-6)
-    ),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=1e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
+    scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1000000000, eta_min=1e-6)),
     method=ILQLConfig(
         name="ilqlconfig",
         tau=0.6,
@@ -72,6 +67,7 @@ elif config_name == "20B":
     default_config.model.model_path = "EleutherAI/gpt-neox-20b"
     default_config.tokenizer.tokenizer_path = "EleutherAI/gpt-neox-20b"
 
+
 def preprocess(sample):
     sample["prompt_output"] = [
         [sample["prompt"], sample["chosen"]],
@@ -99,6 +95,7 @@ def main(hparams={}):
         metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],
     )
+
 
 if __name__ == "__main__":
     import json

@@ -2,16 +2,16 @@ from transformers import GPT2Config
 
 import trlx
 from examples.randomwalks import generate_random_walks
-
 from trlx.data.default_configs import (
+    ILQLConfig,
     ModelConfig,
     OptimizerConfig,
     SchedulerConfig,
     TokenizerConfig,
     TrainConfig,
     TRLConfig,
-    ILQLConfig
 )
+
 
 def main(hparams):
     config = TRLConfig.update(default_config, hparams)
@@ -31,6 +31,7 @@ def main(hparams):
         stop_sequences=["|"],
     )
 
+
 default_config = TRLConfig(
     train=TrainConfig(
         seq_length=10,
@@ -44,12 +45,8 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path=GPT2Config(n_layer=6, n_embd=144, vocab_size=23), num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="CarperAI/randomwalks", truncation_side="right"),
-    optimizer=OptimizerConfig(
-        name="adamw", kwargs=dict(lr=2e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
-    ),
-    scheduler=SchedulerConfig(
-        name="cosine_annealing", kwargs=dict(T_max=1000, eta_min=2e-4)
-    ),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=2e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
+    scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1000, eta_min=2e-4)),
     method=ILQLConfig(
         name="ilqlconfig",
         tau=0.8,

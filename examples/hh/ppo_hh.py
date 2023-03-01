@@ -4,7 +4,6 @@ import os
 import numpy as np
 import torch
 import tritonclient.grpc as client_util
-import yaml
 from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from torch import nn
@@ -15,11 +14,11 @@ import trlx
 from trlx.data.default_configs import (
     ModelConfig,
     OptimizerConfig,
+    PPOConfig,
     SchedulerConfig,
     TokenizerConfig,
     TrainConfig,
     TRLConfig,
-    PPOConfig,
 )
 
 default_config = TRLConfig(
@@ -36,9 +35,7 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path="EleutherAI/gpt-j-6B", num_layers_unfrozen=2),
     tokenizer=TokenizerConfig(tokenizer_path="EleutherAI/gpt-j-6B", truncation_side="left"),
-    optimizer=OptimizerConfig(
-        name="adamw", kwargs=dict(lr=8e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
-    ),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=8e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=8e-6)),
     method=PPOConfig(
         name="PPOConfig",
