@@ -97,6 +97,10 @@ if __name__ == "__main__":
     rw_device = torch.device("cuda:{}".format(1))  # set reward model device
     rw_model.to(rw_device)
 
+    def strip_lines(text):
+        lines = text.split('\n')
+        return '\n'.join([line.strip() for line in lines])
+
     def get_scores(samples: List[str]):
         scores_list = []
         batch_size = 2
@@ -146,7 +150,7 @@ if __name__ == "__main__":
 
     def reward_fn(samples: List[str], **kwargs):
         original_samples = [text.split("TL;DR:")[0] + "TL;DR: " for text in samples]
-        original_samples = [text + post_summary_dict[text.strip()] for text in original_samples]
+        original_samples = [text + post_summary_dict[strip_lines(text)] for text in original_samples]
         original_scores = get_scores(original_samples)
         scores = get_scores(samples)
         norms_scores = scores - original_scores
@@ -171,10 +175,10 @@ if __name__ == "__main__":
     post_summary_dict = {}
     train_prompts = get_prompt_dataset(train_posts, max_length_input)
     for i in range(len(train_prompts)):
-        post_summary_dict[train_prompts[i]] = train_summaries[i]
+        post_summary_dict[strip_lines(train_prompts[i])] = train_summaries[i]
     val_prompts = get_prompt_dataset(val_posts, max_length_input)
     for i in range(len(val_prompts)):
-        post_summary_dict[val_prompts[i]] = val_summaries[i]
+        post_summary_dict[strip_lines(val_prompts[i])] = val_summaries[i]
 
     trainer = trlx.train(
         reward_fn=reward_fn,
