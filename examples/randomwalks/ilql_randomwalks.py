@@ -1,19 +1,12 @@
-import pathlib
-
-import yaml
 from transformers import GPT2Config
 
 import trlx
 from examples.randomwalks import generate_random_walks
-from trlx.data.configs import TRLConfig
-
-config_path = pathlib.Path(__file__).parent.joinpath("configs/ilql_randomwalks.yml")
-with config_path.open() as f:
-    default_config = yaml.safe_load(f)
+from trlx.data.default_configs import default_ilql_config
 
 
-def main(hparams={}):
-    config = TRLConfig.update(default_config, hparams)
+def main():
+    config = default_ilql_config()
 
     metric_fn, eval_prompts, walks, _ = generate_random_walks(seed=config.train.seed)
     rewards = metric_fn(walks)["optimality"]

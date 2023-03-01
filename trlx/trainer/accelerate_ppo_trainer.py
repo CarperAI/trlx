@@ -2,10 +2,11 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 import torch
 import torch.nn.functional as F
+import transformers
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -13,16 +14,16 @@ import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
+from trlx.models.modeling_ppo import (
+    AdaptiveKLController,
+    AutoModelForCausalLMWithHydraValueHead,
+    AutoModelForSeq2SeqLMWithHydraValueHead,
+    FixedKLController,
+)
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.trainer.nn.ppo_models import (
-    AdaptiveKLController,
-    CausalLMHydraWithValueHead,
-    FixedKLController,
-    Seq2SeqLMHydraWithValueHead,
-)
 from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
@@ -70,6 +71,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if not hasattr(self.model, "frozen_head"):
             self.ref_model = self.get_arch(self.config)
             self.ref_model.to(self.accelerator.device)
+            self.ref_model.eval()
 
         # Setup the KL controller
         # This helps prevent large divergences in the controller (policy)
@@ -117,9 +119,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def get_arch(self, config: TRLConfig):
         """Get the model"""
+        model_class = AutoModelForCausalLMWithHydraValueHead
         if config.model.model_arch_type == "seq2seq":
-            return Seq2SeqLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
-        return CausalLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
+            model_class = AutoModelForSeq2SeqLMWithHydraValueHead
+
+        from_fn = model_class.from_pretrained
+        # backward-compat: Try to create a randomly initialized architecture from a config
+        if issubclass(type(config.model.model_path), transformers.PretrainedConfig):
+            from_fn = model_class.from_config
+
+        return from_fn(
+            config.model.model_path,
+            num_layers_unfrozen=config.model.num_layers_unfrozen,
+        )
 
     def loss(self, batch: PPORLBatch):
         """Forward pass & loss
@@ -224,15 +236,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
-
-    def save_pretrained(self, directory: Optional[str] = None):
-        """NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
-        """
-        if directory is None:
-            directory = f"{self.config.train.checkpoint_dir}/hf_model"
-        self.accelerator.unwrap_model(self.model).base_model.save_pretrained(directory)
-        self.tokenizer.save_pretrained(directory)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
@@ -375,12 +378,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
                         ref_logits = self.ref_model(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
+                            return_dict=True,
                         ).logits
             else:
                 all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
@@ -395,14 +400,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                     else:
-                        ref_logits, _, *_ = self.ref_model(
+                        ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
-                            return_dict=False,
-                        )
+                            return_dict=True,
+                        ).logits
                         ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":

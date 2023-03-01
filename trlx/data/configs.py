@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -17,6 +18,20 @@ def merge(base: Dict, update: Dict, updated: Set) -> Dict:
         elif k in update:
             base[k] = update[k]
             updated.add(k)
+
+    return base
+
+
+def _merge_dicts(base: Dict, update: Dict) -> Dict:
+    "Merge two dictionaries recursively, returning a new dictionary."
+
+    base = deepcopy(base)
+
+    for k, v in update.items():
+        if isinstance(v, dict):
+            base[k] = _merge_dicts(base.get(k, {}), v)
+        else:
+            base[k] = v
 
     return base
 
@@ -256,6 +271,16 @@ class TRLConfig:
         }
 
         return data
+
+    def evolve(self, **kwargs) -> "TRLConfig":
+        """
+        Evolve TRLConfig with new parameters. Can update nested parameters.
+        >>> config = trlx.data.default_configs.default_ilql_config()
+        >>> config = config.evolve(method=dict(gamma=0.99, gen_kwargs=dict(max_new_tokens=100))
+        >>> config.method.gamma
+        0.99
+        """
+        return TRLConfig.from_dict(_merge_dicts(self.to_dict(), kwargs))
 
     @classmethod
     def from_dict(cls, config: Dict):
