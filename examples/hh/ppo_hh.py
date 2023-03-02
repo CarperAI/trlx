@@ -77,7 +77,8 @@ if config_name == "125M":
 elif config_name == "1B":
     default_config.train.batch_size = 8
     default_config.train.total_steps = 2500
-    default_config.optimizer.kwargs.lr = 6e-6
+    default_config.optimizer.kwargs["lr"] = 6e-6
+    default_config.scheduler.kwargs["eta_min"] = 6e-6
     default_config.train.checkpoint_dir = "checkpoints/ppo_hh_1B"
     default_config.model.model_path = "Dahoas/pythia-1B-static-sft"
     default_config.tokenizer.tokenizer_path = "EleutherAI/gpt-neox-20b"
@@ -86,14 +87,15 @@ elif config_name == "6B":
     default_config.train.batch_size = 4
     default_config.train.total_steps = 6000
     default_config.train.checkpoint_dir = "checkpoints/ppo_hh_6B"
-    default_config.model.model_path = "Dahoas/pythia-6.9b-static-sft"
+    default_config.model.model_path = "Dahoas/pythia-6B-static-sft"
     default_config.tokenizer.tokenizer_path = "EleutherAI/gpt-neox-20b"
     default_config.method.chunk_size = 16
 elif config_name == "20B":
     default_config.train.seq_length = 512
     default_config.train.batch_size = 1
     default_config.train.total_steps = 8000
-    default_config.optimizer.kwargs.lr = 1e-6
+    default_config.optimizer.kwargs["lr"] = 1e-6
+    default_config.scheduler.kwargs["eta_min"] = 1e-6
     default_config.train.checkpoint_dir = "checkpoints/ppo_hh_20B"
     default_config.model.model_path = "EleutherAI/gpt-neox-20b"
     default_config.tokenizer.tokenizer_path = "EleutherAI/gpt-neox-20b"
