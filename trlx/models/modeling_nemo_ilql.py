@@ -1,6 +1,7 @@
 # Extensible version of the GPT model
 import sys
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import partial, reduce
 from math import sqrt
 from pathlib import Path
@@ -42,6 +43,15 @@ from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
 from trlx.models.modeling_ilql import ILQLConfig, batched_index_select
 from trlx.utils import to_device, tree_map
+
+
+@dataclass
+class NeMoModelOutput:
+    # a TypedDict https://github.com/NVIDIA/NeMo/blob/82e1f4f9f1a280edb70088bf30bf0a099152e185/nemo/collections/asr/modules/transformer/text_generation.py#L42
+    nemo_output: OutputType
+    samples: List[str]
+    prompts: List[str]
+    outputs: List[str]
 
 
 class ParallelLinear(nn.Module):
@@ -253,9 +263,11 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
 class ILQLGPT(MegatronGPTModel):
     ilql_config: ILQLConfig
 
-    def __init__(self, ilql_config, metric_fn=None, **kwargs):
+    def __init__(self, ilql_config, metric_fn=None, stop_sequences=None, **kwargs):
         self.ilql_config = ilql_config
         self.metric_fn = metric_fn
+        self.stop_sequences = stop_sequences
+
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
@@ -581,12 +593,14 @@ class ILQLGPT(MegatronGPTModel):
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
-        metrics = self.metric_fn(gen["sentences"])
+        assert gen is not None, "generate returned None in validation_step"
+
+        metrics = self.metric_fn(samples=gen.samples, prompts=gen.prompts, outputs=gen.outputs)
 
         metric_keys, metric_values = zip(*metrics.items())
 
-        columns = ["sentences", *metric_keys]
-        rows = list(zip(gen["sentences"], *metric_values))
+        columns = ["sentences", "samples", "prompts", "responses", *metric_keys]
+        rows = list(zip(gen.nemo_output["sentences"], gen.samples, gen.prompts, gen.outputs, *metric_values))
 
         avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
 
@@ -767,10 +781,10 @@ class ILQLGPT(MegatronGPTModel):
 
     def generate(
         self,
-        inputs: Union[List[str], torch.Tensor, List[dict]],
+        inputs: Union[List[str], Tuple[torch.Tensor, torch.Tensor]],
         length_params: LengthParam,
         sampling_params: SamplingParam = None,
-    ) -> OutputType:
+    ) -> Optional[NeMoModelOutput]:
         if sampling_params is None:
             sampling_params = {
                 "use_greedy": False,
@@ -783,4 +797,38 @@ class ILQLGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        return super().generate(inputs, length_params, sampling_params)
+        gen = super().generate(inputs, length_params, sampling_params)
+
+        if gen is not None:
+            generated_tokens = gen["token_ids"]
+
+            if isinstance(inputs[0], str):
+                lengths = [len(self.tokenizer.text_to_ids(prompt)) for prompt in inputs]
+            else:
+                _, lengths = inputs
+                lengths = lengths.cpu().numpy().tolist()
+
+            prompt_tokens = [gen_tok[:length] for gen_tok, length in zip(generated_tokens, lengths)]
+            response_tokens = [gen_tok[length:] for gen_tok, length in zip(generated_tokens, lengths)]
+
+            prompts = [self.tokenizer.ids_to_text(toks) for toks in prompt_tokens]
+            outputs = [self.tokenizer.ids_to_text(toks) for toks in response_tokens]
+
+            if self.stop_sequences:
+
+                def remove_stop(s):
+                    for stop in self.stop_sequences:
+                        stop_ix = s.find(stop)
+                        if stop_ix >= 0:
+                            s = s[:stop_ix].rstrip()
+                    return s
+
+                outputs = [remove_stop(s) for s in outputs]
+
+            print(f"{prompts[0]=} {outputs[0]=} {gen['sentences'][0]=}")
+
+            return NeMoModelOutput(
+                nemo_output=gen, prompts=prompts, outputs=outputs, samples=[p + o for p, o in zip(prompts, outputs)]
+            )
+        else:
+            return None

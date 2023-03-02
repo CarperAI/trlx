@@ -8,13 +8,18 @@ import yaml
 from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from torch import nn
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    T5ForConditionalGeneration,
+    T5Tokenizer,
+)
 from tritonclient.utils import np_to_triton_dtype
 
 import trlx
 from trlx.data.configs import TRLConfig
 
-config_path = os.path.join(os.path.dirname(__file__), os.environ.get("CONFIG_PATH", "configs/ppo_hh.yml"))
+config_path = os.path.join(os.path.dirname(__file__), os.environ.get("CONFIG_PATH", "configs/ppo_hh_125M.yml"))
 default_config = yaml.safe_load(open(config_path))
 
 
@@ -24,13 +29,48 @@ def prepare_tensor(name: str, input):
     return t
 
 
-def create_reward_fn():  # noqa:  C901
+def create_steamshp_reward_fn(device=None):
+    tokenizer = T5Tokenizer.from_pretrained("stanfordnlp/SteamSHP-flan-t5-large")
+    model = T5ForConditionalGeneration.from_pretrained("stanfordnlp/SteamSHP-flan-t5-large")
+    model.requires_grad_(False)
+    model.eval()
+    model = model.to(device)
+
+    A_token = tokenizer("A")["input_ids"][0]
+
+    def batched_reward_fn(_, prompts, outputs):
+        rm_inputs = [
+            f"POST: {prompt} \n\n RESPONSE A: {output}\n\n RESPONSE B: .\n\n Which response is better? RESPONSE"
+            for prompt, output in zip(prompts, outputs)
+        ]
+
+        rm_inputs = tokenizer(rm_inputs, return_tensors="pt", padding=True, truncation=True).to(model.device)
+        print(rm_inputs.input_ids.shape)
+        outputs = model.generate(**rm_inputs, return_dict_in_generate=True, output_scores=True, max_new_tokens=1)
+        scores = torch.softmax(outputs.scores[0], dim=-1)[:, A_token]
+        return scores.cpu().tolist()
+
+    def reward_fn(samples, prompts, outputs):
+        mbs = 16
+        out = []
+        for i in range(math.ceil(len(samples) / mbs)):
+            batch_ixs = slice(i * mbs, (i + 1) * mbs)
+            rewards = batched_reward_fn(samples[batch_ixs], prompts[batch_ixs], outputs[batch_ixs])
+            out.extend(rewards)
+
+        return out
+
+    return reward_fn
+
+
+def create_reward_fn(device=None, use_steamshp=False):  # noqa:  C901
     reward_tokenizer = AutoTokenizer.from_pretrained("gpt2")
     reward_tokenizer.pad_token = reward_tokenizer.eos_token
     reward_tokenizer.truncation_side = "left"
     triton_host = os.environ.get("TRITON_HOST")
 
     if triton_host:
+        assert not use_steamshp
         triton_url, triton_model = triton_host.split("/")
         client = client_util.InferenceServerClient(url=triton_url, verbose=False)
 
@@ -51,6 +91,11 @@ def create_reward_fn():  # noqa:  C901
             return out
 
     elif os.environ.get("RANK", "0") == "0":
+        if device is None:
+            device = torch.cuda.device_count() - 1
+
+        if use_steamshp:
+            return create_steamshp_reward_fn(device)
 
         class RewardModel(nn.Module):
             def __init__(self, checkpoint_path, eos_token_id):
@@ -77,8 +122,11 @@ def create_reward_fn():  # noqa:  C901
         reward_model.load_state_dict(torch.load(checkpoint))
         reward_model.eval()
         reward_model.requires_grad_(False)
-        device = torch.cuda.device_count() - 1
-        reward_model = reward_model.half().to(device)
+
+        # fp16 LN only implemented on cuda
+        if device != torch.device("cpu"):
+            reward_model = reward_model.half()
+        reward_model = reward_model.to(device)
 
         def reward_fn(samples, prompts, outputs):
             samples = [s + reward_tokenizer.eos_token for s in samples]
@@ -99,6 +147,7 @@ def create_reward_fn():  # noqa:  C901
     else:
         reward_fn = True
 
+    torch.distributed.barrier()
     return reward_fn
 
 
@@ -108,7 +157,7 @@ def main(hparams={}):
     dataset = load_dataset("Dahoas/rm-static")
     prompts = dataset["train"]["prompt"]
     eval_prompts = dataset["test"]["prompt"][:280]
-    reward_fn = create_reward_fn()
+    reward_fn = create_reward_fn(use_steamshp=True)
 
     trlx.train(
         prompts=prompts,

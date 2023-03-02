@@ -23,6 +23,7 @@ from rich.table import Table
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
 from trlx.models.modeling_ilql import ILQLConfig
+from trlx.models.modeling_llama_nemo import LlamaGPT
 from trlx.models.modeling_nemo_ilql import ILQLGPT
 from trlx.pipeline.offline_pipeline import (
     ILQLRolloutStorage,
@@ -141,6 +142,7 @@ class NeMoILQLTrainer(BaseRLTrainer):
             metric_fn=self.metric_fn,
             cfg=megatron_cfg.model,
             trainer=self.trainer,
+            stop_sequences=stop_sequences,
         )
 
         if pretrained_model is not None:
@@ -152,9 +154,6 @@ class NeMoILQLTrainer(BaseRLTrainer):
         self.max_length = megatron_cfg.model.encoder_seq_length
 
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
-
-        if stop_sequences is not None and len(stop_sequences) > 0:
-            logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
 
     def learn(self):
         def collate_fn(elems: Iterable[ILQLElement]):

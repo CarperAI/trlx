@@ -5,7 +5,7 @@ trainer:
   devices: 8
   num_nodes: 4
   accelerator: gpu
-  precision: 16
+  precision: bf16
   logger: False # logger provided by exp_manager
   enable_checkpointing: False
   replace_sampler_ddp: False
@@ -33,7 +33,7 @@ exp_manager:
   resume_if_exists: False
   resume_ignore_no_checkpoint: True
   # set this to save checkpoints
-  create_checkpoint_callback: True
+  create_checkpoint_callback: False
   checkpoint_callback_params:
     monitor: reduced_train_loss
     save_top_k: 1
