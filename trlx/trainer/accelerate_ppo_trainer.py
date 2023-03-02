@@ -157,6 +157,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             decoder_attention_mask = (
                 decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             )
+            decoder_attention_mask[:, 0] = 1
 
             # Forward pass
             outputs = self.model(
@@ -170,7 +171,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             values_pred = outputs.value
             logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
             mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            start = 1
+            start = 0
             end = start + response_length
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
@@ -336,6 +337,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # Pad the sample outputs
             outputs = self.tokenizer(str_outputs).input_ids
+            if self.config.model.model_arch_type == "seq2seq":
+                # add <pad> to the start of the output
+                for i in range(len(outputs)):
+                    outputs[i] = [self.tokenizer.pad_token_id] + outputs[i]
+
             outputs = list(map(torch.LongTensor, outputs))
             maxsize = max(map(len, outputs))
             outputs = [
@@ -371,6 +377,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask = batch.attention_mask.to(device)
                 prompt_tensors = batch.input_ids.to(device)
                 decoder_attention_mask = sample_outputs.not_equal(self.tokenizer.pad_token_id)
+                decoder_attention_mask[:, 0] = 1
                 with torch.no_grad():
                     outputs = self.model(
                         input_ids=prompt_tensors,
@@ -385,6 +392,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
+                            decoder_attention_mask=decoder_attention_mask,
                             return_dict=True,
                         ).logits
                     else:
@@ -392,6 +400,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
                             decoder_input_ids=sample_outputs,
+                            decoder_attention_mask=decoder_attention_mask,
                             return_dict=True,
                         ).logits
             else:
@@ -433,7 +442,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
                 # Skip the beginning of sequence token
-                start = 1
+                values = values.cpu()[:, :-1]
+                start = 0
 
                 # Get the number of non-padding tokens for each sample
                 # This assumes all padding is on the right side
