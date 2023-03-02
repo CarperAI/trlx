@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union, cast
+from typing import Union, cast
 
 import numpy as np
 import torch
@@ -99,20 +99,6 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
-    def save_pretrained(self, directory: Optional[str] = None):
-        """NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
-        """
-        # TODO: Support saving with `transformers.PreTrainedModel.save_pretrained`.
-        # This is currently not supported becasue `nn.ilql_models.CausalLMWithValueHeads`
-        # requires a custom `generate` method using its (value/q) heads to steer
-        # sampling - something that is not possible with the default
-        # `transformers.PreTrainedModel.generate`.
-        raise NotImplementedError(
-            "`AccelerateILQLTrainer` does not currently support automatic saving "
-            "with `transformers.PreTrainedModel.save_pretrained`."
-        )
-
     def make_experience_seq2seq(self, samples, rewards, max_length=2048):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
@@ -166,7 +152,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             table.add_row(*row)
             Console().print(table)
 
-        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
+        returns = (returns - returns.mean()) / (returns.std() + torch.finfo(returns.dtype).eps)
         rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
         for rs, ret in zip(rewards, returns):
             rs[-1] = ret

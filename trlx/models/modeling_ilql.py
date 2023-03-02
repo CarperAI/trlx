@@ -57,9 +57,6 @@ class ILQLConfig(MethodConfig):
     two_qs: bool
     gen_kwargs: dict
 
-    def heads(self, hidden_size: int, vocab_size: int, dtype: type):
-        return ILQLHeads(self, hidden_size, vocab_size, dtype)
-
     def loss(self, outputs, labels):
         logits, (qs, target_qs, vs) = outputs
         terminal_mask = labels.dones[:, :-1]
