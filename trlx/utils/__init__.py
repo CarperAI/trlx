@@ -29,7 +29,7 @@ def significant(x: Number, ndigits=2) -> Number:
     if isinstance(x, torch.Tensor):
         x = x.item()
 
-    if not isinstance(x, Number) or math.isnan(x) or x == 0:
+    if not isinstance(x, Number) or x == 0:
         return x
 
     return round(x, ndigits - int(math.floor(math.log10(abs(x)))))

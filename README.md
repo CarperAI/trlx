@@ -48,7 +48,7 @@ trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('
 #### Using a reward-labeled dataset
 
 ```python
-trainer = trlx.train('EleutherAI/gpt-j-6B', samples=['dolphins', 'geese'], rewards=[1.0, 100.0])
+trainer = trlx.train('EleutherAI/gpt-j-6B', dataset=[('dolphins', 'geese'), (1.0, 100.0)])
 ```
 
 #### Trainers provide a wrapper over their underlying model
@@ -57,24 +57,13 @@ trainer = trlx.train('EleutherAI/gpt-j-6B', samples=['dolphins', 'geese'], rewar
 trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'), do_sample=True)
 ```
 
-#### Configure Hyperparameters
-
-```python
-from trlx.data.default_configs import default_ppo_config, TrainConfig
-
-config = default_ppo_config()
-config.model.model_path = 'EleutherAI/gpt-neox-20b'
-config.train.seq_length = 32
-config.train.batch_size = 16
-
-trainer = trlx.train(config=config, reward_fn=lambda samples, **kwargs: [float(int(sample)) for sample in samples])
-```
-
 #### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
 
 ```python
 trainer.save_pretrained('/path/to/output/folder/')
 ```
+
+🩹 Warning: Only the `AcceleratePPOTrainer` can write HuggingFace transformers to disk with `save_pretrained` at the moment, as ILQL trainers require inference behavior currently unsupported by available `transformers` architectures.
 
 #### Use 🤗 Accelerate to launch distributed training
 
@@ -85,13 +74,13 @@ accelerate launch examples/simulacra.py
 
 #### Use NeMo-Megatron to launch distributed training
 
-Follow the setup instructions in the [NeMo README](./trlx/models/).
+Follow the setup instructions in the [NeMo README](./trlx/trainer/nemo).
 
 ```bash
 python examples/nemo_ilql_sentiments.py
 ```
 
-For more usage see the [NeMo README](./trlx/models)
+For more usage see the [NeMo README](./trlx/trainer/nemo)
 
 #### Use Ray Tune to launch hyperparameter sweep
 

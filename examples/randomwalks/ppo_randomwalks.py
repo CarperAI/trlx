@@ -1,10 +1,18 @@
+import pathlib
+
+import yaml
+
 import trlx
 from examples.randomwalks import generate_random_walks
-from trlx.data.default_configs import default_ppo_config
+from trlx.data.configs import TRLConfig
+
+config_path = pathlib.Path(__file__).parent.joinpath("configs/ppo_randomwalks.yml")
+with config_path.open() as f:
+    default_config = yaml.safe_load(f)
 
 
-def main():
-    config = default_ppo_config().evolve(model=dict(model_path="gpt2"))
+def main(hparams={}):
+    config = TRLConfig.update(default_config, hparams)
 
     metric_fn, prompts, *_ = generate_random_walks(seed=config.train.seed)
 

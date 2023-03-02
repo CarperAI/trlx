@@ -1,7 +1,11 @@
+import os
 import sys
 from abc import abstractmethod
 from typing import Any, Callable, Dict, Iterable
 
+import torch
+
+from trlx.data import RLElement
 from trlx.data.configs import TRLConfig
 from trlx.pipeline import BaseRolloutStore
 

@@ -6,7 +6,6 @@ import sqlite3
 from urllib.request import urlretrieve
 
 import trlx
-from trlx.data.default_configs import default_ilql_config
 
 url = "https://raw.githubusercontent.com/JD-P/simulacra-aesthetic-captions/main/sac_public_2022_06_29.sqlite"
 dbpath = "sac_public_2022_06_29.sqlite"
@@ -27,7 +26,6 @@ if __name__ == "__main__":
 
     prompts, ratings = tuple(map(list, zip(*c.fetchall())))
     trlx.train(
-        config=default_ilql_config(),
         samples=prompts,
         rewards=ratings,
         eval_prompts=["Hatsune Miku, Red Dress"] * 64,

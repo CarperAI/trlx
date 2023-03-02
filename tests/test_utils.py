@@ -1,5 +1,3 @@
-import unittest
-
 import accelerate
 import pytest
 import torch
@@ -70,9 +68,9 @@ def test_hf_attr_getters(model_name: str):
         arch = transformers.AutoModelForCausalLM.from_config(config)
 
     arch_getters = [
-        modeling_utils.hf_get_decoder,
-        modeling_utils.hf_get_decoder_final_norm,
-        modeling_utils.hf_get_decoder_blocks,
+        modeling_utils.hf_get_causal_base_model,
+        modeling_utils.hf_get_causal_final_norm,
+        modeling_utils.hf_get_causal_hidden_layers,
         modeling_utils.hf_get_lm_head,
     ]
     for get in arch_getters:
@@ -127,23 +125,3 @@ def test_parse_delta_kwargs(model_name):
     )
     for kwarg_mod in delta_kwargs["modified_modules"]:
         assert kwarg_mod.endswith("a") or kwarg_mod.endswith("b"), "Parsed modified module should contain ['a', 'b']"
-
-
-class TestStatistics(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.m = modeling_utils.RunningMoments()
-        cls.a1 = torch.arange(100, dtype=float)
-        cls.a2 = torch.ones(100, dtype=float)
-        cls.a3 = torch.exp(torch.arange(10, dtype=float))
-        cls.a4 = torch.tensor([-10, -1, 0, 1, 10], dtype=float)
-
-    def test_running_moments(self):
-        assert torch.isclose(self.m.update(self.a1)[1], self.a1.std(unbiased=True), atol=1e-6)
-        assert torch.isclose(self.m.update(self.a2)[1], self.a2.std(unbiased=True), atol=1e-6)
-        assert torch.isclose(self.m.update(self.a3)[1], self.a3.std(unbiased=True), atol=1e-6)
-        assert torch.isclose(self.m.update(self.a4)[1], self.a4.std(unbiased=True), atol=1e-6)
-
-        a = torch.hstack((self.a1, self.a2, self.a3, self.a4))
-        assert torch.isclose(self.m.mean, a.mean(), atol=1e-6)
-        assert torch.isclose(self.m.std, a.std(unbiased=True), atol=1e-6)

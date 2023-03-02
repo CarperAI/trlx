@@ -3,11 +3,6 @@ import warnings
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
-from trlx.data.default_configs import (
-    default_ilql_config,
-    default_ppo_config,
-    default_sft_config,
-)
 from trlx.utils import set_seed
 from trlx.utils.loading import get_pipeline, get_trainer
 
@@ -22,6 +17,7 @@ def train(  # noqa: C901
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
+    logit_mask: Optional[List[List[bool]]] = None,
     stop_sequences: Optional[List[str]] = [],
 ):
     """
@@ -49,6 +45,7 @@ def train(  # noqa: C901
             Function to compute statistics on batches of generated samples. Its arguments are the same
             as in `reward_fn` (`samples`, `prompts`, `outputs`) but the return is dictionary with keys
             as metric's name and values and lists of numeric values per each sample in batch
+        logit_mask (Optional[List]): Bigram masking matrix
         stop_sequences (Optional[List[str]]):
             String sequences to trim generations (both for generating of experience and evaluation) up to its
             encounter in them. Generations will not contain them and also will also be right-stripped
@@ -58,11 +55,11 @@ def train(  # noqa: C901
             "Passing the `config` argument implicitly is depreciated, load it from `configs` directory instead"
         )
         if reward_fn:
-            config = default_ppo_config()
+            config = TRLConfig.load_yaml("configs/ppo_config.yml")
         elif rewards:
-            config = default_ilql_config()
+            config = TRLConfig.load_yaml("configs/ilql_config.yml")
         else:
-            config = default_sft_config()
+            config = TRLConfig.load_yaml("configs/sft_config.yml")
 
     set_seed(config.train.seed)
 

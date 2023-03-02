@@ -1,0 +1,56 @@
+train:
+  seq_length: 48
+  epochs: 10
+  total_steps: 80000
+  batch_size: 8
+
+  checkpoint_interval: 1000000
+  eval_interval: 16
+
+  pipeline: "PromptPipeline"
+  trainer: "AcceleratePPOTrainer"
+
+model:
+  model_path: "EleutherAI/gpt-j-6B"
+  num_layers_unfrozen: 2
+
+tokenizer:
+  tokenizer_path: "gpt2"
+
+optimizer:
+  name: "adamw"
+  kwargs:
+    lr: 1.412e-4
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+
+scheduler:
+  name: "cosine_annealing"
+  kwargs:
+    T_max: 80000 # train.total_steps
+    eta_min: 1.412e-4
+
+method:
+  name: "ppoconfig"
+  num_rollouts: 8
+  chunk_size: 8
+  ppo_epochs: 4
+  init_kl_coef: 0.2
+  target: 6
+  horizon: 10000
+  gamma: 1
+  lam: 0.95
+  cliprange: 0.2
+  cliprange_value: 0.2
+  vf_coef: 0.2
+  scale_reward: False
+  ref_mean: null
+  ref_std: null
+  cliprange_reward: 10
+  gen_kwargs:
+    max_new_tokens: 48
+    top_k: 0.0
+    top_p: 0.7
+    do_sample: True
+    temperature: 0.5

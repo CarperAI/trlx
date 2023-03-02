@@ -1,11 +1,17 @@
 import os
+import pathlib
 from typing import Dict, List
 
+import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.default_configs import TRLConfig, default_sft_config
+from trlx.data.configs import TRLConfig
+
+config_path = pathlib.Path(__file__).parent.joinpath("../configs/sft_config.yml")
+with config_path.open() as f:
+    default_config = yaml.safe_load(f)
 
 
 def get_positive_score(scores):
@@ -14,8 +20,7 @@ def get_positive_score(scores):
 
 
 def main(hparams={}):
-    # Merge sweep config with default config if given
-    config = TRLConfig.update(default_sft_config().to_dict(), hparams)
+    config = TRLConfig.update(default_config, hparams)
 
     imdb = load_dataset("imdb", split="train+test")
     # Finetune on only positive reviews

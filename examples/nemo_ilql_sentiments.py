@@ -1,10 +1,12 @@
+import os
 from typing import Dict, List
 
+import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.default_configs import default_ilql_config
+from trlx.data.configs import TRLConfig
 
 
 def get_positive_score(scores):
@@ -12,25 +14,11 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-default_config = default_ilql_config()
+default_config = yaml.safe_load(open(os.path.dirname(__file__) + "/../configs/nemo_ilql_config.yml"))
 
 
 def main(hparams={}):
-    # Merge sweep config with default config if given
-
-    config = default_config.evolve(
-        train=dict(
-            seq_length=1024,
-            batch_size=512,
-            total_steps=200,
-            trainer="NeMoILQLTrainer",
-            trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-                megatron_cfg="megatron_20b.yaml",
-            ),
-        )
-    )
-    config = config.evolve(**hparams)
+    config = TRLConfig.update(default_config, hparams)
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -48,8 +36,7 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
 
     trlx.train(
-        samples=imdb["text"],
-        rewards=imdb["label"],
+        dataset=(imdb["text"], imdb["label"]),
         eval_prompts=["I don't know much about Hungarian underground"] * 128,
         metric_fn=metric_fn,
         config=config,

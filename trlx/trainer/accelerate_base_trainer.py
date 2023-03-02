@@ -249,23 +249,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """Creates a checkpoint of the optimizer, scheduler and model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
 
-    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
-        """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
-        later use.
+    @abstractmethod
+    def save_pretrained(self, directory: Optional[str] = None):
+        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
+        `transformers.PreTrainedModel.from_pretrained` method.
 
-        Args:
-            directory (str, *optional*): The directory to save the trainer files to.
-                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
-                checkpoint directory as specified by the Trainer's config.
-            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
-                `save_pretrained` method.
+        NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
+        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
         """
-        if directory is None:
-            directory = f"{self.config.train.checkpoint_dir}/hf_model"
-        self.accelerator.wait_for_everyone()
-        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
-        if self.accelerator.is_main_process:
-            self.tokenizer.save_pretrained(directory)
+        pass
 
     def load(self, directory=None):
         """Load checkpoint of optimizer, scheduler and a model"""

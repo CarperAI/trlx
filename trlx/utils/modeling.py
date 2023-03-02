@@ -33,7 +33,7 @@ def make_head(n_embd: int, out: int, dtype: type = torch.float32) -> nn.Sequenti
 
 def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
-    hidden_layers = hf_get_decoder_blocks(model)
+    hidden_layers = hf_get_causal_hidden_layers(model)
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
     elif num_layers_unfrozen > 0:
@@ -102,7 +102,7 @@ def findattr(obj, attrs: Tuple[str]) -> Union[object, None]:
     raise ValueError(f"Could not find an attribute from `{attrs}` in `{obj}`")
 
 
-def hf_get_decoder(model: nn.Module) -> nn.Module:
+def hf_get_causal_base_model(model: transformers.AutoModelForCausalLM) -> nn.Module:
     """Returns the causal decoder backbone of the specified HuggingFace transformers
     model.
     NOTE: Different model configurations have different causal decoder attribute
@@ -111,12 +111,12 @@ def hf_get_decoder(model: nn.Module) -> nn.Module:
         - model.decoder: (OPTConfig, BloomConfig)
         - gpt_neox: (GPTNeoXConfig)
     """
-    decoder_attrs = ("transformer", "model.decoder", "gpt_neox", "decoder")
+    decoder_attrs = ("transformer", "model.decoder", "gpt_neox")
     return findattr(model, decoder_attrs)
 
 
-def hf_get_decoder_final_norm(model: nn.Module) -> float:
-    """Returns the final (layer) norm of the specified decoder.
+def hf_get_causal_final_norm(model: nn.Module) -> float:
+    """Returns the final (layer) norm of the specified model.
     NOTE: Different model configurations have different final norm attribute names.
         - transformer.ln_f: (GPT2LMHeadModel, GPTJForCausalLM)
         - model.decoder.final_layer_norm: (OPTForCausalLM)
@@ -125,19 +125,17 @@ def hf_get_decoder_final_norm(model: nn.Module) -> float:
     norm_attrs = (
         "transformer.ln_f",
         "model.decoder.final_layer_norm",
-        "decoder.final_layer_norm",
         "gpt_neox.final_layer_norm",
     )
     return findattr(model, norm_attrs)
 
 
-def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
-    """Returns the decoder hidden layers of the specified model.
+def hf_get_causal_hidden_layers(model: nn.Module) -> Tuple[nn.Module]:
+    """Returns the hidden layers of the specified model.
     NOTE: Different model configurations have different hidden layer attribute names.
         - transformer.h: (BloomForCausalLM, GPT2LMHeadModel, GPTJForCausalLM)
         - model.decoder.layers: (OPTForCausalLM)
         - gpt_neox.layers: (GPTNeoXForCausalLM)
-        - decoder.block: (T5ForConditionalGeneration)
     """
     hidden_layers_attrs = (
         "h",
@@ -146,12 +144,11 @@ def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
         "transformer.h",
         "model.decoder.layers",
         "gpt_neox.layers",
-        "decoder.block",
     )
     return findattr(model, hidden_layers_attrs)
 
 
-def hf_get_lm_head(model: nn.Module) -> nn.Module:
+def hf_get_lm_head(model: transformers.AutoModelForCausalLM) -> nn.Module:
     """Returns the language modeling (lm) head of the specified HuggingFace
     transformers model.
     NOTE: Different model configurations have different `lm_head` attribute names.
