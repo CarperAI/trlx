@@ -1,8 +1,8 @@
+import json
 import math
 import os
-
-import json
 import sys
+
 import numpy as np
 import torch
 import tritonclient.grpc as client_util

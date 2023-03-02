@@ -1,8 +1,8 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
 import json
-import sys
 import os
+import sys
 from typing import List
 
 import torch
@@ -50,7 +50,6 @@ def main(hparams={}):
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         config=config,
     )
-
 
 
 if __name__ == "__main__":

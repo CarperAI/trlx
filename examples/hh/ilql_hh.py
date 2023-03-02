@@ -1,6 +1,6 @@
 import json
-import sys
 import os
+import sys
 
 from datasets import load_dataset
 from ppo_hh import create_reward_fn
