@@ -1,3 +1,5 @@
+import json
+import sys
 import os
 from typing import Dict, List
 
@@ -44,4 +46,6 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    main()
+    hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
+    main(hparams)
+
