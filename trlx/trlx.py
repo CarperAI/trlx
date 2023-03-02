@@ -55,7 +55,8 @@ def train(  # noqa: C901
     """
     if config is None:
         warnings.warn(
-            "Passing the `config` argument implicitly is depreciated, use or adapt some from `trlx/data/default_configs.py` instead"
+            "Passing the `config` argument implicitly is depreciated, use or"
+            "adapt some from `trlx/data/default_configs.py` instead"
         )
         if reward_fn:
             config = default_ppo_config()
