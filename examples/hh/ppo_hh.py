@@ -187,7 +187,7 @@ def create_reward_fn():  # noqa:  C901
 
 
 def main(hparams={}):
-    config = TRLConfig.update(config, hparams)
+    config = TRLConfig.update(default_config, hparams)
 
     dataset = load_dataset("Dahoas/rm-static")
     prompts = dataset["train"]["prompt"]
