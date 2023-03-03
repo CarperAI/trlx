@@ -1,5 +1,4 @@
 import os
-import pathlib
 from typing import List
 
 import torch
@@ -9,7 +8,15 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
-from trlx.data.configs import TRLConfig
+from trlx.data.configs import (
+    ModelConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+    TokenizerConfig,
+    TrainConfig,
+    TRLConfig,
+)
+from trlx.models.modeling_ppo import PPOConfig
 
 REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
 if not os.path.exists(REWARD_CHECKPOINT_PATH):
@@ -19,6 +26,64 @@ if not os.path.exists(REWARD_CHECKPOINT_PATH):
         https://huggingface.co/CarperAI/openai_summarize_tldr_rm_checkpoint/resolve/main/pytorch_model.bin"
     )
 SFT_MODEL_PATH = "CarperAI/openai_summarize_tldr_sft"
+
+config = TRLConfig(
+    train=TrainConfig(
+        seq_length=550,
+        epochs=50,
+        total_steps=100000,
+        batch_size=4,
+        checkpoint_interval=10000,
+        eval_interval=200,
+        pipeline="PromptPipeline",
+        trainer="AcceleratePPOTrainer",
+    ),
+    model=ModelConfig(
+        model_path="CarperAI/openai_summarize_tldr_sft",
+        num_layers_unfrozen=8,
+    ),
+    tokenizer=TokenizerConfig(
+        tokenizer_path="gpt2",
+        truncation_side="right",
+    ),
+    optimizer=OptimizerConfig(
+        name="adamw",
+        kwargs={
+            "lr": 5.0e-6,
+            "betas": [0.9, 0.999],
+            "eps": 1.0e-8,
+            "weight_decay": 0.01,
+        },
+    ),
+    scheduler=SchedulerConfig(
+        name="cosine_annealing",
+        kwargs={
+            "T_max": 100000,
+            "eta_min": 5.0e-6,
+        },
+    ),
+    method=PPOConfig(
+        name="PPOConfig",
+        num_rollouts=128,
+        chunk_size=16,
+        ppo_epochs=4,
+        init_kl_coef=0.1,
+        target=6,
+        horizon=10000,
+        gamma=1,
+        lam=0.95,
+        cliprange=0.2,
+        cliprange_value=0.2,
+        vf_coef=0.2,
+        scale_reward=None,
+        ref_mean=None,
+        ref_std=None,
+        cliprange_reward=10,
+        gen_kwargs={
+            "max_new_tokens": 50,
+        },
+    ),
+)
 
 
 if __name__ == "__main__":
@@ -86,9 +151,6 @@ if __name__ == "__main__":
         scores = get_scores(samples)
         norms_scores = scores - original_scores
         return norms_scores
-
-    config_path = pathlib.Path(__file__).parent.joinpath("configs/ppo_config_summ_gptj.yml")
-    config = TRLConfig.load_yaml(config_path)
 
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
     tokenizer.pad_token = tokenizer.eos_token

@@ -3,6 +3,11 @@ import warnings
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from trlx.data.configs import TRLConfig
+from trlx.data.default_configs import (
+    default_ilql_config,
+    default_ppo_config,
+    default_sft_config,
+)
 from trlx.utils import set_seed
 from trlx.utils.loading import get_pipeline, get_trainer
 
@@ -50,14 +55,15 @@ def train(  # noqa: C901
     """
     if config is None:
         warnings.warn(
-            "Passing the `config` argument implicitly is depreciated, load it from `configs` directory instead"
+            "Passing the `config` argument implicitly is depreciated, use or"
+            "adapt some from `trlx/data/default_configs.py` instead"
         )
         if reward_fn:
-            config = TRLConfig.load_yaml("configs/ppo_config.yml")
+            config = default_ppo_config()
         elif rewards:
-            config = TRLConfig.load_yaml("configs/ilql_config.yml")
+            config = default_ilql_config()
         else:
-            config = TRLConfig.load_yaml("configs/sft_config.yml")
+            config = default_sft_config()
 
     set_seed(config.train.seed)
 

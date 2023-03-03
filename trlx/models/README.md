@@ -27,7 +27,7 @@ exp_manager:
 ```
 
 ## NeMo Megatron setup
-Clone https://github.com/NVIDIA/NeMo/ and apex from https://github.com/NVIDIA/apex/.
+Clone https://github.com/NVIDIA/NeMo/tree/r1.15.0 (currently only up to `r1.15.0` is supoprted) and apex from https://github.com/NVIDIA/apex/.
 
 1) install conda (or mamba/micromamba)
 
