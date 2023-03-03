@@ -28,7 +28,7 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-config_path = pathlib.Path("configs/ilql_config.yml")
+config_path = pathlib.Path("configs/ilql_sentiment_t5.yml")
 with config_path.open() as f:
     default_config = yaml.safe_load(f)
 
@@ -36,7 +36,7 @@ with config_path.open() as f:
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
-    tokenizer = AutoTokenizer.from_pretrained("lvwerra/t5-imdb")
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -51,7 +51,7 @@ def main(hparams={}):
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return {"sentiments": sentiments}
 
-    def build_imdb_dataset(tokenizer, input_min_text_length=2, input_max_text_length=8):
+    def build_imdb_dataset(tokenizer, input_min_text_length=2, input_max_text_length=6):
         # load imdb with datasets
         ds = load_dataset("imdb", split="train")
         ds = ds.rename_columns({"text": "review"})
@@ -61,8 +61,8 @@ def main(hparams={}):
 
         def tokenize(sample):
             size = input_size()
-            sample["input_ids"] = tokenizer.encode(sample["review"])[:size] + [tokenizer.eos_token_id]
-            sample["decoder_input_ids"] = tokenizer.encode(sample["review"])[size:] + [tokenizer.eos_token_id]
+            sample["input_ids"] = tokenizer.encode(sample["review"])[:size]  # + [tokenizer.eos_token_id]
+            sample["decoder_input_ids"] = tokenizer.encode(sample["review"])[size:]  # + [tokenizer.eos_token_id]
             sample["query"] = tokenizer.decode(sample["input_ids"])
             sample["output"] = tokenizer.decode(sample["decoder_input_ids"])
             sample["output_prompt"] = [[sample["query"], sample["output"]]]
@@ -72,7 +72,7 @@ def main(hparams={}):
         ds.set_format(type="torch")
         return ds
 
-    def build_imdb_dataset_test(tokenizer, input_min_text_length=2, input_max_text_length=8):
+    def build_imdb_dataset_test(tokenizer, input_min_text_length=2, input_max_text_length=6):
         # load imdb with datasets
         ds = load_dataset("imdb", split="test")
         ds = ds.rename_columns({"text": "review"})
@@ -82,8 +82,8 @@ def main(hparams={}):
 
         def tokenize(sample):
             size = input_size()
-            sample["input_ids"] = tokenizer.encode(sample["review"])[:size] + [tokenizer.eos_token_id]
-            sample["decoder_input_ids"] = tokenizer.encode(sample["review"])[size:] + [tokenizer.eos_token_id]
+            sample["input_ids"] = tokenizer.encode(sample["review"])[:size]  # + [tokenizer.eos_token_id]
+            sample["decoder_input_ids"] = tokenizer.encode(sample["review"])[size:]  # + [tokenizer.eos_token_id]
             sample["query"] = tokenizer.decode(sample["input_ids"])
             sample["output"] = tokenizer.decode(sample["decoder_input_ids"])
             sample["output_prompt"] = [[sample["query"], sample["output"]]]
@@ -96,7 +96,7 @@ def main(hparams={}):
     dataset = build_imdb_dataset(tokenizer)
     prompts_outputs = sum(dataset["output_prompt"], [])
     rewards = [float(x) for x in dataset["label"]]
-    val_prompts = build_imdb_dataset_test(tokenizer)["query"][0:1000]
+    val_prompts = build_imdb_dataset_test(tokenizer)["query"][0:100]
     trlx.train(
         samples=prompts_outputs,
         rewards=rewards,
