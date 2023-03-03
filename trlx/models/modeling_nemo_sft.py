@@ -7,7 +7,6 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.distributed
 from apex.transformer import tensor_parallel
-from nemo.collections.common.losses import CrossEntropyLoss
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingBatchSampler,
 )
@@ -31,7 +30,6 @@ from trlx.utils import to_device
 
 try:
     from apex.transformer import parallel_state
-    from apex.transformer.pipeline_parallel.utils import get_micro_batch_size
 
     HAVE_APEX = True
 except (ImportError, ModuleNotFoundError):
@@ -404,7 +402,7 @@ class SFTGPT(MegatronGPTModel):
                     reset_attention_mask=False,
                     eod_mask_loss=False,
                 )
-                # attention_mask = attention_mask[0:1]
+                attention_mask = attention_mask[0:1]
             else:
                 # GPT3 uses only causal mask, which doesn't need attention mask
                 if parallel_state.is_pipeline_first_stage():
@@ -420,9 +418,9 @@ class SFTGPT(MegatronGPTModel):
                     loss_mask, attention_mask = None, None
                 elif parallel_state.is_pipeline_last_stage():
                     # Last pipeline stage needs only the labels and loss_mask
-                    input_ids = batch[0].cuda(non_blocking=True)
-                    _, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                        data=input_ids,
+                    labels = batch[0].cuda(non_blocking=True)  # Unused
+                    _, loss_mask, _ = get_ltor_masks_and_position_ids(
+                        data=labels,
                         eod_token=self.tokenizer.eos_id,
                         reset_position_ids=False,
                         reset_attention_mask=False,
@@ -441,26 +439,24 @@ class SFTGPT(MegatronGPTModel):
             )
 
             def loss_func(output_tensor):
-                # TODO: implement this in a sequence parallel way
-                logits = output_tensor[:, :-1, :].contiguous()
-                labels = input_ids[:, 1:].contiguous()
-                _loss_mask = loss_mask[:, 1:].contiguous()
+                logits = output_tensor[:, :-1, :]
+                labels = input_ids[:, 1:]
+                _loss_mask = loss_mask[:, 1:]
+
                 labels = labels.transpose(0, 1).contiguous()  # [b s] -> [s b]
                 logits = logits.transpose(0, 1).contiguous()  # [b s h] -> [s b h]
+
                 if self.cfg.fp16_lm_cross_entropy:
                     assert logits.dtype == torch.half
                     loss = tensor_parallel.vocab_parallel_cross_entropy(logits, labels)
                 else:
                     loss = tensor_parallel.vocab_parallel_cross_entropy(logits.float(), labels)
 
-                loss = loss.transpose(0, 1).contiguous().float().view(-1)
-                _loss_mask = _loss_mask.view(-1).float()
+                _loss_mask = _loss_mask.contiguous().view(-1).float()  # [s b] -> [s*b]
+                loss = loss.transpose(0, 1).contiguous().view(-1).float()  # [s b] -> [s*b]
                 loss_for_mb = torch.sum(loss * _loss_mask) / _loss_mask.sum()  # sequence level nll
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
-
-                # TODO: figure out why this sync is needed (crashes otherwise)
-                torch.cuda.synchronize()
 
                 return loss_for_mb, {"avg_loss": reduced_loss}
 
