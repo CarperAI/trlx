@@ -487,7 +487,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             pi = F.softmax(pi_top_k / temperature, -1)
             next_tokens = torch.multinomial(pi, num_samples=1)
             next_tokens = (1 - finished) * next_tokens + finished * eos_token_id
-            finished = (next_tokens == eos_token_id).long()  | (next_tokens == pad_token_id).long()
+            finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
             samples = decoder_input_ids
             if torch.all(finished):
