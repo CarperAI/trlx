@@ -50,6 +50,9 @@ def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=204
             out.append(tokens)
             if ctx_length == 0:
                 break
+    for i in range(len(out)):
+        out[i].append(tokenizer.eos_token_id)
+
     return out
 
 
