@@ -1,16 +1,10 @@
-import pathlib
 from typing import Dict, List
 
-import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig
-
-config_path = pathlib.Path(__file__).parent.joinpath("../configs/nemo_sft_config.yml")
-with config_path.open() as f:
-    default_config = yaml.safe_load(f)
+from trlx.data.default_configs import default_sft_config
 
 
 def get_positive_score(scores):
@@ -18,8 +12,20 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
+default_config = default_sft_config()
+
+
 def main(hparams={}):
-    config = TRLConfig.update(default_config, hparams)
+    # Merge sweep config with default config if given
+    config = default_config.evolve(
+        train=dict(
+            trainer="NeMoSFTTrainer",
+            trainer_kwargs=dict(
+                pretrained_model="/mnt/nvme/home/guac/models/nemo-megatron-gpt-20B/",
+                megatron_cfg="megatron_20b.yaml",
+            ),
+        )
+    )
 
     imdb = load_dataset("imdb", split="train+test")
     # Finetune on only positive reviews
