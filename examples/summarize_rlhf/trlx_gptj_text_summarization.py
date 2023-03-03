@@ -98,8 +98,8 @@ if __name__ == "__main__":
     rw_model.to(rw_device)
 
     def strip_lines(text):
-        lines = text.split('\n')
-        return '\n'.join([line.strip() for line in lines])
+        lines = text.split("\n")
+        return "\n".join([line.strip() for line in lines])
 
     def get_scores(samples: List[str]):
         scores_list = []
