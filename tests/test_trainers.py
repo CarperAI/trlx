@@ -16,7 +16,6 @@ from trlx.data.configs import (
 from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils.loading import get_pipeline, get_trainer
 
-
 logging.disable_progress_bar()
 logging.set_verbosity(logging.ERROR)
 
@@ -33,18 +32,18 @@ def get_default_train_and_eval_prompts() -> Mapping[str, List[str]]:
         eval=[
             "I purchased a collar for my new",
             "I couldn't help but laugh when the mailman was chased by the",
-        ]
+        ],
     )
 
 
 def get_default_reward_fn():
     def reward_fn(samples: List[str], **kwargs):
         return [sample.count("dog") for sample in samples]
+
     return reward_fn
 
 
 class TestAccelerateBaseTrainer(unittest.TestCase):
-
     def setUp(self) -> None:
         super().setUp()
         self.prompt_dataset = get_default_train_and_eval_prompts()
@@ -67,7 +66,8 @@ class TestAccelerateBaseTrainer(unittest.TestCase):
             model=ModelConfig(model_path="gpt2", num_layers_unfrozen=2),
             tokenizer=TokenizerConfig(tokenizer_path="gpt2", truncation_side="right"),
             optimizer=OptimizerConfig(
-                name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
+                name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
+            ),
             scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-4)),
             method=PPOConfig(
                 name="PPOConfig",
@@ -106,11 +106,14 @@ class TestAccelerateBaseTrainer(unittest.TestCase):
 
         max_prompt_length = config.train.seq_length - config.method.gen_kwargs["max_new_tokens"]
         train_pipeline = get_pipeline(config.train.pipeline)(
-            self.prompt_dataset["train"], max_prompt_length, trainer.tokenizer)
+            self.prompt_dataset["train"], max_prompt_length, trainer.tokenizer
+        )
         trainer.add_prompt_pipeline(train_pipeline)
         trainer.make_experience(config.method.num_rollouts)
 
-        eval_pipeline = get_pipeline(config.train.pipeline)(self.prompt_dataset["eval"], max_prompt_length, trainer.tokenizer)
+        eval_pipeline = get_pipeline(config.train.pipeline)(
+            self.prompt_dataset["eval"], max_prompt_length, trainer.tokenizer
+        )
         trainer.add_eval_pipeline(eval_pipeline)
         return trainer
 
