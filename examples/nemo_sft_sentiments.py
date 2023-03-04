@@ -21,7 +21,7 @@ def main(hparams={}):
         train=dict(
             trainer="NeMoSFTTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/guac/models/nemo-megatron-gpt-20B/",
+                pretrained_model=None,
                 megatron_cfg="megatron_20b.yaml",
             ),
         )

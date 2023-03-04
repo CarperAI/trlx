@@ -25,7 +25,7 @@ def main(hparams={}):
             total_steps=200,
             trainer="NeMoILQLTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+                pretrained_model=None,
                 megatron_cfg="megatron_20b.yaml",
             ),
         )
