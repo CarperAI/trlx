@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed
+from apex.transformer import tensor_parallel
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingBatchSampler,
 )
@@ -23,7 +24,6 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
-from apex.transformer import tensor_parallel
 from trlx.models.modeling_nemo_ilql import (
     reshard_for_pipeline_parallelism,
     unwrap_float16_module,
@@ -352,11 +352,10 @@ class SFTGPT(MegatronGPTModel):
             self.sequence_parallel_(True)
 
         # NeMo generate resets the microbatch calculator
-        from nemo.utils import AppState
-
         from apex.transformer.pipeline_parallel.utils import (
             _reconfigure_microbatch_calculator,
         )
+        from nemo.utils import AppState
 
         _reconfigure_microbatch_calculator(
             rank=AppState().global_rank,
