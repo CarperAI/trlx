@@ -2,10 +2,10 @@ import os
 
 import torch
 from datasets import load_dataset
+from reward_model.reward_model import GPTRewardModel
 from transformers import AutoTokenizer
 
 import trlx
-from reward_model.reward_model import GPTRewardModel
 from trlx.data.default_configs import (
     ILQLConfig,
     ModelConfig,
