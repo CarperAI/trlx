@@ -6,7 +6,6 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.distributed
-from apex.transformer import tensor_parallel
 from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_samplers import (
     MegatronPretrainingBatchSampler,
 )
@@ -24,8 +23,12 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
+from apex.transformer import tensor_parallel
+from trlx.models.modeling_nemo_ilql import (
+    reshard_for_pipeline_parallelism,
+    unwrap_float16_module,
+)
 from trlx.trainer.accelerate_sft_trainer import SFTConfig
-from trlx.models.modeling_nemo_ilql import unwrap_float16_module, reshard_for_pipeline_parallelism
 from trlx.utils import to_device
 
 try:
@@ -393,8 +396,7 @@ class SFTGPT(MegatronGPTModel):
         def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
             if parallel_state.get_pipeline_model_parallel_world_size() == 1:
-                batch = [x.cuda(non_blocking=True) for x in batch]
-                input_ids = batch[0]
+                input_ids = batch[0].cuda(non_blocking=True)
                 attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
                     data=input_ids,
                     eod_token=self.tokenizer.eos_id,
@@ -418,7 +420,7 @@ class SFTGPT(MegatronGPTModel):
                     loss_mask, attention_mask = None, None
                 elif parallel_state.is_pipeline_last_stage():
                     # Last pipeline stage needs only the labels and loss_mask
-                    labels = batch[0].cuda(non_blocking=True)  # Unused
+                    labels = batch[0].cuda(non_blocking=True)  # Use labels to get the loss mask
                     _, loss_mask, _ = get_ltor_masks_and_position_ids(
                         data=labels,
                         eod_token=self.tokenizer.eos_id,
@@ -457,6 +459,9 @@ class SFTGPT(MegatronGPTModel):
                 loss_for_mb = torch.sum(loss * _loss_mask) / _loss_mask.sum()  # sequence level nll
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
+
+                # TODO: figure out why this sync is needed (crashes otherwise)
+                torch.cuda.synchronize()
 
                 return loss_for_mb, {"avg_loss": reduced_loss}
 

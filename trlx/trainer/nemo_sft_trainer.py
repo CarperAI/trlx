@@ -149,13 +149,12 @@ class NeMoSFTTrainer(BaseRLTrainer):
 
     def learn(self):
         def collate_fn(elems: List[transformers.BatchEncoding]):
-            # Pad batch to max length
             input_ids = self.tokenizer.pad(
                 elems,
-                padding='max_length',
+                padding="max_length",
                 max_length=self.max_length,
-                return_tensors='pt',
-            )['input_ids']
+                return_tensors="pt",
+            )["input_ids"]
             return [input_ids]
 
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
