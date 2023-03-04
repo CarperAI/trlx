@@ -1,16 +1,50 @@
 import os
 
 import torch
-import yaml
 from datasets import load_dataset
-from reward_model.reward_model import GPTRewardModel
 from transformers import AutoTokenizer
 
 import trlx
-from trlx.data.configs import TRLConfig
+from reward_model.reward_model import GPTRewardModel
+from trlx.data.default_configs import (
+    ILQLConfig,
+    ModelConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+    TokenizerConfig,
+    TrainConfig,
+    TRLConfig,
+)
 
-config_path = "configs/ilql_summarize_t5.yml"
-default_config = yaml.safe_load(open(config_path))
+default_config = TRLConfig(
+    train=TrainConfig(
+        seq_length=550,
+        batch_size=8,
+        epochs=100,
+        total_steps=5000,
+        checkpoint_interval=10000,
+        eval_interval=1000,
+        pipeline="PromptPipeline",
+        trainer="AccelerateILQLTrainer",
+        checkpoint_dir="ilql_summarize_t5",
+    ),
+    model=ModelConfig(model_path="pvduy/flant5-xl_openai_tldr_sft", num_layers_unfrozen=-1, model_arch_type="seq2seq"),
+    tokenizer=TokenizerConfig(tokenizer_path="pvduy/flant5-xl_openai_tldr_sft", truncation_side="left"),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=1e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
+    scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=5000, eta_min=1e-6)),
+    method=ILQLConfig(
+        name="ilqlconfig",
+        tau=0.6,
+        gamma=0.99,
+        cql_scale=0.1,
+        awac_scale=1,
+        alpha=0.0001,
+        beta=0,
+        steps_for_target_q_sync=1,
+        two_qs=True,
+        gen_kwargs=dict(max_new_tokens=50, top_k=50, beta=[1, 2, 3], temperature=1.0),
+    ),
+)
 
 REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
 if not os.path.exists(REWARD_CHECKPOINT_PATH):
@@ -23,7 +57,7 @@ SFT_MODEL_PATH = "CarperAI/openai_summarize_tldr_sft"
 
 
 def main(hparams={}):
-    config = TRLConfig.load_yaml(config_path)
+    config = TRLConfig.update(default_config, hparams)
 
     rw_tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-j-6B")
     rw_tokenizer.pad_token = rw_tokenizer.eos_token
