@@ -1,4 +1,3 @@
-import pathlib
 from typing import List
 
 from datasets import load_dataset
@@ -6,7 +5,15 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 import trlx
-from trlx.data.configs import TRLConfig
+from trlx.data.configs import (
+    ModelConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+    TokenizerConfig,
+    TrainConfig,
+    TRLConfig,
+)
+from trlx.models.modeling_ppo import PPOConfig
 
 try:
     import evaluate
@@ -15,8 +22,72 @@ except ImportError:
         "To run this example, please install the `evaluate` and `nltk` packages" "by running `pip install evaluate`"
     )
 
-config_path = pathlib.Path(__file__).parent / "configs/ppo_config_cnn_daily.yml"
-config = TRLConfig.load_yaml(config_path)
+config = TRLConfig(
+    train=TrainConfig(
+        seq_length=612,
+        epochs=100,
+        total_steps=100000,
+        batch_size=12,
+        checkpoint_interval=10000,
+        eval_interval=500,
+        pipeline="PromptPipeline",
+        trainer="AcceleratePPOTrainer",
+    ),
+    model=ModelConfig(
+        model_path="google/flan-t5-large",
+        model_arch_type="seq2seq",
+        num_layers_unfrozen=2,
+    ),
+    tokenizer=TokenizerConfig(
+        tokenizer_path="google/flan-t5-large",
+        truncation_side="right",
+    ),
+    optimizer=OptimizerConfig(
+        name="adamw",
+        kwargs={
+            "lr": 1.0e-5,
+            "betas": [0.9, 0.999],
+            "eps": 1.0e-8,
+            "weight_decay": 1.0e-6,
+        },
+    ),
+    scheduler=SchedulerConfig(
+        name="cosine_annealing",
+        kwargs={
+            "T_max": 10000,
+            "eta_min": 1.0e-6,
+        },
+    ),
+    method=PPOConfig(
+        name="PPOConfig",
+        num_rollouts=512,
+        chunk_size=12,
+        ppo_epochs=4,
+        init_kl_coef=0.05,
+        target=6,
+        horizon=10000,
+        gamma=0.99,
+        lam=0.95,
+        cliprange=0.2,
+        cliprange_value=0.2,
+        vf_coef=1.0,
+        scale_reward=None,
+        ref_mean=None,
+        ref_std=None,
+        cliprange_reward=10,
+        gen_kwargs={
+            "max_new_tokens": 100,
+        },
+        gen_experience_kwargs={
+            "max_new_tokens": 100,
+            "do_sample": True,
+            "temperature": 1.0,
+            "top_k": 50,
+            "top_p": 0.95,
+        },
+    ),
+)
+
 
 meteor = evaluate.load("meteor")  # use meteor as the reward function
 
