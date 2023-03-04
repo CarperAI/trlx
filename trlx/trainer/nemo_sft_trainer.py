@@ -1,99 +1,16 @@
 from pathlib import Path
-from typing import List, Sequence, cast
+from typing import List, cast
 
 import torch
 import transformers
-from nemo.collections.nlp.parts.nlp_overrides import (
-    GradScaler,
-    MegatronHalfPrecisionPlugin,
-    NLPDDPStrategy,
-    PipelineMixedPrecisionPlugin,
-)
 from nemo.utils import logging
-
-# from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import MegatronGPTModel
-from nemo.utils.exp_manager import StatelessTimer, exp_manager
-from omegaconf.omegaconf import OmegaConf, open_dict
-from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks.timer import Timer
-from pytorch_lightning.trainer.connectors.checkpoint_connector import (
-    CheckpointConnector,
-)
+from omegaconf.omegaconf import OmegaConf
 
 from trlx.data.configs import TRLConfig
 from trlx.models.modeling_nemo_sft import SFTGPT
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.accelerate_sft_trainer import SFTConfig
-
-
-def megatron_trainer(cfg):
-    logging.info("\n\n************** Experiment configuration ***********")
-    logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
-    seed_everything(cfg.model.get("seed", 1000))
-
-    megatron_amp_o2 = cfg.model.get("megatron_amp_O2", False)
-    with_distributed_adam = cfg.model.optim.get("name") == "distributed_fused_adam"
-
-    plugins = []
-    strategy = NLPDDPStrategy(
-        no_ddp_communication_hook=True,  # we don't use DDP for async grad allreduce
-        gradient_as_bucket_view=cfg.model.gradient_as_bucket_view,
-        find_unused_parameters=False,
-    )
-    if cfg.trainer.precision in [16, "bf16"]:
-        scaler = None
-        if cfg.trainer.precision == 16:
-            scaler = GradScaler(
-                init_scale=cfg.model.get("native_amp_init_scale", 2**32),
-                growth_interval=cfg.model.get("native_amp_growth_interval", 1000),
-                hysteresis=cfg.model.get("hysteresis", 2),
-            )
-        if megatron_amp_o2 and not with_distributed_adam:
-            plugins.append(MegatronHalfPrecisionPlugin(precision=cfg.trainer.precision, device="cuda", scaler=scaler))
-        else:
-            plugins.append(PipelineMixedPrecisionPlugin(precision=cfg.trainer.precision, device="cuda", scaler=scaler))
-
-    trainer = Trainer(plugins=plugins, strategy=strategy, **cfg.trainer)
-    try:
-        exp_manager(trainer, cfg.exp_manager)
-    except FileNotFoundError:
-        print(f"exp_manager failed to find git-rev, continuing anyway, {FileNotFoundError}")
-    # update resume from checkpoint found by exp_manager
-    if cfg.model.resume_from_checkpoint is not None:
-        resume_from_checkpoint = cfg.model.resume_from_checkpoint
-    else:
-        resume_from_checkpoint = trainer._checkpoint_connector.resume_from_checkpoint_fit_path
-
-    logging.info(f"Resuming training from checkpoint: {resume_from_checkpoint}")
-
-    trainer._checkpoint_connector = CheckpointConnector(trainer, resume_from_checkpoint=resume_from_checkpoint)
-    # Override timer callback to a stateless one
-    for idx, callback in enumerate(trainer.callbacks):
-        if isinstance(callback, Timer):
-            trainer.callbacks[idx] = StatelessTimer(
-                cfg.trainer.max_time,
-            )
-    # hydra interpolation does not work here as the interpolation key is lost when PTL saves hparams
-    with open_dict(cfg):
-        cfg.model.precision = cfg.trainer.precision
-
-    return trainer
-
-
-class ShuffledCyclicSequence:
-    def __init__(self, new_length: int, data: Sequence, seed: int):
-        self.data = data
-        self.new_length = new_length
-
-        rng = torch.Generator().manual_seed(seed)
-        self.perm = torch.randperm(new_length, generator=rng, device="cpu")
-
-    def __len__(self):
-        return self.new_length
-
-    def __getitem__(self, idx):
-        permuted_idx = self.perm[idx].item()
-        return self.data[permuted_idx % len(self.data)]
+from trlx.trainer.nemo_ilql_trainer import ShuffledCyclicSequence, megatron_trainer
 
 
 @register_trainer

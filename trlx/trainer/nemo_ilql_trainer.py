@@ -12,7 +12,7 @@ from nemo.collections.nlp.parts.nlp_overrides import (
 from nemo.utils import get_rank, logging
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
@@ -37,6 +37,7 @@ from . import BaseRLTrainer
 def megatron_trainer(cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
+    seed_everything(cfg.model.get("seed", 1000))
 
     megatron_amp_o2 = cfg.model.get("megatron_amp_O2", False)
     with_distributed_adam = cfg.model.optim.get("name") == "distributed_fused_adam"
