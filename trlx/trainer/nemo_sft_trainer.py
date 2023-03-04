@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, cast
+from typing import Any, Callable, List, Optional, Union, cast
 
 import torch
 import transformers
@@ -18,18 +18,12 @@ class NeMoSFTTrainer(BaseRLTrainer):
     def __init__(
         self,
         config: TRLConfig,
-        reward_fn=None,
-        logit_mask=None,
-        metric_fn=None,
-        stop_sequences=None,
-        train_mode=True,
-        megatron_cfg=None,
-        pretrained_model=None,
+        metric_fn: Optional[Callable[[List[str]], Any]] = None,
+        megatron_cfg: Optional[Union[str, dict]] = None,
+        pretrained_model: Optional[str] = None,
+        **kwargs,
     ):
-        super().__init__(config, train_mode)
-        self.logit_mask = logit_mask
-        self.metric_fn = metric_fn
-        self.reward_fn = None
+        super().__init__(config, metric_fn=metric_fn, **kwargs)
 
         if not isinstance(config.method, SFTConfig):
             raise ValueError("config.method must be SFTConfig")
@@ -39,7 +33,6 @@ class NeMoSFTTrainer(BaseRLTrainer):
             cfg_path = Path(__file__).parent.parent.parent / "configs" / "nemo_configs" / megatron_cfg
             logging.info(f"Loading NeMo config from {cfg_path=}")
             megatron_cfg = OmegaConf.load(cfg_path)
-
         elif megatron_cfg is None:
             raise ValueError("megatron_cfg must be a path or a config")
 
@@ -60,9 +53,6 @@ class NeMoSFTTrainer(BaseRLTrainer):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
-
-        if stop_sequences is not None and len(stop_sequences) > 0:
-            logging.warning(f"Ignoring stop_sequences {stop_sequences=}")
 
     def learn(self):
         def collate_fn(elems: List[transformers.BatchEncoding]):

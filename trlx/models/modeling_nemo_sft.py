@@ -2,7 +2,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.distributed
@@ -42,7 +42,7 @@ except (ImportError, ModuleNotFoundError):
 class SFTGPT(MegatronGPTModel):
     sft_config: SFTConfig
 
-    def __init__(self, sft_config, metric_fn=None, **kwargs):
+    def __init__(self, sft_config: SFTConfig, metric_fn: Optional[Callable[[List[str]], Any]] = None, **kwargs):
         self.sft_config = sft_config
         self.metric_fn = metric_fn
         super().__init__(**kwargs)
@@ -440,6 +440,7 @@ class SFTGPT(MegatronGPTModel):
             )
 
             def loss_func(output_tensor):
+                # Shift logits and labels to align predictions
                 logits = output_tensor[:, :-1, :]
                 labels = input_ids[:, 1:]
                 _loss_mask = loss_mask[:, 1:]
@@ -453,9 +454,9 @@ class SFTGPT(MegatronGPTModel):
                 else:
                     loss = tensor_parallel.vocab_parallel_cross_entropy(logits.float(), labels)
 
-                _loss_mask = _loss_mask.contiguous().view(-1).float()  # [s b] -> [s*b]
-                loss = loss.transpose(0, 1).contiguous().view(-1).float()  # [s b] -> [s*b]
-                loss_for_mb = torch.sum(loss * _loss_mask) / _loss_mask.sum()  # sequence level nll
+                _loss_mask = _loss_mask.contiguous().view(-1).float()
+                loss = loss.transpose(0, 1).contiguous().view(-1).float()
+                loss_for_mb = torch.sum(loss * _loss_mask) / _loss_mask.sum()
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
