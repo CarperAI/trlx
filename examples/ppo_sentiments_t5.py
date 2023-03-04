@@ -1,20 +1,11 @@
 import os
-import pathlib
 from typing import Dict, List
 
 import numpy as np
-import yaml
 from datasets import load_dataset
 from transformers import AutoTokenizer, pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig
-
-
-def get_positive_score(scores):
-    "Extract value associated with a positive sentiment from pipeline's output"
-    return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
-
 from trlx.data.configs import (
     ModelConfig,
     OptimizerConfig,
@@ -24,6 +15,11 @@ from trlx.data.configs import (
     TRLConfig,
 )
 from trlx.models.modeling_ppo import PPOConfig
+
+
+def get_positive_score(scores):
+    "Extract value associated with a positive sentiment from pipeline's output"
+    return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
 default_config = TRLConfig(
@@ -36,7 +32,7 @@ default_config = TRLConfig(
         eval_interval=100,
         pipeline="PromptPipeline",
         trainer="AcceleratePPOTrainer",
-        save_best=False
+        save_best=False,
     ),
     model=ModelConfig(
         model_path="lvwerra/t5-imdb",
@@ -90,6 +86,7 @@ default_config = TRLConfig(
     ),
 )
 
+
 class LengthSampler:
     """
     Samples a length
@@ -128,7 +125,7 @@ def main(hparams={}):
         input_size = LengthSampler(input_min_text_length, input_max_text_length)
 
         def tokenize(sample):
-            sample['review'] = sample['review'].replace("/>br", "")
+            sample["review"] = sample["review"].replace("/>br", "")
             sample["input_ids"] = tokenizer.encode(sample["review"])[: input_size()] + [tokenizer.eos_token_id]
             sample["query"] = tokenizer.decode(sample["input_ids"])
             return sample
@@ -146,7 +143,7 @@ def main(hparams={}):
         input_size = LengthSampler(input_min_text_length, input_max_text_length)
 
         def tokenize(sample):
-            sample['review'] = sample['review'].replace("/>br", "")
+            sample["review"] = sample["review"].replace("/>br", "")
             sample["input_ids"] = tokenizer.encode(sample["review"])[: input_size()] + [tokenizer.eos_token_id]
             sample["query"] = tokenizer.decode(sample["input_ids"])
             return sample
