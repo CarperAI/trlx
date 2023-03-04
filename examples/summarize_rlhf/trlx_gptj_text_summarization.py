@@ -16,7 +16,7 @@ from trlx.data.configs import (
     TrainConfig,
     TRLConfig,
 )
-from trlx.trainer.nn.ppo_models import PPOConfig
+from trlx.models.modeling_ppo import PPOConfig
 
 REWARD_CHECKPOINT_PATH = "reward_model/rm_checkpoint/pytorch_model.bin"
 if not os.path.exists(REWARD_CHECKPOINT_PATH):
