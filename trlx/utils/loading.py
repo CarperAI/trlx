@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, List
 
 # Register load pipelines via module import
 from trlx.pipeline import _DATAPIPELINE
@@ -15,13 +15,15 @@ try:
     from trlx.trainer.nemo_sft_trainer import NeMoSFTTrainer
 except ImportError:
     # NeMo is not installed
-    def _trainers_unavailble(names: str):
+    def _trainers_unavailble(names: List[str]):
         def log_error(*args, **kwargs):
-            raise ImportError(f"Unable to import NeMo so {names} are unavailable")
+            raise ImportError("NeMo is not installed. Please install `nemo_toolkit` to use NeMo-based trainers.")
 
-        return register_trainer(names)(log_error)
+        # Register dummy trainers
+        for name in names:
+            register_trainer(name)(log_error)
 
-    _trainers_unavailble("NeMoILQLTrainer and NeMoSFTTrainer")
+    _trainers_unavailble(["NeMoILQLTrainer", "NeMoSFTTrainer"])
 
 
 def get_trainer(name: str) -> Callable:
