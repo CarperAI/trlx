@@ -17,6 +17,7 @@ default_config = default_sft_config()
 
 def main(hparams={}):
     # Merge sweep config with default config if given
+
     config = default_config.evolve(
         train=dict(
             trainer="NeMoSFTTrainer",
@@ -26,6 +27,7 @@ def main(hparams={}):
             ),
         )
     )
+    config = config.evolve(**hparams)
 
     imdb = load_dataset("imdb", split="train+test")
     # Finetune on only positive reviews
