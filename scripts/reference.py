@@ -5,9 +5,8 @@ import os
 import subprocess
 import time
 
-import wandb.apis.reports as wb
-
 import wandb
+import wandb.apis.reports as wb
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--pr_branch", type=str, required=True, help="Git branch of the format (origin:branch)")
