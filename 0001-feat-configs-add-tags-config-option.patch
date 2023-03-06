@@ -1,0 +1,45 @@
+From 7e7144868f71f437e10a15868b99d2cfcc571f3e Mon Sep 17 00:00:00 2001
+From: reciprocated <56548574+reciprocated@users.noreply.github.com>
+Date: Mon, 6 Mar 2023 10:52:20 +0200
+Subject: [PATCH] feat(configs): add `tags` config option
+
+---
+ trlx/data/configs.py                    | 3 ++-
+ trlx/trainer/accelerate_base_trainer.py | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/trlx/data/configs.py b/trlx/data/configs.py
+index 2029700..725b570 100644
+--- a/trlx/data/configs.py
++++ b/trlx/data/configs.py
+@@ -1,6 +1,6 @@
+ from copy import deepcopy
+ from dataclasses import dataclass, field
+-from typing import Any, Dict, Optional, Set
++from typing import Any, Dict, Optional, Set, List
+
+ import yaml
+
+@@ -218,6 +218,7 @@ class TrainConfig:
+
+     tracker: Optional[str] = "wandb"
+     logging_dir: Optional[str] = None
++    tags: Optional[List[str]] = field(default_factory=list)
+
+     seed: int = 1000
+
+diff --git a/trlx/trainer/accelerate_base_trainer.py b/trlx/trainer/accelerate_base_trainer.py
+index 0e92efc..0a27804 100644
+--- a/trlx/trainer/accelerate_base_trainer.py
++++ b/trlx/trainer/accelerate_base_trainer.py
+@@ -91,7 +91,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
+                     "name": run_name,
+                     "entity": self.config.train.entity_name,
+                     "group": self.config.train.group_name,
+-                    "tags": ["/".join(get_git_tag())],
++                    "tags": self.config.train.tags + ["/".join(get_git_tag())],
+                     "mode": "disabled" if os.environ.get("debug", False) else "online",
+                 }
+
+--
+2.30.1 (Apple Git-130)

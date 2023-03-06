@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set, List
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
