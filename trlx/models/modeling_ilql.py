@@ -57,12 +57,15 @@ class ILQLConfig(MethodConfig):
     two_qs: bool
     gen_kwargs: dict
 
-    def loss(self, outputs, labels: ILQLBatch):
+    def loss(self, outputs, labels):
         logits, (qs, target_qs, vs) = outputs
         terminal_mask = labels.dones[:, :-1]
         n_nonterminal = max(1, terminal_mask.sum())
-
-        actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
+        # check type of labels
+        if isinstance(labels, ILQLBatch):
+            actions = labels.input_ids[:, 1:].gather(dim=1, index=labels.actions_ixs).unsqueeze(-1)
+        else:
+            actions = labels.decoder_input_ids[:, 1:].unsqueeze(-1)
         nactions = actions.shape[1]
         bsize, _, dsize = logits.shape
 
@@ -339,3 +342,147 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         self.ilql_heads.load_state_dict(state_dict, strict=False)
         del state_dict
         gc.collect()
+
+
+class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
+    """This is a wrapper around huggingface AutoModelForSeq2Seq with two additional scalar heads"""
+
+    _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
+    _supported_modules = ["ilql_heads"]
+    _supported_args = ["two_qs", "alpha"]
+
+    def __init__(
+        self,
+        base_model: transformers.PreTrainedModel,
+        *,
+        two_qs: bool = True,
+        alpha: float = 0.99,
+    ):
+        super().__init__(base_model)
+        hidden_size = hf_get_hidden_size(self.base_model.config)
+        vocab_size = self.base_model.config.vocab_size
+        dtype = next(hf_get_lm_head(self.base_model).parameters()).dtype
+        self.two_qs = two_qs
+        self.alpha = alpha
+        self.ilql_heads = ILQLHeads(hidden_size, vocab_size, self.two_qs, self.alpha, dtype=dtype)
+
+    def sync_target_q_heads(self):
+        self.ilql_heads.sync_target_q_heads()
+
+    def state_dict(self, *args, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the ilql heads
+        to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
+        """
+        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
+        for k, v in ilql_heads_state_dict.items():
+            base_model_state_dict[f"ilql_heads.{k}"] = v
+        return base_model_state_dict
+
+    def post_init(self, state_dict):
+        """
+        We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
+        by preprending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
+        keys of the value head state dictionary.
+        """
+        for k in list(state_dict.keys()):
+            if "ilql_heads." in k:
+                state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
+        self.ilql_heads.load_state_dict(state_dict, strict=False)
+        del state_dict
+        gc.collect()
+
+    def forward(
+        self,
+        input_ids,
+        attention_mask=None,
+        decoder_input_ids=None,
+        past_key_values=None,
+        encoder_outputs=None,
+        actions_ixs=None,
+        states_ixs=None,
+        output_attentions=True,
+        output_hidden_states=True,
+    ):
+        forward_kwargs = self.get_compatible_forward_kwargs(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            past_key_values=past_key_values,
+            encoder_outputs=encoder_outputs,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+        )
+        out = self.base_model(**forward_kwargs)
+
+        hs = out.decoder_hidden_states[-1]
+
+        logits = self.base_model.lm_head(hs)
+        qs, target_qs, vs = self.ilql_heads(hs, states_ixs=states_ixs, actions_ixs=actions_ixs)
+        encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
+        return logits, qs, target_qs, vs, out.past_key_values, encoder_outputs
+
+    def generate(
+        self,
+        input_ids,
+        attention_mask=None,
+        decoder_input_ids=None,
+        past_key_values=None,
+        encoder_outputs=None,
+        beta=1,
+        max_new_tokens=32,
+        max_length=1024,
+        temperature=1,
+        top_k=20,
+        logit_mask=None,
+        pad_token_id=None,
+        eos_token_id=None,
+    ):
+        """
+        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        changing token probabilities as to how advantageous they would be
+        according to value functions estimations.
+        """
+
+        if eos_token_id is None or pad_token_id is None:
+            raise ValueError("eos_token_id and pad_token_id must be provided")
+
+        if attention_mask is None:
+            attention_mask = input_ids.not_equal(pad_token_id)
+
+        samples = input_ids.clone()
+        max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
+        if decoder_input_ids is None:
+            decoder_input_ids = input_ids.new_zeros(input_ids.shape[0], 1)
+
+        finished = torch.zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
+        for _ in range(max_new_tokens):
+            out = self.forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                decoder_input_ids=decoder_input_ids[:, -1].unsqueeze(-1),
+                past_key_values=past_key_values,
+                encoder_outputs=encoder_outputs,
+            )
+            logits, _, target_qs, vs, past_key_values, encoder_outputs = out
+            if self.two_qs:
+                qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
+            else:
+                qs = target_qs[:, -1, :]
+
+            logits = logits[:, -1, :]
+            vs = vs[:, -1, :]
+            adv = qs - vs
+            pi_beta = F.log_softmax(logits, -1)
+            pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
+            pi = F.softmax(pi_top_k / temperature, -1)
+            next_tokens = torch.multinomial(pi, num_samples=1)
+            next_tokens = (1 - finished) * next_tokens + finished * eos_token_id
+            finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
+            decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
+            samples = decoder_input_ids
+            if torch.all(finished):
+                break
+
+        return samples

@@ -6,7 +6,10 @@ import unittest
 import torch
 import transformers
 
-from trlx.models.modeling_ilql import AutoModelForCausalLMWithILQLHeads
+from trlx.models.modeling_ilql import (
+    AutoModelForCausalLMWithILQLHeads,
+    AutoModelForSeq2SeqLMWithILQLHeads,
+)
 from trlx.models.modeling_ppo import (
     AutoModelForCausalLMWithHydraValueHead,
     AutoModelForCausalLMWithValueHead,
@@ -333,6 +336,84 @@ class TestAutoModelForCausalLMWithILQLHeads(unittest.TestCase):
 
     def test_from_config(self):
         for model_path in AUTO_CAUSAL_LM_PATHS:
+            config = transformers.AutoConfig.from_pretrained(model_path)
+            # Modify the config to ensure the model is initialized from the custom config
+            config.vocab_size = 2
+            model = self._auto_model_class.from_config(config, **self._supported_args)
+            self.assertEqual(model.base_model.get_output_embeddings().out_features, config.vocab_size)
+
+
+class TestAutoModelForSeq2SeqLMWithILQLHeads(unittest.TestCase):
+    _auto_model_class = AutoModelForSeq2SeqLMWithILQLHeads
+    _supported_args = {"two_qs": True, "alpha": 0.8}  # TODO: Test various values
+
+    def setUp(self):
+        self.text = "Once upon a time there was a happy goose named Louis. He liked to eat bananas."
+
+    def tearDown(self):
+        gc.collect()  # Try to free up memory
+
+    def _create_inputs(self, model_path):
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
+        tokenizer.padding_side = "left"
+        inputs = tokenizer(self.text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
+        inputs["decoder_input_ids"] = torch.tensor([[tokenizer.pad_token_id]])
+        return inputs
+
+    def test_forward(self):
+        for model_path in AUTO_SEQ2SEQ_LM_PATHS:
+            model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
+            inputs = self._create_inputs(model_path)
+            print(inputs)
+            # Ensure that the `forward` method doesn't throw an error on generic inputs
+            try:
+                model(**inputs)
+            except Exception as e:
+                self.assertFalse(True, msg=e)
+
+    def test_generate(self):
+        for model_path in AUTO_SEQ2SEQ_LM_PATHS:
+            model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
+            inputs = self._create_inputs(model_path)
+
+            inputs["pad_token_id"] = tokenizer.pad_token_id
+            inputs["eos_token_id"] = tokenizer.eos_token_id
+
+            # Ensure that the `generate` method doesn't throw an error on generic inputs
+            try:
+                model.generate(**inputs)
+            except Exception as e:
+                self.assertFalse(True, msg=e)
+
+    def test_save_load(self):
+        for model_path in AUTO_SEQ2SEQ_LM_PATHS:
+            model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
+            modified_model = copy.deepcopy(model)
+
+            # Manually modify value head parameters
+            modified_model.ilql_heads.q_heads[0][0].bias = torch.nn.Parameter(
+                torch.ones_like(modified_model.ilql_heads.q_heads[0][0].bias) * 600053.34
+            )
+
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                modified_model.save_pretrained(tmpdirname)
+                loaded_model = self._auto_model_class.from_pretrained(tmpdirname)
+
+            # Check that the loaded model state dict is the same as the saved model state dict
+            loaded_state_dict = loaded_model.state_dict()
+            self.assertEqual(modified_model.state_dict().keys(), loaded_state_dict.keys())
+            for name, saved_state in modified_model.state_dict().items():
+                self.assertTrue(torch.all(torch.isclose(saved_state, loaded_state_dict[name])))
+            # Assert loaded states are not the same as the original unmodified pretrained model
+            self.assertFalse(
+                torch.all(
+                    torch.isclose(modified_model.ilql_heads.q_heads[0][0].bias, model.ilql_heads.q_heads[0][0].bias)
+                )
+            )
+
+    def test_from_config(self):
+        for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             config = transformers.AutoConfig.from_pretrained(model_path)
             # Modify the config to ensure the model is initialized from the custom config
             config.vocab_size = 2
