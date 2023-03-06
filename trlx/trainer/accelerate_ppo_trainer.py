@@ -441,7 +441,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
-                # Skip the beginning of sequence token
                 values = values.cpu()[:, :-1]
                 start = 0
 
