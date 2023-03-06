@@ -319,14 +319,6 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
 
-    @property
-    def device(self):
-        return self.base_model.device
-
-    @property
-    def dummy_inputs(self):
-        return {"input_ids": torch.ones(1, 1, device=self.base_model.device, dtype=torch.long)}
-
     def state_dict(self, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
