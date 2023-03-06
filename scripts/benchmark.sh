@@ -18,7 +18,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-# set -ex
+set -ex
 dir=`mktemp -d -p .`
 cd $dir
 trap "rm -rf ../$dir" EXIT

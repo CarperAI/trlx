@@ -44,9 +44,8 @@ else:
     print(f"Making runs on {pr_branch}")
     subprocess.run(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} {public}".split())
 
-print(f"{project_name.split('/')[1] if args.public else project_name=}")
 # wait for a bit until w&b syncs runs
-# time.sleep(10)
+time.sleep(10)
 
 import wandb.apis.reports as wb
 
@@ -97,16 +96,5 @@ report.blocks = [
     ),
 ]
 
-print(f'{report=}')
 report.save()
 print(report.url)
-
-
-import wandb.apis.reports as wb
-
-report = wb.Report(
-    entity=None,
-    project="trlx",
-    title="...",
-)
-report.save()
