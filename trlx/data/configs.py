@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, List
 
 import yaml
 
@@ -218,6 +218,7 @@ class TrainConfig:
 
     tracker: Optional[str] = "wandb"
     logging_dir: Optional[str] = None
+    tags: Optional[List[str]] = field(default_factory=list)
 
     seed: int = 1000
 
