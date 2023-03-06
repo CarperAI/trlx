@@ -5,6 +5,8 @@ import os
 import subprocess
 import time
 
+import wandb.apis.reports as wb
+
 import wandb
 
 parser = argparse.ArgumentParser()
@@ -23,8 +25,6 @@ if ':' in ref_branch:
 
 pr_hash = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} --only_hash").read()[:-1]
 ref_hash = os.popen(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} --only_hash").read()[:-1]
-
-import wandb
 
 api = wandb.Api()
 project_name = "CarperAI/trlx-benchmarks" if args.public else "trlx-benchmarks"
@@ -47,7 +47,6 @@ else:
 # wait for a bit until w&b syncs runs
 time.sleep(10)
 
-import wandb.apis.reports as wb
 
 report = wb.Report(
     # entity="carperai" if args.public else None,
