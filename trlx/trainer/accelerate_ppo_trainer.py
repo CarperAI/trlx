@@ -25,7 +25,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.utils import Clock
+from trlx.utils import Clock, infinite_dataloader
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
@@ -247,7 +247,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
         prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
         prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
-        self.prompt_iterator = iter(prompt_dataloader)
+        self.prompt_iterator = infinite_dataloader(prompt_dataloader)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """Make experiences

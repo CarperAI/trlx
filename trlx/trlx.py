@@ -92,7 +92,7 @@ def train(  # noqa: C901
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
-        pipeline = get_pipeline(config.train.pipeline)(prompts, max_prompt_length, trainer.tokenizer, infinite=True)
+        pipeline = get_pipeline(config.train.pipeline)(prompts, max_prompt_length, trainer.tokenizer)
         trainer.add_prompt_pipeline(pipeline)
 
         if eval_prompts is None:

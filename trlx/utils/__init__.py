@@ -5,8 +5,9 @@ import subprocess
 import time
 from dataclasses import is_dataclass
 from enum import Enum
+from itertools import repeat
 from numbers import Number
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 import numpy as np
 import torch
@@ -226,3 +227,14 @@ def get_git_tag() -> Tuple[str, str]:
         return branch.decode()[:-1], output.decode()[1:-2]
     except subprocess.CalledProcessError:
         return "unknown", "unknown"
+
+
+# Iter utils
+
+
+def infinite_dataloader(dataloader: Iterable) -> Iterable:
+    """
+    Returns a cyclic infinite dataloader from a finite dataloader
+    """
+    for _ in repeat(dataloader):
+        yield from dataloader
