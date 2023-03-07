@@ -31,7 +31,8 @@ config = TRLConfig(
         checkpoint_interval=10000,
         eval_interval=500,
         pipeline="PromptPipeline",
-        trainer="AcceleratePPOTrainer",
+        trainer="AccelerateMRTTrainer",
+        tracker=None,
     ),
     model=ModelConfig(
         model_path="google/flan-t5-small",
