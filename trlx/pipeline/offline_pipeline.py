@@ -62,7 +62,7 @@ class PromptPipeline(BasePipeline):
     Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
     """
 
-    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
+    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer, infinite=False):
         super().__init__()
 
         model_inputs = tokenizer(
@@ -77,11 +77,18 @@ class PromptPipeline(BasePipeline):
             {"input_ids": tokens, "attention_mask": mask} for tokens, mask in zip(prompts_tokens, attention_mask)
         ]
 
+        self.infinite = infinite
+
     def __getitem__(self, ix: int):
+        if self.infinite:
+            ix = ix % len(self.prompts)
         return self.prompts[ix]
 
     def __len__(self) -> int:
-        return len(self.prompts)
+        if self.infinite:
+            return torch.iinfo(torch.int32).max
+        else:
+            return len(self.prompts)
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
         collate_fn = DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
