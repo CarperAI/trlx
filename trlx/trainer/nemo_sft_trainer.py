@@ -56,8 +56,9 @@ class NeMoSFTTrainer(BaseRLTrainer):
 
     def learn(self):
         def collate_fn(elems: List[transformers.BatchEncoding]):
+            context_tokens = [add_bos_if_not_present(e["input_ids"]) for e in elems]
             input_ids = self.tokenizer.pad(
-                elems,
+                {"input_ids": context_tokens},
                 padding="max_length",
                 max_length=self.max_length,
                 return_tensors="pt",
