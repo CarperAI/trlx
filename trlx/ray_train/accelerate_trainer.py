@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ray.tune.trainable import Trainable
 
 from accelerate.commands.config import default_config_file, load_config_from_file
-from ray.train.torch import TorchTrainer
+from ray.train.torch import TorchTrainer, get_device
 
 from .launch import launch_command, launch_command_parser
 
@@ -137,6 +137,8 @@ class AccelerateTrainer(TorchTrainer):
                 with open(temp_config_file, "w") as f:
                     f.write(accelerate_config_raw)
 
+                os.environ["ACCELERATE_TORCH_DEVICE"] = str(get_device())
+
                 # Set by TorchBackend
                 master_addr = os.environ["MASTER_ADDR"]
                 master_port = os.environ["MASTER_PORT"]
@@ -169,7 +171,6 @@ class AccelerateTrainer(TorchTrainer):
                 os.environ["LOCAL_RANK"] = str(session.get_local_rank())
                 os.environ["LOCAL_WORLD_SIZE"] = str(session.get_local_world_size())
                 os.environ["LOCAL_SIZE"] = str(session.get_local_world_size())
-                os.environ["ACCELERATE_TORCH_DEVICE"] = f"cuda:{session.get_local_rank()}"
 
                 return train_loop_per_worker(*args, **kwargs)
 

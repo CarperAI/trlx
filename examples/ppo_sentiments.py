@@ -23,10 +23,12 @@ def main(hparams={}):
     default_config = hparams.pop("default_config")
     config = TRLConfig.update(default_config, hparams)
 
-    if torch.cuda.is_available():
-        device = int(os.environ.get("LOCAL_RANK", 0))
-    else:
-        device = -1
+    device = os.environ.get("ACCELERATE_TORCH_DEVICE", None)
+    if device is None:
+        if torch.cuda.is_available():
+            device = int(os.environ.get("LOCAL_RANK", 0))
+        else:
+            device = -1
 
     sentiment_fn = pipeline(
         "sentiment-analysis",

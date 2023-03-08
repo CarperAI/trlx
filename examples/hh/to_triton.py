@@ -24,7 +24,9 @@ parser.add_argument("--device", type=int, default=0)
 args = parser.parse_args()
 
 model_name = args.checkpoint.split("/")[-1]
-device = torch.device(args.device)
+device = os.environ.get("ACCELERATE_TORCH_DEVICE", None)
+if device is None:
+    device = torch.device(args.device)
 
 
 class RewardModel(nn.Module):
