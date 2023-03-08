@@ -40,7 +40,7 @@ python -m venv venv
 pip install torch --extra-index-url https://download.pytorch.org/whl/cu117
 pip install -e .
 
-args='{"train": {"project_name": "trlx-benchmarks", "entity_name": '$entity', "tags": ["'$hash'"]}}'
+args='{"train": {"project_name": "trlx-references", "entity_name": '$entity', "tags": ["'$hash'"]}}'
 python examples/randomwalks/ilql_randomwalks.py "$args"
 python examples/randomwalks/ppo_randomwalks.py "$args"
 

@@ -26,7 +26,7 @@ pr_hash = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_br
 ref_hash = os.popen(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} --only_hash").read()[:-1]
 
 api = wandb.Api()
-project_name = "CarperAI/trlx-benchmarks" if args.public else "trlx-benchmarks"
+project_name = "CarperAI/trlx-references" if args.public else "trlx-references"
 public = "--public" if args.public else ""
 
 runs = api.runs(project_name, filters={"tags": {"$in": [ref_hash]}})
