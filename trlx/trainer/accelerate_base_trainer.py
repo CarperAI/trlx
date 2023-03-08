@@ -244,10 +244,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def save(self, directory: Optional[str] = None):
-        """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
-
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
         later use.
@@ -260,15 +256,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 `save_pretrained` method.
         """
         if directory is None:
-            directory = f"{self.config.train.checkpoint_dir}/hf_model"
+            directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
         self.accelerator.wait_for_everyone()
         self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
         if self.accelerator.is_main_process:
             self.tokenizer.save_pretrained(directory)
 
-    def load(self, directory=None):
+    def save(self, directory: Optional[str] = None, **kwargs):
+        """Creates a checkpoint of the optimizer, scheduler and model"""
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+
+    def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
-        self.accelerator.load_state(directory or self.config.train.checkpoint_dir)
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
@@ -487,7 +487,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.iter_count += 1
 
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        self.save()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        self.save(directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -533,7 +535,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
-                        self.save()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        self.save(directory)
                         return self.evaluate()
 
                 self.post_backward_callback()
