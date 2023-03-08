@@ -1,4 +1,3 @@
-# https://github.com/huggingface/transformers/blob/v4.26.1/tests/trainer/test_trainer.py#L312
 import os
 import tempfile
 import unittest
