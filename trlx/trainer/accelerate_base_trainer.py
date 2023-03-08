@@ -487,7 +487,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.iter_count += 1
 
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        subfolder = f"checkpoint_{self.iter_count}"
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
                         self.save(directory)
 
@@ -535,7 +535,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
-                        subfolder = f"checkpoint_{self.iter_count}"
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"# Left pad the dir name with zeros
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
                         self.save(directory)
                         return self.evaluate()
