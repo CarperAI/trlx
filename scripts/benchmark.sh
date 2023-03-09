@@ -29,9 +29,11 @@ git clone --depth 1 --single-branch -b $branch https://github.com/$origin .
 git apply ../0001-feat-configs-add-tags-config-option.patch
 
 hash=`find . -not \( -path ./.git -prune \) -not -name "*.md" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -f1 -d" "`
+git_hash=`git log --format=%h/%s/%as -n1`
 
 if [ "$only_hash" = true ]; then
-   echo $hash
+   echo "$hash"
+   echo "$git_hash"
    exit 0
 fi
 
@@ -56,4 +58,4 @@ CUDA_VISIBLE_DEVICES=2 accelerate launch --num_processes 1 --config_file configs
 CUDA_VISIBLE_DEVICES=3 accelerate launch --num_processes 1 --config_file configs/accelerate/zero2-bf16.yaml --main_process_port 8883 examples/ppo_sentiments_t5.py "$args" > ../benchmark_logs/ppo_sentiments_t5.log 2>&1 &
 
 wait
-# accelerate launch --num_processes 7 --config_file configs/accelerate/zero2-bf16.yaml examples/hh/ppo_hh.py "$args"
+accelerate launch --num_processes 7 --config_file configs/accelerate/zero2-bf16.yaml examples/hh/ppo_hh.py "$args"
