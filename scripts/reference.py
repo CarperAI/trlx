@@ -3,7 +3,6 @@
 import argparse
 import os
 import subprocess
-import time
 
 import wandb
 import wandb.apis.reports as wb
@@ -22,8 +21,10 @@ if ':' in pr_branch:
 if ':' in ref_branch:
     ref_origin, ref_branch = ref_branch.rsplit(':', 1)
 
-pr_hash = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} --only_hash").read()[:-1]
-ref_hash = os.popen(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} --only_hash").read()[:-1]
+out = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} --only_hash")
+pr_hash, pr_git_hash = [x[:-1] for x in out.readlines()]
+out = os.popen(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} --only_hash")
+ref_hash, ref_git_hash = [x[:-1] for x in out.readlines()]
 
 api = wandb.Api()
 project_name = "CarperAI/trlx-references" if args.public else "trlx-references"
@@ -31,25 +32,24 @@ public = "--public" if args.public else ""
 
 runs = api.runs(project_name, filters={"tags": {"$in": [ref_hash]}})
 if runs:
-    print(f"On {ref_branch} these runs were already made: \n{chr(10).join(run.name for run in runs)}")
+    print(f"On {ref_branch} @{ref_git_hash} these runs were already made: \n{chr(10).join(run.name for run in runs)}")
 else:
-    print(f"Making runs on {ref_branch}")
+    print(f"Making runs on {ref_branch} @{ref_git_hash}")
     subprocess.run(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} {public}".split())
 
 runs = api.runs(project_name, filters={"tags": {"$in": [pr_hash]}})
 if runs:
-    print(f"On {pr_branch} these runs were already made: \n{chr(10).join(run.name for run in runs)}")
+    print(f"On {pr_branch} @{pr_git_hash} these runs were already made: \n{chr(10).join(run.name for run in runs)}")
 else:
-    print(f"Making runs on {pr_branch}")
+    print(f"Making runs on {pr_branch} @{pr_git_hash}")
     subprocess.run(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} {public}".split())
 
 report = wb.Report(
-    entity="carperai" if args.public else None,
     project=project_name.split('/')[1] if args.public else project_name,
     title=f"{pr_branch} v. {ref_branch}",
+    description=f"{pr_branch}\n@{pr_git_hash}\n\n{ref_branch}\n@{ref_git_hash}",
 )
 blocks = []
-api = wandb.Api()
 
 experiment_names = set(x.name.split(':')[0] for x in api.runs(project_name))
 for name in experiment_names:
@@ -59,7 +59,7 @@ for name in experiment_names:
     ]}
 
     runs = api.runs(project_name, filters=filters)
-    metrics = set(sum([[metric for metric in run.history().columns if not metric.startswith("_")] for run in runs],[]))
+    metrics = set(sum([[metric for metric in run.history().columns if not metric.startswith("_")] for run in runs], []))
 
     metrics_panels = [
         wb.LinePlot(
@@ -100,5 +100,6 @@ for name in experiment_names:
         ),
     ])
 
+report.blocks = blocks
 report.save()
 print(report.url)
