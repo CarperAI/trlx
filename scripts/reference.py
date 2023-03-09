@@ -1,4 +1,4 @@
-# python scripts/reference.py --pr_branch CarperAI/trlx:convert-examples-configs --ref_branch CarperAI/trlx:main
+# python scripts/reference.py CarperAI/trlx:convert-examples-configs --against CarperAI/trlx:main
 
 import argparse
 import os
@@ -9,14 +9,14 @@ import wandb
 import wandb.apis.reports as wb
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--pr_branch", type=str, required=True, help="Git branch of the format (origin:branch)")
-parser.add_argument("--ref_branch", type=str, default="CarperAI/trlx:main", help="Reference git branch")
-parser.add_argument("--public", action="store_true", help="Use CarperAI entity to store w&b runs")
+parser.add_argument("branch", type=str, help="Git branch in the format `origin:branch`")
+parser.add_argument("--against", type=str, default="CarperAI/trlx:main", help="Reference git branch")
+parser.add_argument("--public", action="store_true", help="Use CarperAI entity to store/pull from w&b runs")
 args = parser.parse_args()
 
 pr_origin = ref_origin = "CarperAI/trlx"
-pr_branch = args.pr_branch
-ref_branch = args.ref_branch
+pr_branch = args.branch
+ref_branch = args.against
 if ':' in pr_branch:
     pr_origin, pr_branch = pr_branch.rsplit(':', 1)
 if ':' in ref_branch:
@@ -43,56 +43,62 @@ else:
     print(f"Making runs on {pr_branch}")
     subprocess.run(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} {public}".split())
 
-# wait for a bit until w&b syncs runs
-time.sleep(10)
-
-
 report = wb.Report(
-    # entity="carperai" if args.public else None,
+    entity="carperai" if args.public else None,
     project=project_name.split('/')[1] if args.public else project_name,
     title=f"{pr_branch} v. {ref_branch}",
 )
+blocks = []
+api = wandb.Api()
 
-# collect metric columns to display
-metrics = set(sum([[metric for metric in run.history().columns if not metric.startswith("_")] for run in runs], []))
-metrics_panels = [
-    wb.LinePlot(
-        title=f"{metric}",
-        x="Step",
-        y=[f"{metric}"],
-        title_x="Step",
-        smoothing_show_original=True,
-        max_runs_to_show=100,
-        plot_type="line",
-        font_size="auto",
-        legend_position="north",
-    ) for metric in metrics
-]
+experiment_names = set(x.name.split(':')[0] for x in api.runs(project_name))
+for name in experiment_names:
+    filters = {"$and": [
+        {"display_name": {"$regex": f"^{name}"}},
+        {"tags": {"$in": [pr_hash, ref_hash]}}
+    ]}
 
-# sort the most important metrics to be shown first
-major_metrics = set()
-for metric in metrics:
-    if metric.startswith("reward") or metric.startswith("metric"):
-        major_metrics.add(metric)
-metrics = metrics - major_metrics
+    runs = api.runs(project_name, filters=filters)
+    metrics = set(sum([[metric for metric in run.history().columns if not metric.startswith("_")] for run in runs],[]))
 
-report.blocks = [
-    wb.H1(text="Metrics"),
-    wb.PanelGrid(
-        panels=[panel for panel in metrics_panels if panel.title in major_metrics],
-        runsets=[wb.Runset(
-            project=project_name,
-            filters={"tags": {"$in": [pr_hash, ref_hash]}}
-        )],
-    ),
-    wb.PanelGrid(
-        panels=[panel for panel in metrics_panels if panel.title in metrics],
-        runsets=[wb.Runset(
-            project=project_name,
-            filters={"tags": {"$in": [pr_hash, ref_hash]}}
-        )],
-    ),
-]
+    metrics_panels = [
+        wb.LinePlot(
+            title=f"{metric}",
+            x="Step",
+            y=[metric],
+            title_x="Step",
+            smoothing_show_original=True,
+            max_runs_to_show=100,
+            plot_type="line",
+            font_size="auto",
+            legend_position="north",
+        ) for metric in metrics
+    ]
+
+    # sort the most important metrics to be shown first
+    major_metrics = set()
+    for metric in metrics:
+        if metric.startswith("reward") or metric.startswith("metric"):
+            major_metrics.add(metric)
+    metrics = metrics - major_metrics
+
+    blocks.extend([
+        wb.H1(text=name),
+        wb.PanelGrid(
+            panels=[panel for panel in metrics_panels if panel.title in major_metrics],
+            runsets=[wb.Runset(
+                project=project_name,
+                filters=filters
+            )],
+        ),
+        wb.PanelGrid(
+            panels=[panel for panel in metrics_panels if panel.title in metrics],
+            runsets=[wb.Runset(
+                project=project_name,
+                filters=filters
+            )],
+        ),
+    ])
 
 report.save()
 print(report.url)
