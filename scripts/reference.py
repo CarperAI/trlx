@@ -68,7 +68,7 @@ for name in experiment_names:
             y=[metric],
             title_x="Step",
             smoothing_show_original=True,
-            max_runs_to_show=100,
+            max_runs_to_show=2,
             plot_type="line",
             font_size="auto",
             legend_position="north",
