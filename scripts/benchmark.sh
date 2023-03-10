@@ -58,4 +58,6 @@ CUDA_VISIBLE_DEVICES=2 accelerate launch --num_processes 1 --config_file configs
 CUDA_VISIBLE_DEVICES=3 accelerate launch --num_processes 1 --config_file configs/accelerate/zero2-bf16.yaml --main_process_port 8883 examples/ppo_sentiments_t5.py "$args" > ../benchmark_logs/ppo_sentiments_t5.log 2>&1 &
 
 wait
+
+args='{"train": {"total_steps": 2000, "project_name": "trlx-references", "entity_name": '$entity', "tags": ["'$hash'"]}}'
 accelerate launch --num_processes 7 --config_file configs/accelerate/zero2-bf16.yaml examples/hh/ppo_hh.py "$args"
