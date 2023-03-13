@@ -225,7 +225,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             table.add_row(*row)
             Console().print(table)
 
-        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
+        returns = (returns - returns.mean()) / (returns.std() + torch.finfo(returns.dtype).eps)
         rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
         for rs, ret in zip(rewards, returns):
             rs[-1] = ret

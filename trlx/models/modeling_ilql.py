@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
 from itertools import chain
+from typing import Optional, Tuple
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -157,11 +158,15 @@ class ILQLHeads(nn.Module):
 
     def forward(
         self,
-        hs: torch.Tensor,
-        states_ixs: torch.Tensor = None,
-        actions_ixs: torch.Tensor = None,
+        hs: TensorType["batch", "seq_len", "hidden"],
+        states_ixs: Optional[TensorType["batch", "states_seq_len"]] = None,
+        actions_ixs: Optional[TensorType["batch", "actions_seq_len"]] = None,
         **kwargs,
-    ):
+    ) -> Tuple[
+        Tuple[TensorType["batch", "actions_seq_len", "hidden"]],
+        Tuple[TensorType["batch", "actions_seq_len", "hidden"]],
+        TensorType["batch", "states_seq_len", "hidden"],
+    ]:
         if states_ixs is not None:
             states_hs = batched_index_select(hs, states_ixs, 1)
             actions_hs = batched_index_select(hs, actions_ixs, 1)

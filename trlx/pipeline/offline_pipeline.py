@@ -3,7 +3,11 @@ from typing import Iterable, List, Union
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding, PreTrainedTokenizer
+from transformers import (
+    DataCollatorWithPadding,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 from trlx.data.ilql_types import (
     ILQLBatch,
@@ -14,7 +18,9 @@ from trlx.data.ilql_types import (
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
-def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=2048) -> List[int]:  # noqa: C901
+def tokenize_dialogue(  # noqa: C901
+    dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+) -> List[List[int]]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
