@@ -59,5 +59,5 @@ CUDA_VISIBLE_DEVICES=3 accelerate launch --num_processes 1 --config_file configs
 
 wait
 
-args='{"train": {"total_steps": 2000, "project_name": "trlx-references", "entity_name": '$entity', "tags": ["'$hash'"]}}'
-accelerate launch --num_processes 7 --config_file configs/accelerate/zero2-bf16.yaml examples/hh/ppo_hh.py "$args"
+args='{"train": {"total_steps": 1500, "seq_length": 512, "project_name": "trlx-references", "entity_name": '$entity', "tags": ["'$hash'"]}}'
+CONFIG_NAME=6B accelerate launch --num_processes 7 --config_file configs/accelerate/zero2-bf16.yaml examples/hh/ppo_hh.py "$args"
