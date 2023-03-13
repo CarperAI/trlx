@@ -23,8 +23,12 @@ if ':' in ref_branch:
 
 out = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} --only_hash")
 pr_hash, pr_git_hash = [x[:-1] for x in out.readlines()]
+
 out = os.popen(f"./scripts/benchmark.sh --origin {ref_origin} --branch {ref_branch} --only_hash")
 ref_hash, ref_git_hash = [x[:-1] for x in out.readlines()]
+
+print(f"{pr_origin}:{pr_branch=} {pr_hash=} {pr_git_hash=}")
+print(f"{ref_origin}:{ref_branch} {ref_hash=} {ref_git_hash=}")
 
 api = wandb.Api()
 project_name = "CarperAI/trlx-references" if args.public else "trlx-references"
