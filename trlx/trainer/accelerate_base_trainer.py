@@ -483,7 +483,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     forward_time = 0
                     backward_time = 0
                     stats_accum = []
-                    for mbi in range(self.mb_num):
+                    for mbi in range(self.num_mb):
                         forward_time -= time()
                         loss, stats = self.loss(batch)
                         forward_time += time()
@@ -492,11 +492,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         backward_time += time()
                         stats_accum.append(stats)
 
-                    forward_time /= self.mb_num
-                    backward_time /= self.mb_num
+                    forward_time /= self.num_mb
+                    backward_time /= self.num_mb
                     # TODO(Dahoas): Best way to combine stats between mbs?
                     # How does accelerate do it?
-                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.mb_num for key in stats_accum[0]}
+                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
 
                     self.opt.step()
                     self.opt.zero_grad()
