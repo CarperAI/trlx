@@ -1,5 +1,6 @@
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
@@ -12,11 +13,23 @@ def merge(base: Dict, update: Dict, updated: Set) -> Dict:
         if k in update and isinstance(v, dict):
             base[k] = merge(v, update[k], updated)
             updated.add(k)
-        elif isinstance(v, dict):
-            base[k] = merge(v, update, updated)
         elif k in update:
             base[k] = update[k]
             updated.add(k)
+
+    return base
+
+
+def _merge_dicts(base: Dict, update: Dict) -> Dict:
+    "Merge two dictionaries recursively, returning a new dictionary."
+
+    base = deepcopy(base)
+
+    for k, v in update.items():
+        if isinstance(v, dict):
+            base[k] = _merge_dicts(base.get(k, {}), v)
+        else:
+            base[k] = v
 
     return base
 
@@ -183,9 +196,6 @@ class TrainConfig:
 
     :param seed: Random seed
     :type seed: int
-
-    :param git_tag: Git tag for logging (as returned by ``trlx.utils.get_git_tags()``)
-    :type git_tag: Optional[Tuple[str, str]]
     """
 
     total_steps: int
@@ -212,7 +222,6 @@ class TrainConfig:
     logging_dir: Optional[str] = None
 
     seed: int = 1000
-    git_tag: Optional[Tuple[str, str]] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -258,6 +267,16 @@ class TRLConfig:
         }
 
         return data
+
+    def evolve(self, **kwargs) -> "TRLConfig":
+        """
+        Evolve TRLConfig with new parameters. Can update nested parameters.
+        >>> config = trlx.data.default_configs.default_ilql_config()
+        >>> config = config.evolve(method=dict(gamma=0.99, gen_kwargs=dict(max_new_tokens=100))
+        >>> config.method.gamma
+        0.99
+        """
+        return TRLConfig.from_dict(_merge_dicts(self.to_dict(), kwargs))
 
     @classmethod
     def from_dict(cls, config: Dict):
