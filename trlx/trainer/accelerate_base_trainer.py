@@ -45,6 +45,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
+        if config.train.minibatch_size:
+            assert config.train.batch_size % config.train.minibatch_size == 0, "Minibatch size must divide batch size"
+            self.mbs = config.train.minibatch_size
+        else:
+            self.mbs = config.train.batch_size
+        self.num_mb = config.train.batch_size // self.mbs
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
@@ -474,12 +480,23 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     # gradient update per batch, PPO for example commonly performs
                     # multiple gradient updates on the same batch of data.
                     # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = time()
-                    loss, stats = self.loss(batch)
-                    forward_time = time() - forward_time
-                    backward_time = time()
-                    self.accelerator.backward(loss)
-                    backward_time = time() - backward_time
+                    forward_time = 0
+                    backward_time = 0
+                    stats_accum = []
+                    for mbi in range(self.mb_num):
+                        forward_time -= time()
+                        loss, stats = self.loss(batch)
+                        forward_time += time()
+                        backward_time -= time()
+                        self.accelerator.backward(loss)
+                        backward_time += time()
+                        stats_accum.append(stats)
+
+                    forward_time /= self.mb_num
+                    backward_time /= self.mb_num
+                    # TODO(Dahoas): Best way to combine stats between mbs?
+                    # How does accelerate do it?
+                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.mb_num for key in stats_accum[0]}
 
                     self.opt.step()
                     self.opt.zero_grad()
