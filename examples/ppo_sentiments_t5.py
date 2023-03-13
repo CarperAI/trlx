@@ -169,4 +169,3 @@ def main(hparams={}):
 if __name__ == "__main__":
     hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
     main(hparams)
-
