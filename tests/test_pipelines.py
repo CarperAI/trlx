@@ -10,6 +10,7 @@ def test_tokenize_dialogue_single_turn(response_words):
     response = " ".join(response_words)
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenized_response = tokenizer(response, add_special_tokens=False).input_ids
+    print(f"{response} -> {tokenized_response}")
     dialog_tokens = tokenize_dialogue(response, tokenizer)
 
     assert len(dialog_tokens) == 2

@@ -37,6 +37,7 @@ def tokenize_dialogue(  # noqa: C901
             tokens = tokenizer(phrase, add_special_tokens=False).input_ids[-ctx_length:]
             ctx_length -= len(tokens)
             out.insert(0, tokens)
+            assert ctx_length >= 0
             if ctx_length == 0:
                 break
 
@@ -53,6 +54,7 @@ def tokenize_dialogue(  # noqa: C901
             tokens = tokenizer(phrase, add_special_tokens=False).input_ids[:ctx_length]
             ctx_length -= len(tokens)
             out.append(tokens)
+            assert ctx_length >= 0
             if ctx_length == 0:
                 break
 
