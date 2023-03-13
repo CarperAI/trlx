@@ -56,7 +56,6 @@ class GPTRewardModel(nn.Module):
         chosen_rewards = rewards[:bs]
         rejected_rewards = rewards[bs:]
 
-        # Compute pairwise loss. Only backprop on the last value before padding
         loss = 0
         inference = False
         for i in range(bs):
@@ -86,7 +85,7 @@ class GPTRewardModel(nn.Module):
             chosen_end_scores.append(c_truncated_reward[-1])
             rejected_end_scores.append(r_truncated_reward[-1])
 
-            # Compute loss
+            # Compute loss based on truncated rewards (ignore padding)
             loss += -torch.log(torch.sigmoid(c_truncated_reward - r_truncated_reward)).mean()
         loss = loss / bs
 

@@ -1,7 +1,7 @@
 import os
 import sys
 from abc import abstractmethod
-from typing import Any, Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable, Optional
 
 import torch
 
@@ -97,7 +97,7 @@ class BaseRLTrainer:
         pass
 
     @abstractmethod
-    def save(self, directory=None):
+    def save(self, directory: Optional[str] = None):
         """Creates a checkpoint of training states"""
         pass
 

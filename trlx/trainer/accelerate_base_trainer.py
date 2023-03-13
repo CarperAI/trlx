@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
 
+import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
@@ -22,7 +23,6 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
-    logging,
     significant,
 )
 from trlx.utils.modeling import (
@@ -76,12 +76,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             num_gpus = "1gpu"
         else:
             num_gpus = f"{self.accelerator.num_processes}gpus"
-        git_tags = config.train.git_tag or get_git_tag()
-        branch = git_tags[0]
+        branch = get_git_tag()[0]
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process:
+        if self.accelerator.is_main_process and not ray.is_initialized():
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -92,7 +91,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "name": run_name,
                     "entity": self.config.train.entity_name,
                     "group": self.config.train.group_name,
-                    "tags": ["/".join(git_tags)],
+                    "tags": ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
 
@@ -245,23 +244,31 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def save(self, directory: Optional[str] = None):
-        """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
+    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
+        """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
+        later use.
 
-    @abstractmethod
-    def save_pretrained(self, directory: Optional[str] = None):
-        """Save the model and its configuration file to a directory, so that it can be re-loaded with the
-        `transformers.PreTrainedModel.from_pretrained` method.
-
-        NOTE: If a `directory` is not provided, the model will be saved to a sub-directory
-        of the Trainer config checkpoint dir named "hf_model" (e.g. `/ckpts/hf_model`).
+        Args:
+            directory (str, *optional*): The directory to save the trainer files to.
+                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
+                checkpoint directory as specified by the Trainer's config.
+            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
+                `save_pretrained` method.
         """
-        pass
+        if directory is None:
+            directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
+        self.accelerator.wait_for_everyone()
+        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
+        if self.accelerator.is_main_process:
+            self.tokenizer.save_pretrained(directory)
 
-    def load(self, directory=None):
+    def save(self, directory: Optional[str] = None, **kwargs):
+        """Creates a checkpoint of the optimizer, scheduler and model"""
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+
+    def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
-        self.accelerator.load_state(directory or self.config.train.checkpoint_dir)
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
@@ -395,22 +402,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.accelerator.is_main_process:
             rows = sum(list(map(list, zip(*table))), [])
 
+            # Add metrics/rewards to the table's title
+            table_title = f"Evaluation #{self.nth_evaluation}"
+            for k, x in stats.items():
+                if k.startswith("reward") or k.startswith("metrics"):
+                    table_title += f" {k}: {significant(x)}"
+
+            rich_table = Table(*columns, title=table_title, show_lines=True)
+            for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
+                rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
+            Console().print(rich_table)
+
             if not ray.is_initialized():
-                # Add metrics/rewards to the table's title
-                table_title = f"Evaluation #{self.nth_evaluation}"
-                for k, x in stats.items():
-                    if k.startswith("reward") or k.startswith("metrics"):
-                        table_title += f" {k}: {significant(x)}"
+                if self.config.train.tracker == "wandb":
+                    import wandb
 
-                rich_table = Table(*columns, title=table_title, show_lines=True)
-                for ix in range(max(min(3, len(rows)), len(gen_sweep_values))):
-                    rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
-                Console().print(rich_table)
-
-            if self.config.train.tracker == "wandb":
-                import wandb
-
-                stats["samples"] = wandb.Table(columns, rows)
+                    stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
@@ -480,7 +487,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.iter_count += 1
 
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        self.save()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        self.save(directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -518,14 +527,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             checkpoint = Checkpoint.from_directory("state")
                             session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
-                    self.accelerator.log(stats, step=self.iter_count)
+                    if not ray.is_initialized():
+                        self.accelerator.log(stats, step=self.iter_count)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
-                        self.save()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        self.save(directory)
                         return self.evaluate()
 
                 self.post_backward_callback()

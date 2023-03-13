@@ -1,13 +1,13 @@
+import json
 import os
-import pathlib
+import sys
 from typing import Dict, List
 
-import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig
+from trlx.data.default_configs import TRLConfig, default_ilql_config
 
 
 def get_positive_score(scores):
@@ -16,7 +16,8 @@ def get_positive_score(scores):
 
 
 def main(hparams={}):
-    config = TRLConfig.update(hparams.pop("default_config"), hparams)
+    # Merge sweep config with default config if given
+    config = TRLConfig.update(default_ilql_config().to_dict(), hparams)
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -43,8 +44,5 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    config_path = pathlib.Path(__file__).parent.joinpath("../configs/ilql_config.yml")
-    with config_path.open() as f:
-        default_config = yaml.safe_load(f)
-
-    main({"default_config": default_config})
+    hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
+    main(hparams)

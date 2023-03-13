@@ -1,17 +1,16 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
-
+import json
 import os
-import pathlib
+import sys
 from typing import List
 
 import torch
-import yaml
 from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.configs import TRLConfig
+from trlx.data.default_configs import TRLConfig, default_ppo_config
 
 
 def get_positive_score(scores):
@@ -20,15 +19,13 @@ def get_positive_score(scores):
 
 
 def main(hparams={}):
-    default_config = hparams.pop("default_config")
-    config = TRLConfig.update(default_config, hparams)
+    # Merge sweep config with default config if given
+    config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
 
-    device = os.environ.get("ACCELERATE_TORCH_DEVICE", None)
-    if device is None:
-        if torch.cuda.is_available():
-            device = int(os.environ.get("LOCAL_RANK", 0))
-        else:
-            device = -1
+    if torch.cuda.is_available():
+        device = int(os.environ.get("LOCAL_RANK", 0))
+    else:
+        device = -1
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -50,13 +47,11 @@ def main(hparams={}):
     trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["I don't know much about Hungarian underground"] * 256,
+        eval_prompts=["I don't know much about Hungarian underground"] * 64,
         config=config,
     )
 
 
 if __name__ == "__main__":
-    config_path = pathlib.Path(__file__).parent.joinpath("../configs/ppo_config.yml")
-    with config_path.open() as f:
-        default_config = yaml.safe_load(f)
-    main({"default_config": default_config})
+    hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
+    main(hparams)

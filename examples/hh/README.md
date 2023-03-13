@@ -8,7 +8,7 @@ accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2
 ```
 Or if you want to train a smaller model or start from a supervised checkpoint, you can use one of the [configs](./configs)
 ```sh
-CONFIG_PATH=configs/ppo_hh_125M.yml accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
+CONFIG_NAME=125M accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
 ```
 
 Already trained models are hosted on https://huggingface.co/reciprocate

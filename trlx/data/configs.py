@@ -145,7 +145,9 @@ class TrainConfig:
     :param tracker: Tracker to use for logging. Default: "wandb"
     :type tracker: str
 
-    :param checkpoint_interval: Save model every checkpoint_interval steps
+    :param checkpoint_interval: Save model every checkpoint_interval steps.
+        Each checkpoint is stored in a sub-directory of the `TrainConfig.checkpoint_dir`
+        directory in the format `checkpoint_dir/checkpoint_{step}`.
     :type checkpoint_interval: int
 
     :param eval_interval: Evaluate model every eval_interval steps
@@ -286,6 +288,9 @@ class TRLConfig:
                     for layer in layers[1:]:
                         d = d.setdefault(layer, {})
                     d[var] = value
+
+        if not isinstance(baseconfig, Dict):
+            baseconfig = baseconfig.to_dict()
 
         updates = set()
         merged = merge(baseconfig, update, updates)
