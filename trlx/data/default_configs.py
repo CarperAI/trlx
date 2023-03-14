@@ -29,7 +29,7 @@ def default_ppo_config():
         optimizer=OptimizerConfig(
             name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
-        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-4)),
+        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)),
         method=PPOConfig(
             name="PPOConfig",
             num_rollouts=128,
@@ -75,7 +75,7 @@ def default_ilql_config():
             name="adamw", kwargs=dict(lr=5.0e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
         scheduler=SchedulerConfig(
-            name="cosine_annealing", kwargs=dict(T_max=1000, eta_min=5.0e-5)  # train.total_steps
+            name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=5.0e-5)  # train.total_steps
         ),
         method=ILQLConfig(
             name="ilqlconfig",
@@ -110,7 +110,7 @@ def default_sft_config():
             name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
         scheduler=SchedulerConfig(
-            name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-4)  # train.total_steps
+            name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)  # train.total_steps
         ),
         method=SFTConfig(
             name="sftconfig",
