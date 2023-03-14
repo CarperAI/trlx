@@ -80,7 +80,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process and not ray.is_initialized():
+        if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -413,11 +413,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
             Console().print(rich_table)
 
-            if not ray.is_initialized():
-                if self.config.train.tracker == "wandb":
-                    import wandb
+            if self.config.train.tracker == "wandb":
+                import wandb
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
@@ -527,8 +526,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             checkpoint = Checkpoint.from_directory("state")
                             session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
+                    self.accelerator.log(stats, step=self.iter_count)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
