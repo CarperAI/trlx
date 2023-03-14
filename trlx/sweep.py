@@ -13,7 +13,6 @@ from ray.air import ScalingConfig
 from ray.tune.logger import CSVLoggerCallback
 
 from trlx.ray_train.accelerate_trainer import AccelerateTrainer
-from trlx.utils import get_git_tag
 
 
 def get_param_space(config: dict):  # noqa: C901
@@ -248,13 +247,13 @@ def create_report(target_metric, column_names, entity_name, project_name, group_
 
     if best_config:
         best_config = best_config["train_loop_config"]
-        config = best_config.pop("default_config")
+        config = {}
         for name, value in best_config.items():
             *layers, var = name.split(".")
             if layers:
-                d = config[layers[0]]
+                d = config.setdefault(layers[0], {})
                 for layer in layers[1:]:
-                    d = d[layer]
+                    d = d.setdefault(layer, {})
                 d[var] = value
 
         report.blocks = report.blocks + [
@@ -275,12 +274,7 @@ if __name__ == "__main__":
         required=True,
         help="The config file defining the param_space.",
     )
-    parser.add_argument(
-        "--default_config",
-        type=str,
-        required=True,
-        help="The default config file for the script.",
-    )
+
     parser.add_argument(
         "--accelerate_config",
         type=str,
@@ -304,8 +298,8 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
     tune_config = get_tune_config(config.pop("tune_config"))
     param_space = get_param_space(config)
-    with open(args.default_config) as f:
-        default_config = yaml.safe_load(f)
+    column_names = list(param_space.keys())
+    target_metric = tune_config["metric"]
 
     if args.server_address:
         ray.init(address=f"ray://{args.server_address}")
@@ -325,10 +319,8 @@ if __name__ == "__main__":
     script = importlib.import_module(script_path)
     project_name = "sweep_" + script_path.split(".")[-1]
 
-    default_config["train"]["project_name"] = project_name
-    default_config["train"]["group_name"] = datetime.now().replace(microsecond=0).isoformat()
-    param_space["default_config"] = default_config.copy()
-    param_space["default_config"]["train"]["git_tag"] = get_git_tag()
+    param_space["train.project_name"] = project_name
+    param_space["train.group_name"] = datetime.now().replace(microsecond=0).isoformat()
     param_space_train = {"train_loop_config": param_space}
 
     tuner = tune.Tuner(
@@ -349,12 +341,8 @@ if __name__ == "__main__":
     )
 
     results = tuner.fit()
-    group_name = default_config["train"]["group_name"]
-    entity_name = default_config["train"].get("entity_name", None)
-
-    column_names = param_space.pop("default_config")
-    column_names = param_space.keys()
-    target_metric = tune_config["metric"]
+    group_name = param_space["train.group_name"]
+    entity_name = param_space.get("train.entity_name", None)
 
     create_report(target_metric, column_names, entity_name, project_name, group_name, results.get_best_result().config)
 
