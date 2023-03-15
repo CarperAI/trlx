@@ -25,7 +25,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.utils import Clock, infinite_dataloader
+from trlx.utils import Clock
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
@@ -76,10 +76,10 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
         # Setup the KL controller
         # This helps prevent large divergences in the controller (policy)
-        if config.method.target is not None:
-            self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
-        else:
-            self.kl_ctl = FixedKLController(config.method.init_kl_coef)
+        # if config.method.target is not None:
+        #     self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
+        # else:
+        #     self.kl_ctl = FixedKLController(config.method.init_kl_coef)
 
         # Create the parameters for the Hugging Face language model's generator
         # method (that generates new tokens from a prompt).
@@ -204,6 +204,8 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
             returns=returns,
             mask=mask,
         )
+
+        # TODO update this
         self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
         return loss, stats
 
@@ -232,7 +234,8 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
         self.make_experience(self.config.method.num_rollouts, self.iter_count)
 
     def post_backward_callback(self):
-        self.kl_ctl.update(self.approx_kl, n_steps=self.config.train.batch_size)
+        ...
+        # self.kl_ctl.update(self.approx_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
@@ -246,8 +249,8 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
         prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
-        prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
-        self.prompt_iterator = infinite_dataloader(prompt_dataloader)
+        self.prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
+        self.prompt_iterator = iter(self.prompt_dataloader)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """Make experiences
@@ -272,22 +275,35 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
             leave=logging.get_verbosity() < logging.WARNING,
         )
 
-        ppo_rl_elements = []
+        mrt_rl_elements = []
         stats = {}
         clock = Clock()
 
-        while len(ppo_rl_elements) < num_rollouts:
-            # Get next batch in prompt dataset
-            batch: PromptBatch = next(self.prompt_iterator)
+        while len(mrt_rl_elements) < num_rollouts:
+            # Get next batch in prompt dataset and refresh if exhausted
+            # TOOD (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
+            # "refreshing" the contents of the `prompt_iterator`
+            try:
+                batch: PromptBatch = next(self.prompt_iterator)
+            except StopIteration:
+                self.prompt_iterator = iter(self.prompt_dataloader)
+                batch = next(self.prompt_iterator)
 
             exp_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
+            # For MRT, this should generate num_candidates samples for each prompt in the batch
             samples = self.generate(**batch)
+            device = samples.device
+
+            # Expand queries and mask
+            copied_idxs = torch.tensor([i for i in range(batch.input_ids.shape[0]) for _ in range(self.config.method.num_candidates)], device=device)
+            batch.input_ids = torch.index_select(batch.input_ids, 0, copied_idxs) # [batch_size * candidate_size, query_length]
+            batch.attention_mask = torch.index_select(batch.attention_mask, 0, copied_idxs) # [batch_size * candidate_size, query_length]
+
             stats["time/exp_generate"] = time() - exp_generate_time
 
             prompt_tensors = batch.input_ids
-            device = samples.device
 
             prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
             padded_samples = self.accelerator.pad_across_processes(
@@ -325,7 +341,7 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                 scores = torch.empty(len(samples), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
-                scores = torch.tensor(all_scores[0])
+                scores = all_scores[0].clone() # torch.tensor(all_scores[0])
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
 
@@ -398,34 +414,36 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                             return_dict=True,
                         ).logits
             else:
-                all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
-                attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
-                with torch.no_grad():
-                    logits, *_, values = self.model(
-                        all_tokens,
-                        attention_mask=attention_mask,
-                    )
-                    # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.model, "frozen_head"):
-                        ref_logits = self.model.forward_hydra(
-                            all_tokens,
-                            attention_mask=attention_mask,
-                            return_dict=True,
-                        ).logits
-                    else:
-                        ref_logits = self.ref_model(
-                            all_tokens,
-                            attention_mask=attention_mask,
-                            return_dict=True,
-                        ).logits
-                        ref_logits = ref_logits.to(device)
+                assert False
+            # else:
+            #     all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
+            #     attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
+            #     with torch.no_grad():
+            #         logits, *_, values = self.model(
+            #             all_tokens,
+            #             attention_mask=attention_mask,
+            #         )
+            #         # TODO(dahoas): When hydra model works need to also support generation on hydra head
+            #         if hasattr(self.model, "frozen_head"):
+            #             ref_logits = self.model.forward_hydra(
+            #                 all_tokens,
+            #                 attention_mask=attention_mask,
+            #                 return_dict=True,
+            #             ).logits
+            #         else:
+            #             ref_logits = self.ref_model(
+            #                 all_tokens,
+            #                 attention_mask=attention_mask,
+            #                 return_dict=True,
+            #             ).logits
+            #             ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], sample_outputs[:, 1:])
-            else:
-                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
+            # else:
+            #     logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
+            #     ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
             n_samples: int = samples.shape[0]
             logprobs = logprobs.cpu()
@@ -450,7 +468,7 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                 all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
 
                 kl_divergence_estimate: List[torch.Tensor] = [
-                    -self.kl_ctl.value
+                    1.0 #-self.kl_ctl.value 
                     * (
                         logprobs[sample_idx, start : ends[sample_idx]]
                         - ref_logprobs[sample_idx, start : ends[sample_idx]]
@@ -459,15 +477,15 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                 ]
 
             # Else if not seq2seq (i.e. causal)
-            else:
-                values = values.cpu()[:, :-1]
-                start = prompt_tensors.shape[1] - 1
-                ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
+            # else:
+            #     values = values.cpu()[:, :-1]
+            #     start = prompt_tensors.shape[1] - 1
+            #     ends = start + attention_mask[:, start:].sum(1)
+            #     all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+            #     all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
-                kl_divergence_estimate = -self.kl_ctl.value * (logprobs - ref_logprobs)
-                kl_divergence_estimate = [rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)]
+            #     kl_divergence_estimate = 1.0 * (logprobs - ref_logprobs)
+            #     kl_divergence_estimate = [rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)]
 
             rollout_count = 0
 
@@ -480,7 +498,7 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                 rewards = sample_kl_divergence_estimate
                 rewards[-1] += scores[sample_idx].cpu()
 
-                ppo_rl_elements.append(
+                mrt_rl_elements.append(
                     MRTRLElement(
                         query_tensor=prompt_tensors[sample_idx],
                         response_tensor=sample_outputs[sample_idx],
@@ -492,15 +510,15 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
                 rollout_count += 1
             exp_time = clock.tick()
-            tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
+            tbar.set_description(f"[rollout {len(mrt_rl_elements)} / {num_rollouts}]")
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 
-        stats["kl_ctl_value"] = self.kl_ctl.value
+        # stats["kl_ctl_value"] = self.kl_ctl.value
         stats["time/exp"] = exp_time
 
         if not ray.is_initialized():
             self.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to trainer's rollout storage
-        self.push_to_store(ppo_rl_elements)
+        self.push_to_store(mrt_rl_elements)

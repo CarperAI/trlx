@@ -13,7 +13,7 @@ from trlx.data.configs import (
     TrainConfig,
     TRLConfig,
 )
-from trlx.models.modeling_ppo import PPOConfig
+from trlx.models.modeling_mrt import MRTConfig
 
 try:
     import evaluate
@@ -27,7 +27,7 @@ config = TRLConfig(
         seq_length=612,
         epochs=100,
         total_steps=100000,
-        batch_size=12,
+        batch_size=4,
         checkpoint_interval=10000,
         eval_interval=500,
         pipeline="PromptPipeline",
@@ -40,8 +40,8 @@ config = TRLConfig(
         num_layers_unfrozen=2,
     ),
     tokenizer=TokenizerConfig(
-        tokenizer_path="google/flan-t5-small",
-        truncation_side="right",
+        tokenizer_path="google/flan-t5-small", #### change to reasonable value
+        truncation_side="right", # what is this?
     ),
     optimizer=OptimizerConfig(
         name="adamw",
@@ -59,35 +59,63 @@ config = TRLConfig(
             "eta_min": 1.0e-6,
         },
     ),
-    method=PPOConfig(
-        name="PPOConfig",
+    method=MRTConfig(
+        name="MRTConfig",
+        # n_updates_per_batch=1, #### MRT
         num_rollouts=512,
-        chunk_size=12,
+        chunk_size=4,
         ppo_epochs=4,
-        init_kl_coef=0.05,
-        target=6,
-        horizon=10000,
-        gamma=0.99,
-        lam=0.95,
-        cliprange=0.2,
-        cliprange_value=0.2,
-        vf_coef=1.0,
+        # init_kl_coef=0.05,
+        # target=6,
+        # horizon=10000,
+        # gamma=0.99,
+        # lam=0.95,
+        # cliprange=0.2,
+        # cliprange_value=0.2,
+        # vf_coef=1.0,
+        num_candidates=16,
         scale_reward=None,
         ref_mean=None,
         ref_std=None,
         cliprange_reward=10,
-        gen_kwargs={
+        gen_kwargs={ # for evaluation
             "max_new_tokens": 100,
+            # TODO: what should the defaults here be
         },
-        gen_experience_kwargs={
+        gen_experience_kwargs={ # for rollouts
             "max_new_tokens": 100,
-            "do_sample": True,
+            "num_beams": 16, # should be same as nb_candidates
+            "num_return_sequences": 16, # should be same as nb_candidates
+            "do_sample": False,
             "temperature": 1.0,
-            "top_k": 50,
-            "top_p": 0.95,
+            # "top_k": 50,
+            # "top_p": 0.95,
         },
     ),
 )
+
+    # gen_kwargs = {
+    #     "min_length":-1,
+    #     "top_k": config['top_k'],
+    #     "top_p": 1.0,
+    #     "temperature": config["temperature"],
+    #     "do_sample": config['do_sample'],
+    #     "num_beams": config['num_beams'],
+    #     "max_length": config['max_length'],
+    #     # "pad_token_id": model.eos_token_id,
+    #     "num_return_sequences": config['candidate_size'],
+    # }
+    # eval_kwargs = {
+    #     # "early_stopping": True,
+    #     # "length_penalty": 2.0,
+    #     "min_length":-1,
+    #     "top_k": 0.0,
+    #     # "top_p": 1.0,
+    #     "do_sample": False,
+    #     "num_beams": config['eval_num_beams'],
+    #     # "no_repeat_ngram_size": 3,
+    #     "max_length": config['max_length'],
+    # }
 
 
 meteor = evaluate.load("meteor")  # use meteor as the reward function
