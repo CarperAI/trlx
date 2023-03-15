@@ -2,7 +2,7 @@
 #SBATCH --job-name=trlx-sweep
 #SBATCH --account=trlx
 #SBATCH --partition=a100-cu117
-#SBATCH --nodes=4
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=0
 #SBATCH --output=%j
@@ -22,7 +22,7 @@ export HOSTNAMES=`scontrol show hostnames "$SLURM_JOB_NODELIST"`
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 cd $TRLX
-source $TRLX/.env/bin/activate
+source $TRLX/venv-with-pinned-ray/bin/activate
 
 ray start --head --port=6379 &
 
@@ -36,5 +36,5 @@ sleep 10
 ray status
 
 NUM_GPUS=16
-python -m trlx.sweep -y --config configs/sweeps/ppo_sweep.yml --default_config configs/ppo_config.yml --accelerate_config configs/accelerate/zero2-bf16.yaml --num_gpus $NUM_GPUS examples/ppo_sentiments.py
+python -m trlx.sweep -y --config configs/sweeps/ppo_sweep.yml --accelerate_config configs/accelerate/zero2-bf16.yaml --num_gpus $NUM_GPUS examples/ppo_sentiments.py
 # python -m trlx.sweep -y --config configs/sweeps/ilql_sweep.yml --default_config configs/ilql_config.yml --accelerate_config configs/accelerate/zero2-bf16.yaml --num_gpus $NUM_GPUS examples/ilql_sentiments.py
