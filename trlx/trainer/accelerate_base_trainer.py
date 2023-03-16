@@ -138,10 +138,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 self.config.model.num_layers_unfrozen,
             )
             delta_model_class = get_delta_model_class(delta_type)
-            delta_model = delta_model_class(model.base_model, **delta_kwargs)
+            delta_model = delta_model_class(backbone_model=model.base_model, **delta_kwargs)
             delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
             if self.accelerator.is_main_process:
+                # Push the delta type back into the config for future reference/serialization
+                self.config.model.delta_kwargs['delta_type'] = delta_type
                 delta_model.log()
+            model.is_delta_model = True
         return model
 
     def setup_optimizer(self):
@@ -265,6 +268,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def save(self, directory: Optional[str] = None, **kwargs):
         """Creates a checkpoint of the optimizer, scheduler and model"""
         self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+        self.save_pretrained(directory or self.config.train.checkpoint_dir)
 
     def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
@@ -453,6 +457,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             results = self.evaluate()
             self.accelerator.log(results, step=self.iter_count)
+
+        # Store the trainer config for reproducibility
+        TRLConfig.save_yaml(self.config, f"{self.config.train.checkpoint_dir}/trainer_config.yaml")
 
         tbar = logging.tqdm(
             initial=self.iter_count,

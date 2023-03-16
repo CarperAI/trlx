@@ -324,7 +324,11 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        if self.is_delta_model:
+            base_model_state_dict = {}
+        else:
+            base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
         for k, v in ilql_heads_state_dict.items():
             base_model_state_dict[f"ilql_heads.{k}"] = v
@@ -374,7 +378,11 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        if self.is_delta_model:
+            base_model_state_dict = {}
+        else:
+            base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
         for k, v in ilql_heads_state_dict.items():
             base_model_state_dict[f"ilql_heads.{k}"] = v

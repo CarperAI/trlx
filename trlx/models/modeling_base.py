@@ -52,6 +52,9 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     # `transformers.PreTrainedModel`s.
     _supported_args: List[str] = None
 
+    # Flag to indicate whether the underlying model is a delta model (for parameter efficient tuning)
+    is_delta_model: bool = False
+
     def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
         super().__init__()
         self.base_model = base_model
@@ -200,6 +203,16 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         if state_dict is None:
             state_dict = self.state_dict()
             kwargs["state_dict"] = state_dict
+
+        # If opendelta modified this model, drop the rest of the state_dict
+        if self.is_delta_model:
+            save_path = args[0]
+            # Create save_path with parent directory if it doesn't exist
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+            save_path = os.path.join(save_path, "delta_pytorch_model.bin")
+            torch.save(state_dict, save_path)
+            _ = kwargs.pop("state_dict", None)
 
         return self.base_model.save_pretrained(*args, **kwargs)
 

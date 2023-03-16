@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set
@@ -252,6 +253,22 @@ class TRLConfig:
         with open(yml_fp, mode="r") as file:
             config = yaml.safe_load(file)
         return cls.from_dict(config)
+
+    @classmethod
+    def save_yaml(cls, config: "TRLConfig", yml_fp: str):
+        """
+        Save TRLConfig as yaml file.
+
+        :param config: TRLConfig to save
+        :type config: TRLConfig
+
+        :param yml_fp: Path to yaml file
+        :type yml_fp: str
+        """
+        if not os.path.exists(os.path.dirname(yml_fp)):
+            os.makedirs(os.path.dirname(yml_fp))
+        with open(yml_fp, mode="w") as file:
+            yaml.safe_dump(config.to_dict(), file)
 
     def to_dict(self):
         """
