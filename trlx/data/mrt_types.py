@@ -30,11 +30,11 @@ class MRTRLElement:
     :type rewards: torch.Tensor
     """
 
-    query_tensor: TensorType["query_size"]
-    response_tensor: TensorType["response_size"]
-    logprobs: TensorType["response_size", "vocab_size"]
-    values: TensorType["response_size"]
-    rewards: TensorType["response_size"]
+    query_tensor: TensorType["num_candidates", "query_size"]
+    response_tensor: TensorType["num_candidates", "response_size"]
+    logprobs: TensorType["num_candidates", "response_size", "vocab_size"]
+    values: TensorType["num_candidates", "response_size"]
+    rewards: TensorType["num_candidates", "response_size"]
 
 
 @dataclass
@@ -58,8 +58,8 @@ class MRTRLBatch:
     :type rewards: torch.Tensor
     """
 
-    query_tensors: TensorType["batch_size", "query_size"]
-    response_tensors: TensorType["batch_size", "response_size"]
-    logprobs: TensorType["batch_size", "response_size", "vocab_size"]
-    values: TensorType["batch_size", "response_size"]
-    rewards: TensorType["batch_size", "response_size"]
+    query_tensors: TensorType["batch_size", "num_candidates", "query_size"]
+    response_tensors: TensorType["batch_size", "num_candidates", "response_size"]
+    logprobs: TensorType["batch_size", "num_candidates", "response_size", "vocab_size"]
+    values: TensorType["batch_size", "num_candidates", "response_size"]
+    rewards: TensorType["batch_size", "num_candidates", "response_size"]

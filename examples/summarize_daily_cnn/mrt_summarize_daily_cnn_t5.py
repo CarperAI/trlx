@@ -74,6 +74,7 @@ config = TRLConfig(
         # cliprange_value=0.2,
         # vf_coef=1.0,
         num_candidates=16,
+        ce_loss_weight=0.0,
         scale_reward=None,
         ref_mean=None,
         ref_std=None,

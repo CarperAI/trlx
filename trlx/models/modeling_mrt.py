@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchtyping import TensorType
 
 from trlx.data.method_configs import MethodConfig, register_method
@@ -71,6 +72,7 @@ class MRTConfig(MethodConfig):
     # cliprange_value: float
     # vf_coef: float
     num_candidates: int
+    ce_loss_weight: float
     scale_reward: Optional[str]
     ref_mean: Optional[float]
     ref_std: Optional[float]
@@ -81,62 +83,124 @@ class MRTConfig(MethodConfig):
     def loss(
         self,
         logprobs: TensorType["batch_size", "response_size"],
-        values: TensorType["batch_size", "response_size"],
-        old_logprobs: TensorType["batch_size", "response_size"],
-        old_values: TensorType["batch_size", "response_size"],
-        advantages: TensorType["batch_size", "response_size"],
-        returns: TensorType["batch_size", "response_size"],
+        rewards: TensorType["batch_size", "response_size"],
         mask: TensorType["batch_size", "response_size"],
     ):
-        """PPO objective function.
+        """MRT objective function.
         References:
         - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
-        values_clipped = torch.clamp(
-            values,
-            old_values - self.cliprange_value,
-            old_values + self.cliprange_value,
-        )
-        n = mask.sum()
 
-        vf_loss1 = (values - returns) ** 2
-        vf_loss2 = (values_clipped - returns) ** 2
-        vf_loss = 0.5 * torch.sum(torch.max(vf_loss1, vf_loss2) * mask) / n
-        vf_clipfrac = torch.sum((vf_loss2 > vf_loss1).float() * mask) / n
+        loss = torch.tensor(0.0)
+        costs = 1 - rewards
 
-        log_ratio = (logprobs - old_logprobs) * mask
-        ratio = torch.exp(log_ratio)
-        # Unbiased KL-div estimates (`k3`). Ref: http://joschu.net/blog/kl-approx.html
-        with torch.no_grad():
-            approx_kl = torch.mean((ratio - 1) - log_ratio)
+        # Reward component
+        if self.ce_loss_weight < 1.0: # if ce_loss_weight is 1.0, then we only use the ce loss
+            # We make the assumption here that rewards are scaled to [0,1]
+            # lengths = response_masks.sum(dim=-1).float()
+            lengths = mask.sum(dim=-1).float()
 
-        pg_loss1 = -advantages * ratio
-        pg_loss2 = -advantages * torch.clamp(
-            ratio,
-            1.0 - self.cliprange,
-            1.0 + self.cliprange,
-        )
-        pg_loss = torch.sum(torch.max(pg_loss1, pg_loss2) * mask) / n
-        pg_clipfrac = torch.sum((pg_loss2 > pg_loss1).float() * mask) / n
+#             model_outputs = self.model(
+#                 input_ids=queries,
+#                 decoder_input_ids=responses, # response tokens are already shifted right (start token = pad token)
+#                 attention_mask=query_masks
+#                 return_dict=True)
+# ,
+            avg_scores = logprobs.sum(dim=-1) / lengths
 
-        loss = pg_loss + self.vf_coef * vf_loss
+            # [batch_size, candidate_size]
+            avg_scores = avg_scores.view(-1, self.num_candidates)
+            costs = costs.view(-1, self.num_candidates)
+
+            probs = F.softmax(avg_scores, dim=1).squeeze(-1)
+            loss = (probs * costs).sum()
+
+        # Cross entropy component
+        ce_loss = torch.tensor(0.0)
+        if self.ce_loss_weight > 0.0:
+            assert False, 'ce_loss_weight should be 0.0'
+            # if parallel_mask is not None:
+            #     queries = queries[parallel_mask]
+            #     query_masks = query_masks[parallel_mask]
+            #     refs = refs[parallel_mask]
+            #     ref_masks = ref_masks[parallel_mask]
+
+            # # We should compute the cross entropy with the reference response and not with the generated response
+            # model_outputs = self.model(
+            #     input_ids=queries,
+            #     decoder_input_ids=shift_tokens_right(refs, self.model.config.pad_token_id, self.model.config.decoder_start_token_id),
+            #     attention_mask=query_masks,
+            #     return_dict=True)
+            # ce_loss = F.cross_entropy(
+            #     model_outputs.logits.reshape(-1, model_outputs.logits.size(-1)),
+            #     refs.reshape(-1),
+            #     ignore_index=self.model.config.pad_token_id
+            # )
+
+        combined_loss = self.ce_loss_weight * ce_loss + (1 - self.ce_loss_weight) * loss
 
         stats = dict(
-            losses=dict(
-                total_loss=loss.item(),
-                policy_loss=pg_loss.item(),
-                value_loss=vf_loss.item(),
-            ),
-            values=dict(
-                get_tensor_stats(values, mask, n),
-                values_error=torch.sum(((values - returns) * mask) ** 2) / n,
-                clipfrac=vf_clipfrac,
-            ),
-            old_values=get_tensor_stats(old_values, mask, n),
-            returns=get_tensor_stats(returns, mask, n),
-            policy=dict(approx_kl=approx_kl.item(), clipfrac=pg_clipfrac.item()),
-            ratio=(ratio * mask).sum() / n,
-            padding_percentage=n / mask.numel(),
+            loss=dict(combined_loss=combined_loss, ce_loss=ce_loss, loss=loss, costs=costs),
         )
+        # stats = utils.apply_to_sample(lambda t: t.detach().cpu(), stats)
 
-        return loss, flatten_dict(stats)
+        return combined_loss, flatten_dict(stats)
+
+
+
+"""
+    def loss(self, rewards, queries, responses, query_masks, response_masks, refs, ref_masks, parallel_mask=None):
+        loss = torch.tensor(0.0)
+        costs = 1 - rewards
+
+        # Reward component
+        if self.params['ce_loss_weight'] < 1.0: # if ce_loss_weight is 1.0, then we only use the ce loss
+            # We make the assumption here that rewards are scaled to [0,1]
+            lengths = response_masks.sum(dim=-1).float()
+
+            model_outputs = self.model(
+                input_ids=queries,
+                decoder_input_ids=responses, # response tokens are already shifted right (start token = pad token)
+                attention_mask=query_masks,
+                return_dict=True)
+
+            logprobs = logprobs_from_logits(model_outputs.logits[:,:-1,:], responses[:, 1:], mask=response_masks[:, 1:])
+            avg_scores = logprobs.sum(dim=-1) / lengths
+
+            # [batch_size, candidate_size]
+            avg_scores = avg_scores.view(-1, self.params['candidate_size'])
+            costs = costs.view(-1, self.params['candidate_size'])
+
+            probs = F.softmax(avg_scores, dim=1).squeeze(-1)
+            loss = (probs * costs).sum()
+
+        # Cross entropy component
+        ce_loss = torch.tensor(0.0)
+        if self.params['ce_loss_weight'] > 0.0:
+            if parallel_mask is not None:
+                queries = queries[parallel_mask]
+                query_masks = query_masks[parallel_mask]
+                refs = refs[parallel_mask]
+                ref_masks = ref_masks[parallel_mask]
+
+            # We should compute the cross entropy with the reference response and not with the generated response
+            model_outputs = self.model(
+                input_ids=queries,
+                decoder_input_ids=shift_tokens_right(refs, self.model.config.pad_token_id, self.model.config.decoder_start_token_id),
+                attention_mask=query_masks,
+                return_dict=True)
+            ce_loss = F.cross_entropy(
+                model_outputs.logits.reshape(-1, model_outputs.logits.size(-1)),
+                refs.reshape(-1),
+                ignore_index=self.model.config.pad_token_id
+            )
+
+        combined_loss = self.params['ce_loss_weight'] * ce_loss + (1 - self.params['ce_loss_weight']) * loss
+
+        stats = dict(
+            loss=dict(combined_loss=combined_loss, ce_loss=ce_loss, loss=loss, costs=costs),
+        )
+        stats = utils.apply_to_sample(lambda t: t.detach().cpu(), stats)
+
+        return combined_loss, flatten_dict(stats)
+"""

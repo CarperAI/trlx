@@ -8,6 +8,7 @@ import ray
 import torch
 import torch.nn.functional as F
 import transformers
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -22,7 +23,7 @@ from trlx.models.modeling_ppo import (
     FixedKLController,
 )
 from trlx.pipeline.offline_pipeline import PromptPipeline
-from trlx.pipeline.ppo_pipeline import PPORolloutStorage
+from trlx.pipeline.mrt_pipeline import MRTRolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils import Clock
@@ -55,7 +56,7 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
         # Setup the rollout store
         # Rollouts contain the prompt & response, log probs, values and rewards - from each rollout
-        self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
+        self.store = MRTRolloutStorage(self.tokenizer.pad_token_id)
 
         # Create the rollout store dataloader (for batching up rollouts)
         # TODO (jon-tow): This is only used to satisfy to `accelerator.prepare` call constraint below - remove in future
@@ -143,12 +144,11 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
         response_tensors = batch.response_tensors.to(self.accelerator.device)
-        old_logprobs = batch.logprobs.to(self.accelerator.device)
-        old_values = batch.values.to(self.accelerator.device)
-        old_rewards = batch.rewards.to(self.accelerator.device)
-        response_length = old_rewards.shape[1]
+        logprobs = batch.logprobs.to(self.accelerator.device)
+        rewards = batch.rewards.to(self.accelerator.device)
+        response_length = rewards.shape[1]
 
-        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
+        # advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
 
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
@@ -197,16 +197,12 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
         loss, stats = self.config.method.loss(
             logprobs=logprobs,
-            values=values_pred,
-            old_logprobs=old_logprobs,
-            old_values=old_values,
-            advantages=advantages,
-            returns=returns,
+            rewards=rewards,
             mask=mask,
         )
 
         # TODO update this
-        self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
+        # self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
         return loss, stats
 
     def setup_rollout_logging(self, config):
@@ -257,7 +253,7 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
         Takes `chunk_size` number of prompts from `prompt_iterator`, samples
         from the model and then computes the KL against a reference model. Finally it
-        then appends PPOElements to trainer's `store`.
+        then appends MRTRLElements to trainer's `store`.
 
         Args:
             num_rollouts: Number of rollouts to generate
@@ -275,11 +271,13 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
             leave=logging.get_verbosity() < logging.WARNING,
         )
 
+        num_candidates = self.config.method.num_candidates
+
         mrt_rl_elements = []
         stats = {}
         clock = Clock()
 
-        while len(mrt_rl_elements) < num_rollouts:
+        while len(mrt_rl_elements) * num_candidates < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
             # TOOD (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
             # "refreshing" the contents of the `prompt_iterator`
@@ -293,13 +291,15 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
             # For MRT, this should generate num_candidates samples for each prompt in the batch
+            # So in total: [batch_size * num_candidates, response_len]
             samples = self.generate(**batch)
             device = samples.device
 
             # Expand queries and mask
-            copied_idxs = torch.tensor([i for i in range(batch.input_ids.shape[0]) for _ in range(self.config.method.num_candidates)], device=device)
-            batch.input_ids = torch.index_select(batch.input_ids, 0, copied_idxs) # [batch_size * candidate_size, query_length]
-            batch.attention_mask = torch.index_select(batch.attention_mask, 0, copied_idxs) # [batch_size * candidate_size, query_length]
+            copied_idxs = torch.tensor([i for i in range(batch.input_ids.shape[0]) for _ in range(num_candidates)], device=device)
+            # TODO change this part over here
+            batch.input_ids = torch.index_select(batch.input_ids, 0, copied_idxs) # [batch_size, candidate_size, query_length]
+            batch.attention_mask = torch.index_select(batch.attention_mask, 0, copied_idxs) # [batch_size, candidate_size, query_length]
 
             stats["time/exp_generate"] = time() - exp_generate_time
 
@@ -489,28 +489,37 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
             rollout_count = 0
 
-            for sample_idx in range(n_samples):
-                sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
+            for idx in range(n_samples // num_candidates):
+                sample_idxs = torch.arange(
+                    idx * num_candidates, 
+                    (idx + 1) * num_candidates)
+                    # k
+                # sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
 
-                if len(sample_kl_divergence_estimate) == 0 or len(all_logprobs[sample_idx]) == 0:
-                    continue
+                # if len(sample_kl_divergence_estimate) == 0 or len(all_logprobs[sample_idx]) == 0:
+                    # continue
+                
+                # not used for MRT:
+                # rewards = sample_kl_divergence_estimate
+                #rewards[-1] += scores[sample_idx].cpu()
 
-                rewards = sample_kl_divergence_estimate
-                rewards[-1] += scores[sample_idx].cpu()
+                ends_cands = ends[idx * num_candidates: (idx+1) * num_candidates]
+                rewards = torch.zeros_like(logprobs, dtype=torch.float32)
+                rewards[torch.arange(num_candidates), ends_cands - 1] = scores[sample_idxs].cpu()
 
                 mrt_rl_elements.append(
                     MRTRLElement(
-                        query_tensor=prompt_tensors[sample_idx],
-                        response_tensor=sample_outputs[sample_idx],
-                        logprobs=all_logprobs[sample_idx],
-                        values=all_values[sample_idx],
-                        rewards=rewards,
+                        query_tensor=prompt_tensors[sample_idxs].view(num_candidates, -1),
+                        response_tensor=sample_outputs[sample_idxs].view(num_candidates, -1),
+                        logprobs=logprobs[sample_idxs].view(num_candidates, -1),
+                        values=values.contiguous().view(num_candidates, -1),
+                        rewards=rewards
                     )
                 )
 
-                rollout_count += 1
+                rollout_count += num_candidates
             exp_time = clock.tick()
-            tbar.set_description(f"[rollout {len(mrt_rl_elements)} / {num_rollouts}]")
+            tbar.set_description(f"[rollout {rollout_count} / {num_rollouts}]")
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 
