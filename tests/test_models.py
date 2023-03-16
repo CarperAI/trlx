@@ -2,10 +2,11 @@ import copy
 import gc
 import tempfile
 import unittest
+from functools import lru_cache
 
 import torch
 import transformers
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from trlx.data.default_configs import default_ilql_config
@@ -23,6 +24,7 @@ from trlx.models.modeling_ppo import (
     AutoModelForSeq2SeqLMWithHydraValueHead,
     AutoModelForSeq2SeqLMWithValueHead,
 )
+from trlx.trainer.accelerate_ilql_trainer import make_experience
 
 AUTO_CAUSAL_LM_PATHS = ["gpt2", "EleutherAI/pythia-160m", "facebook/opt-125m"]
 AUTO_SEQ2SEQ_LM_PATHS = ["t5-small", "google/flan-t5-small"]
@@ -541,15 +543,16 @@ def test_ilql_heads_alpha(hidden_size, vocab_size, alpha, two_qs):
 @given(
     st.integers(1, 32),
     st.integers(1, 32),
-    st.integers(0, 32),
     st.integers(1, 32),
     st.integers(1, 32),
     st.integers(1, 32),
     st.booleans(),
 )
-def test_ilql_loss_doesnt_crash(batch_size, seq_len, num_action_idxs, num_state_idxs, hidden_size, vocab_size, two_qs):
+def test_ilql_loss_doesnt_crash(batch_size, seq_len, num_action_idxs, hidden_size, vocab_size, two_qs):
     ilql_config: ILQLConfig = default_ilql_config().method
     ilql_config.two_qs = two_qs
+
+    num_state_idxs = num_action_idxs + 1
 
     heads = ILQLHeads(hidden_size, vocab_size, two_qs, alpha=1.0, dtype=torch.float32)
 
@@ -563,12 +566,41 @@ def test_ilql_loss_doesnt_crash(batch_size, seq_len, num_action_idxs, num_state_
     labels = ILQLBatch(
         input_ids=torch.randint(0, vocab_size, (batch_size, seq_len + 1)),
         attention_mask=torch.ones(batch_size, seq_len, dtype=torch.bool),
-        rewards=torch.randn(batch_size, num_state_idxs - 1, 1),
+        rewards=torch.randn(batch_size, num_action_idxs),
         states_ixs=states_ixs,
         actions_ixs=actions_ixs,
-        dones=torch.randint(0, 2, (batch_size, num_state_idxs, 1), dtype=torch.bool),
+        dones=torch.randint(0, 2, (batch_size, num_state_idxs), dtype=torch.bool),
     )
 
     print(f"{batch_size=}, {seq_len=}, {num_action_idxs=}, {num_state_idxs=}, {hidden_size=}, {vocab_size=}, {two_qs=}")
     loss_input = logits, (qs, target_qs, vs)
     loss, stats = ilql_config.loss(loss_input, labels)
+
+
+@lru_cache
+def cached_tokenizer():
+    return transformers.AutoTokenizer.from_pretrained("gpt2")
+
+
+@given(
+    st.lists(st.tuples(st.text(min_size=1), st.floats(0.0, 1.0)), min_size=1),
+    st.integers(1, 32),
+    st.booleans(),
+)
+@settings(deadline=None)
+def test_ilql_loss_make_experience_single_turn(samples_rewards, hidden_size, two_qs):
+    samples, rewards = zip(*samples_rewards)
+    batch_size = len(samples)
+    rollouts = make_experience(samples, rewards, tokenizer=cached_tokenizer(), verbose=False)
+    ilql_config: ILQLConfig = default_ilql_config().method
+
+    loader = rollouts.create_loader(batch_size)
+    ilql_batch = next(iter(loader))
+    seq_len = ilql_batch.input_ids.shape[1]
+    heads = ILQLHeads(hidden_size, 50257, two_qs, alpha=1.0, dtype=torch.float32)
+
+    hidden_states = torch.randn(batch_size, seq_len, hidden_size)
+    qs, target_qs, vs = heads(hidden_states, states_ixs=ilql_batch.states_ixs, actions_ixs=ilql_batch.actions_ixs)
+    logits = torch.randn(batch_size, seq_len, 50257)
+
+    loss, stats = ilql_config.loss((logits, (qs, target_qs, vs)), ilql_batch)

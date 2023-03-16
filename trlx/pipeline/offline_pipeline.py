@@ -1,4 +1,5 @@
-from typing import Iterable, List, Union
+from dataclasses import dataclass
+from typing import Iterable, List, Tuple, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -18,49 +19,53 @@ from trlx.data.ilql_types import (
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
+@dataclass
+class DialogMessage:
+    is_output: bool
+    tokens: Tuple[int]
+
+
 def tokenize_dialogue(  # noqa: C901
     dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
-) -> List[List[int]]:
+) -> List[DialogMessage]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
     if isinstance(dialogue, str):
         dialogue = [tokenizer.bos_token, dialogue]
     elif isinstance(dialogue, tuple):
+        if len(dialogue) % 2 != 0:
+            raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
         dialogue = list(dialogue)
 
-    out = []
-    ctx_length = max_length - 1
+    if not dialogue[-1].endswith(tokenizer.eos_token):
+        dialogue[-1] = dialogue[-1] + tokenizer.eos_token
+
+    tokenized = [
+        DialogMessage(is_output=i % 2 == 1, tokens=tuple(tokenizer(dialogue[i], add_special_tokens=False).input_ids))
+        for i in range(len(dialogue))
+    ]
+
+    # flip to truncate from the left
     if tokenizer.truncation_side == "left":
-        for phrase in reversed(dialogue):
-            # Manually added BOS and EOS above so we don't want to add special tokens here
-            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[-ctx_length:]
-            ctx_length -= len(tokens)
-            out.insert(0, tokens)
-            assert ctx_length >= 0
-            if ctx_length == 0:
-                break
+        tokenized = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in tokenized[::-1]]
 
-        # in case of odd number of phrases (possibly due to truncation)
-        # since the first phrase always has to be a prompt, force it to be <bos>
-        if len(out) % 2 == 1:
-            if sum(map(len, out)) == max_length:
-                out[0].pop(0)
-            out.insert(0, [tokenizer.bos_token_id])
+    # truncate if necessary
+    lengths = [len(t.tokens) for t in tokenized]
+    cumsum_lengths = [sum(lengths[:i]) for i in range(len(lengths))]
+    truncated = [
+        DialogMessage(is_output=t.is_output, tokens=t.tokens[: max(max_length - cl, 0)])
+        for t, cl in zip(tokenized, cumsum_lengths)
+    ]
 
-    elif tokenizer.truncation_side == "right":
-        for phrase in dialogue:
-            # Manually added BOS and EOS above so we don't want to add special tokens here
-            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[:ctx_length]
-            ctx_length -= len(tokens)
-            out.append(tokens)
-            assert ctx_length >= 0
-            if ctx_length == 0:
-                break
+    # flip back if was fliped to left truncate
+    if tokenizer.truncation_side == "left":
+        truncated = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in truncated[::-1]]
 
-    out[-1].append(tokenizer.eos_token_id)
+    # remove empty messages
+    truncated = [t for t in truncated if len(t.tokens) > 0]
 
-    return out
+    return truncated
 
 
 @register_datapipeline

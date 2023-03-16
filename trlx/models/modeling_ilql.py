@@ -74,10 +74,11 @@ class ILQLConfig(MethodConfig):
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
 
+        # The loss_q assumes len(states) == len(rewards) + 1
         # values of current states
-        V = vs[:, :-1].squeeze()
+        V = vs[:, :-1, 0]
         # values of next states
-        Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
+        Vnext = vs[:, 1:, 0] * labels.dones[:, 1:].to(vs.dtype)
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
 
