@@ -4,7 +4,7 @@ import torch
 from transformers import AutoTokenizer
 
 from trlx.data.configs import TRLConfig
-from trlx.models.modeling_ppo import CausalLMHydraWithValueHead
+from trlx.models.modeling_ppo import AutoModelForCausalLMWithHydraValueHead
 from trlx.utils.modeling import RunningMoments
 
 
@@ -14,7 +14,9 @@ class TestHydraHead(unittest.TestCase):
     def setUpClass(cls):
         print("Testing Hydra model...")
         config = TRLConfig.load_yaml("configs/test_config.yml")
-        cls.hydra_model = CausalLMHydraWithValueHead(config.model.model_path, config.model.num_layers_unfrozen)
+        cls.hydra_model = AutoModelForCausalLMWithHydraValueHead.from_pretrained(
+            config.model.model_path, num_layers_unfrozen=config.model.num_layers_unfrozen
+        )
 
         tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
         tokenizer.pad_token = tokenizer.eos_token
