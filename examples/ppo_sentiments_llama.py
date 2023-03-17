@@ -37,13 +37,14 @@ def llama_config():
             eval_interval=100,
             pipeline="PromptPipeline",
             trainer="AcceleratePPOTrainer",
+            save_best=False,
         ),
         model=ModelConfig(model_path="decapoda-research/llama-7b-hf", num_layers_unfrozen=2),
         tokenizer=TokenizerConfig(tokenizer_path="decapoda-research/llama-7b-hf", truncation_side="right"),
         optimizer=OptimizerConfig(
-            name="adamw", kwargs=dict(lr=1.0e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
+            name="adamw", kwargs=dict(lr=1.0e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
-        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-4)),
+        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-5)),
         method=PPOConfig(
             name="PPOConfig",
             num_rollouts=128,
