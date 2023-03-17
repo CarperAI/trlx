@@ -51,30 +51,28 @@ class MRTRolloutStorage(BaseRolloutStore):
         shuffle: bool,
     ) -> DataLoader:
         def collate_fn(elems: Iterable[MRTRLElement]):
-            return MRTRLBatch(
-                # Left padding of already left-padded queries
+            return MRTRLBatch( # TODO: make sure this is expected
                 pad_sequence(
-                    [elem.query_tensor.flip(0) for elem in elems],
+                    [elem.query_tensor.transpose(0, 1) for elem in elems],
                     padding_value=self.pad_token_id,
-                    batch_first=True,
-                ).flip(1),
+                ).transpose(0, 1).transpose(1, 2),
                 # Right pad the rest, to have a single horizontal query/response split
                 pad_sequence(
-                    [elem.response_tensor for elem in elems],
+                    [elem.response_tensor.transpose(0,1) for elem in elems],
                     padding_value=self.pad_token_id,
-                    batch_first=True,
-                ),
+                ).transpose(0, 1).transpose(1, 2),
                 pad_sequence(
-                    [elem.logprobs for elem in elems],
+                    [elem.logprobs.transpose(0, 1) for elem in elems],
                     padding_value=0.0,
-                    batch_first=True,
-                ),
-                pad_sequence([elem.values for elem in elems], padding_value=0.0, batch_first=True),
+                ).transpose(0, 1).transpose(1, 2),
                 pad_sequence(
-                    [elem.rewards for elem in elems],
-                    padding_value=0.0,
-                    batch_first=True,
-                ),
+                    [elem.values.transpose(0, 1) for elem in elems],
+                    padding_value=0.0
+                ).transpose(0, 1).transpose(1, 2),
+                pad_sequence(
+                    [elem.rewards.transpose(0, 1) for elem in elems],
+                    padding_value=0.0
+                ).transpose(0, 1).transpose(1, 2)
             )
 
         return DataLoader(self, batch_size, shuffle=shuffle, collate_fn=collate_fn)

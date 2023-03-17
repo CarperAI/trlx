@@ -146,7 +146,16 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
         response_tensors = batch.response_tensors.to(self.accelerator.device)
         logprobs = batch.logprobs.to(self.accelerator.device)
         rewards = batch.rewards.to(self.accelerator.device)
-        response_length = rewards.shape[1]
+
+        # remove middle dimension
+        batch_size = len(query_tensors)
+        num_candidates = self.config.method.num_candidates
+        query_tensors = query_tensors.reshape(batch_size * num_candidates, -1)
+        response_tensors = response_tensors.reshape(batch_size * num_candidates, -1)
+        logprobs = logprobs.reshape(batch_size * num_candidates, -1)
+        rewards = rewards.reshape(batch_size * num_candidates, -1)
+        response_length = rewards.shape[-1]
+
 
         # advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
 
@@ -238,7 +247,8 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
         self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
 
-        self.n_updates_per_batch = self.config.method.ppo_epochs
+        # This should always be 1 for PPO
+        self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
@@ -489,6 +499,9 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
 
             rollout_count = 0
 
+            rewards = torch.zeros_like(logprobs, dtype=torch.float32)
+            rewards[torch.arange(len(rewards)), ends - 1] = scores.cpu()
+
             for idx in range(n_samples // num_candidates):
                 sample_idxs = torch.arange(
                     idx * num_candidates, 
@@ -503,23 +516,19 @@ class AccelerateMRTTrainer(AccelerateRLTrainer):
                 # rewards = sample_kl_divergence_estimate
                 #rewards[-1] += scores[sample_idx].cpu()
 
-                ends_cands = ends[idx * num_candidates: (idx+1) * num_candidates]
-                rewards = torch.zeros_like(logprobs, dtype=torch.float32)
-                rewards[torch.arange(num_candidates), ends_cands - 1] = scores[sample_idxs].cpu()
-
                 mrt_rl_elements.append(
                     MRTRLElement(
                         query_tensor=prompt_tensors[sample_idxs].view(num_candidates, -1),
                         response_tensor=sample_outputs[sample_idxs].view(num_candidates, -1),
                         logprobs=logprobs[sample_idxs].view(num_candidates, -1),
-                        values=values.contiguous().view(num_candidates, -1),
-                        rewards=rewards
+                        values=values[sample_idxs].view(num_candidates, -1),
+                        rewards=rewards[sample_idxs].view(num_candidates, -1)
                     )
                 )
 
                 rollout_count += num_candidates
             exp_time = clock.tick()
-            tbar.set_description(f"[rollout {rollout_count} / {num_rollouts}]")
+            tbar.set_description(f"[rollout {num_candidates * len(mrt_rl_elements)} / {num_rollouts}]")
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 

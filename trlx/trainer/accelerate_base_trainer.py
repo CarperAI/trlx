@@ -451,9 +451,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         state = json.load(f)
                         self.iter_count = state["iter_count"]
         else:
-            # TODO: no eval for now:
-            # results = self.evaluate()
-            # self.accelerator.log(results, step=self.iter_count)
+            results = self.evaluate()
+            self.accelerator.log(results, step=self.iter_count)
             ...
 
         tbar = logging.tqdm(

@@ -100,7 +100,7 @@ def train(  # noqa: C901
 
         trainer.make_experience(config.method.num_rollouts)
 
-    # Offline training from the collected samples (e.g. SFT, ILQL)
+    # Offline training from the collected samples (e.g. SFT, ILQL)  
     elif samples:
         if rewards:
             if len(samples) != len(rewards):

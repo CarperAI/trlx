@@ -91,7 +91,14 @@ class MRTConfig(MethodConfig):
         - https://stable-baselines.readthedocs.io/en/master/modules/ppo2.html
         """
 
+        # TODO: check if masking is correct
+
+        n = mask.sum()
+
         loss = torch.tensor(0.0)
+        
+        # we make the assumption here that we only care about sequence level rewards only
+        rewards = rewards.sum(dim=-1)
         costs = 1 - rewards
 
         # Reward component
@@ -140,7 +147,12 @@ class MRTConfig(MethodConfig):
         combined_loss = self.ce_loss_weight * ce_loss + (1 - self.ce_loss_weight) * loss
 
         stats = dict(
-            loss=dict(combined_loss=combined_loss, ce_loss=ce_loss, loss=loss, costs=costs),
+            losses=dict(
+                total_loss=combined_loss.item(),
+                ce_loss=ce_loss.item(),
+                mrt_loss=loss.item(),
+            ),
+            padding_percentage=n / mask.numel(),
         )
         # stats = utils.apply_to_sample(lambda t: t.detach().cpu(), stats)
 
