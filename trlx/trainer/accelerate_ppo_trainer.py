@@ -455,7 +455,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1].cpu()
-            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean().to(device)
+            log_ratio = log_ratio.to(torch.float32)  # Convert to float32 before applying exp()
+            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean()
+            self.mean_kl = self.mean_kl.to(device).half()  # Convert back to half-precision if needed
+
             kl_penalty = self.kl_ctl.value * -log_ratio
             kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
