@@ -22,10 +22,9 @@ def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=204
         dialogue = [tokenizer.bos_token, dialogue]
     elif isinstance(dialogue, tuple):
         dialogue = list(dialogue)
-    dialogue[-1] += tokenizer.eos_token
 
     out = []
-    ctx_length = max_length
+    ctx_length = max_length - 1
     if tokenizer.truncation_side == "left":
         for phrase in reversed(dialogue):
             # Manually added BOS and EOS above so we don't want to add special tokens here
@@ -50,8 +49,8 @@ def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=204
             out.append(tokens)
             if ctx_length == 0:
                 break
-    for i in range(len(out)):
-        out[i].append(tokenizer.eos_token_id)
+
+    out[-1].append(tokenizer.eos_token_id)
 
     return out
 
