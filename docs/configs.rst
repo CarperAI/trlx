@@ -25,10 +25,10 @@ the specific method being used (i.e. ILQL or PPO)
 
 **PPO**
 
-.. autoclass:: trlx.data.method_configs.PPOConfig
+.. autoclass:: trlx.trainer.nn.ppo_models.MethodConfig
     :members:
 
 **ILQL**
 
-.. autoclass:: trlx.data.method_configs.ILQLConfig
+.. autoclass:: trlx.trainer.nn.ilql_models.ILQLConfig
     :members:
