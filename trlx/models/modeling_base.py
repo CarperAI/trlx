@@ -97,6 +97,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     def from_pretrained(  # noqa: max-complexity
         cls,
         pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
+        revision=None,
         *model_args,
         **kwargs,
     ):
@@ -126,7 +127,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         if isinstance(pretrained_model_name_or_path, str):
             # Load the base model using the `transformers` AutoClass (e.g. AutoModelForCausalLM)
             base_model = cls._auto_model_parent_class.from_pretrained(
-                pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
+                pretrained_model_name_or_path, *model_args, revision=revision, **from_pretrained_kwargs
             )
         elif isinstance(pretrained_model_name_or_path, transformers.PreTrainedModel):
             base_model = pretrained_model_name_or_path
@@ -145,7 +146,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
             if not os.path.exists(filename):
                 try:
-                    filename = hf_hub_download(pretrained_model_name_or_path, "pytorch_model.bin")
+                    filename = hf_hub_download(pretrained_model_name_or_path, "pytorch_model.bin", revision=revision)
                 # Sharded
                 except Exception:
                     if os.path.exists(sharded_index_filename):
@@ -154,6 +155,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                         index_file_name = hf_hub_download(
                             pretrained_model_name_or_path,
                             "pytorch_model.bin.index.json",
+                            revision=revision,
                         )
                     with open(index_file_name, "r") as f:
                         index = json.load(f)
@@ -172,7 +174,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                     filename = os.path.join(pretrained_model_name_or_path, shard_file)
                     # Download if shard file doesn't exist locally
                     if not os.path.exists(filename):
-                        filename = hf_hub_download(pretrained_model_name_or_path, shard_file)
+                        filename = hf_hub_download(pretrained_model_name_or_path, shard_file, revision=revision)
                     state_dict.update(torch.load(filename, map_location="cpu"))
             else:
                 state_dict = torch.load(filename, map_location="cpu")

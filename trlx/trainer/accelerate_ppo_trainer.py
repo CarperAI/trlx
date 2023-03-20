@@ -434,11 +434,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
             n_samples: int = samples.shape[0]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-            prompt_tensors = prompt_tensors.cpu()
-            sample_outputs = sample_outputs.cpu()
-            values = values.cpu()[:, :-1]
 
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
@@ -447,6 +442,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 start = prompt_tensors.shape[1] - 1
 
+            log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
+            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean().to(device)
+
+            logprobs = logprobs.cpu()
+            ref_logprobs = ref_logprobs.cpu()
+            prompt_tensors = prompt_tensors.cpu()
+            sample_outputs = sample_outputs.cpu()
+            values = values.cpu()[:, :-1]
+
             ends = start + attention_mask[:, start:].sum(1)
 
             # Get the logprobs and values, for tokens that are not padding
@@ -454,12 +458,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
-            log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1].cpu()
-            log_ratio = log_ratio.to(torch.float32)  # Convert to float32 before applying exp()
-            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean()
-            self.mean_kl = self.mean_kl.to(device).half()  # Convert back to half-precision if needed
-
-            kl_penalty = self.kl_ctl.value * -log_ratio
+            kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
             kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
             rollout_count = 0
