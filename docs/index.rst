@@ -8,15 +8,38 @@ Welcome to trlX's documentation!
 trlX is a library made for training large language models using reinforcement learning. It
 currently supports training using PPO or ILQL for models up to 20B using Accelerate.
 
+Installation
+------------
+.. code-block:: bash
+
+   pip install "trlx"
+
+
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
+   README
    data
-   models
    configs
    pipeline
+   trainer
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Examples
+
    examples
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+   :caption: Resources
+
+   faq
+   glossary
+
 
 Indices and tables
 ==================

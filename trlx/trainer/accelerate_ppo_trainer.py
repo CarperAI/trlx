@@ -278,7 +278,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset and refresh if exhausted
-            # TOOD (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
+            # TODO (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
             # "refreshing" the contents of the `prompt_iterator`
             try:
                 batch: PromptBatch = next(self.prompt_iterator)

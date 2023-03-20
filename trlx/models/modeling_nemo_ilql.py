@@ -666,7 +666,7 @@ class ILQLGPT(MegatronGPTModel):
                 )
             else:
                 # In-between stages are given data via the pipeline engine
-                # Still need to specify thes arguments to avoid errors
+                # Still need to specify these arguments to avoid errors
                 model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
             def gather_ntc(t: torch.Tensor):

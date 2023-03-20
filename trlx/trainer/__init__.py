@@ -64,7 +64,7 @@ class BaseRLTrainer:
 
         :param prompts: List of prompts to tokenize and use as context
 
-        :param length: How many new tokens to genrate for each prompt
+        :param length: How many new tokens to generate for each prompt
         :type length: int
 
         :param n_samples: Default behavior is to take number of prompts as this

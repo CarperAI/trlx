@@ -17,7 +17,7 @@ class DSLDataset:
             self.train_data = json.load(f)
         with open("dataset/test.json", "r") as f:
             self.test_data = json.load(f)
-        logger.info("Sucessfully loaded the dataset")
+        logger.info("Successfully loaded the dataset")
 
     def load_datapoints(self, split="train"):
         if split == "train":
@@ -74,7 +74,7 @@ def main(hparams={}):
 
 
 if __name__ == "__main__":
-    # TEST REWARD FUNTION
+    # TEST REWARD FUNCTION
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -4]),1)"])) == [1]
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -a]),1)"])) == [-1]
     assert (reward_fn(["Input: 1 Output: [-4,-5,-2] Function: div_n(reverse([-2, -5, -3]),1)"])) == [-0.5]

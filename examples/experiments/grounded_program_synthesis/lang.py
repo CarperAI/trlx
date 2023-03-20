@@ -109,7 +109,7 @@ interpreter = Interpreter()
 # This is used to store the input, output and the function template.
 # Input : List given as an input to the function.
 # function_template : The atomic function in a given DSL Grammar
-# Output : Transformed outut by applying function on the input.
+# Output : Transformed output by applying function on the input.
 generation_template = {"function_template": "NONE", "output": "NONE", "input": []}
 
 
