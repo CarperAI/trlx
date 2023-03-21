@@ -27,7 +27,7 @@ config = TRLConfig(
         seq_length=612,
         epochs=100,
         total_steps=100000,
-        batch_size=4,
+        batch_size=1,
         checkpoint_interval=10000,
         eval_interval=100,
         pipeline="PromptPipeline",
@@ -35,12 +35,12 @@ config = TRLConfig(
         tracker="wandb",
     ),
     model=ModelConfig(
-        model_path="google/flan-t5-small",
+        model_path="google/flan-t5-large",
         model_arch_type="seq2seq",
         num_layers_unfrozen=2,
     ),
     tokenizer=TokenizerConfig(
-        tokenizer_path="google/flan-t5-small", #### change to reasonable value
+        tokenizer_path="google/flan-t5-large", #### change to reasonable value
         truncation_side="right", # what is this?
     ),
     optimizer=OptimizerConfig(
@@ -63,7 +63,7 @@ config = TRLConfig(
         name="MRTConfig",
         # n_updates_per_batch=1, #### MRT
         num_rollouts=512,
-        chunk_size=4,
+        chunk_size=1,
         ppo_epochs=1,
         # init_kl_coef=0.05,
         # target=6,
@@ -134,8 +134,8 @@ if __name__ == "__main__":
     dataset = load_dataset("cnn_dailymail", "3.0.0", cache_dir="data")
 
     # take 20,000 samples from the training set as prompts for training
-    prompts = dataset["train"]["article"][0:1200]
-    summaries = dataset["train"]["highlights"][0:1200]
+    prompts = dataset["train"]["article"][0:20000]
+    summaries = dataset["train"]["highlights"][0:20000]
     prompts = ["Summarize: " + prompt for prompt in prompts]
 
     # take 1,000 samples from the validation set as prompts for evaluation
