@@ -476,7 +476,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             # For each batch
             for batch in self.train_dataloader:
                 mbs = [
-                        PPORLBatch(
+                    PPORLBatch(
                         query_tensors=batch.query_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
                         response_tensors=batch.response_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
                         logprobs=batch.logprobs[mbi * self.mb_size : (mbi + 1) * self.mb_size],
