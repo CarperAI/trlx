@@ -16,6 +16,7 @@ from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
+from trlx.data.ppo_types import PPORLBatch
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
@@ -47,10 +48,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.max_length = config.train.seq_length
         if config.train.minibatch_size:
             assert config.train.batch_size % config.train.minibatch_size == 0, "Minibatch size must divide batch size"
-            self.mbs = config.train.minibatch_size
+            self.mb_size = config.train.minibatch_size
         else:
-            self.mbs = config.train.batch_size
-        self.num_mb = config.train.batch_size // self.mbs
+            self.mb_size = config.train.batch_size
+        self.num_mb = config.train.batch_size // self.mb_size
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
@@ -474,6 +475,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         for _ in range(self.config.train.epochs):
             # For each batch
             for batch in self.train_dataloader:
+                mbs = [
+                        PPORLBatch(
+                                    query_tensors=batch.query_tensors[mbi * self.mb_size : (mbi+1) * self.mb_size],
+                                    response_tensors=batch.response_tensors[mbi * self.mb_size : (mbi+1) * self.mb_size],
+                                    logprobs=batch.logprobs[mbi * self.mb_size : (mbi+1) * self.mb_size],
+                                    values=batch.values[mbi * self.mb_size : (mbi+1) * self.mb_size],
+                                    rewards=batch.rewards[mbi * self.mb_size : (mbi+1) * self.mb_size],
+                                ) for mbi in range(self.num_mb)
+                    ]
                 # For each update per batch
                 for _ in range(self.n_updates_per_batch):
                     # Note that whereas standard policy gradient methods perform one
@@ -483,10 +493,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     forward_time = 0
                     backward_time = 0
                     stats_accum = []
-                    for mbi in range(self.num_mb):
+                    for mb in mbs:
                         forward_time -= time()
-                        loss, stats = self.loss(batch)
+                        loss, stats = self.loss(mb)
                         forward_time += time()
+                        loss /= self.num_mb
                         backward_time -= time()
                         self.accelerator.backward(loss)
                         backward_time += time()
