@@ -475,12 +475,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     # gradient update per batch, PPO for example commonly performs
                     # multiple gradient updates on the same batch of data.
                     # https://arxiv.org/pdf/1707.06347.pdf
+                    # TODO: remove
+                    torch.use_deterministic_algorithms(False, warn_only=True)
                     forward_time = time()
                     loss, stats = self.loss(batch)
                     forward_time = time() - forward_time
                     backward_time = time()
                     self.accelerator.backward(loss)
                     backward_time = time() - backward_time
+                    torch.use_deterministic_algorithms(True, warn_only=True)
 
                     self.opt.step()
                     self.opt.zero_grad()
