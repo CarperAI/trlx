@@ -31,7 +31,7 @@ trap "rm -rf ../$dir" EXIT
 git clone --depth 1 --single-branch -b $branch https://github.com/$origin .
 
 # temporary, adding `tags` config option to old branches
-git apply ../0001-feat-configs-add-tags-config-option.patch
+git apply ../0001-feat-configs-add-tags-config-option.patch ||:
 
 hash=`find . -not \( -path ./.git -prune \) -not -name "*.md" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -f1 -d" "`
 git_hash=`git log --format=%h/%s/%as -n1`
