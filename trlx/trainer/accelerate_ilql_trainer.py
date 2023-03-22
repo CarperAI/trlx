@@ -169,7 +169,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         ) = self.accelerator.prepare(self.model, self.opt, train_dataloader, eval_dataloader)
 
         self.n_updates_per_batch = 1
-        self.total_steps = self.config.train.epochs * len(train_dataloader)
+        self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def make_experience_seq2seq(self, samples, rewards, max_length=2048):
