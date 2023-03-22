@@ -457,8 +457,6 @@ def test_batched_index_select(batch, seq_len, num_idxes, hidden):
     st.booleans(),
 )
 def test_ilql_heads_indexing(batch_size, seq_len, num_action_idxs, num_state_idxs, hidden_size, vocab_size, two_qs):
-    torch.use_deterministic_algorithms(True)
-
     heads = ILQLHeads(hidden_size, vocab_size, two_qs, alpha=1.0, dtype=torch.float32)
 
     # heads(hidden_states, states_ixs, actions_ixs) should
@@ -572,7 +570,6 @@ def test_ilql_loss_doesnt_crash(batch_size, seq_len, num_action_idxs, hidden_siz
         dones=torch.randint(0, 2, (batch_size, num_state_idxs), dtype=torch.bool),
     )
 
-    print(f"{batch_size=}, {seq_len=}, {num_action_idxs=}, {num_state_idxs=}, {hidden_size=}, {vocab_size=}, {two_qs=}")
     loss_input = logits, (qs, target_qs, vs)
     loss, stats = ilql_config.loss(loss_input, labels)
 
