@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 origin=CarperAI/trlx
 branch=main
@@ -18,8 +19,12 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-set -ex
 dir=`mktemp -d -p .`
+if [ ! -d "$dir" ]; then
+   echo "Couldn't create a temporary directory, aborting"
+   exit 1
+fi
+
 cd $dir
 trap "rm -rf ../$dir" EXIT
 
@@ -39,7 +44,8 @@ fi
 
 python -m venv venv
 . venv/bin/activate
-pip install torch --extra-index-url https://download.pytorch.org/whl/cu117
+python -m pip install pip --upgrade
+pip install -r requirements.txt
 pip install -e .
 
 args='{"train": {"project_name": "trlx-references", "entity_name": '$entity', "tags": ["'$hash'"]}}'
