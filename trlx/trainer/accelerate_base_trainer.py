@@ -477,13 +477,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
             for batch in self.train_dataloader:
                 mbs = [
                         PPORLBatch(
-                                    query_tensors=batch.query_tensors[mbi * self.mb_size : (mbi+1) * self.mb_size],
-                                    response_tensors=batch.response_tensors[mbi * self.mb_size : (mbi+1) * self.mb_size],
-                                    logprobs=batch.logprobs[mbi * self.mb_size : (mbi+1) * self.mb_size],
-                                    values=batch.values[mbi * self.mb_size : (mbi+1) * self.mb_size],
-                                    rewards=batch.rewards[mbi * self.mb_size : (mbi+1) * self.mb_size],
-                                ) for mbi in range(self.num_mb)
-                    ]
++                        query_tensors=batch.query_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
++                        response_tensors=batch.response_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
++                        logprobs=batch.logprobs[mbi * self.mb_size : (mbi + 1) * self.mb_size],
++                        values=batch.values[mbi * self.mb_size : (mbi + 1) * self.mb_size],
++                        rewards=batch.rewards[mbi * self.mb_size : (mbi + 1) * self.mb_size],
++                    )
++                    for mbi in range(self.num_mb)
++                ]
                 # For each update per batch
                 for _ in range(self.n_updates_per_batch):
                     # Note that whereas standard policy gradient methods perform one
