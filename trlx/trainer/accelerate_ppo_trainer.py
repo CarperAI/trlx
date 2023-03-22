@@ -25,7 +25,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.utils import Clock
+from trlx.utils import Clock, infinite_dataloader
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
@@ -204,7 +204,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             returns=returns,
             mask=mask,
         )
-        self.approx_kl = stats["policy/approx_kl"]  # Update kl controller stats
+
         return loss, stats
 
     def setup_rollout_logging(self, config):
@@ -232,7 +232,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.make_experience(self.config.method.num_rollouts, self.iter_count)
 
     def post_backward_callback(self):
-        self.kl_ctl.update(self.approx_kl, n_steps=self.config.train.batch_size)
+        self.kl_ctl.update(self.mean_kl.item(), n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
@@ -246,8 +246,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
         prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
-        self.prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
-        self.prompt_iterator = iter(self.prompt_dataloader)
+        prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
+        self.prompt_iterator = infinite_dataloader(prompt_dataloader)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """Make experiences
@@ -277,14 +277,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         clock = Clock()
 
         while len(ppo_rl_elements) < num_rollouts:
-            # Get next batch in prompt dataset and refresh if exhausted
-            # TOOD (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
-            # "refreshing" the contents of the `prompt_iterator`
-            try:
-                batch: PromptBatch = next(self.prompt_iterator)
-            except StopIteration:
-                self.prompt_iterator = iter(self.prompt_dataloader)
-                batch = next(self.prompt_iterator)
+            # Get next batch in prompt dataset
+            batch: PromptBatch = next(self.prompt_iterator)
 
             exp_generate_time = time()
 
@@ -434,56 +428,40 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
             n_samples: int = samples.shape[0]
+
+            # Estimate the KL divergence between the model and reference model
+            if self.config.model.model_arch_type == "seq2seq":
+                attention_mask = sample_outputs != self.tokenizer.pad_token_id
+                start = 0
+            else:
+                start = prompt_tensors.shape[1] - 1
+
+            log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
+            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean().to(device)
+
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
             prompt_tensors = prompt_tensors.cpu()
             sample_outputs = sample_outputs.cpu()
+            values = values.cpu()[:, :-1]
 
-            # Estimate the KL divergence between the model and reference model
-            if self.config.model.model_arch_type == "seq2seq":
-                values = values.cpu()[:, :-1]
-                start = 0
+            ends = start + attention_mask[:, start:].sum(1)
 
-                # Get the number of non-padding tokens for each sample
-                # This assumes all padding is on the right side
-                padding_token: int = 0
-                ends = (sample_outputs[:, start:] != padding_token).sum(1)
+            # Get the logprobs and values, for tokens that are not padding
+            # or beginning of sequences tokens. These are from the model (not the reference model)
+            all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
+            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
-                # Get the logprobs and values, for tokens that are not padding
-                # or beginning of sequences tokens. These are from the model
-                # (not the reference model)
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
-                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
-
-                kl_divergence_estimate: List[torch.Tensor] = [
-                    -self.kl_ctl.value
-                    * (
-                        logprobs[sample_idx, start : ends[sample_idx]]
-                        - ref_logprobs[sample_idx, start : ends[sample_idx]]
-                    )
-                    for sample_idx in range(n_samples)
-                ]
-
-            # Else if not seq2seq (i.e. causal)
-            else:
-                values = values.cpu()[:, :-1]
-                start = prompt_tensors.shape[1] - 1
-                ends = start + attention_mask[:, start:].sum(1)
-                all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
-                all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
-
-                kl_divergence_estimate = -self.kl_ctl.value * (logprobs - ref_logprobs)
-                kl_divergence_estimate = [rs[start : ends[ix]] for ix, rs in enumerate(kl_divergence_estimate)]
+            kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
+            kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
             rollout_count = 0
 
             for sample_idx in range(n_samples):
-                sample_kl_divergence_estimate = kl_divergence_estimate[sample_idx]
-
-                if len(sample_kl_divergence_estimate) == 0 or len(all_logprobs[sample_idx]) == 0:
+                if len(kl_penalty[sample_idx]) == 0 or len(all_logprobs[sample_idx]) == 0:
                     continue
 
-                rewards = sample_kl_divergence_estimate
+                rewards = kl_penalty[sample_idx]
                 rewards[-1] += scores[sample_idx].cpu()
 
                 ppo_rl_elements.append(
@@ -502,6 +480,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 
+        if torch.distributed.is_initialized():
+            torch.distributed.all_reduce(self.mean_kl, torch.distributed.ReduceOp.AVG)
+
+        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl)
         stats["kl_ctl_value"] = self.kl_ctl.value
         stats["time/exp"] = exp_time
 

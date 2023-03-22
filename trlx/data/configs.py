@@ -158,7 +158,9 @@ class TrainConfig:
     :param tracker: Tracker to use for logging. Default: "wandb"
     :type tracker: str
 
-    :param checkpoint_interval: Save model every checkpoint_interval steps
+    :param checkpoint_interval: Save model every checkpoint_interval steps.
+        Each checkpoint is stored in a sub-directory of the `TrainConfig.checkpoint_dir`
+        directory in the format `checkpoint_dir/checkpoint_{step}`.
     :type checkpoint_interval: int
 
     :param eval_interval: Evaluate model every eval_interval steps
