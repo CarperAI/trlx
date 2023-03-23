@@ -326,7 +326,7 @@ if __name__ == "__main__":
         AccelerateTrainer(
             script.main,
             # Mandatory arg. None means use Accelerate default path
-            accelerate_config_path=args.accelerate_config,
+            accelerate_config=args.accelerate_config,
             scaling_config=ScalingConfig(
                 trainer_resources={"CPU": 0},
                 num_workers=args.num_gpus,
