@@ -10,9 +10,8 @@ import wandb.apis.reports as wb
 import yaml
 from ray import tune
 from ray.air import ScalingConfig
+from ray.train.huggingface.accelerate import AccelerateTrainer
 from ray.tune.logger import CSVLoggerCallback
-
-from trlx.ray_train.accelerate_trainer import AccelerateTrainer
 
 
 def get_param_space(config: dict):  # noqa: C901
@@ -327,7 +326,7 @@ if __name__ == "__main__":
         AccelerateTrainer(
             script.main,
             # Mandatory arg. None means use Accelerate default path
-            accelerate_config_path=args.accelerate_config,
+            accelerate_config=args.accelerate_config,
             scaling_config=ScalingConfig(
                 trainer_resources={"CPU": 0},
                 num_workers=args.num_gpus,
