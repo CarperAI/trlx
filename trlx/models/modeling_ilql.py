@@ -3,7 +3,6 @@ import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
-from itertools import chain
 
 import deepspeed  # type: ignore
 import numpy as np
