@@ -38,7 +38,7 @@ config = TRLConfig(
         eval_interval=500,
         pipeline="PromptPipeline",
         trainer="AcceleratePPOTrainer",
-        tracker="wandb"
+        tracker="wandb",
     ),
     model=ModelConfig(
         model_path="t5-large",
@@ -101,7 +101,6 @@ chrf_metric = evaluate.load("chrf")
 
 
 if __name__ == "__main__":
-    import os
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
@@ -139,12 +138,17 @@ if __name__ == "__main__":
             references=[original["tgt"] for original in original_sents],
         )["score"]
 
+        # TODO: This is needed since there seems to be a bug in the comet metric
+        # that changes torch's determinism setting. Remove this once the bug is fixed.
+        # Same issue as in `reward_fn`
+        torch.use_deterministic_algorithms(False, warn_only=True)
+
         # For corpus-level metrics, it's better to ignore the sentence-level scores
         return {"bleu": bleu_score, "chrf": chrf_score, "comet": comet_score}
 
     # The WMT16 is large so we can benefit with using it as a streaming dataset
     train_dataset = load_dataset("wmt16", "de-en", split="train", streaming=True)
-    valid_dataset = load_dataset("wmt16","de-en", split="validation", streaming=True)
+    valid_dataset = load_dataset("wmt16", "de-en", split="validation", streaming=True)
 
     src_lang = "en"
     tgt_lang = "de"
