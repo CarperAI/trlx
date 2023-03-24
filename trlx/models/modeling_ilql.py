@@ -305,7 +305,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
             attention_mask = torch.hstack((attention_mask, (input_ids != eos_token_id).long()))
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
-            if torch.all(finished):
+            if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
 
         return samples
@@ -476,7 +476,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
             samples = decoder_input_ids
-            if torch.all(finished):
+            if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
 
         return samples
