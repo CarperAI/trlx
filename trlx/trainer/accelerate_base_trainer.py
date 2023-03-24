@@ -385,6 +385,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats.update(mean_metrics)
 
                     for metric, values in metrics.items():
+                        # Skip metrics that are scalers since they represent aggregated values
+                        if isinstance(values, float):
+                            continue
                         columns.append(metric)
                         if not isinstance(values, list):
                             values = values.tolist()
@@ -451,8 +454,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         state = json.load(f)
                         self.iter_count = state["iter_count"]
         else:
-            results = self.evaluate()
-            self.accelerator.log(results, step=self.iter_count)
+            # results = self.evaluate()
+            # self.accelerator.log(results, step=self.iter_count)
+            ...
 
         tbar = logging.tqdm(
             initial=self.iter_count,
