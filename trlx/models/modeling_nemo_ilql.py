@@ -38,6 +38,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     SamplingParam,
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from omegaconf import open_dict
 
 from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
 from trlx.models.modeling_ilql import ILQLConfig, batched_index_select
@@ -316,14 +317,36 @@ class ILQLGPT(MegatronGPTModel):
 
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
-        rank_subfolder = f"mp_rank_{mp_rank:02d}"
-        rank_params = Path(checkpoint_dir) / rank_subfolder / "model_weights.ckpt"
-        print(f"Loading from {rank_params}")
-        state_dict = torch.load(rank_params)
+        mp_rank_subfolder = f"mp_rank_{mp_rank:02d}"
+        mp_rank_params = Path(checkpoint_dir) / mp_rank_subfolder / "model_weights.ckpt"
 
-        state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
+        pp_rank = parallel_state.get_pipeline_model_parallel_rank()
+        tp_pp_rank_subfolder = f"tp_rank_{mp_rank:02d}_pp_rank_{pp_rank:03d}"
+        tp_pp_rank_params = Path(checkpoint_dir) / tp_pp_rank_subfolder / "model_weights.ckpt"
+
+        if mp_rank_params.exists():
+            rank_params = mp_rank_params
+            state_dict = torch.load(rank_params)
+            state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
+
+        elif tp_pp_rank_params.exists():
+            rank_params = tp_pp_rank_params
+            state_dict = torch.load(rank_params)
+        else:
+            raise ValueError(f"Could not find model weights at {mp_rank_params} or {tp_pp_rank_params}")
+
+        print(f"Loading from {rank_params}")
 
         def trim_key(key, prefix):
+            if not key.startswith(prefix):
+                print(f"{key=}")
+                s_keys = str(state_dict.keys())
+                indx = s_keys.find(key)
+                print(f"{s_keys[indx-100:indx+100]=}")
+                idx2 = s_keys.find("word_embeddings")
+                print(f"{s_keys[idx2-100:idx2+100]=}")
+                return key
+
             assert key.startswith(prefix), f"key {key} in state_dict does not start with {prefix}"
             return key[len(prefix) :]
 
@@ -333,7 +356,7 @@ class ILQLGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
@@ -532,17 +555,20 @@ class ILQLGPT(MegatronGPTModel):
         self.model.apply(toggle_checkpointing)
 
         if enable:
-            self.cfg.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
-            self.cfg.activations_checkpoint_method = self._ori_activations_checkpoint_method
-            self.cfg.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
+            with open_dict(self.cfg):
+                self.cfg.activations_checkpoint_granularity = self._ori_activations_checkpoint_granularity
+                self.cfg.activations_checkpoint_method = self._ori_activations_checkpoint_method
+                self.cfg.activations_checkpoint_num_layers = self._ori_activations_checkpoint_num_layers
         else:
-            self.cfg.activations_checkpoint_granularity = None
-            self.cfg.activations_checkpoint_method = None
-            self.cfg.activations_checkpoint_num_layers = None
+            with open_dict(self.cfg):
+                self.cfg.activations_checkpoint_granularity = None
+                self.cfg.activations_checkpoint_method = None
+                self.cfg.activations_checkpoint_num_layers = None
 
     # TODO: replace this with less magical code
     def sequence_parallel_(self, enabled: bool):
-        self.cfg.sequence_parallel = enabled
+        with open_dict(self.cfg):
+            self.cfg.sequence_parallel = enabled
 
         def toggle_sp(m):
             if hasattr(m, "sequence_parallel"):
@@ -567,7 +593,7 @@ class ILQLGPT(MegatronGPTModel):
         if sp_was_enabled:
             self.sequence_parallel_(False)
 
-        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
+        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_method", None) is not None
 
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(False)
@@ -783,4 +809,11 @@ class ILQLGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        return super().generate(inputs, length_params, sampling_params)
+        ret = super().generate(inputs, length_params, sampling_params)
+        if ret is None:
+            print("ILQL: no output")
+            print(sampling_params)
+            print(length_params)
+            print(inputs)
+            assert False
+        return ret

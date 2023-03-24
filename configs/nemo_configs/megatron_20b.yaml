@@ -28,6 +28,7 @@ exp_manager:
   create_tensorboard_logger: False
   create_wandb_logger: True
   wandb_logger_kwargs:
+    entity: uwu1
     project: trlxnemo
     name: megatron_gpt_20b_ilql_sentiments
   resume_if_exists: False
