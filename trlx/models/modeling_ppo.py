@@ -855,6 +855,9 @@ class LlamaModelBranch(ModelBranch):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
+        """Reference:
+        https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L491
+        """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
