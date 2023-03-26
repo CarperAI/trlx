@@ -1,7 +1,9 @@
+import contextlib
 import json
 import os
 import sys
 from abc import abstractmethod
+from contextlib import contextmanager
 from time import time
 from typing import Dict, List, Optional, Tuple
 
@@ -422,6 +424,18 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.nth_evaluation += 1
         return stats
 
+    @contextmanager
+    def _accumulate(self):
+        if (
+            (self.iter_count + 1) % self.accelerator.gradient_accumulation_steps == 0
+            or self.iter_count + 1 == self.config.train.total_steps
+        ):
+            context = contextlib.nullcontext
+        else:
+            context = self.accelerator.no_sync
+        with context(self.model):
+            yield
+
     def learn(self):  # noqa: C901
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
@@ -467,78 +481,89 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # For each epoch
         for _ in range(self.config.train.epochs):
             # For each batch
-            for batch in self.train_dataloader:
-                # For each update per batch
+            dataloader_iterator = iter(self.train_dataloader)
+            for initial_batch in dataloader_iterator:
+                batches = [initial_batch]
+                if self.accelerator.gradient_accumulation_steps > 1 and self.n_updates_per_batch > 1:
+                    # prepare batches so we can iterate through all of them multiple times, instead of iterating the
+                    # one batch multiple times and accumulating over that same batch
+                    for _ in range(
+                        min(self.accelerator.gradient_accumulation_steps - 1, len(self.train_dataloader) - 1)
+                    ):
+                        batches.append(next(initial_batch))
                 for _ in range(self.n_updates_per_batch):
-                    # Note that whereas standard policy gradient methods perform one
-                    # gradient update per batch, PPO for example commonly performs
-                    # multiple gradient updates on the same batch of data.
-                    # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = time()
-                    loss, stats = self.loss(batch)
-                    forward_time = time() - forward_time
-                    backward_time = time()
-                    self.accelerator.backward(loss)
-                    backward_time = time() - backward_time
+                    for batch in batches:
+                        with self._accumulate():
+                            # Note that whereas standard policy gradient methods perform one
+                            # gradient update per batch, PPO for example commonly performs
+                            # multiple gradient updates on the same batch of data.
+                            # https://arxiv.org/pdf/1707.06347.pdf
+                            forward_time = time()
+                            loss, stats = self.loss(batch)
+                            loss = loss / self.accelerator.gradient_accumulation_steps
+                            forward_time = time() - forward_time
+                            backward_time = time()
+                            self.accelerator.backward(loss)
+                            backward_time = time() - backward_time
 
-                    self.opt.step()
-                    self.opt.zero_grad()
-                    self.scheduler.step()
-                    self.iter_count += 1
+                            self.opt.step()
+                            self.opt.zero_grad()
+                            self.scheduler.step()
+                            self.iter_count += 1
 
-                    if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
-                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        self.save(directory)
+                        if self.iter_count % self.config.train.checkpoint_interval == 0:
+                            subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                            directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                            self.save(directory)
 
-                    stats["time/forward"] = forward_time
-                    stats["time/backward"] = backward_time
-                    for group_number, lr in enumerate(self.scheduler.get_last_lr()):
-                        stats[f"learning_rate_group_{group_number}"] = lr
+                        stats["time/forward"] = forward_time
+                        stats["time/backward"] = backward_time
+                        for group_number, lr in enumerate(self.scheduler.get_last_lr()):
+                            stats[f"learning_rate_group_{group_number}"] = lr
 
-                    if self.iter_count % self.config.train.eval_interval == 0:
-                        results = self.evaluate()
-                        stats.update(results)
+                        if self.iter_count % self.config.train.eval_interval == 0:
+                            results = self.evaluate()
+                            stats.update(results)
 
-                        # always save checkpoint with the greatest mean reward
-                        if self.config.train.save_best:
-                            if stats.get("reward/mean", -float("inf")) > best_reward:
-                                best_reward = stats.get("reward/mean")
-                                do_save = True
-                            # in case ILQL reports reward estimate as one of its metrics
-                            elif stats.get("metrics/reward", -float("inf")) > best_reward:
-                                best_reward = stats.get("metrics/reward")
-                                do_save = True
-                            else:
-                                do_save = False
-                            do_save = torch.tensor(do_save, device=self.accelerator.device)
-                            if torch.distributed.is_initialized():
-                                torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
-                            if do_save:
-                                best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
-                                logger.info(f"Saving the best state so far into {best_path}")
-                                self.save(best_path)
+                            # always save checkpoint with the greatest mean reward
+                            if self.config.train.save_best:
+                                if stats.get("reward/mean", -float("inf")) > best_reward:
+                                    best_reward = stats.get("reward/mean")
+                                    do_save = True
+                                # in case ILQL reports reward estimate as one of its metrics
+                                elif stats.get("metrics/reward", -float("inf")) > best_reward:
+                                    best_reward = stats.get("metrics/reward")
+                                    do_save = True
+                                else:
+                                    do_save = False
+                                do_save = torch.tensor(do_save, device=self.accelerator.device)
+                                if torch.distributed.is_initialized():
+                                    torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
+                                if do_save:
+                                    best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
+                                    logger.info(f"Saving the best state so far into {best_path}")
+                                    self.save(best_path)
 
-                        # Report the metrics to Ray Tune.
-                        if ray.is_initialized():
-                            self.save("state")
-                            with open("state/state.json", "w") as f:
-                                json.dump(dict(iter_count=self.iter_count), f)
-                            checkpoint = Checkpoint.from_directory("state")
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+                            # Report the metrics to Ray Tune.
+                            if ray.is_initialized():
+                                self.save("state")
+                                with open("state/state.json", "w") as f:
+                                    json.dump(dict(iter_count=self.iter_count), f)
+                                checkpoint = Checkpoint.from_directory("state")
+                                session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
+                        if not ray.is_initialized():
+                            self.accelerator.log(stats, step=self.iter_count)
 
-                    desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
-                    tbar.set_description(f"[{desc}]")
-                    tbar.update()
+                        desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
+                        tbar.set_description(f"[{desc}]")
+                        tbar.update()
 
-                    if self.iter_count >= self.total_steps:
-                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
-                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        self.save(directory)
-                        return self.evaluate()
+                        if self.iter_count >= self.total_steps:
+                            subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                            directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                            self.save(directory)
+                            return self.evaluate()
 
                 self.post_backward_callback()
 
