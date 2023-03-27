@@ -21,8 +21,8 @@ from trlx.data.configs import (
 from trlx.models.modeling_ppo import PPOConfig
 
 try:
-    import evaluate
     import comet
+    import evaluate
 
     if comet.__version__ != "1.1.3":
         raise ImportError
