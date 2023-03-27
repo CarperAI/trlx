@@ -493,14 +493,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     backward_time = 0
                     stats_accum = []
                     for mb in mbs:
-                        forward_time -= time()
-                        loss, stats = self.loss(mb)
-                        forward_time += time()
-                        loss /= self.num_mb
-                        backward_time -= time()
-                        self.accelerator.backward(loss)
-                        backward_time += time()
-                        stats_accum.append(stats)
+                        with self.accelerator.accumulate(self.model):
+                            forward_time -= time()
+                            loss, stats = self.loss(mb)
+                            forward_time += time()
+                            backward_time -= time()
+                            self.accelerator.backward(loss)
+                            backward_time += time()
+                            stats_accum.append(stats)
 
                     forward_time /= self.num_mb
                     backward_time /= self.num_mb
