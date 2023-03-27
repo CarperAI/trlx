@@ -3,7 +3,6 @@ import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
-from itertools import chain
 from typing import Optional, Tuple
 
 import deepspeed  # type: ignore
@@ -186,13 +185,8 @@ class ILQLHeads(nn.Module):
                 target_param.data.copy_((alpha * copy_param.data) + (1.0 - alpha) * target_param.data)
 
     def sync_target_q_heads(self):
-        if os.environ.get("DEEPSPEED_ZERO_STAGE", "0") == "3":
-            params = chain(
-                chain(q_head.parameters() for q_head in self.q_heads),
-                chain(q_head.parameters() for q_head in self.target_q_heads),
-            )
-
-            with deepspeed.zero.GatheredParameters(list(params), modifier_rank=0):
+        if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") == "3":
+            with deepspeed.zero.GatheredParameters(list(self.parameters()), modifier_rank=0):
                 if deepspeed.comm.get_rank() == 0:
                     self._sync_target_q_heads(self.alpha)
         else:
@@ -317,7 +311,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
             attention_mask = torch.hstack((attention_mask, (input_ids != eos_token_id).long()))
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
 
-            if torch.all(finished):
+            if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
 
         return samples
@@ -488,7 +482,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
             samples = decoder_input_ids
-            if torch.all(finished):
+            if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
 
         return samples
