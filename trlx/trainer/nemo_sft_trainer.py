@@ -61,7 +61,7 @@ class NeMoSFTTrainer(BaseRLTrainer):
                 input_ids = [self.tokenizer.bos_token_id] + input_ids
             if add_eos:
                 input_ids = input_ids + [self.tokenizer.eos_token_id]
-            
+
             if len(input_ids) > self.max_length:
                 input_ids = input_ids[: self.max_length]
             return input_ids
