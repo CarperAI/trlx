@@ -34,7 +34,7 @@ def main(hparams):
 
 default_config = TRLConfig(
     train=TrainConfig(
-        seq_length=10,
+        seq_length=11,
         batch_size=100,
         epochs=20,
         total_steps=1000,

@@ -25,7 +25,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.utils import Clock
+from trlx.utils import Clock, infinite_dataloader
 from trlx.utils.modeling import RunningMoments, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
@@ -246,8 +246,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
         prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
-        self.prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
-        self.prompt_iterator = iter(self.prompt_dataloader)
+        prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
+        self.prompt_iterator = infinite_dataloader(prompt_dataloader)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """Make experiences
@@ -277,14 +277,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         clock = Clock()
 
         while len(ppo_rl_elements) < num_rollouts:
-            # Get next batch in prompt dataset and refresh if exhausted
-            # TOOD (jon-tow): Make `prompt_dataloader` a cyclic/infinite DataLoader to not require manually
-            # "refreshing" the contents of the `prompt_iterator`
-            try:
-                batch: PromptBatch = next(self.prompt_iterator)
-            except StopIteration:
-                self.prompt_iterator = iter(self.prompt_dataloader)
-                batch = next(self.prompt_iterator)
+            # Get next batch in prompt dataset
+            batch: PromptBatch = next(self.prompt_iterator)
 
             exp_generate_time = time()
 
