@@ -32,7 +32,8 @@ def tokenize_dialogue(  # noqa: C901
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
     if isinstance(dialogue, str):
-        dialogue = [tokenizer.bos_token, dialogue]
+        bos_token = tokenizer.bos_token or tokenizer.eos_token
+        dialogue = [bos_token, dialogue]
     elif isinstance(dialogue, tuple):
         if len(dialogue) % 2 != 0:
             raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
