@@ -22,9 +22,13 @@ from trlx.models.modeling_ppo import PPOConfig
 
 try:
     import evaluate
+    import comet
+
+    if comet.__version__ != "1.1.3":
+        raise ImportError
 except ImportError:
     raise ImportError(
-        "To run this example, please install the `evaluate` and `nltk` packages" "by running `pip install evaluate`"
+        "To run this example, please install `evaluate`, `nltk` and `comet==1.1.3` packages by running `pip install evaluate unbabel-comet==1.1.3`"
     )
 
 
