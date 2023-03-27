@@ -15,7 +15,6 @@ from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
 )
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
-    get_ltor_masks_and_position_ids,
 )
 from nemo.collections.nlp.modules.common.transformer.text_generation import (
     LengthParam,
