@@ -45,7 +45,7 @@ def main(hparams={}):
 
     # Take few words off of movies reviews as prompts
     imdb = load_dataset("nakcnx/Thai-IMDB")
-    prompts = [" ".join(review.split()[:4]) for review in imdb['train']["review_th"]]
+    prompts = [" ".join(str(review).split()[:4]) for review in imdb['train']["review_th"]]
 
     trlx.train(
         reward_fn=reward_fn,
