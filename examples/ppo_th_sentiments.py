@@ -21,8 +21,8 @@ def get_positive_score(scores):
 def main(hparams={}):
     # Merge sweep config with default config if given
     config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-    config['model']['model_path'] = 'nakcnx/OTG-Math-680'
-    config['tokenizer']['tokenizer_path'] = 'nakcnx/OTG-Math-680' #'nakcnx/TGPT-2-345M' #'nakcnx/TGPT-Neo-125M'
+    config.model.model_path = 'nakcnx/OTG-Math-680'
+    config.tokenizer.tokenizer_path = 'nakcnx/OTG-Math-680' #'nakcnx/TGPT-2-345M' #'nakcnx/TGPT-Neo-125M'
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
@@ -45,7 +45,7 @@ def main(hparams={}):
 
     # Take few words off of movies reviews as prompts
     imdb = load_dataset("nakcnx/Thai-IMDB")
-    prompts = [" ".join(review.split()[:4]) for review in imdb["review_th"]]
+    prompts = [" ".join(review.split()[:4]) for review in imdb['train']["review_th"]]
 
     trlx.train(
         reward_fn=reward_fn,
