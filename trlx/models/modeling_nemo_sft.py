@@ -391,46 +391,38 @@ class SFTGPT(MegatronGPTModel):
     def parameters(self):
         return (p for p in self.model.parameters() if p.requires_grad)
 
+    def build_attention_mask_and_position_ids(
+        self, data: torch.LongTensor, reset_attention_mask: bool = False
+    ) -> Tuple[torch.BoolTensor, torch.LongTensor]:
+        micro_batch_size, seq_length = data.size()
+
+        # Attention mask (lower triangular).
+        if reset_attention_mask:
+            att_mask_batch = micro_batch_size
+        else:
+            att_mask_batch = 1
+        attention_mask = torch.tril(torch.ones((att_mask_batch, seq_length, seq_length), device=data.device)).view(
+            att_mask_batch, 1, seq_length, seq_length
+        )
+
+        # Position ids.
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=data.device)
+        position_ids = position_ids.unsqueeze(0).repeat(micro_batch_size, 1)
+
+        # Convert attention mask to binary:
+        attention_mask = attention_mask < 0.5
+        return attention_mask, position_ids
+
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
             if parallel_state.get_pipeline_model_parallel_world_size() == 1:
-                input_ids = batch[0].cuda(non_blocking=True)
-                attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
-                    data=input_ids,
-                    eod_token=self.tokenizer.eos_id,
-                    reset_position_ids=False,
-                    reset_attention_mask=False,
-                    eod_mask_loss=False,
+                input_ids, loss_mask = [b.cuda(non_blocking=True) for b in batch]
+                attention_mask, position_ids = self.build_attention_mask_and_position_ids(
+                    data=input_ids, reset_attention_mask=False
                 )
-                attention_mask = attention_mask[0:1]
             else:
-                # GPT3 uses only causal mask, which doesn't need attention mask
-                if parallel_state.is_pipeline_first_stage():
-                    # Fist pipeline stage needs only the tokens and position_ids
-                    input_ids = batch[0].cuda(non_blocking=True)
-                    _, _, position_ids = get_ltor_masks_and_position_ids(
-                        data=input_ids,
-                        eod_token=self.tokenizer.eos_id,
-                        reset_position_ids=False,
-                        reset_attention_mask=False,
-                        eod_mask_loss=False,
-                    )
-                    loss_mask, attention_mask = None, None
-                elif parallel_state.is_pipeline_last_stage():
-                    # Last pipeline stage needs only the labels and loss_mask
-                    labels = batch[0].cuda(non_blocking=True)  # Use labels to get the loss mask
-                    _, loss_mask, _ = get_ltor_masks_and_position_ids(
-                        data=labels,
-                        eod_token=self.tokenizer.eos_id,
-                        reset_position_ids=False,
-                        reset_attention_mask=False,
-                        eod_mask_loss=False,
-                    )
-                    input_ids, attention_mask, position_ids = None, None, None
-                else:
-                    # Intermediate pipeline stage doesn't need any inputs
-                    input_ids, loss_mask, attention_mask, position_ids = None, None, None, None
+                input_ids, loss_mask, attention_mask, position_ids = None, None, None, None
 
             output_tensor = model(
                 input_ids=input_ids,
@@ -443,7 +435,7 @@ class SFTGPT(MegatronGPTModel):
                 # Shift logits and labels to align predictions
                 logits = output_tensor[:, :-1, :]
                 labels = input_ids[:, 1:]
-                _loss_mask = loss_mask[:, 1:]
+                _loss_mask = loss_mask[:, 1:]  # Align loss mask with labels
 
                 labels = labels.transpose(0, 1).contiguous()  # [b s] -> [s b]
                 logits = logits.transpose(0, 1).contiguous()  # [b s h] -> [s b h]
