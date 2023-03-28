@@ -85,6 +85,7 @@ elif config_name == "1B":
     default_config.method.chunk_size = 16
 elif config_name == "6B":
     default_config.train.batch_size = 4
+    default_config.train.seq_length = 512
     default_config.train.total_steps = 6000
     default_config.train.checkpoint_dir = "checkpoints/ppo_hh_6B"
     default_config.model.model_path = "Dahoas/pythia-6B-static-sft"
