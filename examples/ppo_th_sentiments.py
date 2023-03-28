@@ -7,6 +7,7 @@ from typing import List
 
 import torch
 from datasets import load_dataset
+from datasets import Dataset
 from transformers import pipeline
 import pandas as pd
 
