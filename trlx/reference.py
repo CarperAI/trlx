@@ -4,9 +4,8 @@ import argparse
 import os
 import subprocess
 
-import wandb.apis.reports as wb
-
 import wandb
+import wandb.apis.reports as wb
 
 parser = argparse.ArgumentParser()
 parser.add_argument("branch", type=str, help="Git branch in the format `origin:branch`")
