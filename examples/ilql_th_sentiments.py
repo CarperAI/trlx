@@ -40,11 +40,11 @@ def main(hparams={}):
     df = pd.DataFrame( imdb['train'] )
     df = df.dropna()
     imdb2 = Dataset.from_pandas(df)
-    
+
     trlx.train(
         samples=imdb2["review_th_pythainlp"],
         rewards=imdb2["sentiment"],
-        eval_prompts=["หนังเรื่องไม่สนุกเลย"] * 32, #64,
+        eval_prompts=["หนังเรื่องนี้ไม่สนุกเลย"] * 32, #64,
         metric_fn=metric_fn,
         config=config,
     )

@@ -56,7 +56,7 @@ def main(hparams={}):
     trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
-        eval_prompts=["หนังเรื่องไม่สนุกเลย"] * 64,
+        eval_prompts=["หนังเรื่องนี้ไม่สนุกเลย"] * 16, #64,
         config=config,
     )
 
