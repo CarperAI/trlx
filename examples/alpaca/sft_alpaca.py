@@ -86,7 +86,9 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
         metric_fn=metric_fn,
         config=config,
     )
-    trainer.save_pretrained("alpaca-pythia-cleaned-sft")
+
+    slug = f"{model_name.split('/')[-1]}-{dataset.split('/')[-1]}"
+    trainer.save_pretrained(f"{slug}-sft")
 
 
 if __name__ == "__main__":
