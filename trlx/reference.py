@@ -4,8 +4,9 @@ import argparse
 import os
 import subprocess
 
-import wandb
 import wandb.apis.reports as wb
+
+import wandb
 
 parser = argparse.ArgumentParser()
 parser.add_argument("branch", type=str, help="Git branch in the format `origin:branch`")
@@ -16,10 +17,10 @@ args = parser.parse_args()
 pr_origin = ref_origin = "CarperAI/trlx"
 pr_branch = args.branch
 ref_branch = args.against
-if ':' in pr_branch:
-    pr_origin, pr_branch = pr_branch.rsplit(':', 1)
-if ':' in ref_branch:
-    ref_origin, ref_branch = ref_branch.rsplit(':', 1)
+if ":" in pr_branch:
+    pr_origin, pr_branch = pr_branch.rsplit(":", 1)
+if ":" in ref_branch:
+    ref_origin, ref_branch = ref_branch.rsplit(":", 1)
 
 out = os.popen(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} --only_hash")
 pr_hash, pr_git_hash = [x[:-1] for x in out.readlines()]
@@ -49,18 +50,15 @@ else:
     subprocess.run(f"./scripts/benchmark.sh --origin {pr_origin} --branch {pr_branch} {public}".split())
 
 report = wb.Report(
-    project=project_name.split('/')[1] if args.public else project_name,
+    project=project_name.split("/")[1] if args.public else project_name,
     title=f"{pr_branch} v. {ref_branch}",
     description=f"{pr_branch}\n@{pr_git_hash}\n\n{ref_branch}\n@{ref_git_hash}",
 )
 blocks = []
 
-experiment_names = set(x.name.split(':')[0] for x in api.runs(project_name))
+experiment_names = set(x.name.split(":")[0] for x in api.runs(project_name))
 for name in experiment_names:
-    filters = {"$and": [
-        {"display_name": {"$regex": f"^{name}"}},
-        {"tags": {"$in": [pr_hash, ref_hash]}}
-    ]}
+    filters = {"$and": [{"display_name": {"$regex": f"^{name}"}}, {"tags": {"$in": [pr_hash, ref_hash]}}]}
 
     runs = api.runs(project_name, filters=filters)
     metrics = set(sum([[metric for metric in run.history().columns if not metric.startswith("_")] for run in runs], []))
@@ -76,7 +74,8 @@ for name in experiment_names:
             plot_type="line",
             font_size="auto",
             legend_position="north",
-        ) for metric in metrics
+        )
+        for metric in metrics
     ]
 
     # sort the most important metrics to be shown first
@@ -86,23 +85,19 @@ for name in experiment_names:
             major_metrics.add(metric)
     metrics = metrics - major_metrics
 
-    blocks.extend([
-        wb.H1(text=name),
-        wb.PanelGrid(
-            panels=[panel for panel in metrics_panels if panel.title in major_metrics],
-            runsets=[wb.Runset(
-                project=project_name,
-                filters=filters
-            )],
-        ),
-        wb.PanelGrid(
-            panels=[panel for panel in metrics_panels if panel.title in metrics],
-            runsets=[wb.Runset(
-                project=project_name,
-                filters=filters
-            )],
-        ),
-    ])
+    blocks.extend(
+        [
+            wb.H1(text=name),
+            wb.PanelGrid(
+                panels=[panel for panel in metrics_panels if panel.title in major_metrics],
+                runsets=[wb.Runset(project=project_name, filters=filters)],
+            ),
+            wb.PanelGrid(
+                panels=[panel for panel in metrics_panels if panel.title in metrics],
+                runsets=[wb.Runset(project=project_name, filters=filters)],
+            ),
+        ]
+    )
 
 report.blocks = blocks
 report.save()
