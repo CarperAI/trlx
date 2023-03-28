@@ -101,6 +101,11 @@ For more usage see the [NeMo README](./trlx/models)
 python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
 ```
 
+#### Benchmark your trlX fork against trlX's `main` branch
+```bash
+python -m trlx.reference octocat/trlx-fork:fix-branch
+```
+
 ## Logging
 
 trlX uses the standard Python `logging` library to log training information to the console. The default logger is set to the `INFO` level, which means that `INFO`, `WARNING`, `ERROR`, and `CRITICAL` level messages will be printed to standard output.
