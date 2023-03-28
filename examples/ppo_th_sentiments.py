@@ -36,7 +36,8 @@ def main(hparams={}):
         "poom-sci/WangchanBERTa-finetuned-sentiment",
         top_k=3,
         truncation=True,
-        batch_size=256,
+        batch_size=64, #256
+        chunk_size=32,
         device=device,
     )
 
