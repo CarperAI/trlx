@@ -87,7 +87,9 @@ class DialogStore(BaseRolloutStore):
         hf_collate_fn = DataCollatorWithPadding(self.tokenizer)
 
         def collate_fn(elems: Iterable[dict]):
-            batch = hf_collate_fn(elems)
+            batch = hf_collate_fn(
+                {"input_ids": [e["input_ids"] for e in elems], "attention_mask": [e["attention_mask"] for e in elems]}
+            )
             labels = hf_collate_fn([{"input_ids": e["labels"]} for e in elems])["input_ids"]
             batch["labels"] = labels
             return batch
