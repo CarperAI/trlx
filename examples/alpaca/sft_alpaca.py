@@ -93,9 +93,9 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("override_hparams", type=str, default="{}")
-    parser.add_argument("model_name", type=str, default="EleutherAI/gpt-j-6B")
-    parser.add_argument("dataset", type=str, default="tatsu-lab/alpaca")
+    parser.add_argument("override_hparams", type=str, default="{}", nargs="?")
+    parser.add_argument("--model_name", type=str, default="EleutherAI/gpt-j-6B")
+    parser.add_argument("--dataset", type=str, default="tatsu-lab/alpaca")
 
     args = parser.parse_args()
     hparams = json.loads(args.override_hparams)
