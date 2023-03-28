@@ -3,6 +3,7 @@ import os
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
+from typing import Optional, Tuple
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -72,10 +73,11 @@ class ILQLConfig(MethodConfig):
         targetQs = [q.gather(-1, actions).squeeze(-1).detach() for q in target_qs]
         targetQ = reduce(torch.minimum, targetQs)
 
+        # The loss_q assumes len(states) == len(rewards) + 1
         # values of current states
-        V = vs[:, :-1].squeeze()
+        V = vs[:, :-1, 0]
         # values of next states
-        Vnext = vs[:, 1:].squeeze() * labels.dones[:, 1:]
+        Vnext = vs[:, 1:, 0] * labels.dones[:, 1:].to(vs.dtype)
         # target to fit Q
         Q_ = labels.rewards + self.gamma * Vnext.detach()
 
@@ -156,11 +158,15 @@ class ILQLHeads(nn.Module):
 
     def forward(
         self,
-        hs: torch.Tensor,
-        states_ixs: torch.Tensor = None,
-        actions_ixs: torch.Tensor = None,
+        hs: TensorType["batch", "seq_len", "hidden"],
+        states_ixs: Optional[TensorType["batch", "states_seq_len"]] = None,
+        actions_ixs: Optional[TensorType["batch", "actions_seq_len"]] = None,
         **kwargs,
-    ):
+    ) -> Tuple[
+        Tuple[TensorType["batch", "actions_seq_len", "hidden"]],
+        Tuple[TensorType["batch", "actions_seq_len", "hidden"]],
+        TensorType["batch", "states_seq_len", "hidden"],
+    ]:
         if states_ixs is not None:
             states_hs = batched_index_select(hs, states_ixs, 1)
             actions_hs = batched_index_select(hs, actions_ixs, 1)

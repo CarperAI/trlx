@@ -325,7 +325,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = torch.empty(len(samples), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
-                scores = torch.tensor(all_scores[0])
+                scores = all_scores[0].clone().detach()
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
 
