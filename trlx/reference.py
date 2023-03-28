@@ -1,4 +1,4 @@
-# python scripts/reference.py CarperAI/trlx:convert-examples-configs --against CarperAI/trlx:main
+# python -m trlx.reference CarperAI/trlx:add-benchmark-tools --against CarperAI/trlx:main
 
 import argparse
 import os
