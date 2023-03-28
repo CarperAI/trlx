@@ -180,6 +180,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts: List[torch.LongTensor],
         samples: List[torch.LongTensor],
         prompt_sizes: torch.LongTensor = None,
+        append_eos_token: bool = False,
     ) -> Tuple[List[str], List[str], List[str]]:
         """
         Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
@@ -197,13 +198,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
-
             # Trim outputs up to `self.stop_sequences` if any are present
+            trimmed = False
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
+                        trimmed = True
+
+            # Recover the last <eos> if it was present in the original sample
+            # or add one if it was trimmed with `self.stop_sequences`.
+            # Only in cases when a generation ended due to `max_new_tokens` exhaustion,
+            # <eos> token would not be present in the original sample
+            if append_eos_token and (trimmed or sample[-1] == self.tokenizer.eos_token_id):
+                str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)

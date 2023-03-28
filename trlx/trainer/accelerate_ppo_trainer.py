@@ -302,7 +302,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
-                    gathered_prompts, gathered_samples, gathered_prompt_sizes
+                    gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True
                 )
 
                 exp_score_time = time()
@@ -327,7 +327,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 scores = all_scores[0].clone().detach()
 
-            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
+            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
             # Pad the sample outputs
             outputs = self.tokenizer(str_outputs).input_ids
@@ -445,7 +445,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             sample_outputs = sample_outputs.cpu()
             values = values.cpu()[:, :-1]
 
-            ends = start + attention_mask[:, start:].sum(1)
+            ends = start + attention_mask[:, start:].sum(1) + 1
 
             # Get the logprobs and values, for tokens that are not padding
             # or beginning of sequences tokens. These are from the model (not the reference model)
@@ -458,9 +458,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_count = 0
 
             for sample_idx in range(n_samples):
-                if len(kl_penalty[sample_idx]) == 0 or len(all_logprobs[sample_idx]) == 0:
-                    continue
-
                 rewards = kl_penalty[sample_idx]
                 rewards[-1] += scores[sample_idx].cpu()
 
