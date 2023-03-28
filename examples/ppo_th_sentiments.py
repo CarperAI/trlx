@@ -25,7 +25,7 @@ def main(hparams={}):
     config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
     config.model.model_path = 'nakcnx/OTG-Math-680'
     config.tokenizer.tokenizer_path = 'nakcnx/OTG-Math-680' #'nakcnx/TGPT-2-345M' #'nakcnx/TGPT-Neo-125M'
-    config.chunk_size = 32
+    config.chunk_size = 1
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
