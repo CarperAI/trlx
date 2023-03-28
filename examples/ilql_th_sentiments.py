@@ -40,6 +40,7 @@ def main(hparams={}):
     df = pd.DataFrame( imdb['train'] )
     df = df.dropna()
     imdb2 = Dataset.from_pandas(df)
+    
     trlx.train(
         samples=imdb2["review_th_pythainlp"],
         rewards=imdb2["sentiment"],

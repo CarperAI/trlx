@@ -8,6 +8,7 @@ from typing import List
 import torch
 from datasets import load_dataset
 from transformers import pipeline
+import pandas as pd
 
 import trlx
 from trlx.data.default_configs import TRLConfig, default_ppo_config
@@ -45,6 +46,9 @@ def main(hparams={}):
 
     # Take few words off of movies reviews as prompts
     imdb = load_dataset("nakcnx/Thai-IMDB")
+    df = pd.DataFrame( imdb['train'] )
+    df = df.dropna()
+    imdb2 = Dataset.from_pandas(df)
     prompts = [" ".join(str(review).split()[:4]) for review in imdb['train']["review_th"]]
 
     trlx.train(
