@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
-from trlx.data.ppo_types import PPORLBatch
+from trlx.pipeline import MiniBatchIterator
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
@@ -474,17 +474,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # For each epoch
         for _ in range(self.config.train.epochs):
             # For each batch
-            for batch in self.train_dataloader:
-                mbs = [
-                    PPORLBatch(
-                        query_tensors=batch.query_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
-                        response_tensors=batch.response_tensors[mbi * self.mb_size : (mbi + 1) * self.mb_size],
-                        logprobs=batch.logprobs[mbi * self.mb_size : (mbi + 1) * self.mb_size],
-                        values=batch.values[mbi * self.mb_size : (mbi + 1) * self.mb_size],
-                        rewards=batch.rewards[mbi * self.mb_size : (mbi + 1) * self.mb_size],
-                    )
-                    for mbi in range(self.num_mb)
-                ]
+            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
                 # For each update per batch
                 for _ in range(self.n_updates_per_batch):
                     # Note that whereas standard policy gradient methods perform one
