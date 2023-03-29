@@ -19,7 +19,7 @@ def preprocess(instruction: str, input: str, output: str):
     """Build Alpaca prompt and output from instruction and input/output examples"""
     if input:
         prefix = (
-            "Below is an instruction that describes a task, paired with an input that provides further context."
+            "Below is an instruction that describes a task, paired with an input that provides further context. "
             "Write a response that appropriately completes the request."
         )
         prompt = f"{prefix}\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
@@ -71,9 +71,8 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
         device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
     )
 
-    def metric_fn(samples: List[str], **kwargs) -> Dict[str, List[float]]:
-        responses = [sample.split("### Response:\n")[1] for sample in samples]
-        sentiments = list(map(get_positive_score, sentiment_fn(responses)))
+    def metric_fn(samples: List[str], prompts: List[str], outputs: List[str]) -> Dict[str, List[float]]:
+        sentiments = list(map(get_positive_score, sentiment_fn(outputs)))
         return {"sentiments": sentiments}
 
     imdb = load_dataset("imdb", split="test")
