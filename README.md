@@ -59,7 +59,6 @@ trainer = trlx.train('EleutherAI/gpt-j-6B', samples=['dolphins', 'geese'], rewar
 trainer = trlx.train('gpt2', samples=[['Question: 1 + 2 Answer:', '3'], ['Question: Solve this equation: ∀n>0, s=2, sum(n ** -s). Answer:', '(pi ** 2)/ 6']])
 ```
 
-
 #### Trainers provide a wrapper over their underlying model
 
 ```python
