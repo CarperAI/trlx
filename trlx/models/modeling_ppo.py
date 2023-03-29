@@ -597,8 +597,9 @@ class OPTModelBranch(ModelBranch):
             combined_attention_mask = modeling_opt._make_causal_mask(
                 input_shape,
                 hidden_states.dtype,
+                device=hidden_states.device,
                 past_key_values_length=past_key_values_length,
-            ).to(hidden_states.device)
+            )
 
         if attention_mask is not None:
             expanded_attn_mask = modeling_opt._expand_mask(
