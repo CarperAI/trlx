@@ -445,10 +445,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             sample_outputs = sample_outputs.cpu()
             values = values.cpu()[:, :-1]
 
+            # Get the logprobs and values, for tokens that are not padding,
+            # from the start of the prompt up to the <eos> token, while also including the latter
+            # (these are taken from the student model and not the reference model)
             ends = start + attention_mask[:, start:].sum(1) + 1
-
-            # Get the logprobs and values, for tokens that are not padding
-            # or beginning of sequences tokens. These are from the model (not the reference model)
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
