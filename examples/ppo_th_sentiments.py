@@ -54,12 +54,13 @@ def main(hparams={}):
     imdb2 = Dataset.from_pandas(df)
     prompts = [" ".join(str(review).split()[:4]) for review in imdb2["review_th"]]
 
-    trlx.train(
+    trainer = trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=["หนังเรื่องนี้ไม่สนุกเลย"] * 16, #64,
         config=config,
     )
+    trainer.save_pretrained('../output/ppo/')
 
 
 if __name__ == "__main__":
