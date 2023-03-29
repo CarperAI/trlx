@@ -44,12 +44,14 @@ def main(hparams={}):
     imdb = load_dataset("imdb", split="train+test")
     prompts = [" ".join(review.split()[:4]) for review in imdb["text"]]
 
-    trlx.train(
+    trainer = trlx.train(
         reward_fn=reward_fn,
         prompts=prompts,
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         config=config,
     )
+    
+    trainer.save_pretrained('../output/ppo/')
 
 
 if __name__ == "__main__":

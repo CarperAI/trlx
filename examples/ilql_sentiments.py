@@ -34,13 +34,15 @@ def main(hparams={}):
 
     imdb = load_dataset("imdb", split="train+test")
 
-    trlx.train(
+    trainer = trlx.train(
         samples=imdb["text"],
         rewards=imdb["label"],
         eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
         config=config,
     )
+
+    trainer.save_pretrained('../output/ilql/')
 
 
 if __name__ == "__main__":
