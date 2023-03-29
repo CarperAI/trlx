@@ -69,6 +69,34 @@ def tokenize_dialogue(  # noqa: C901
     return truncated
 
 
+class DialogStore(BaseRolloutStore):
+    def __init__(self, dialogs: List[List[DialogMessage]], tokenizer: PreTrainedTokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+        attention_masks = [torch.ones(sum(len(m.tokens) for m in d), dtype=torch.bool) for d in dialogs]
+        input_ids = [torch.tensor([t for m in d for t in m.tokens], dtype=torch.long) for d in dialogs]
+        # -100 is the ignore index for CrossEntropyLoss
+        labels = [
+            torch.tensor([t if m.is_output else -100 for m in d for t in m.tokens], dtype=torch.long) for d in dialogs
+        ]
+        self.history = [
+            dict(input_ids=i, attention_mask=a, labels=l) for i, a, l in zip(input_ids, attention_masks, labels)
+        ]
+
+    def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
+        hf_collate_fn = DataCollatorWithPadding(self.tokenizer)
+
+        def collate_fn(elems: Iterable[dict]):
+            batch = hf_collate_fn(
+                {"input_ids": [e["input_ids"] for e in elems], "attention_mask": [e["attention_mask"] for e in elems]}
+            )
+            labels = hf_collate_fn([{"input_ids": e["labels"]} for e in elems])["input_ids"]
+            batch["labels"] = labels
+            return batch
+
+        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
+
+
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
