@@ -508,6 +508,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                         # always save checkpoint with the greatest mean reward
                         if self.config.train.save_best:
@@ -527,14 +529,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
-
-                        # Report the metrics to Ray Tune.
-                        if ray.is_initialized():
-                            self.save("state")
-                            with open("state/state.json", "w") as f:
-                                json.dump(dict(iter_count=self.iter_count), f)
-                            checkpoint = Checkpoint.from_directory("state")
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                     self.accelerator.log(stats, step=self.iter_count)
 
