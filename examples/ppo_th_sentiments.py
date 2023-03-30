@@ -52,7 +52,7 @@ def main(hparams={}):
     df = pd.DataFrame( imdb['train'] )
     df = df.dropna()
     imdb2 = Dataset.from_pandas(df)
-    prompts = [" ".join(str(review).split()[:4]) for review in imdb2["review_th"]]
+    prompts = [" ".join(str(review).split()[:4]) for review in imdb2["review_th_pythainlp"]]
 
     trainer = trlx.train(
         reward_fn=reward_fn,

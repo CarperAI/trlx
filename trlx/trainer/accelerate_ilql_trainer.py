@@ -213,6 +213,13 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         sample_lengths = np.array(list(map(len, all_input_ids)))
         output_lengths = np.array(list(map(len, all_actions_ixs)))
         prompt_lengths = sample_lengths - output_lengths
+
+        logger.info(f"sample_lengths: {sample_lengths}")
+        logger.info(f"output_lengths: {output_lengths}")
+        logger.info(f"prompt_lengths: {prompt_lengths}")
+        logger.info(f"samples: {samples}")
+        logger.info(f"rewards: {rewards}")
+
         returns = torch.tensor(rewards, dtype=float)
 
         if os.environ.get("RANK", "0") == "0":
