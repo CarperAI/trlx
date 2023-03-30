@@ -9,7 +9,6 @@ import ray
 import torch
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
-from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
