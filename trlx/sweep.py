@@ -331,7 +331,7 @@ if __name__ == "__main__":
                 trainer_resources={"CPU": 0},
                 num_workers=args.num_gpus,
                 use_gpu=True,
-                resources_per_worker={"CPU": args.num_cpus},
+                resources_per_worker={"CPU": args.num_cpus, "GPU": 1},
             ),
         ),
         param_space=param_space_train,
