@@ -1,7 +1,9 @@
 """Example of using PPO to train a T5 model for translation.
 Based on examples/summarize_daily_cnn/t5_summarize_daily_cnn.py"""
 
+import json
 import os
+import sys
 from typing import List
 
 import torch
@@ -33,14 +35,14 @@ except ImportError:
     )
 
 
-config = TRLConfig(
+default_config = TRLConfig(
     train=TrainConfig(
         seq_length=612,
         epochs=100,
         total_steps=100000,
         batch_size=12,
         checkpoint_interval=10000,
-        eval_interval=500,
+        eval_interval=200,
         pipeline="PromptPipeline",
         trainer="AcceleratePPOTrainer",
         tracker="wandb",
@@ -48,7 +50,7 @@ config = TRLConfig(
     model=ModelConfig(
         model_path="t5-large",
         model_arch_type="seq2seq",
-        num_layers_unfrozen=2,
+        num_layers_unfrozen=-1,
     ),
     tokenizer=TokenizerConfig(
         tokenizer_path="t5-large",
@@ -57,7 +59,7 @@ config = TRLConfig(
     optimizer=OptimizerConfig(
         name="adamw",
         kwargs={
-            "lr": 1.0e-5,
+            "lr": 2.0e-6,
             "betas": [0.9, 0.999],
             "eps": 1.0e-8,
             "weight_decay": 1.0e-6,
@@ -72,7 +74,7 @@ config = TRLConfig(
     ),
     method=PPOConfig(
         name="PPOConfig",
-        num_rollouts=512,
+        num_rollouts=256,
         chunk_size=12,
         ppo_epochs=4,
         init_kl_coef=0.05,
@@ -99,13 +101,15 @@ config = TRLConfig(
     ),
 )
 
-# COMET is the metric we are optimizng for
-comet_metric = evaluate.load("comet", "wmt20-comet-da", progress_bar=False)
-bleu_metric = evaluate.load("bleu")
-chrf_metric = evaluate.load("chrf")
 
+def main(hparams={}):
+    config = TRLConfig.update(default_config, hparams)
 
-if __name__ == "__main__":
+    # COMET is the metric we are optimizng for
+    comet_metric = evaluate.load("comet", "wmt20-comet-da", progress_bar=False)
+    bleu_metric = evaluate.load("bleu")
+    chrf_metric = evaluate.load("chrf")
+
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
@@ -200,3 +204,8 @@ if __name__ == "__main__":
         eval_prompts=val_src_dataset,
         config=config,
     )
+
+
+if __name__ == "__main__":
+    hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
+    main(hparams)
