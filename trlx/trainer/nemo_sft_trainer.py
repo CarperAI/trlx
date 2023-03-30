@@ -66,8 +66,7 @@ class NeMoSFTTrainer(BaseRLTrainer):
             return input_ids
 
         def pad_batch_and_build_loss_mask(
-            input_ids: List[List[int]],
-            batch_max_length: int
+            input_ids: List[List[int]], batch_max_length: int
         ) -> Tuple[torch.Tensor, torch.Tensor]:
             batch_loss_masks = []
             padded_input_ids = []
