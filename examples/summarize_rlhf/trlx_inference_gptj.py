@@ -32,9 +32,7 @@ rw_model = GPTRewardModel("CarperAI/openai_summarize_tldr_ppo")
 rw_model.load_state_dict(torch.load(REWARD_CHECKPOINT_PATH))
 rw_model.half()
 rw_model.eval()
-rw_device = os.environ.get("ACCELERATE_TORCH_DEVICE", None)
-if rw_device is None:
-    rw_device = torch.device("cuda:{}".format(1))
+rw_device = torch.device("cuda:{}".format(1))
 rw_model.to(rw_device)
 
 

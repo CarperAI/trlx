@@ -164,9 +164,7 @@ def create_reward_fn():  # noqa:  C901
         reward_model.load_state_dict(torch.load(checkpoint))
         reward_model.eval()
         reward_model.requires_grad_(False)
-        device = os.environ.get("ACCELERATE_TORCH_DEVICE", None)
-        if device is None:
-            device = torch.cuda.device_count() - 1
+        device = torch.cuda.device_count() - 1
         reward_model = reward_model.half().to(device)
 
         def reward_fn(samples, prompts, outputs):
