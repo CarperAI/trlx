@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union, cast
+from typing import Any, Callable, List, Optional, Tuple, Union, cast
 
 import torch
 import transformers
@@ -61,12 +61,14 @@ class NeMoSFTTrainer(BaseRLTrainer):
                 input_ids = [self.tokenizer.bos_token_id] + input_ids
             if add_eos:
                 input_ids = input_ids + [self.tokenizer.eos_token_id]
-
             if len(input_ids) > self.max_length:
                 input_ids = input_ids[: self.max_length]
             return input_ids
 
-        def pad_batch_and_build_loss_mask(input_ids: List[List[int]], batch_max_length: int):
+        def pad_batch_and_build_loss_mask(
+            input_ids: List[List[int]],
+            batch_max_length: int
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
             batch_loss_masks = []
             padded_input_ids = []
             for ids in input_ids:
@@ -77,6 +79,9 @@ class NeMoSFTTrainer(BaseRLTrainer):
                 batch_loss_masks.append(torch.tensor(loss_mask, dtype=torch.float))
             padded_input_ids = torch.as_tensor(padded_input_ids, dtype=torch.long)
             batch_loss_masks = torch.stack(batch_loss_masks, dim=0)
+            # NOTE: Un-build the loss mask if we're not going to mask eod tokens
+            if self.model.cfg.data.get("eod_mask_loss", False) is False:
+                loss_mask = torch.ones_like(loss_mask)
             return padded_input_ids, batch_loss_masks
 
         def collate_fn(elems: List[transformers.BatchEncoding]):
@@ -88,12 +93,7 @@ class NeMoSFTTrainer(BaseRLTrainer):
                 )
                 for e in elems
             ]
-            batch_max_length = self.max_length
-            input_ids, loss_mask = pad_batch_and_build_loss_mask(context_tokens, batch_max_length)
-            if self.model.cfg.data.get("eod_mask_loss", False) is False:
-                loss_mask = torch.ones_like(loss_mask)
-
-            # Pack two tensors that can be split in half:
+            input_ids, loss_mask = pad_batch_and_build_loss_mask(context_tokens, self.max_length)
             return input_ids, loss_mask
 
         train_samples = self.model.cfg.global_batch_size * self.trainer.max_steps
