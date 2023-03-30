@@ -26,6 +26,7 @@ args = parser.parse_args()
 model_name = args.checkpoint.split("/")[-1]
 device = torch.device(args.device)
 
+
 class RewardModel(nn.Module):
     def __init__(self, checkpoint_path, eos_token_id):
         super().__init__()
