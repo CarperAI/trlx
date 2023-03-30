@@ -14,7 +14,7 @@ from trlx.data.default_configs import TRLConfig, default_ilql_config
 
 def get_positive_score(scores):
     "Extract value associated with a positive sentiment from pipeline's output"
-    return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
+    return dict(map(lambda x: tuple(x.values()), scores))["pos"]
 
 
 def main(hparams={}):
