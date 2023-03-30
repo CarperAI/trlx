@@ -104,7 +104,7 @@ For more usage see the [NeMo README](./trlx/models)
 #### Use Ray Tune to launch hyperparameter sweep
 
 ```bash
-python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
+python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml --accelerate_config configs/accelerate/ddp.yaml --num_gpus 4 examples/ppo_sentiments.py
 ```
 
 #### Benchmark your trlX fork against trlX's `main` branch
