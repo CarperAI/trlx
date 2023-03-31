@@ -27,16 +27,16 @@ def default_ppo_config():
         model=ModelConfig(model_path="lvwerra/gpt2-imdb", num_layers_unfrozen=2),
         tokenizer=TokenizerConfig(tokenizer_path="gpt2", truncation_side="right"),
         optimizer=OptimizerConfig(
-            name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
+            name="adamw", kwargs=dict(lr=3e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
-        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)),
+        scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=3e-5)),
         method=PPOConfig(
             name="PPOConfig",
             num_rollouts=128,
             chunk_size=128,
             ppo_epochs=4,
-            init_kl_coef=0.05,
-            target=6,
+            init_kl_coef=0.001,
+            target=None,
             horizon=10000,
             gamma=1,
             lam=0.95,
@@ -61,7 +61,7 @@ def default_ilql_config():
     return TRLConfig(
         train=TrainConfig(
             seq_length=64,
-            batch_size=32,
+            batch_size=128,
             epochs=100,
             total_steps=1000,
             checkpoint_interval=1000,
@@ -87,7 +87,7 @@ def default_ilql_config():
             beta=0,
             steps_for_target_q_sync=5,
             two_qs=True,
-            gen_kwargs=dict(max_new_tokens=56, top_k=20, beta=4, temperature=1.0),
+            gen_kwargs=dict(max_new_tokens=56, top_k=20, beta=1, temperature=1.0),
         ),
     )
 
