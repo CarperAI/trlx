@@ -295,13 +295,27 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
+        update = {}
+        # unflatten a string variable name into a nested dictionary
+        # key1.key2.key3: value -> {key1: {key2: {key3: value}}}
+        for name, value in config.items():
+            if isinstance(value, dict):
+                update[name] = value
+            else:
+                *layers, var = name.split(".")
+                if layers:
+                    d = update.setdefault(layers[0], {})
+                    for layer in layers[1:]:
+                        d = d.setdefault(layer, {})
+                    d[var] = value
+
         if not isinstance(baseconfig, Dict):
             baseconfig = baseconfig.to_dict()
 
         updates = set()
-        merged = merge(baseconfig, config, updates)
+        merged = merge(baseconfig, update, updates)
 
-        for param in config:
+        for param in update:
             if param not in updates:
                 raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 

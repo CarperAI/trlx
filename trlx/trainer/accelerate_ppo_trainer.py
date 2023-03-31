@@ -4,7 +4,6 @@ import uuid
 from time import time
 from typing import Callable, List
 
-import ray
 import torch
 import torch.nn.functional as F
 import transformers
@@ -484,8 +483,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         stats["kl_ctl_value"] = self.kl_ctl.value
         stats["time/exp"] = exp_time
 
-        if not ray.is_initialized():
-            self.accelerator.log(stats, step=iter_count)
+        self.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)

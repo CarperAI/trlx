@@ -9,7 +9,6 @@ import ray
 import torch
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
-from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
@@ -81,7 +80,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process and not ray.is_initialized():
+        if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -423,11 +422,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
             Console().print(rich_table)
 
-            if not ray.is_initialized():
-                if self.config.train.tracker == "wandb":
-                    import wandb
+            if self.config.train.tracker == "wandb":
+                import wandb
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
@@ -509,6 +507,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                         # always save checkpoint with the greatest mean reward
                         if self.config.train.save_best:
@@ -529,17 +529,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
-                        # Report the metrics to Ray Tune.
-                        if ray.is_initialized():
-                            self.save("state")
-                            with open("state/state.json", "w") as f:
-                                json.dump(dict(iter_count=self.iter_count), f)
-                            checkpoint = Checkpoint.from_directory("state")
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
-
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
-
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
@@ -547,8 +536,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count >= self.total_steps:
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        results = self.evaluate()
+                        stats.update(results)
+
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+                        self.accelerator.log(stats, step=self.iter_count)
+
                         self.save(directory)
-                        return self.evaluate()
+                        return results
+
+                    self.accelerator.log(stats, step=self.iter_count)
 
                 self.post_backward_callback()
 

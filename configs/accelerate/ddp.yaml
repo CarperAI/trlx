@@ -2,7 +2,7 @@ compute_environment: LOCAL_MACHINE
 deepspeed_config: {}
 distributed_type: MULTI_GPU
 downcast_bf16: no
-dynamo_backend: 'NO'
+dynamo_config: {}
 fsdp_config: {}
 gpu_ids: all
 machine_rank: 0
