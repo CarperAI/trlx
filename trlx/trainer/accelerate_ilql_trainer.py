@@ -172,6 +172,10 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
+        logger.info(f"**** SAMPLES len: {len(samples)}") 
+        logger.info(f"**** SAMPLES: {samples[:5]}") 
+        logger.info(f"**** REWARDS len: {len(rewards)}") 
+        logger.info(f"**** REWARDS: {rewards[:5]}")     
 
         if self.config.model.model_arch_type == "seq2seq":
             return self.make_experience_seq2seq(samples, rewards, max_length)
