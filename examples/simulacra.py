@@ -21,6 +21,7 @@ if __name__ == "__main__":
         if os.environ.get('LOCAL_RANK', '0') == '0' and not os.path.exists(dbpath):
             print(f"fetching {dbpath}")
             urlretrieve(url, dbpath)
+    accelerator.wait_for_everyone()
 
     conn = sqlite3.connect(dbpath)
     c = conn.cursor()
