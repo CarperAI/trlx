@@ -15,10 +15,9 @@ dbpath = "sac_public_2022_06_29.sqlite"
 
 if __name__ == "__main__":
     accelerator = Accelerator()
-    with accelerator.local_main_process_first():
-        if os.environ.get('LOCAL_RANK', '0') == '0' and not os.path.exists(dbpath):
-            print(f"fetching {dbpath}")
-            urlretrieve(url, dbpath)
+    if os.environ.get('LOCAL_RANK', '0') == '0' and not os.path.exists(dbpath):
+        print(f"fetching {dbpath}")
+        urlretrieve(url, dbpath)
     accelerator.wait_for_everyone()
 
     conn = sqlite3.connect(dbpath)
