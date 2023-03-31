@@ -538,8 +538,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count >= self.total_steps:
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        results = self.evaluate()
+                        stats.update(results)
+
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
                         self.save(directory)
-                        return self.evaluate()
+                        return results
 
                 self.post_backward_callback()
 
