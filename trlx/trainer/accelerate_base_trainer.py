@@ -529,7 +529,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
-
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
