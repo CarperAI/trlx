@@ -529,7 +529,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
-                    self.accelerator.log(stats, step=self.iter_count)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
@@ -543,8 +542,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                         if ray.is_initialized():
                             session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+                        self.accelerator.log(stats, step=self.iter_count)
+
                         self.save(directory)
                         return results
+
+                    self.accelerator.log(stats, step=self.iter_count)
 
                 self.post_backward_callback()
 
