@@ -12,6 +12,7 @@ url = "https://raw.githubusercontent.com/JD-P/simulacra-aesthetic-captions/main/
 dbpath = "sac_public_2022_06_29.sqlite"
 
 if __name__ == "__main__":
+    print(os.environ)
     if not os.path.exists(dbpath):
         print(f"fetching {dbpath}")
         urlretrieve(url, dbpath)
