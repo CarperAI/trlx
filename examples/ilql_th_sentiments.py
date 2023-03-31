@@ -41,6 +41,7 @@ def main(hparams={}):
     imdb = load_dataset("nakcnx/Thai-IMDB")
     df = pd.DataFrame( imdb['train'] )
     df = df.dropna()
+    df['sentiment_int'] = df['sentiment'].replace(['positive', 'negative'],[1, 0])
     imdb2 = Dataset.from_pandas(df)
 
     trainer = trlx.train(
