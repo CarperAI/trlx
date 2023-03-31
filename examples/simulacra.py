@@ -4,7 +4,6 @@
 from accelerate import Accelerator
 import os
 import sqlite3
-import time
 from urllib.request import urlretrieve
 
 import trlx
