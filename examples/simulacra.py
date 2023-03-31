@@ -1,10 +1,11 @@
 # Optimize prompts by training on prompts-ratings pairings dataset
 # taken from https://github.com/JD-P/simulacra-aesthetic-captions
 
-from accelerate import Accelerator
 import os
 import sqlite3
 from urllib.request import urlretrieve
+
+from accelerate import Accelerator
 
 import trlx
 from trlx.data.default_configs import default_ilql_config
@@ -14,7 +15,7 @@ dbpath = "sac_public_2022_06_29.sqlite"
 
 if __name__ == "__main__":
     accelerator = Accelerator()
-    if os.environ.get('LOCAL_RANK', '0') == '0' and not os.path.exists(dbpath):
+    if os.environ.get("LOCAL_RANK", "0") == "0" and not os.path.exists(dbpath):
         print(f"fetching {dbpath}")
         urlretrieve(url, dbpath)
     accelerator.wait_for_everyone()
