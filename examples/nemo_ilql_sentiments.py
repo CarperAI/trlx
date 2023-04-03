@@ -38,7 +38,13 @@ def main(hparams={}):
                 pretrained_model="/mnt/hdd/nemo_gpt40B/nemo_gpt40B_tp8_pp2/",
                 megatron_cfg=nemo_config,
             ),
-        )
+        ),
+        method=dict(
+            gen_kwargs=dict(
+                beta=2.0,
+                temperature=0.9,
+            )
+        ),
     )
     config = config.evolve(**hparams)
 

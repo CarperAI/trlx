@@ -27,6 +27,79 @@ from trlx.utils import to_device
 logger = logging.get_logger(__name__)
 
 
+def make_experience(samples, rewards, tokenizer=None, max_length=2048, verbose=True):  # noqa: C901
+    """
+    Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
+    """
+
+    if verbose:
+        logger.info("Collecting rollouts")
+    if tokenizer is not None:
+        samples = [tokenize_dialogue(s, tokenizer, max_length) for s in samples]
+
+    all_input_ids = []
+    all_actions_ixs = []
+    all_states_ixs = []
+    all_dones = []
+    for sample in samples:
+        length = 0
+        all_input_ids.append(torch.tensor(sum((s.tokens for s in sample), ())))
+        actions_ixs = []
+        for dm in sample:
+            if dm.is_output:
+                actions_ixs.append(torch.arange(length - 1, length + len(dm.tokens) - 1))
+
+            length += len(dm.tokens)
+
+        states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
+        all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
+        all_actions_ixs.append(torch.hstack(actions_ixs))
+        all_states_ixs.append(states_ixs)
+
+    if tokenizer is not None and os.environ.get("RANK", "0") == "0" and verbose:
+        logger.info("Logging sample example")
+        prompt = tokenizer.decode(all_input_ids[0][: all_states_ixs[0][1]])
+        response = tokenizer.decode(all_input_ids[0][all_states_ixs[0][1] :])
+        columns = ["Prompt", "Response", "Reward"]
+        table = Table(*columns, title="Sample Example", show_lines=True)
+        table.add_row(prompt, response, str(rewards[0]))
+        Console().print(table)
+
+    sample_lengths = np.array(list(map(len, all_input_ids)))
+    output_lengths = np.array(list(map(len, all_actions_ixs)))
+    prompt_lengths = sample_lengths - output_lengths
+    returns = torch.tensor(rewards, dtype=float)
+
+    if os.environ.get("RANK", "0") == "0" and verbose:
+        logger.info("Logging experience string statistics")
+        columns = ["Prompt Length", "Output Length", "Sample Length"]
+        table = Table(*columns, title="Experience String Stats (mean ∈ \[min, max])", show_lines=True)
+        row = []
+        for lengths in [prompt_lengths, output_lengths, sample_lengths]:
+            row.append(f"{lengths.mean():.2f} ∈ [{min(lengths)}, {max(lengths)}]")
+        table.add_row(*row)
+        Console().print(table)
+
+    returns = returns - returns.mean()
+    std_returns = returns.std()
+    if not torch.isnan(std_returns):
+        returns = returns / (std_returns + torch.finfo(returns.dtype).eps)
+    rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
+    for rs, ret in zip(rewards, returns):
+        rs[-1] = ret
+
+    attention_mask = [torch.ones(len(x), dtype=int) for x in all_input_ids]
+
+    return ILQLRolloutStorage(
+        all_input_ids,
+        attention_mask,
+        rewards,
+        all_states_ixs,
+        all_actions_ixs,
+        all_dones,
+    )
+
+
 @register_trainer
 class AccelerateILQLTrainer(AccelerateRLTrainer):
     def __init__(self, config: TRLConfig, **kwargs):
@@ -113,16 +186,14 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         all_states_ixs = []
         all_dones = []
         for sample in samples:
-            all_input_ids.append(torch.tensor(sample[0]))
-            all_output_ids.append(torch.tensor(sample[1]))
-            isoutput = False
+            all_input_ids.append(torch.tensor(sample[0].tokens))
+            all_output_ids.append(torch.tensor(sample[1].tokens))
             actions_ixs = []
             length = 0
             for phrase in sample:
-                if isoutput:
-                    length = len(phrase)
+                if phrase.is_output:
+                    length = len(phrase.tokens)
                     actions_ixs.append(torch.arange(0, length - 1))
-                isoutput = not isoutput
             states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
             all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
             all_actions_ixs.append(torch.hstack(actions_ixs))
@@ -176,67 +247,4 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         if self.config.model.model_arch_type == "seq2seq":
             return self.make_experience_seq2seq(samples, rewards, max_length)
 
-        logger.info("Collecting rollouts")
-        if self.tokenizer:
-            samples = [tokenize_dialogue(s, self.tokenizer, max_length) for s in samples]
-
-        all_input_ids = []
-        all_actions_ixs = []
-        all_states_ixs = []
-        all_dones = []
-        for sample in samples:
-            length = 0
-            all_input_ids.append(torch.tensor(sum(sample, [])))
-            isoutput = False
-            actions_ixs = []
-            for phrase in sample:
-                if isoutput:
-                    actions_ixs.append(torch.arange(length - 1, length + len(phrase) - 1))
-
-                length += len(phrase)
-                isoutput = not isoutput
-
-            states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
-            all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
-            all_actions_ixs.append(torch.hstack(actions_ixs))
-            all_states_ixs.append(states_ixs)
-
-        if self.tokenizer and os.environ.get("RANK", "0") == "0":
-            logger.info("Logging sample example")
-            prompt = self.tokenizer.decode(all_input_ids[0][: all_states_ixs[0][1]])
-            response = self.tokenizer.decode(all_input_ids[0][all_states_ixs[0][1] :])
-            columns = ["Prompt", "Response", "Reward"]
-            table = Table(*columns, title="Sample Example", show_lines=True)
-            table.add_row(prompt, response, str(rewards[0]))
-            Console().print(table)
-
-        sample_lengths = np.array(list(map(len, all_input_ids)))
-        output_lengths = np.array(list(map(len, all_actions_ixs)))
-        prompt_lengths = sample_lengths - output_lengths
-        returns = torch.tensor(rewards, dtype=float)
-
-        if os.environ.get("RANK", "0") == "0":
-            logger.info("Logging experience string statistics")
-            columns = ["Prompt Length", "Output Length", "Sample Length"]
-            table = Table(*columns, title="Experience String Stats (mean ∈ \[min, max])", show_lines=True)
-            row = []
-            for lengths in [prompt_lengths, output_lengths, sample_lengths]:
-                row.append(f"{lengths.mean():.2f} ∈ [{min(lengths)}, {max(lengths)}]")
-            table.add_row(*row)
-            Console().print(table)
-
-        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
-        rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
-        for rs, ret in zip(rewards, returns):
-            rs[-1] = ret
-
-        attention_mask = [torch.ones(len(x), dtype=int) for x in all_input_ids]
-
-        self.store = ILQLRolloutStorage(
-            all_input_ids,
-            attention_mask,
-            rewards,
-            all_states_ixs,
-            all_actions_ixs,
-            all_dones,
-        )
+        self.store = make_experience(samples, rewards, self.tokenizer, max_length=max_length, verbose=True)
