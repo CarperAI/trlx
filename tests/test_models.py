@@ -365,6 +365,7 @@ class TestAutoModelForSeq2SeqLMWithILQLHeads(unittest.TestCase):
     def _create_inputs(self, model_path):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
         tokenizer.padding_side = "left"
+        tokenizer.pad_token = tokenizer.eos_token
         inputs = tokenizer(self.text, truncation=True, padding="max_length", max_length=4, return_tensors="pt")
         inputs["decoder_input_ids"] = torch.tensor([[tokenizer.pad_token_id]])
         return inputs
@@ -373,7 +374,6 @@ class TestAutoModelForSeq2SeqLMWithILQLHeads(unittest.TestCase):
         for model_path in AUTO_SEQ2SEQ_LM_PATHS:
             model = self._auto_model_class.from_pretrained(model_path, **self._supported_args)
             inputs = self._create_inputs(model_path)
-            print(inputs)
             # Ensure that the `forward` method doesn't throw an error on generic inputs
             try:
                 model(**inputs)
