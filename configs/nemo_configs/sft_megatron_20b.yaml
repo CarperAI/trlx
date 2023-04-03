@@ -29,7 +29,7 @@ exp_manager:
   create_wandb_logger: True
   wandb_logger_kwargs:
     project: trlx-nemo-sft
-    name: megatron_gpt_20b_ppo_sentiments
+    name: megatron_gpt_20b_sft_sentiments
   resume_if_exists: False
   resume_ignore_no_checkpoint: True
   # set this to save checkpoints

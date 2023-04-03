@@ -391,24 +391,16 @@ class SFTGPT(MegatronGPTModel):
         return (p for p in self.model.parameters() if p.requires_grad)
 
     def build_attention_mask_and_position_ids(
-        self, data: torch.LongTensor, reset_attention_mask: bool = False
+        self, data: torch.LongTensor
     ) -> Tuple[torch.BoolTensor, torch.LongTensor]:
         micro_batch_size, seq_length = data.size()
 
-        # Attention mask (lower triangular).
-        if reset_attention_mask:
-            att_mask_batch = micro_batch_size
-        else:
-            att_mask_batch = 1
-        attention_mask = torch.tril(torch.ones((att_mask_batch, seq_length, seq_length), device=data.device)).view(
-            att_mask_batch, 1, seq_length, seq_length
-        )
-
-        # Position ids.
         position_ids = torch.arange(seq_length, dtype=torch.long, device=data.device)
         position_ids = position_ids.unsqueeze(0).repeat(micro_batch_size, 1)
 
-        # Convert attention mask to binary:
+        attention_mask = torch.tril(torch.ones((1, seq_length, seq_length), device=data.device)).view(
+            1, 1, seq_length, seq_length
+        )
         attention_mask = attention_mask < 0.5
         return attention_mask, position_ids
 
@@ -417,9 +409,7 @@ class SFTGPT(MegatronGPTModel):
             # On first and last pipeline stages, the input data is passed in
             if parallel_state.get_pipeline_model_parallel_world_size() == 1:
                 input_ids, loss_mask = [b.cuda(non_blocking=True) for b in batch]
-                attention_mask, position_ids = self.build_attention_mask_and_position_ids(
-                    data=input_ids, reset_attention_mask=False
-                )
+                attention_mask, position_ids = self.build_attention_mask_and_position_ids(data=input_ids)
             else:
                 input_ids, loss_mask, attention_mask, position_ids = None, None, None, None
 
