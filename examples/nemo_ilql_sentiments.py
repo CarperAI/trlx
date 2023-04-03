@@ -28,7 +28,13 @@ def main(hparams={}):
                 pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
-        )
+        ),
+        method=dict(
+            gen_kwargs=dict(
+                beta=2.0,
+                temperature=0.9,
+            )
+        ),
     )
     config = config.evolve(**hparams)
 

@@ -9,7 +9,6 @@ import ray
 import torch
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
-from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
@@ -72,6 +71,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.tokenizer.sep_token = "<sep>"
         if config.model.model_arch_type != "seq2seq":
             self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -87,7 +87,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process and not ray.is_initialized():
+        if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -98,7 +98,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "name": run_name,
                     "entity": self.config.train.entity_name,
                     "group": self.config.train.group_name,
-                    "tags": ["/".join(get_git_tag())],
+                    "tags": self.config.train.tags + ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
 
@@ -186,6 +186,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts: List[torch.LongTensor],
         samples: List[torch.LongTensor],
         prompt_sizes: torch.LongTensor = None,
+        append_eos_token: bool = False,
     ) -> Tuple[List[str], List[str], List[str]]:
         """
         Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
@@ -203,13 +204,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
-
             # Trim outputs up to `self.stop_sequences` if any are present
+            trimmed = False
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
+                        trimmed = True
+
+            # Recover the last <eos> if it was present in the original sample
+            # or add one if it was trimmed with `self.stop_sequences`.
+            # Only in cases when a generation ended due to `max_new_tokens` exhaustion,
+            # <eos> token would not be present in the original sample
+            if append_eos_token and (trimmed or sample[-1] == self.tokenizer.eos_token_id):
+                str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)
@@ -420,11 +429,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
             Console().print(rich_table)
 
-            if not ray.is_initialized():
-                if self.config.train.tracker == "wandb":
-                    import wandb
+            if self.config.train.tracker == "wandb":
+                import wandb
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
@@ -518,6 +526,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                         # always save checkpoint with the greatest mean reward
                         if self.config.train.save_best:
@@ -538,17 +548,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
-                        # Report the metrics to Ray Tune.
-                        if ray.is_initialized():
-                            self.save("state")
-                            with open("state/state.json", "w") as f:
-                                json.dump(dict(iter_count=self.iter_count), f)
-                            checkpoint = Checkpoint.from_directory("state")
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
-
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
-
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
@@ -556,8 +555,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count >= self.total_steps:
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        results = self.evaluate()
+                        stats.update(results)
+
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+                        self.accelerator.log(stats, step=self.iter_count)
+
                         self.save(directory)
-                        return self.evaluate()
+                        return results
+
+                    self.accelerator.log(stats, step=self.iter_count)
 
                 self.post_backward_callback()
 

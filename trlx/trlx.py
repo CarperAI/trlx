@@ -102,18 +102,17 @@ def train(  # noqa: C901
 
     # Offline training from the collected samples (e.g. SFT, ILQL)
     elif samples:
-        if rewards:
+        if rewards is not None:
             if len(samples) != len(rewards):
                 raise ValueError(f"Number of samples {len(samples)} should match the number of rewards {len(rewards)}")
 
         if eval_prompts is None:
             eval_prompts = [trainer.tokenizer.bos_token] * batch_size
 
-        if rewards:
+        if rewards is not None:
             trainer.make_experience(samples, rewards, config.train.seq_length)
         else:
-            trainer.store = get_pipeline(config.train.pipeline)(samples, max_prompt_length, trainer.tokenizer)
-
+            trainer.make_experience(samples, config.train.seq_length)
     else:
         raise ValueError("Either `samples` or `reward_fn` should be given for training")
 

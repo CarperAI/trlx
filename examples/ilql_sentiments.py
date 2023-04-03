@@ -37,7 +37,7 @@ def main(hparams={}):
     trlx.train(
         samples=imdb["text"],
         rewards=imdb["label"],
-        eval_prompts=["I don't know much about Hungarian underground"] * 64,
+        eval_prompts=["I don't know much about Hungarian underground"] * 256,
         metric_fn=metric_fn,
         config=config,
     )
