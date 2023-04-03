@@ -607,6 +607,11 @@ class ILQLGPT(MegatronGPTModel):
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
+        # Only the last stage of the pipleline produces output
+        if gen is None:
+            assert not parallel_state.is_pipeline_last_stage()
+            return None
+
         metrics = self.metric_fn(gen["sentences"])
 
         metric_keys, metric_values = zip(*metrics.items())
@@ -638,7 +643,11 @@ class ILQLGPT(MegatronGPTModel):
 
         return avg_metrics, (rows, columns)
 
-    def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]):
+    def validation_epoch_end(self, outputs: Optional[[Tuple[dict, Tuple[List[str], List[str]]]]]):
+        if outputs is None:
+            assert not parallel_state.is_pipeline_last_stage()
+            return
+
         metrics, tables = zip(*outputs)
         _, columns = tables[0]
         rows = [r for trows, _ in tables for r in trows]
@@ -809,11 +818,4 @@ class ILQLGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        ret = super().generate(inputs, length_params, sampling_params)
-        if ret is None:
-            print("ILQL: no output")
-            print(sampling_params)
-            print(length_params)
-            print(inputs)
-            assert False
-        return ret
+        return super().generate(inputs, length_params, sampling_params)
