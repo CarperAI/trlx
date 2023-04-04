@@ -394,6 +394,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats.update(mean_metrics)
 
                     for metric, values in metrics.items():
+                        # Skip metrics that are scalers since they represent aggregated values
+                        if isinstance(values, float):
+                            continue
                         columns.append(metric)
                         if not isinstance(values, list):
                             values = values.tolist()
