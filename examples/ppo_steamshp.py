@@ -34,7 +34,7 @@ def create_steamshp_reward_fn(device=None):
         return scores.cpu().tolist()
 
     def reward_fn(samples, prompts, outputs):
-        mbs = 16
+        mbs = 32
         out = []
         for i in range(math.ceil(len(samples) / mbs)):
             batch_ixs = slice(i * mbs, (i + 1) * mbs)
@@ -54,7 +54,17 @@ def get_positive_score(scores):
 def main(hparams={}):
     # Merge sweep config with default config if given
     config = default_ppo_config()
+    config.model.model_path = "EleutherAI/gpt-j-6b"
+    config.model.num_layers_unfrozen = 2
+    config.tokenizer.tokenizer_path = "gpt2"
     config.train.seq_length = 512
+    config.train.batch_size = 4
+    config.optimizer.kwargs["lr"] = 8e-6
+    config.scheduler.kwargs["eta_min"] = 8e-6
+    config.method.num_rollouts = 64
+    config.method.chunk_size = 16
+    config.train.total_steps = 6000
+
     # SteamSHP reccomends truncating from the left
     config.tokenizer.truncation_side = "left"
 
