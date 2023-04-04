@@ -388,7 +388,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1) for k, xs in metrics.items()
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1).item() for k, xs in metrics.items()
                     }
 
                     stats.update(mean_metrics)

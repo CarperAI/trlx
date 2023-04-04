@@ -48,7 +48,7 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         labels[~batch.attention_mask.bool()] = -100
 
         loss = self.model(input_ids=batch.input_ids, attention_mask=batch.attention_mask, labels=labels).loss
-        stats = {"loss": loss}
+        stats = {"loss": loss.item()}
 
         return loss, stats
 
