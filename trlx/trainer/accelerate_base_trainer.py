@@ -5,7 +5,6 @@ from abc import abstractmethod
 from time import time
 from typing import Dict, List, Optional, Tuple
 
-import accelerate
 import ray
 import torch
 from accelerate import Accelerator  # type: ignore
