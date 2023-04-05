@@ -1,7 +1,9 @@
+import contextlib
 import json
 import os
 import sys
 from abc import abstractmethod
+from contextlib import contextmanager
 from time import time
 from typing import Dict, List, Optional, Tuple
 
@@ -51,6 +53,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             self.mb_size = config.train.batch_size
         self.num_mb = config.train.batch_size // self.mb_size
+        self.mb_count = 0
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
@@ -437,6 +440,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.nth_evaluation += 1
         return stats
 
+    @contextmanager
+    def _accumulate(self):
+        # We can't use accelerator.accumulate() since that checks if the dataloader is exhausted
+        # and we do exhaust the eval dataloader right before each training loop
+        self.mb_count += 1
+        assert self.mb_count // self.num_mb <= self.config.train.total_steps, "Beyond total steps, something is wrong"
+        if (
+            self.mb_count % self.accelerator.gradient_accumulation_steps == 0
+            or self.mb_count // self.num_mb >= self.config.train.total_steps
+        ):
+            context = contextlib.nullcontext
+        else:
+            context = self.accelerator.no_sync
+        with context(self.model):
+            yield
+
     def learn(self):  # noqa: C901
         """
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
@@ -493,14 +512,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     backward_time = 0
                     stats_accum = []
                     for mb in mbs:
-                        forward_time -= time()
-                        loss, stats = self.loss(mb)
-                        forward_time += time()
-                        loss /= self.num_mb
-                        backward_time -= time()
-                        self.accelerator.backward(loss)
-                        backward_time += time()
-                        stats_accum.append(stats)
+                        with self._accumulate():
+                            forward_time -= time()
+                            loss, stats = self.loss(mb)
+                            forward_time += time()
+                            backward_time -= time()
+                            self.accelerator.backward(loss)
+                            backward_time += time()
+                            stats_accum.append(stats)
 
                     forward_time /= self.num_mb
                     backward_time /= self.num_mb
