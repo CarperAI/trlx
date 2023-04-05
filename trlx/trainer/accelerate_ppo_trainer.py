@@ -325,14 +325,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 scores = all_scores[0].clone().detach()
 
-            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
-
             # Pad the sample outputs
-            outputs = self.tokenizer(str_outputs).input_ids
             if self.config.model.model_arch_type == "seq2seq":
-                # add <pad> to the start of the output
-                for i in range(len(outputs)):
-                    outputs[i] = [self.tokenizer.pad_token_id] + outputs[i]
+                outputs = samples.detach().cpu()
+            else:
+                _, _, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
+                outputs = self.tokenizer(str_outputs).input_ids
 
             outputs = list(map(torch.LongTensor, outputs))
             maxsize = max(map(len, outputs))
@@ -430,6 +428,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Estimate the KL divergence between the model and reference model
             if self.config.model.model_arch_type == "seq2seq":
                 attention_mask = sample_outputs != self.tokenizer.pad_token_id
+                attention_mask[:, 0] = 1
                 start = 0
             else:
                 start = prompt_tensors.shape[1] - 1
@@ -446,7 +445,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Get the logprobs and values, for tokens that are not padding,
             # from the start of the prompt up to the <eos> token, while also including the latter
             # (these are taken from the student model and not the reference model)
-            ends = start + attention_mask[:, start:].sum(1) + 1
+            ends = start + attention_mask[:, start:].sum(1)
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
