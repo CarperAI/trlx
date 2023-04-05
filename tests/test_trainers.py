@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from typing import List, Mapping
+from unittest.mock import patch
 
 import trlx.utils.logging as logging
 from trlx.data.configs import (
@@ -132,3 +133,36 @@ class TestAccelerateBaseTrainer(unittest.TestCase):
             if total_steps % interval != 0:
                 self.assertTrue(os.path.isdir(os.path.join(tmpdir, f"checkpoint_{total_steps}")))
             self.assertTrue(os.path.isdir(os.path.join(tmpdir, "best_checkpoint")))
+
+    def test_accumulate_context(self):
+        config = self.get_default_config()
+        trainer = self.get_trainer(config)
+        trainer.accelerator.gradient_accumulation_steps = 3
+
+        def run_test(mb_count, num_mb, total_steps, should_call_no_sync):
+            trainer.mb_count = mb_count
+            trainer.num_mb = num_mb
+            trainer.config.train.total_steps = total_steps
+
+            with patch.object(trainer.accelerator, "no_sync") as no_sync_tracker:
+                with patch("contextlib.nullcontext") as nullcontext_tracker:
+                    with trainer._accumulate():
+                        pass
+
+            self.assertEqual(no_sync_tracker.called, should_call_no_sync)
+            self.assertEqual(nullcontext_tracker.called, not should_call_no_sync)
+
+        # Test case 1: the context manager should call accelerator.no_sync
+        run_test(mb_count=1, num_mb=2, total_steps=4, should_call_no_sync=True)
+
+        # Test case 2: the context manager should sync because next mb_count is 3 (corresponds with gradient accumulation)
+        run_test(mb_count=2, num_mb=2, total_steps=4, should_call_no_sync=False)
+
+        # Test case 3: the context manager should sync because next mb_count is final step even though it is not % by 3
+        run_test(mb_count=3, num_mb=1, total_steps=4, should_call_no_sync=False)
+
+        # Test case 4: the context manager should call accelerator.no_sync
+        run_test(mb_count=3, num_mb=1, total_steps=6, should_call_no_sync=True)
+
+        # Test case 5: the context manager should sync because next mb_count is 28 and 28 // num_mb means it is the last step
+        run_test(mb_count=27, num_mb=4, total_steps=7, should_call_no_sync=False)
