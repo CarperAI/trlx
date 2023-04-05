@@ -112,7 +112,7 @@ class PromptPipeline(BasePipeline):
     """
 
     def __init__(
-        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
+        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer, add_special_tokens: bool
     ):
         super().__init__()
 
@@ -123,7 +123,7 @@ class PromptPipeline(BasePipeline):
             metadata = [{}] * len(prompts)
 
         model_inputs = tokenizer(
-            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
+            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=add_special_tokens
         )
 
         prompts_tokens = model_inputs["input_ids"]
