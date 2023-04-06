@@ -242,7 +242,10 @@ def flatten_dict(
 
 
 def gather_dict(obj: Dict, grad_state: accelerate.state.GradientState = None):
-    """Gather and concatenates key-values from a dictionary, optionally trimming them if some of them were out of dataloader's padding"""
+    """
+    Gather and concatenates key-values from a dictionary, optionally
+    trimming them if some of them were out of dataloader's padding
+    """
     if not torch.distributed.is_initialized():
         return obj
 
