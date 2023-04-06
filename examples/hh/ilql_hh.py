@@ -1,8 +1,8 @@
 import json
 import os
 import sys
-
 from itertools import islice
+
 from datasets import load_dataset
 from ppo_hh import create_reward_fn
 

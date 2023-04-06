@@ -2,8 +2,8 @@ import json
 import math
 import os
 import sys
-
 from itertools import islice
+
 import numpy as np
 import torch
 import tritonclient.grpc as client_util
@@ -172,8 +172,11 @@ def create_reward_fn():  # noqa:  C901
 
         def get_reward(samples):
             input = reward_tokenizer(
-                samples, padding=True, truncation=True,
-                max_length=reward_tokenizer.max_len_single_sentence, return_tensors="pt"
+                samples,
+                padding=True,
+                truncation=True,
+                max_length=reward_tokenizer.max_len_single_sentence,
+                return_tensors="pt",
             ).to(reward_device)
 
             mbs = reward_batch_size
