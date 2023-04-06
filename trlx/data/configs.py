@@ -196,6 +196,9 @@ class TrainConfig:
 
     :param seed: Random seed
     :type seed: int
+
+    :param minibatch_size: Size of model input during one forward pass. Must divide batch size
+    :type minibatch_size: int
     """
 
     total_steps: int
@@ -223,6 +226,8 @@ class TrainConfig:
     tags: Optional[List[str]] = field(default_factory=list)
 
     seed: int = 1000
+
+    minibatch_size: Optional[int] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
