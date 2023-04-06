@@ -355,10 +355,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores)
-            stats["exp_scores/mean"] = all_scores_mean
-            stats["exp_scores/std"] = all_scores_std
-            stats["exp_scores/running_mean"] = self.running_moments.mean
-            stats["exp_scores/running_std"] = self.running_moments.std
+            stats["exp_scores/mean"] = all_scores_mean.item()
+            stats["exp_scores/std"] = all_scores_std.item()
+            stats["exp_scores/running_mean"] = self.running_moments.mean.item()
+            stats["exp_scores/running_std"] = self.running_moments.std.item()
 
             if self.config.method.scale_reward == "running":
                 scores /= self.running_moments.std
@@ -483,7 +483,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if torch.distributed.is_initialized():
             torch.distributed.all_reduce(self.mean_kl, torch.distributed.ReduceOp.AVG)
 
-        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl)
+        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl).item()
         stats["kl_ctl_value"] = self.kl_ctl.value
         stats["time/exp"] = exp_time
 

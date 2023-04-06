@@ -4,7 +4,7 @@ from datasets import load_dataset
 from transformers import pipeline
 
 import trlx
-from trlx.data.default_configs import default_ilql_config
+from trlx.data.default_configs import default_sft_config
 
 
 def get_positive_score(scores):
@@ -12,7 +12,7 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-default_config = default_ilql_config()
+default_config = default_sft_config()
 
 
 def main(hparams={}):
@@ -20,23 +20,18 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
-            seq_length=1024,
-            batch_size=512,
-            total_steps=200,
-            trainer="NeMoILQLTrainer",
+            trainer="NeMoSFTTrainer",
             trainer_kwargs=dict(
                 pretrained_model=None,
                 megatron_cfg="megatron_20b.yaml",
             ),
-        ),
-        method=dict(
-            gen_kwargs=dict(
-                beta=2.0,
-                temperature=0.9,
-            )
-        ),
+        )
     )
     config = config.evolve(**hparams)
+
+    imdb = load_dataset("imdb", split="train+test")
+    # Finetune on only positive reviews
+    imdb = imdb.filter(lambda sample: sample["label"] == 1)
 
     sentiment_fn = pipeline(
         "sentiment-analysis",
@@ -51,12 +46,9 @@ def main(hparams={}):
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
         return {"sentiments": sentiments}
 
-    imdb = load_dataset("imdb", split="train+test")
-
     trlx.train(
         samples=imdb["text"],
-        rewards=imdb["label"],
-        eval_prompts=["I don't know much about Hungarian underground"] * 128,
+        eval_prompts=["I don't know much about Hungarian underground"] * 64,
         metric_fn=metric_fn,
         config=config,
     )

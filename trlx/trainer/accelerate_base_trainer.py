@@ -1,7 +1,9 @@
+import contextlib
 import json
 import os
 import sys
 from abc import abstractmethod
+from contextlib import contextmanager
 from time import time
 from typing import Dict, List, Optional, Tuple
 
@@ -15,6 +17,7 @@ from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
+from trlx.pipeline import MiniBatchIterator
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
@@ -45,6 +48,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
+        if config.train.minibatch_size:
+            assert config.train.batch_size % config.train.minibatch_size == 0, "Minibatch size must divide batch size"
+            self.mb_size = config.train.minibatch_size
+        else:
+            self.mb_size = config.train.batch_size
+        self.num_mb = config.train.batch_size // self.mb_size
+        self.mb_count = 0
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
@@ -393,12 +403,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1) for k, xs in metrics.items()
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1).item() for k, xs in metrics.items()
                     }
 
                     stats.update(mean_metrics)
 
                     for metric, values in metrics.items():
+                        # Skip metrics that are scalers since they represent aggregated values
+                        if isinstance(values, float):
+                            continue
                         columns.append(metric)
                         if not isinstance(values, list):
                             values = values.tolist()
@@ -434,6 +447,22 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         self.nth_evaluation += 1
         return stats
+
+    @contextmanager
+    def _accumulate(self):
+        # We can't use accelerator.accumulate() since that checks if the dataloader is exhausted
+        # and we do exhaust the eval dataloader right before each training loop
+        self.mb_count += 1
+        assert self.mb_count // self.num_mb <= self.config.train.total_steps, "Beyond total steps, something is wrong"
+        if (
+            self.mb_count % self.accelerator.gradient_accumulation_steps == 0
+            or self.mb_count // self.num_mb >= self.config.train.total_steps
+        ):
+            context = contextlib.nullcontext
+        else:
+            context = self.accelerator.no_sync
+        with context(self.model):
+            yield
 
     def learn(self):  # noqa: C901
         """
@@ -480,19 +509,31 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # For each epoch
         for _ in range(self.config.train.epochs):
             # For each batch
-            for batch in self.train_dataloader:
+            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
                 # For each update per batch
                 for _ in range(self.n_updates_per_batch):
                     # Note that whereas standard policy gradient methods perform one
                     # gradient update per batch, PPO for example commonly performs
                     # multiple gradient updates on the same batch of data.
                     # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = time()
-                    loss, stats = self.loss(batch)
-                    forward_time = time() - forward_time
-                    backward_time = time()
-                    self.accelerator.backward(loss)
-                    backward_time = time() - backward_time
+                    forward_time = 0
+                    backward_time = 0
+                    stats_accum = []
+                    for mb in mbs:
+                        with self._accumulate():
+                            forward_time -= time()
+                            loss, stats = self.loss(mb)
+                            forward_time += time()
+                            backward_time -= time()
+                            self.accelerator.backward(loss)
+                            backward_time += time()
+                            stats_accum.append(stats)
+
+                    forward_time /= self.num_mb
+                    backward_time /= self.num_mb
+                    # TODO(Dahoas): Best way to combine stats between mbs?
+                    # How does accelerate do it?
+                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
 
                     self.opt.step()
                     self.opt.zero_grad()
