@@ -11,6 +11,7 @@ import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
 from apex.transformer import parallel_state, tensor_parallel
+from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
@@ -38,6 +39,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     SamplingParam,
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from nemo.utils import AppState
 from omegaconf import open_dict
 
 from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
@@ -607,6 +609,21 @@ class ILQLGPT(MegatronGPTModel):
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(True)
+
+        if sp_was_enabled:
+            self.sequence_parallel_(True)
+
+        # NeMo generate resets the microbatch calculator
+
+        _reconfigure_microbatch_calculator(
+            rank=AppState().global_rank,
+            rampup_batch_size=None,
+            global_batch_size=self.cfg.global_batch_size,
+            micro_batch_size=self.cfg.micro_batch_size,
+            data_parallel_size=AppState().data_parallel_size,
+        )
         # Only the last stage of the pipleline produces output
         if gen is None:
             assert not parallel_state.is_pipeline_last_stage()
@@ -621,30 +638,10 @@ class ILQLGPT(MegatronGPTModel):
 
         avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
 
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(True)
-
-        if sp_was_enabled:
-            self.sequence_parallel_(True)
-
-        # NeMo generate resets the microbatch calculator
-        from apex.transformer.pipeline_parallel.utils import (
-            _reconfigure_microbatch_calculator,
-        )
-        from nemo.utils import AppState
-
-        _reconfigure_microbatch_calculator(
-            rank=AppState().global_rank,
-            rampup_batch_size=None,
-            global_batch_size=self.cfg.global_batch_size,
-            micro_batch_size=self.cfg.micro_batch_size,
-            data_parallel_size=AppState().data_parallel_size,
-        )
-
         return avg_metrics, (rows, columns)
 
-    def validation_epoch_end(self, outputs: Optional[[Tuple[dict, Tuple[List[str], List[str]]]]]):
-        if outputs is None:
+    def validation_epoch_end(self, outputs: Optional[List[Tuple[dict, Tuple[List[str], List[str]]]]]):
+        if outputs is None or len(outputs) == 0:
             assert not parallel_state.is_pipeline_last_stage()
             return
 
@@ -663,7 +660,7 @@ class ILQLGPT(MegatronGPTModel):
                 v,
                 prog_bar=True,
                 rank_zero_only=True,
-                sync_dist=True,
+                # sync_dist=True,
             )
 
     # Need to override this otherwise distributed fused adam won't work

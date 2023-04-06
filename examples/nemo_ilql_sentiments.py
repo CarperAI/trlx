@@ -26,6 +26,7 @@ def main(hparams={}):
     model_config.encoder_seq_length = 1024
     model_config.data.seq_length = 1024
     model_config.global_batch_size = 128
+    model_config.micro_batch_size = 4
     nemo_config.model = model_config
 
     config = default_config.evolve(
