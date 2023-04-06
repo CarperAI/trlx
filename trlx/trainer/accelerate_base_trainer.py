@@ -332,7 +332,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             all_metadata = []
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
-                metadata = prompts["metadata"]
+                metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
                 if self.generate_sweep_kwarg:
                     samples = self.generate_eval(
                         prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}

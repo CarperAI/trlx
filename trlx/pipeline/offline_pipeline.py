@@ -137,10 +137,9 @@ class PromptPipeline(BasePipeline):
         def collate_fn(xs):
             out = self.tokenizer.pad([{"input_ids": x["input_ids"]} for x in xs], return_tensors="pt")
 
-            out["metadata"] = {}
             for key in xs[0]:
                 if key != "input_ids" and key != "attention_mask":
-                    out["metadata"][key] = [x[key] for x in xs]
+                    out[key] = [x[key] for x in xs]
 
             return out
 
