@@ -31,7 +31,7 @@ from trlx.utils.modeling import (
     flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
-    gather_object_for_metrics,
+    gather_dict,
     get_delta_model_class,
     parse_delta_kwargs,
 )
@@ -357,7 +357,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 all_prompts.extend(prompts.tolist())
                 all_prompt_sizes.extend(prompt_sizes.tolist())
 
-                metadata = gather_object_for_metrics(self.accelerator.gradient_state, metadata)
+                metadata = gather_dict(metadata, self.accelerator.gradient_state)
                 all_metadata.append(metadata)
 
                 desc = [

@@ -241,7 +241,8 @@ def flatten_dict(
     return dict(items)
 
 
-def gather_object_for_metrics(grad_state: accelerate.state.GradientState, obj: Dict):
+def gather_dict(obj: Dict, grad_state: accelerate.state.GradientState = None):
+    """Gather and concatenates key-values from a dictionary, optionally trimming them if some of them were out of dataloader's padding"""
     if not torch.distributed.is_initialized():
         return obj
 
@@ -253,9 +254,10 @@ def gather_object_for_metrics(grad_state: accelerate.state.GradientState, obj: D
         for k in obj:
             acc[k].extend(obj[k])
 
-    if grad_state.end_of_dataloader and grad_state.remainder > 0:
-        for k in acc:
-            acc[k] = acc[k][: grad_state.remainder]
+    if grad_state:
+        if grad_state.end_of_dataloader and grad_state.remainder > 0:
+            for k in acc:
+                acc[k] = acc[k][: grad_state.remainder]
 
     return acc
 

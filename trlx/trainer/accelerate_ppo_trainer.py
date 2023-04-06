@@ -25,11 +25,7 @@ from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils import Clock, infinite_dataloader
-from trlx.utils.modeling import (
-    RunningMoments,
-    gather_object_for_metrics,
-    logprobs_of_labels,
-)
+from trlx.utils.modeling import RunningMoments, gather_dict, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
 
@@ -302,8 +298,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_samples = self.accelerator.gather(padded_samples)
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
-            metadata = {k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"}
-            metadata = gather_object_for_metrics(self.accelerator.gradient_state, metadata)
+            metadata = gather_dict({k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
