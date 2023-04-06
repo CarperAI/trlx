@@ -123,8 +123,8 @@ class PromptPipeline(BasePipeline):
 
         self.tokenizer = tokenizer
         self.prompts = [
-            {"input_ids": tokens, "attention_mask": mask} | meta
-            for tokens, mask, meta in zip(prompts_tokens, attention_mask, metadata)
+            {"input_ids": tokens, "attention_mask": mask, **metadata}
+            for tokens, mask, metadata in zip(prompts_tokens, attention_mask, metadata)
         ]
 
     def __getitem__(self, ix: int):
