@@ -2,6 +2,7 @@ import json
 import os
 import sys
 
+from itertools import islice
 from datasets import load_dataset
 from ppo_hh import create_reward_fn
 
@@ -86,7 +87,7 @@ def main(hparams={}):
     prompts_outputs = sum(dataset["train"]["prompt_output"], [])
 
     rewards = sum(dataset["train"]["reward"], [])
-    eval_prompts = [prompt_output[0][0] for prompt_output in dataset["test"]["prompt_output"]][:280]
+    eval_prompts = [{"prompt": x["prompt"], "original_output": x["chosen"]} for x in islice(dataset["test"], 280)]
     reward_fn = create_reward_fn()
 
     trlx.train(
