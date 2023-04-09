@@ -1,7 +1,9 @@
+import contextlib
 import json
 import os
 import sys
 from abc import abstractmethod
+from contextlib import contextmanager
 from time import time
 from typing import Dict, List, Optional, Tuple
 
@@ -9,13 +11,13 @@ import ray
 import torch
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
-from ray.air.checkpoint import Checkpoint
 from rich.console import Console
 from rich.table import Table
 from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
+from trlx.pipeline import MiniBatchIterator
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.utils import (
     filter_non_scalars,
@@ -45,6 +47,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
     def __init__(self, config, **kwargs):  # noqa: C901
         super().__init__(config, **kwargs)
         self.max_length = config.train.seq_length
+        if config.train.minibatch_size:
+            assert config.train.batch_size % config.train.minibatch_size == 0, "Minibatch size must divide batch size"
+            self.mb_size = config.train.minibatch_size
+        else:
+            self.mb_size = config.train.batch_size
+        self.num_mb = config.train.batch_size // self.mb_size
+        self.mb_count = 0
         self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
@@ -65,6 +74,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.tokenizer.sep_token = "<sep>"
         if config.model.model_arch_type != "seq2seq":
             self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -80,7 +90,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
-        if self.accelerator.is_main_process and not ray.is_initialized():
+        if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
             dist_config = get_distributed_config(self.accelerator)
             config_dict["distributed"] = dist_config
@@ -91,7 +101,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "name": run_name,
                     "entity": self.config.train.entity_name,
                     "group": self.config.train.group_name,
-                    "tags": ["/".join(get_git_tag())],
+                    "tags": self.config.train.tags + ["/".join(get_git_tag())],
                     "mode": "disabled" if os.environ.get("debug", False) else "online",
                 }
 
@@ -179,6 +189,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts: List[torch.LongTensor],
         samples: List[torch.LongTensor],
         prompt_sizes: torch.LongTensor = None,
+        append_eos_token: bool = False,
     ) -> Tuple[List[str], List[str], List[str]]:
         """
         Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
@@ -196,13 +207,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
-
             # Trim outputs up to `self.stop_sequences` if any are present
+            trimmed = False
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
+                        trimmed = True
+
+            # Recover the last <eos> if it was present in the original sample
+            # or add one if it was trimmed with `self.stop_sequences`.
+            # Only in cases when a generation ended due to `max_new_tokens` exhaustion,
+            # <eos> token would not be present in the original sample
+            if append_eos_token and (trimmed or sample[-1] == self.tokenizer.eos_token_id):
+                str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)
@@ -244,10 +263,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
 
-    def save(self, directory: Optional[str] = None):
-        """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir)
-
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
         later use.
@@ -260,15 +275,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 `save_pretrained` method.
         """
         if directory is None:
-            directory = f"{self.config.train.checkpoint_dir}/hf_model"
+            directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
         self.accelerator.wait_for_everyone()
         self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
         if self.accelerator.is_main_process:
             self.tokenizer.save_pretrained(directory)
 
-    def load(self, directory=None):
+    def save(self, directory: Optional[str] = None, **kwargs):
+        """Creates a checkpoint of the optimizer, scheduler and model"""
+        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+
+    def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
-        self.accelerator.load_state(directory or self.config.train.checkpoint_dir)
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
@@ -379,12 +398,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1) for k, xs in metrics.items()
+                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1).item() for k, xs in metrics.items()
                     }
 
                     stats.update(mean_metrics)
 
                     for metric, values in metrics.items():
+                        # Skip metrics that are scalers since they represent aggregated values
+                        if isinstance(values, float):
+                            continue
                         columns.append(metric)
                         if not isinstance(values, list):
                             values = values.tolist()
@@ -413,14 +435,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 rich_table.add_row(*[str(significant(x)) for x in rows[ix]])
             Console().print(rich_table)
 
-            if not ray.is_initialized():
-                if self.config.train.tracker == "wandb":
-                    import wandb
+            if self.config.train.tracker == "wandb":
+                import wandb
 
-                    stats["samples"] = wandb.Table(columns, rows)
+                stats["samples"] = wandb.Table(columns, rows)
 
         self.nth_evaluation += 1
         return stats
+
+    @contextmanager
+    def _accumulate(self):
+        # We can't use accelerator.accumulate() since that checks if the dataloader is exhausted
+        # and we do exhaust the eval dataloader right before each training loop
+        self.mb_count += 1
+        assert self.mb_count // self.num_mb <= self.config.train.total_steps, "Beyond total steps, something is wrong"
+        if (
+            self.mb_count % self.accelerator.gradient_accumulation_steps == 0
+            or self.mb_count // self.num_mb >= self.config.train.total_steps
+        ):
+            context = contextlib.nullcontext
+        else:
+            context = self.accelerator.no_sync
+        with context(self.model):
+            yield
 
     def learn(self):  # noqa: C901
         """
@@ -468,22 +505,31 @@ class AccelerateRLTrainer(BaseRLTrainer):
         # For each epoch
         for _ in range(self.config.train.epochs):
             # For each batch
-            for batch in self.train_dataloader:
+            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
                 # For each update per batch
                 for _ in range(self.n_updates_per_batch):
                     # Note that whereas standard policy gradient methods perform one
                     # gradient update per batch, PPO for example commonly performs
                     # multiple gradient updates on the same batch of data.
                     # https://arxiv.org/pdf/1707.06347.pdf
-                    # TODO: remove
-                    torch.use_deterministic_algorithms(False, warn_only=True)
-                    forward_time = time()
-                    loss, stats = self.loss(batch)
-                    forward_time = time() - forward_time
-                    backward_time = time()
-                    self.accelerator.backward(loss)
-                    backward_time = time() - backward_time
-                    torch.use_deterministic_algorithms(True, warn_only=True)
+                    forward_time = 0
+                    backward_time = 0
+                    stats_accum = []
+                    for mb in mbs:
+                        with self._accumulate():
+                            forward_time -= time()
+                            loss, stats = self.loss(mb)
+                            forward_time += time()
+                            backward_time -= time()
+                            self.accelerator.backward(loss)
+                            backward_time += time()
+                            stats_accum.append(stats)
+
+                    forward_time /= self.num_mb
+                    backward_time /= self.num_mb
+                    # TODO(Dahoas): Best way to combine stats between mbs?
+                    # How does accelerate do it?
+                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
 
                     self.opt.step()
                     self.opt.zero_grad()
@@ -491,7 +537,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.iter_count += 1
 
                     if self.iter_count % self.config.train.checkpoint_interval == 0:
-                        self.save()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        self.save(directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -501,6 +549,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if self.iter_count % self.config.train.eval_interval == 0:
                         results = self.evaluate()
                         stats.update(results)
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
 
                         # always save checkpoint with the greatest mean reward
                         if self.config.train.save_best:
@@ -521,24 +571,24 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 logger.info(f"Saving the best state so far into {best_path}")
                                 self.save(best_path)
 
-                        # Report the metrics to Ray Tune.
-                        if ray.is_initialized():
-                            self.save("state")
-                            with open("state/state.json", "w") as f:
-                                json.dump(dict(iter_count=self.iter_count), f)
-                            checkpoint = Checkpoint.from_directory("state")
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
-
-                    if not ray.is_initialized():
-                        self.accelerator.log(stats, step=self.iter_count)
-
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
 
                     if self.iter_count >= self.total_steps:
-                        self.save()
-                        return self.evaluate()
+                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
+                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
+                        results = self.evaluate()
+                        stats.update(results)
+
+                        if ray.is_initialized():
+                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
+                        self.accelerator.log(stats, step=self.iter_count)
+
+                        self.save(directory)
+                        return results
+
+                    self.accelerator.log(stats, step=self.iter_count)
 
                 self.post_backward_callback()
 

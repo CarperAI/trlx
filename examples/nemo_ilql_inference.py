@@ -21,7 +21,7 @@ trl_config = default_config.evolve(
             default_config.train.__dict__,
             trainer="NeMoILQLTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+                pretrained_model=None,
                 megatron_cfg="megatron_20b.yaml",
             ),
         ),

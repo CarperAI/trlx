@@ -9,7 +9,7 @@ deepspeed_config:
   zero_stage: 2
 distributed_type: DEEPSPEED
 downcast_bf16: no
-dynamo_backend: 'NO'
+dynamo_config: {}
 fsdp_config: {}
 machine_rank: 0
 main_training_function: main

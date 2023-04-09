@@ -1,5 +1,12 @@
+"""Example of using PPO to train a T5 model for translation.
+Based on examples/summarize_daily_cnn/t5_summarize_daily_cnn.py"""
+
+import json
+import os
+import sys
 from typing import List
 
+import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -16,39 +23,43 @@ from trlx.data.configs import (
 from trlx.models.modeling_ppo import PPOConfig
 
 try:
+    import comet
     import evaluate
+
+    if comet.__version__ != "1.1.3":
+        raise ImportError
 except ImportError:
     raise ImportError(
-        "To run this example, please install the `evaluate` and `nltk` packages" "by running `pip install evaluate`"
+        "To run this example, please install `evaluate`, `nltk` and `comet==1.1.3` packages by "
+        "running `pip install evaluate unbabel-comet==1.1.3`"
     )
 
 
-config = TRLConfig(
+default_config = TRLConfig(
     train=TrainConfig(
         seq_length=612,
         epochs=100,
         total_steps=100000,
         batch_size=12,
         checkpoint_interval=10000,
-        eval_interval=500,
+        eval_interval=200,
         pipeline="PromptPipeline",
         trainer="AcceleratePPOTrainer",
-        tracker="wandb"
-        # tracker=None
+        tracker="wandb",
     ),
     model=ModelConfig(
-        model_path="google/flan-t5-large",
+        model_path="t5-large",
         model_arch_type="seq2seq",
-        num_layers_unfrozen=2,
+        num_layers_unfrozen=-1,
     ),
     tokenizer=TokenizerConfig(
-        tokenizer_path="google/flan-t5-large",
+        tokenizer_path="t5-large",
         truncation_side="right",
     ),
     optimizer=OptimizerConfig(
         name="adamw",
         kwargs={
-            "lr": 1.0e-5,
+            "lr": 2.0e-6,
             "betas": [0.9, 0.999],
             "eps": 1.0e-8,
             "weight_decay": 1.0e-6,
@@ -63,7 +74,7 @@ config = TRLConfig(
     ),
     method=PPOConfig(
         name="PPOConfig",
-        num_rollouts=512,
+        num_rollouts=256,
         chunk_size=12,
         ppo_epochs=4,
         init_kl_coef=0.05,
@@ -83,24 +94,26 @@ config = TRLConfig(
         },
         gen_experience_kwargs={
             "max_new_tokens": 100,
-            "do_sample": True,
+            "do_sample": False,
+            "num_beams": 4,
             "temperature": 1.0,
-            "top_k": 50,
-            "top_p": 0.95,
         },
     ),
 )
 
 
-comet_metric = evaluate.load("comet", "wmt20-comet-da")
-bleu_metric = evaluate.load("bleu")
-chrf_metric = evaluate.load("chrf")
+def main(hparams={}):
+    config = TRLConfig.update(default_config, hparams)
 
+    # COMET is the metric we are optimizng for
+    comet_metric = evaluate.load("comet", "wmt20-comet-da", progress_bar=False)
+    bleu_metric = evaluate.load("bleu")
+    chrf_metric = evaluate.load("chrf")
 
-if __name__ == "__main__":
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
     def reward_fn(samples: List[str], prompts: List[str], outputs: List[str]) -> List[float]:
-        # WHAT should samples be for translation?
         original_sents = [translation_map[prompt.strip()] for prompt in prompts]
 
         scores = comet_metric.compute(
@@ -108,44 +121,43 @@ if __name__ == "__main__":
             references=[original["tgt"] for original in original_sents],
             sources=[original["src"] for original in original_sents],
         )["scores"]
+
+        # TODO: This is needed since there seems to be a bug in the comet metric
+        # that changes torch's determinism setting. Remove this once the bug is fixed.
+        torch.use_deterministic_algorithms(False, warn_only=True)
         return scores
 
     def metric_fn(samples: List[str], prompts: List[str], outputs: List[str]) -> List[float]:
-        # Compute BLEU and CHRF
+        """Compute COMET, BLEU and CHRF for evaluation"""
         original_sents = [translation_map[prompt.strip()] for prompt in prompts]
 
         comet_score = comet_metric.compute(
             predictions=[output.strip() for output in outputs],
             references=[original["tgt"] for original in original_sents],
             sources=[original["src"] for original in original_sents],
-        )['mean_score']
+        )["mean_score"]
 
         bleu_score = bleu_metric.compute(
             predictions=[output.strip() for output in outputs],
             references=[original["tgt"] for original in original_sents],
-        )['bleu']
+        )["bleu"]
 
-        chrf_score = bleu_metric.compute(
+        chrf_score = chrf_metric.compute(
             predictions=[output.strip() for output in outputs],
             references=[original["tgt"] for original in original_sents],
-        )['score']
+        )["score"]
 
-        return {
-            'bleu': bleu_score,
-            'chrf': chrf_score,
-            'comet': comet_score
-        }
+        # TODO: This is needed since there seems to be a bug in the comet metric
+        # that changes torch's determinism setting. Remove this once the bug is fixed.
+        # Same issue as in `reward_fn`
+        torch.use_deterministic_algorithms(False, warn_only=True)
 
-    train_dataset = load_dataset(
-        "wmt16", "de-en", split="train", cache_dir="/home/aiscuser/dev/trlx_mrt/examples/notebooks/data", streaming=True
-    )
-    valid_dataset = load_dataset(
-        "wmt16",
-        "de-en",
-        split="validation",
-        cache_dir="/home/aiscuser/dev/trlx_mrt/examples/notebooks/data",
-        streaming=False,
-    )
+        # For corpus-level metrics, it's better to ignore the sentence-level scores
+        return {"bleu": bleu_score, "chrf": chrf_score, "comet": comet_score}
+
+    # The WMT16 is large so we can benefit with using it as a streaming dataset
+    train_dataset = load_dataset("wmt16", "de-en", split="train", streaming=True)
+    valid_dataset = load_dataset("wmt16", "de-en", split="validation", streaming=True)
 
     src_lang = "en"
     tgt_lang = "de"
@@ -157,8 +169,8 @@ if __name__ == "__main__":
     src_dataset = [PREFIX + src_sent for src_sent in original_src_dataset]
 
     # take 1,000 samples from the validation set as prompts for evaluation
-    val_original_src_dataset = [sent_pair[src_lang] for sent_pair in valid_dataset["translation"][0:1000]]
-    val_tgt_dataset = [sent_pair[tgt_lang] for sent_pair in valid_dataset["translation"][0:1000]]
+    val_original_src_dataset = [sent_pair["translation"][src_lang] for sent_pair in valid_dataset.take(1000)]
+    val_tgt_dataset = [sent_pair["translation"][tgt_lang] for sent_pair in valid_dataset.take(1000)]
     val_src_dataset = [PREFIX + src_sent for src_sent in val_original_src_dataset]
 
     # make dictionary of prompts and labels to use for reward function
@@ -192,3 +204,8 @@ if __name__ == "__main__":
         eval_prompts=val_src_dataset,
         config=config,
     )
+
+
+if __name__ == "__main__":
+    hparams = {} if len(sys.argv) == 1 else json.loads(sys.argv[1])
+    main(hparams)

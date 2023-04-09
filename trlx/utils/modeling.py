@@ -125,6 +125,7 @@ def hf_get_decoder_final_norm(model: nn.Module) -> float:
     norm_attrs = (
         "transformer.ln_f",
         "model.decoder.final_layer_norm",
+        "model.norm",
         "decoder.final_layer_norm",
         "gpt_neox.final_layer_norm",
     )
@@ -142,6 +143,7 @@ def hf_get_decoder_blocks(model: nn.Module) -> Tuple[nn.Module]:
     hidden_layers_attrs = (
         "h",
         "layers",
+        "model.layers",
         "decoder.layers",
         "transformer.h",
         "model.decoder.layers",
@@ -239,6 +241,9 @@ def flatten_dict(
 
 
 def get_tensor_stats(xs: torch.Tensor, mask: torch.Tensor, n: int):
+    if xs.numel() == 0:
+        return dict(mean=0, min=0, max=0, std=0)
+
     mean = (xs * mask).sum() / n
     return dict(
         mean=mean,

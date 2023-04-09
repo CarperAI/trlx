@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Iterable, Sequence, cast
 
-import numpy as np
 import torch
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
@@ -12,24 +11,19 @@ from nemo.collections.nlp.parts.nlp_overrides import (
 from nemo.utils import get_rank, logging
 from nemo.utils.exp_manager import StatelessTimer, exp_manager
 from omegaconf.omegaconf import OmegaConf, open_dict
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks.timer import Timer
 from pytorch_lightning.trainer.connectors.checkpoint_connector import (
     CheckpointConnector,
 )
-from rich.console import Console
-from rich.table import Table
 
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import ILQLBatch, ILQLElement, flatten_dataclass
 from trlx.models.modeling_ilql import ILQLConfig
 from trlx.models.modeling_nemo_ilql import ILQLGPT
-from trlx.pipeline.offline_pipeline import (
-    ILQLRolloutStorage,
-    ilql_collate_fn,
-    tokenize_dialogue,
-)
+from trlx.pipeline.offline_pipeline import ILQLRolloutStorage, ilql_collate_fn
 from trlx.trainer import register_trainer
+from trlx.trainer.accelerate_ilql_trainer import make_experience
 
 from . import BaseRLTrainer
 
@@ -37,6 +31,7 @@ from . import BaseRLTrainer
 def megatron_trainer(cfg):
     logging.info("\n\n************** Experiment configuration ***********")
     logging.info(f"\n{OmegaConf.to_yaml(cfg)}")
+    seed_everything(cfg.model.get("seed", 1000))
 
     megatron_amp_o2 = cfg.model.get("megatron_amp_O2", False)
     with_distributed_adam = cfg.model.optim.get("name") == "distributed_fused_adam"
@@ -205,68 +200,5 @@ class NeMoILQLTrainer(BaseRLTrainer):
         """
         Tokenizes samples and shapes rewards into proper tensors and then inserts the resulting dataset into the trainer
         """
-        logging.info("Collecting rollouts")
-
-        if self.tokenizer:
-            samples = [tokenize_dialogue(s, self.tokenizer, max_length) for s in samples]
-
-        all_input_ids = []
-        all_actions_ixs = []
-        all_states_ixs = []
-        all_dones = []
-        for sample in samples:
-            length = 0
-            all_input_ids.append(torch.tensor(sum(sample, [])))
-            isoutput = False
-            actions_ixs = []
-            for phrase in sample:
-                if isoutput:
-                    actions_ixs.append(torch.arange(length - 1, length + len(phrase) - 1))
-
-                length += len(phrase)
-                isoutput = not isoutput
-
-            states_ixs = torch.hstack((*actions_ixs, torch.tensor(length - 1)))
-            all_dones.append(torch.tensor([1] * (len(states_ixs) - 1) + [0], dtype=int))
-            all_actions_ixs.append(torch.hstack(actions_ixs))
-            all_states_ixs.append(states_ixs)
-
-        if get_rank.is_global_rank_zero():
-            logging.info("Logging sample example")
-            prompt = self.tokenizer.decode(all_input_ids[0][: all_states_ixs[0][1]])
-            response = self.tokenizer.decode(all_input_ids[0][all_states_ixs[0][1] :])
-            columns = ["Prompt", "Response", "Reward"]
-            table = Table(*columns, title="Sample Example", show_lines=True)
-            table.add_row(prompt, response, str(rewards[0]))
-            Console().print(table)
-
-        sample_lengths = np.array(list(map(len, all_input_ids)))
-        output_lengths = np.array(list(map(len, all_actions_ixs)))
-        prompt_lengths = sample_lengths - output_lengths
-        returns = torch.tensor(rewards, dtype=float)
-
-        if get_rank.is_global_rank_zero():
-            logging.info("Logging experience string statistics")
-            columns = ["Prompt Length", "Output Length", "Sample Length"]
-            table = Table(*columns, title="Experience String Stats (mean ∈ \[min, max])", show_lines=True)
-            row = []
-            for lengths in [prompt_lengths, output_lengths, sample_lengths]:
-                row.append(f"{lengths.mean():.2f} ∈ [{min(lengths)}, {max(lengths)}]")
-            table.add_row(*row)
-            Console().print(table)
-
-        returns = (returns - returns.mean()) / (returns.std() + 1e-30)
-        rewards = [torch.zeros(len(x)) for x in all_actions_ixs]
-        for rs, ret in zip(rewards, returns):
-            rs[-1] = ret
-
-        attention_mask = [torch.ones(len(x), dtype=int) for x in all_input_ids]
-
-        self.store = ILQLRolloutStorage(
-            all_input_ids,
-            attention_mask,
-            rewards,
-            all_states_ixs,
-            all_actions_ixs,
-            all_dones,
-        )
+        verbose = get_rank.is_global_rank_zero()
+        self.store = make_experience(samples, rewards, self.tokenizer, max_length, verbose)

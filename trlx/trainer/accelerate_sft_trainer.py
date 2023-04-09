@@ -4,6 +4,11 @@ from transformers import AutoModelForCausalLM
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
+from trlx.pipeline.offline_pipeline import (
+    DialogStore,
+    PromptPipeline,
+    tokenize_dialogue,
+)
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 
@@ -36,8 +41,14 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         return AutoModelForCausalLM.from_pretrained(config.model.model_path)
 
     def loss(self, batch):
-        loss = self.model(input_ids=batch.input_ids, attention_mask=batch.attention_mask, labels=batch.input_ids).loss
-        stats = {"loss": loss}
+        if "labels" in batch:
+            labels = batch.labels.clone()
+        else:
+            labels = batch.input_ids.clone()
+        labels[~batch.attention_mask.bool()] = -100
+
+        loss = self.model(input_ids=batch.input_ids, attention_mask=batch.attention_mask, labels=labels).loss
+        stats = {"loss": loss.item()}
 
         return loss, stats
 
@@ -55,3 +66,10 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         self.n_updates_per_batch = 1
         self.total_steps = self.config.train.epochs * len(train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
+
+    def make_experience(self, samples, seq_length):
+        if isinstance(samples[0], str):
+            self.store = PromptPipeline(samples, seq_length, self.tokenizer)
+        else:
+            dialogs = [tokenize_dialogue(d, self.tokenizer, seq_length) for d in samples]
+            self.store = DialogStore(dialogs, self.tokenizer)
