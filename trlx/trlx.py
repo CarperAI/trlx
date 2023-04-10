@@ -43,7 +43,9 @@ def train(  # noqa: C901
             Giving a single string `s` for the sample is a shorthand for (`tokenizer.bos_token`, `s`)
         rewards (List[float]):
             List of real numbers measuring the goodness of each sample
-        prompts (`List[str]` or `List[Dict[str, Any]]`): Prompts to use for generations during online training. If a dict is passed as prompt, it must havea a required key `"prompt"`, all the extra keys would be passed along the generation for that prompt as a keyword argument to reward function.
+        prompts (`List[str]` or `List[Dict[str, Any]]`): Prompts to use for generations during online training.
+            If a dict is passed as prompt, it must have a required key `"prompt"`, all the extra keys would be
+            passed along the generation for that prompt as a keyword argument to reward function.
         eval_prompts (List[str] or `List[Dict[str, Any]]`): Prompts to use for periodical validation of training
         metric_fn (Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]]):
             Function to compute statistics on batches of generated samples. Its arguments are the same
