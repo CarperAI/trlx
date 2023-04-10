@@ -1,3 +1,4 @@
+# DO NOT REVIEW, WILL BE DELETED
 from typing import List
 
 from datasets import load_dataset
@@ -41,8 +42,8 @@ config = TRLConfig(
         num_layers_unfrozen=2,
     ),
     tokenizer=TokenizerConfig(
-        tokenizer_path="google/flan-t5-small", #### change to reasonable value
-        truncation_side="right", # what is this?
+        tokenizer_path="google/flan-t5-small",  # change to reasonable value
+        truncation_side="right",  # what is this?
     ),
     optimizer=OptimizerConfig(
         name="adamw",
@@ -80,14 +81,14 @@ config = TRLConfig(
         ref_mean=None,
         ref_std=None,
         cliprange_reward=10,
-        gen_kwargs={ # for evaluation
+        gen_kwargs={  # for evaluation
             "max_new_tokens": 100,
             # TODO: what should the defaults here be
         },
-        gen_experience_kwargs={ # for rollouts
+        gen_experience_kwargs={  # for rollouts
             "max_new_tokens": 100,
-            "num_beams": 16, # should be same as nb_candidates
-            "num_return_sequences": 16, # should be same as nb_candidates
+            "num_beams": 16,  # should be same as nb_candidates
+            "num_return_sequences": 16,  # should be same as nb_candidates
             "do_sample": False,
             "temperature": 1.0,
             # "top_k": 50,
@@ -96,28 +97,28 @@ config = TRLConfig(
     ),
 )
 
-    # gen_kwargs = {
-    #     "min_length":-1,
-    #     "top_k": config['top_k'],
-    #     "top_p": 1.0,
-    #     "temperature": config["temperature"],
-    #     "do_sample": config['do_sample'],
-    #     "num_beams": config['num_beams'],
-    #     "max_length": config['max_length'],
-    #     # "pad_token_id": model.eos_token_id,
-    #     "num_return_sequences": config['candidate_size'],
-    # }
-    # eval_kwargs = {
-    #     # "early_stopping": True,
-    #     # "length_penalty": 2.0,
-    #     "min_length":-1,
-    #     "top_k": 0.0,
-    #     # "top_p": 1.0,
-    #     "do_sample": False,
-    #     "num_beams": config['eval_num_beams'],
-    #     # "no_repeat_ngram_size": 3,
-    #     "max_length": config['max_length'],
-    # }
+# gen_kwargs = {
+#     "min_length":-1,
+#     "top_k": config['top_k'],
+#     "top_p": 1.0,
+#     "temperature": config["temperature"],
+#     "do_sample": config['do_sample'],
+#     "num_beams": config['num_beams'],
+#     "max_length": config['max_length'],
+#     # "pad_token_id": model.eos_token_id,
+#     "num_return_sequences": config['candidate_size'],
+# }
+# eval_kwargs = {
+#     # "early_stopping": True,
+#     # "length_penalty": 2.0,
+#     "min_length":-1,
+#     "top_k": 0.0,
+#     # "top_p": 1.0,
+#     "do_sample": False,
+#     "num_beams": config['eval_num_beams'],
+#     # "no_repeat_ngram_size": 3,
+#     "max_length": config['max_length'],
+# }
 
 
 meteor = evaluate.load("meteor")  # use meteor as the reward function

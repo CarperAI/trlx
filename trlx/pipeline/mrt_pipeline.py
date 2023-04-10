@@ -51,28 +51,32 @@ class MRTRolloutStorage(BaseRolloutStore):
         shuffle: bool,
     ) -> DataLoader:
         def collate_fn(elems: Iterable[MRTRLElement]):
-            return MRTRLBatch( # TODO: make sure this is expected
+            return MRTRLBatch(  # TODO: make sure this is expected
                 pad_sequence(
                     [elem.query_tensor.transpose(0, 1) for elem in elems],
                     padding_value=self.pad_token_id,
-                ).transpose(0, 1).transpose(1, 2),
+                )
+                .transpose(0, 1)
+                .transpose(1, 2),
                 # Right pad the rest, to have a single horizontal query/response split
                 pad_sequence(
-                    [elem.response_tensor.transpose(0,1) for elem in elems],
+                    [elem.response_tensor.transpose(0, 1) for elem in elems],
                     padding_value=self.pad_token_id,
-                ).transpose(0, 1).transpose(1, 2),
+                )
+                .transpose(0, 1)
+                .transpose(1, 2),
                 pad_sequence(
                     [elem.logprobs.transpose(0, 1) for elem in elems],
                     padding_value=0.0,
-                ).transpose(0, 1).transpose(1, 2),
-                pad_sequence(
-                    [elem.values.transpose(0, 1) for elem in elems],
-                    padding_value=0.0
-                ).transpose(0, 1).transpose(1, 2),
-                pad_sequence(
-                    [elem.rewards.transpose(0, 1) for elem in elems],
-                    padding_value=0.0
-                ).transpose(0, 1).transpose(1, 2)
+                )
+                .transpose(0, 1)
+                .transpose(1, 2),
+                pad_sequence([elem.values.transpose(0, 1) for elem in elems], padding_value=0.0)
+                .transpose(0, 1)
+                .transpose(1, 2),
+                pad_sequence([elem.rewards.transpose(0, 1) for elem in elems], padding_value=0.0)
+                .transpose(0, 1)
+                .transpose(1, 2),
             )
 
         return DataLoader(self, batch_size, shuffle=shuffle, collate_fn=collate_fn)

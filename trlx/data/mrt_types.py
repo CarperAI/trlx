@@ -40,7 +40,7 @@ class MRTRLElement:
 @dataclass
 class MRTRLBatch:
     """
-    A batched version of the PPORLElement. See PPORLElement for more details on individual fields.
+    A batched version of the MRTRLElement. See MRTRLElement for more details on individual fields.
 
     :param query_tensors: A batch of query tensors. Should be a long tensor.
     :type query_tensors: torch.Tensor
