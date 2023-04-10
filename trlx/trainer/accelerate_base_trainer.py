@@ -276,8 +276,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         if directory is None:
             directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
+
         self.accelerator.wait_for_everyone()
-        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
+        self.accelerator.unwrap_model(self.model).save_pretrained(
+            directory,
+            save_function=self.accelerator.save,
+            is_main_process=self.accelerator.is_main_process,
+            state_dict=self.accelerator.get_state_dict(self.model),
+            **kwargs,
+        )
+
         if self.accelerator.is_main_process:
             self.tokenizer.save_pretrained(directory)
 
