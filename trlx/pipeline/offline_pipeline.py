@@ -100,9 +100,13 @@ class DialogStore(BaseRolloutStore):
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
-    Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
-    """
+    Dataloader which is used to supply prompts for either training or evaluation
 
+    Args:
+        prompts (`List[str]` or `List[Dict[str, Any]]`): list of raw text prompts or a dictionary with a required key `"prompt"` and extra information, that would be passed along the generation for that prompt to a reward function.
+        max_prompt_length (`int`): max length of the prompt, if exceeded the prompt will be truncated according to tokenizer's truncation setting
+        tokenizer (`transformers.PreTrainedTokenizer`): a tokenizer to tokenize prompts with
+    """
     def __init__(
         self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
     ):
