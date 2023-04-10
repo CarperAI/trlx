@@ -543,7 +543,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.scheduler.step()
                     self.iter_count += 1
 
-                    if self.iter_count % self.config.train.checkpoint_interval == 0 or self.iter_count >= self.total_steps:
+                    if (
+                        self.iter_count % self.config.train.checkpoint_interval == 0
+                        or self.iter_count >= self.total_steps
+                    ):
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
                         logger.info(f"Saving intermediate checkpoint into {directory}")
