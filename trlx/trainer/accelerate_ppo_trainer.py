@@ -25,7 +25,7 @@ from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils import Clock, infinite_dataloader
-from trlx.utils.modeling import RunningMoments, logprobs_of_labels
+from trlx.utils.modeling import RunningMoments, gather_dict, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
 
@@ -282,7 +282,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             exp_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
-            samples = self.generate(**batch)
+            samples = self.generate(batch["input_ids"], batch["attention_mask"])
             stats["time/exp_generate"] = time() - exp_generate_time
 
             prompt_tensors = batch.input_ids
@@ -298,6 +298,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_samples = self.accelerator.gather(padded_samples)
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
+            metadata = gather_dict({k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
@@ -307,9 +308,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 exp_score_time = time()
                 all_scores = torch.tensor(
                     self.reward_fn(
-                        samples=all_str_samples,
-                        prompts=all_str_prompts,
-                        outputs=all_str_outputs,
+                        samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, **metadata
                     ),
                     dtype=torch.float,
                     device=device,

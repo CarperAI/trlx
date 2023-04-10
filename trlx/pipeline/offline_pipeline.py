@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple, Union
+from typing import Any, Dict, Iterable, List, Tuple, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -100,11 +100,27 @@ class DialogStore(BaseRolloutStore):
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
-    Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
+    Dataloader which is used to supply prompts for either training or evaluation
+
+    Args:
+        prompts (`List[str]` or `List[Dict[str, Any]]`): list of raw text prompts or a dictionary with a required
+            key `"prompt"` and extra information, that would be passed along the generation for that prompt as a
+            keyword argument to a reward function.
+        max_prompt_length (`int`): max length of the prompt, if exceeded the prompt will be truncated according to
+            tokenizer's truncation setting.
+        tokenizer (`transformers.PreTrainedTokenizer`): a tokenizer to tokenize prompts with.
     """
 
-    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
+    def __init__(
+        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
+    ):
         super().__init__()
+
+        if isinstance(prompts[0], dict):
+            metadata = prompts
+            prompts = [x.pop("prompt") for x in metadata]
+        else:
+            metadata = [{}] * len(prompts)
 
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
@@ -115,7 +131,8 @@ class PromptPipeline(BasePipeline):
 
         self.tokenizer = tokenizer
         self.prompts = [
-            {"input_ids": tokens, "attention_mask": mask} for tokens, mask in zip(prompts_tokens, attention_mask)
+            {"input_ids": tokens, "attention_mask": mask, **metadata}
+            for tokens, mask, metadata in zip(prompts_tokens, attention_mask, metadata)
         ]
 
     def __getitem__(self, ix: int):
@@ -125,7 +142,15 @@ class PromptPipeline(BasePipeline):
         return len(self.prompts)
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
-        collate_fn = DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
+        def collate_fn(xs):
+            out = self.tokenizer.pad([{"input_ids": x["input_ids"]} for x in xs], return_tensors="pt")
+
+            for key in xs[0]:
+                if key != "input_ids" and key != "attention_mask":
+                    out[key] = [x[key] for x in xs]
+
+            return out
+
         return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 

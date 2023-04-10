@@ -1,6 +1,7 @@
 import functools
 from typing import Any, Dict, List, MutableMapping, Tuple, Union
 
+import accelerate
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -238,6 +239,30 @@ def flatten_dict(
         else:
             items.append((new_key, v))
     return dict(items)
+
+
+def gather_dict(obj: Dict, grad_state: accelerate.state.GradientState = None):
+    """
+    Gather and concatenates key-values from a dictionary, optionally
+    trimming them if some of them were out of dataloader's padding
+    """
+    if not torch.distributed.is_initialized():
+        return obj
+
+    objs = [None] * torch.distributed.get_world_size()
+    torch.distributed.all_gather_object(objs, obj)
+
+    acc, *objs = objs
+    for obj in objs:
+        for k in obj:
+            acc[k].extend(obj[k])
+
+    if grad_state:
+        if grad_state.end_of_dataloader and grad_state.remainder > 0:
+            for k in acc:
+                acc[k] = acc[k][: grad_state.remainder]
+
+    return acc
 
 
 def get_tensor_stats(xs: torch.Tensor, mask: torch.Tensor, n: int):

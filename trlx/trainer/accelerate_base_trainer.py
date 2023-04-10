@@ -31,6 +31,7 @@ from trlx.utils.modeling import (
     flatten_dict,
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
+    gather_dict,
     get_delta_model_class,
     parse_delta_kwargs,
 )
@@ -328,12 +329,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
             all_samples = []
             all_prompts = []
             all_prompt_sizes = []
+            all_metadata = []
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
+                metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
                 if self.generate_sweep_kwarg:
-                    samples = self.generate_eval(**prompts, **{gen_sweep_arg: gen_sweep_value})
+                    samples = self.generate_eval(
+                        prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}
+                    )
                 else:
-                    samples = self.generate_eval(**prompts)
+                    samples = self.generate_eval(prompts["input_ids"], prompts["attention_mask"])
 
                 # TODO(reciprocated): this should be moved into `decode`
                 # but that needs to be synced with indexing in `make_experience`
@@ -352,6 +357,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 all_prompts.extend(prompts.tolist())
                 all_prompt_sizes.extend(prompt_sizes.tolist())
 
+                metadata = gather_dict(metadata, self.accelerator.gradient_state)
+                all_metadata.append(metadata)
+
                 desc = [
                     f"generation sweep {i_sweep + 1}/{len(gen_sweep_values)}",
                     f"eval batch {i_prompt + 1}/{len(self.eval_dataloader)}",
@@ -368,15 +376,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
 
+                metadata, *xs = all_metadata
+                for k in metadata:
+                    for x in xs:
+                        metadata[k].extend(x[k])
+
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
                     rewards = torch.tensor(
-                        self.reward_fn(
-                            samples=str_samples,
-                            prompts=str_prompts,
-                            outputs=str_outputs,
-                        ),
+                        self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata),
                         dtype=float,
                     )
                     mean_reward = rewards.mean().item()
@@ -390,11 +399,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
-                    metrics = self.metric_fn(
-                        samples=str_samples,
-                        prompts=str_prompts,
-                        outputs=str_outputs,
-                    )
+                    metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata)
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
