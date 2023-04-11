@@ -48,10 +48,11 @@ class PairwiseDataset(Dataset):
                 padding="max_length",
                 return_tensors="pt",
             )
-            self.chosen_input_ids.append(chosen_encodings_dict["input_ids"])
-            self.chosen_attn_masks.append(chosen_encodings_dict["attention_mask"])
-            self.rejected_input_ids.append(rejected_encodings_dict["input_ids"])
-            self.rejected_attn_masks.append(rejected_encodings_dict["attention_mask"])
+            if not torch.all(torch.eq(chosen_encodings_dict["input_ids"], rejected_encodings_dict["input_ids"])).item():
+                self.chosen_input_ids.append(chosen_encodings_dict["input_ids"])
+                self.chosen_attn_masks.append(chosen_encodings_dict["attention_mask"])
+                self.rejected_input_ids.append(rejected_encodings_dict["input_ids"])
+                self.rejected_attn_masks.append(rejected_encodings_dict["attention_mask"])
 
     def __len__(self):
         return len(self.chosen_input_ids)
