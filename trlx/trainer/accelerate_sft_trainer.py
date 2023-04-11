@@ -38,7 +38,7 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return AutoModelForCausalLM.from_pretrained(config.model.model_path)
+        return AutoModelForCausalLM.from_pretrained(config.model.model_path, use_auth_token=config.model.use_auth_token)
 
     def loss(self, batch):
         if "labels" in batch:

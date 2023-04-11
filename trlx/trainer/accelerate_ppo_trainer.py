@@ -131,6 +131,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            use_auth_token=config.model.use_auth_token,
         )
 
     def loss(self, batch: PPORLBatch):

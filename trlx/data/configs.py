@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 import yaml
 
@@ -62,12 +62,17 @@ class ModelConfig:
                 lora_dropout: 0.0
         See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
     :type delta_kwargs: Optional[Dict[str, Any]]
+
+    :param use_auth_token: Whether to use an auth token for downloading models from the hf hub.
+    Set to a string to use that as the token, or to True to pick up the token from `huggingface-cli login`
+    :type use_auth_token: Union[bool, str]
     """
 
     model_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
     delta_kwargs: Optional[Dict[str, Any]] = None
+    use_auth_token: Union[bool, str] = False
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

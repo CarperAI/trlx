@@ -131,6 +131,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             config.model.model_path,
             two_qs=config.method.two_qs,
             alpha=config.method.alpha,
+            use_auth_token=config.model.use_auth_token,
         )
 
     def post_backward_callback(self):
