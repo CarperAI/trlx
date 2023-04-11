@@ -3,17 +3,26 @@ tune_config:
   metric: "metrics/sentiments"
   search_alg: "random"
   scheduler: "fifo"
-  num_samples: 32
+  num_samples: 64
 
-lr:
+# https://docs.ray.io/en/latest/tune/api_docs/search_space.html#tune-sample-docs
+optimizer.kwargs.lr:
   strategy: "loguniform"
-  values: [0.00001, 0.01]
-tau:
+  values: [0.000001, 0.001]
+method.tau:
   strategy: "uniform"
   values: [0.6, 0.9]
-steps_for_target_q_sync:
+method.steps_for_target_q_sync:
   strategy: "choice"
   values: [1, 5, 10]
-alpha:
+method.alpha:
   strategy: "loguniform"
   values: [0.001, 1.0]
+
+# disable checkpointing for storage sake
+train.checkpoint_interval:
+  strategy: "choice"
+  values: [10000000]
+train.save_best:
+  strategy: "choice"
+  values: [false]

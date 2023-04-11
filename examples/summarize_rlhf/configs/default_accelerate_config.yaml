@@ -6,7 +6,7 @@ deepspeed_config:
   zero3_init_flag: false
 distributed_type: DEEPSPEED
 downcast_bf16: 'no'
-dynamo_backend: 'NO'
+dynamo_config: {}
 fsdp_config: {}
 gpu_ids: null
 machine_rank: 0

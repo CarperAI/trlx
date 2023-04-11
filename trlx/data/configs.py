@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import yaml
 
@@ -196,6 +196,9 @@ class TrainConfig:
 
     :param seed: Random seed
     :type seed: int
+
+    :param minibatch_size: Size of model input during one forward pass. Must divide batch size
+    :type minibatch_size: int
     """
 
     total_steps: int
@@ -220,8 +223,11 @@ class TrainConfig:
 
     tracker: Optional[str] = "wandb"
     logging_dir: Optional[str] = None
+    tags: Optional[List[str]] = field(default_factory=list)
 
     seed: int = 1000
+
+    minibatch_size: Optional[int] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
@@ -294,13 +300,27 @@ class TRLConfig:
 
     @classmethod
     def update(cls, baseconfig: Dict, config: Dict):
+        update = {}
+        # unflatten a string variable name into a nested dictionary
+        # key1.key2.key3: value -> {key1: {key2: {key3: value}}}
+        for name, value in config.items():
+            if isinstance(value, dict):
+                update[name] = value
+            else:
+                *layers, var = name.split(".")
+                if layers:
+                    d = update.setdefault(layers[0], {})
+                    for layer in layers[1:]:
+                        d = d.setdefault(layer, {})
+                    d[var] = value
+
         if not isinstance(baseconfig, Dict):
             baseconfig = baseconfig.to_dict()
 
         updates = set()
-        merged = merge(baseconfig, config, updates)
+        merged = merge(baseconfig, update, updates)
 
-        for param in config:
+        for param in update:
             if param not in updates:
                 raise ValueError(f"parameter {param} is not present in the config (typo or a wrong config)")
 

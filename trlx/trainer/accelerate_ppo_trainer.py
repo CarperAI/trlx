@@ -4,7 +4,6 @@ import uuid
 from time import time
 from typing import Callable, List
 
-import ray
 import torch
 import torch.nn.functional as F
 import transformers
@@ -26,7 +25,7 @@ from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils import Clock, infinite_dataloader
-from trlx.utils.modeling import RunningMoments, logprobs_of_labels
+from trlx.utils.modeling import RunningMoments, gather_dict, logprobs_of_labels
 
 logger = logging.get_logger(__name__)
 
@@ -283,7 +282,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             exp_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
-            samples = self.generate(**batch)
+            samples = self.generate(batch["input_ids"], batch["attention_mask"])
             stats["time/exp_generate"] = time() - exp_generate_time
 
             prompt_tensors = batch.input_ids
@@ -299,18 +298,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_samples = self.accelerator.gather(padded_samples)
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
+            metadata = gather_dict({k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
-                    gathered_prompts, gathered_samples, gathered_prompt_sizes
+                    gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True
                 )
 
                 exp_score_time = time()
                 all_scores = torch.tensor(
                     self.reward_fn(
-                        samples=all_str_samples,
-                        prompts=all_str_prompts,
-                        outputs=all_str_outputs,
+                        samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, **metadata
                     ),
                     dtype=torch.float,
                     device=device,
@@ -325,9 +323,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = torch.empty(len(samples), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
-                scores = torch.tensor(all_scores[0])
+                scores = all_scores[0].clone().detach()
 
-            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples)
+            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
             # Pad the sample outputs
             outputs = self.tokenizer(str_outputs).input_ids
@@ -352,10 +350,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores)
-            stats["exp_scores/mean"] = all_scores_mean
-            stats["exp_scores/std"] = all_scores_std
-            stats["exp_scores/running_mean"] = self.running_moments.mean
-            stats["exp_scores/running_std"] = self.running_moments.std
+            stats["exp_scores/mean"] = all_scores_mean.item()
+            stats["exp_scores/std"] = all_scores_std.item()
+            stats["exp_scores/running_mean"] = self.running_moments.mean.item()
+            stats["exp_scores/running_std"] = self.running_moments.std.item()
 
             if self.config.method.scale_reward == "running":
                 scores /= self.running_moments.std
@@ -445,10 +443,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             sample_outputs = sample_outputs.cpu()
             values = values.cpu()[:, :-1]
 
-            ends = start + attention_mask[:, start:].sum(1)
-
-            # Get the logprobs and values, for tokens that are not padding
-            # or beginning of sequences tokens. These are from the model (not the reference model)
+            # Get the logprobs and values, for tokens that are not padding,
+            # from the start of the prompt up to the <eos> token, while also including the latter
+            # (these are taken from the student model and not the reference model)
+            ends = start + attention_mask[:, start:].sum(1) + 1
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
@@ -458,9 +456,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_count = 0
 
             for sample_idx in range(n_samples):
-                if len(kl_penalty[sample_idx]) == 0 or len(all_logprobs[sample_idx]) == 0:
-                    continue
-
                 rewards = kl_penalty[sample_idx]
                 rewards[-1] += scores[sample_idx].cpu()
 
@@ -483,12 +478,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if torch.distributed.is_initialized():
             torch.distributed.all_reduce(self.mean_kl, torch.distributed.ReduceOp.AVG)
 
-        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl)
+        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl).item()
         stats["kl_ctl_value"] = self.kl_ctl.value
         stats["time/exp"] = exp_time
 
-        if not ray.is_initialized():
-            self.accelerator.log(stats, step=iter_count)
+        self.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)

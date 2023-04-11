@@ -1,9 +1,14 @@
-from typing import Iterable, List, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Tuple, Union
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding, PreTrainedTokenizer
+from transformers import (
+    DataCollatorWithPadding,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 from trlx.data.ilql_types import (
     ILQLBatch,
@@ -14,55 +19,108 @@ from trlx.data.ilql_types import (
 from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 
-def tokenize_dialogue(dialogue: Union[str, List[str]], tokenizer, max_length=2048) -> List[int]:  # noqa: C901
+@dataclass
+class DialogMessage:
+    is_output: bool
+    tokens: Tuple[int]
+
+
+def tokenize_dialogue(  # noqa: C901
+    dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+) -> List[DialogMessage]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
     """
     if isinstance(dialogue, str):
-        dialogue = [tokenizer.bos_token, dialogue]
+        bos_token = tokenizer.bos_token or tokenizer.eos_token
+        dialogue = [bos_token, dialogue]
     elif isinstance(dialogue, tuple):
+        if len(dialogue) % 2 != 0:
+            raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
         dialogue = list(dialogue)
 
-    out = []
-    ctx_length = max_length - 1
+    if not dialogue[-1].endswith(tokenizer.eos_token):
+        dialogue[-1] = dialogue[-1] + tokenizer.eos_token
+
+    tokenized = [
+        DialogMessage(is_output=i % 2 == 1, tokens=tuple(tokenizer(dialogue[i], add_special_tokens=False).input_ids))
+        for i in range(len(dialogue))
+    ]
+
+    # flip to truncate from the left
     if tokenizer.truncation_side == "left":
-        for phrase in reversed(dialogue):
-            # Manually added BOS and EOS above so we don't want to add special tokens here
-            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[-ctx_length:]
-            ctx_length -= len(tokens)
-            out.insert(0, tokens)
-            if ctx_length == 0:
-                break
+        tokenized = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in tokenized[::-1]]
 
-        # in case of odd number of phrases (possibly due to truncation)
-        # since the first phrase always has to be a prompt, force it to be <bos>
-        if len(out) % 2 == 1:
-            if sum(map(len, out)) == max_length:
-                out[0].pop(0)
-            out.insert(0, [tokenizer.bos_token_id])
+    # truncate if necessary
+    lengths = [len(t.tokens) for t in tokenized]
+    cumsum_lengths = [sum(lengths[:i]) for i in range(len(lengths))]
+    truncated = [
+        DialogMessage(is_output=t.is_output, tokens=t.tokens[: max(max_length - cl, 0)])
+        for t, cl in zip(tokenized, cumsum_lengths)
+    ]
 
-    elif tokenizer.truncation_side == "right":
-        for phrase in dialogue:
-            # Manually added BOS and EOS above so we don't want to add special tokens here
-            tokens = tokenizer(phrase, add_special_tokens=False).input_ids[:ctx_length]
-            ctx_length -= len(tokens)
-            out.append(tokens)
-            if ctx_length == 0:
-                break
+    # flip back if was fliped to left truncate
+    if tokenizer.truncation_side == "left":
+        truncated = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in truncated[::-1]]
 
-    out[-1].append(tokenizer.eos_token_id)
+    # remove empty messages
+    truncated = [t for t in truncated if len(t.tokens) > 0]
 
-    return out
+    return truncated
+
+
+class DialogStore(BaseRolloutStore):
+    def __init__(self, dialogs: List[List[DialogMessage]], tokenizer: PreTrainedTokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+        attention_masks = [torch.ones(sum(len(m.tokens) for m in d), dtype=torch.bool) for d in dialogs]
+        input_ids = [torch.tensor([t for m in d for t in m.tokens], dtype=torch.long) for d in dialogs]
+        # -100 is the ignore index for CrossEntropyLoss
+        labels = [
+            torch.tensor([t if m.is_output else -100 for m in d for t in m.tokens], dtype=torch.long) for d in dialogs
+        ]
+        self.history = [
+            dict(input_ids=i, attention_mask=a, labels=l) for i, a, l in zip(input_ids, attention_masks, labels)
+        ]
+
+    def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
+        hf_collate_fn = DataCollatorWithPadding(self.tokenizer)
+
+        def collate_fn(elems: Iterable[dict]):
+            batch = hf_collate_fn(
+                {"input_ids": [e["input_ids"] for e in elems], "attention_mask": [e["attention_mask"] for e in elems]}
+            )
+            labels = hf_collate_fn([{"input_ids": e["labels"]} for e in elems])["input_ids"]
+            batch["labels"] = labels
+            return batch
+
+        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 
 @register_datapipeline
 class PromptPipeline(BasePipeline):
     """
-    Tokenizes prompts, unless they are already tokenized, and truncates them to `max_prompt_length` from the right
+    Dataloader which is used to supply prompts for either training or evaluation
+
+    Args:
+        prompts (`List[str]` or `List[Dict[str, Any]]`): list of raw text prompts or a dictionary with a required
+            key `"prompt"` and extra information, that would be passed along the generation for that prompt as a
+            keyword argument to a reward function.
+        max_prompt_length (`int`): max length of the prompt, if exceeded the prompt will be truncated according to
+            tokenizer's truncation setting.
+        tokenizer (`transformers.PreTrainedTokenizer`): a tokenizer to tokenize prompts with.
     """
 
-    def __init__(self, prompts: List[str], max_prompt_length: int, tokenizer: PreTrainedTokenizer):
+    def __init__(
+        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
+    ):
         super().__init__()
+
+        if isinstance(prompts[0], dict):
+            metadata = prompts
+            prompts = [x.pop("prompt") for x in metadata]
+        else:
+            metadata = [{}] * len(prompts)
 
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
@@ -73,7 +131,8 @@ class PromptPipeline(BasePipeline):
 
         self.tokenizer = tokenizer
         self.prompts = [
-            {"input_ids": tokens, "attention_mask": mask} for tokens, mask in zip(prompts_tokens, attention_mask)
+            {"input_ids": tokens, "attention_mask": mask, **metadata}
+            for tokens, mask, metadata in zip(prompts_tokens, attention_mask, metadata)
         ]
 
     def __getitem__(self, ix: int):
@@ -83,7 +142,15 @@ class PromptPipeline(BasePipeline):
         return len(self.prompts)
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
-        collate_fn = DataCollatorWithPadding(self.tokenizer) if self.tokenizer else torch.vstack
+        def collate_fn(xs):
+            out = self.tokenizer.pad([{"input_ids": x["input_ids"]} for x in xs], return_tensors="pt")
+
+            for key in xs[0]:
+                if key != "input_ids" and key != "attention_mask":
+                    out[key] = [x[key] for x in xs]
+
+            return out
+
         return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
 
 

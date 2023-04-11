@@ -2,6 +2,7 @@ import json
 import math
 import os
 import sys
+from itertools import islice
 
 import numpy as np
 import torch
@@ -85,6 +86,7 @@ elif config_name == "1B":
     default_config.method.chunk_size = 16
 elif config_name == "6B":
     default_config.train.batch_size = 4
+    default_config.train.seq_length = 512
     default_config.train.total_steps = 6000
     default_config.train.checkpoint_dir = "checkpoints/ppo_hh_6B"
     default_config.model.model_path = "Dahoas/pythia-6B-static-sft"
@@ -163,24 +165,39 @@ def create_reward_fn():  # noqa:  C901
         reward_model.load_state_dict(torch.load(checkpoint))
         reward_model.eval()
         reward_model.requires_grad_(False)
-        device = torch.cuda.device_count() - 1
-        reward_model = reward_model.half().to(device)
+        reward_device = torch.cuda.device_count() - 1
+        reward_model = reward_model.half().to(reward_device)
+        reward_batch_size = 48
+        delta_reward = True
 
-        def reward_fn(samples, prompts, outputs):
-            samples = [s + reward_tokenizer.eos_token for s in samples]
-            input = reward_tokenizer(samples, padding=True, truncation=True, max_length=1024, return_tensors="pt").to(
-                device
-            )
+        def get_reward(samples):
+            input = reward_tokenizer(
+                samples,
+                padding=True,
+                truncation=True,
+                max_length=reward_tokenizer.max_len_single_sentence,
+                return_tensors="pt",
+            ).to(reward_device)
 
-            mbs = 24
+            mbs = reward_batch_size
             out = []
             for i in range(math.ceil(len(samples) / mbs)):
                 batch_ixs = slice(i * mbs, (i + 1) * mbs)
                 input_ids = input.input_ids[batch_ixs]
                 rewards = reward_model(input_ids)
                 out.extend(rewards)
+            return torch.hstack(out)
 
-            return out
+        def reward_fn(samples, prompts, original_output, **kwargs):
+            samples = [s + reward_tokenizer.eos_token for s in samples]
+            rewards = get_reward(samples)
+
+            if not delta_reward:
+                return rewards
+
+            original_samples = [p + o + reward_tokenizer.eos_token for p, o in zip(prompts, original_output)]
+            original_rewards = get_reward(original_samples)
+            return rewards - original_rewards
 
     else:
         reward_fn = True
@@ -192,8 +209,8 @@ def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)
 
     dataset = load_dataset("Dahoas/rm-static")
-    prompts = dataset["train"]["prompt"]
-    eval_prompts = dataset["test"]["prompt"][:280]
+    prompts = [{"prompt": x["prompt"], "original_output": x["chosen"]} for x in dataset["train"]]
+    eval_prompts = [{"prompt": x["prompt"], "original_output": x["chosen"]} for x in islice(dataset["test"], 280)]
     reward_fn = create_reward_fn()
 
     trlx.train(

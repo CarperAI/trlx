@@ -23,7 +23,7 @@ The following RL algorithms are currently implemented:
 ```bash
 git clone https://github.com/CarperAI/trlx.git
 cd trlx
-pip install torch --extra-index-url https://download.pytorch.org/whl/cu116 # for cuda
+pip install torch==2.0.0 --extra-index-url https://download.pytorch.org/whl/cu116 # for cuda
 pip install -e .
 ```
 
@@ -34,6 +34,8 @@ For more usage see [examples](./examples). You can also try the colab notebooks 
 | ----------- | ----------- |
 | Simulacra (GPT2, ILQL) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CarperAI/trlx/blob/main/examples/notebooks/trlx_simulacra.ipynb)|
 | Sentiment (GPT2, ILQL) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/CarperAI/trlx/blob/main/examples/notebooks/trlx_sentiments.ipynb)|
+
+Latest runs of the examples are on our [Weights & Biases](https://wandb.ai/sorry/trlx-references/reportlist)
 
 ## How to Train
 
@@ -49,6 +51,12 @@ trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('
 
 ```python
 trainer = trlx.train('EleutherAI/gpt-j-6B', samples=['dolphins', 'geese'], rewards=[1.0, 100.0])
+```
+
+#### Using a prompt-completion dataset
+
+```python
+trainer = trlx.train('gpt2', samples=[['Question: 1 + 2 Answer:', '3'], ['Question: Solve this equation: ∀n>0, s=2, sum(n ** -s). Answer:', '(pi ** 2)/ 6']])
 ```
 
 #### Trainers provide a wrapper over their underlying model
@@ -96,7 +104,13 @@ For more usage see the [NeMo README](./trlx/models)
 #### Use Ray Tune to launch hyperparameter sweep
 
 ```bash
-python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml examples/ppo_sentiments.py
+ray start --head --port=6379
+python -m trlx.sweep --config configs/sweeps/ppo_sweep.yml --accelerate_config configs/accelerate/ddp.yaml --num_gpus 4 examples/ppo_sentiments.py
+```
+
+#### Benchmark your trlX fork against trlX's `main` branch
+```bash
+python -m trlx.reference octocat/trlx-fork:fix-branch
 ```
 
 ## Logging
