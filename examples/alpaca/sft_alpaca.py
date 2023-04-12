@@ -32,21 +32,28 @@ def preprocess(instruction: str, input: str, output: str):
         return [prompt, output]
 
 
-def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca"):
+def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca", tokenizer_path=None):
+    tags = [model_name, dataset]
+
+    if tokenizer_path is None:
+        tokenizer_path = model_name
+
     config = default_sft_config()
     config = config.evolve(
         train=dict(
-            total_steps=2400,
-            batch_size=4,
-            seq_length=1024,
+            total_steps=1200,
+            batch_size=16,
+            seq_length=512,
+            minibatch_size=4,
+            tags=tags,
         ),
         model=dict(
             model_path=model_name,
         ),
         tokenizer=dict(
-            tokenizer_path=model_name,
+            tokenizer_path=tokenizer_path,
         ),
-        optimizer=dict(kwargs=dict(lr=2e-5)),
+        optimizer=dict(kwargs=dict(lr=2e-5, weight_decay=0.0)),
         scheduler=dict(kwargs=dict(eta_min=2e-5)),
         method=dict(
             gen_kwargs=dict(
@@ -62,27 +69,11 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
     alpaca = load_dataset(dataset, split="train")
     alpaca = [preprocess(x["instruction"], x["input"], x["output"]) for x in alpaca]
 
-    sentiment_fn = pipeline(
-        "sentiment-analysis",
-        "lvwerra/distilbert-imdb",
-        top_k=2,
-        truncation=True,
-        batch_size=256,
-        device=0 if int(os.environ.get("LOCAL_RANK", 0)) == 0 else -1,
-    )
-
-    def metric_fn(samples: List[str], prompts: List[str], outputs: List[str]) -> Dict[str, List[float]]:
-        sentiments = list(map(get_positive_score, sentiment_fn(outputs)))
-        return {"sentiments": sentiments}
-
-    imdb = load_dataset("imdb", split="test")
-    bad_reviews = imdb.filter(lambda sample: sample["label"] == 0).select(range(256))
-    zs_rewrite = [preprocess("Rewrite the input into a positive review.", x["text"][:1024], "")[0] for x in bad_reviews]
 
     trainer = trlx.train(
         samples=alpaca,
-        eval_prompts=zs_rewrite,
-        metric_fn=metric_fn,
+        eval_prompts=["User:", "User: "], #zs_rewrite,
+        metric_fn=None, #metric_fn,
         config=config,
     )
 
@@ -95,8 +86,9 @@ if __name__ == "__main__":
     parser.add_argument("override_hparams", type=str, default="{}", nargs="?")
     parser.add_argument("--model_name", type=str, default="EleutherAI/gpt-j-6B")
     parser.add_argument("--dataset", type=str, default="tatsu-lab/alpaca")
+    parser.add_argument("--tokenizer_path", type=str, default=None)
 
     args = parser.parse_args()
     hparams = json.loads(args.override_hparams)
 
-    main(hparams, args.model_name, args.dataset)
+    main(hparams, args.model_name, args.dataset, args.tokenizer_path)
