@@ -2,18 +2,39 @@ import json
 import os
 from argparse import ArgumentParser
 from typing import Dict, List
+from functools import partial
+
+import torch
 
 from datasets import load_dataset
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer
 
 import trlx
 from trlx.data.default_configs import TRLConfig, default_sft_config
 
+# Patch GPTNeoxForCausalLM's GPTNeoxAttention to use Flash Attention
+# by using torch.nn.functional.scaled_dot_product_attention
 
-def get_positive_score(scores):
-    "Extract value associated with a positive sentiment from pipeline's output"
-    return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
+from transformers.models.gpt_neox.modeling_gpt_neox import GPTNeoXAttention, GPTNeoXForCausalLM
 
+
+def _attn_flash(self, query, key, value, attention_mask=None, head_mask=None):
+    # q, k, v: [bs, num_attention_heads, seq_len, attn_head_size]
+    query = query.type_as(value)
+    key = key.type_as(value)
+    attention_mask = None
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, attn_mask=attention_mask, is_causal=attention_mask is None
+    )
+    return attn_output, None
+
+def patch_gpt_neox_attention(m):
+    if isinstance(m, GPTNeoXAttention):
+        m._attn = _attn_flash.__get__(m, m.__class__)
+
+def unpatch_gpt_neox_attention(m):
+    if isinstance(m, GPTNeoXAttention):
+        m._attn = GPTNeoXAttention._attn.__get__(m, m.__class__)
 
 def preprocess(instruction: str, input: str, output: str):
     """Build Alpaca prompt and output from instruction and input/output examples"""
@@ -35,6 +56,11 @@ def preprocess(instruction: str, input: str, output: str):
 def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca", tokenizer_path=None):
     tags = [model_name, dataset]
 
+    model = GPTNeoXForCausalLM.from_pretrained(model_name, use_auth_token=True)
+
+    model.apply(patch_gpt_neox_attention)
+    # model.gpt_neox = torch.compile(model.gpt_neox) 
+
     if tokenizer_path is None:
         tokenizer_path = model_name
 
@@ -43,12 +69,12 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
         train=dict(
             total_steps=1200,
             batch_size=16,
-            seq_length=512,
+            seq_length=4096,
             minibatch_size=4,
             tags=tags,
         ),
         model=dict(
-            model_path=model_name,
+            model_path=model,
         ),
         tokenizer=dict(
             tokenizer_path=tokenizer_path,
@@ -69,21 +95,25 @@ def main(hparams={}, model_name="EleutherAI/gpt-j-6B", dataset="tatsu-lab/alpaca
     alpaca = load_dataset(dataset, split="train")
     alpaca = [preprocess(x["instruction"], x["input"], x["output"]) for x in alpaca]
 
-    trainer = trlx.train(
-        samples=alpaca,
-        eval_prompts=["User:", "User: "],  # zs_rewrite,
-        metric_fn=None,  # metric_fn,
-        config=config,
-    )
+    with torch.backends.cuda.sdp_kernel(
+        enable_flash=True, enable_math=False, enable_mem_efficient=False
+    ):
+
+        trainer = trlx.train(
+            samples=alpaca,
+            eval_prompts=["User:", "User: "],  # zs_rewrite,
+            metric_fn=None,  # metric_fn,
+            config=config,
+        )
 
     slug = f"{model_name.split('/')[-1]}-{dataset.split('/')[-1]}"
-    trainer.save_pretrained(f"{slug}-sft")
+    trainer.save_pretrained(f"{slug}-mix-sft")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("override_hparams", type=str, default="{}", nargs="?")
-    parser.add_argument("--model_name", type=str, default="EleutherAI/gpt-j-6B")
+    parser.add_argument("--model_name", type=str, default="EleutherAI/pythia-6.9b")
     parser.add_argument("--dataset", type=str, default="tatsu-lab/alpaca")
     parser.add_argument("--tokenizer_path", type=str, default=None)
 
