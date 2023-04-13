@@ -220,6 +220,7 @@ class TrainConfig:
     checkpoint_dir: str = "ckpts"
     rollout_logging_dir: Optional[str] = None
     save_best: bool = True
+    save_optimizer: bool = True
 
     tracker: Optional[str] = "wandb"
     logging_dir: Optional[str] = None

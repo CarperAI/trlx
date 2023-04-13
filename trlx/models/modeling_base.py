@@ -198,7 +198,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                 Keyword arguments passed along to the underlying model's
                 `save_pretrained` method.
         """
-        state_dict = kwargs.pop("state_dict", None)
+        state_dict = kwargs.get("state_dict", None)
         if state_dict is None:
             state_dict = self.state_dict()
             kwargs["state_dict"] = state_dict

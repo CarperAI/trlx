@@ -277,8 +277,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         if directory is None:
             directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
+
         self.accelerator.wait_for_everyone()
-        self.accelerator.unwrap_model(self.model).save_pretrained(directory, **kwargs)
+        self.accelerator.unwrap_model(self.model).save_pretrained(
+            directory,
+            save_function=self.accelerator.save,
+            is_main_process=self.accelerator.is_main_process,
+            state_dict=self.accelerator.get_state_dict(self.model),
+            **kwargs,
+        )
+
         if self.accelerator.is_main_process:
             self.tokenizer.save_pretrained(directory)
 
@@ -540,17 +548,24 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.scheduler.step()
                     self.iter_count += 1
 
-                    if self.iter_count % self.config.train.checkpoint_interval == 0:
+                    if (
+                        self.iter_count % self.config.train.checkpoint_interval == 0
+                        or self.iter_count >= self.total_steps
+                    ):
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        self.save(directory)
+                        logger.info(f"Saving intermediate checkpoint into {directory}")
+                        if self.config.train.save_optimizer:
+                            self.save(directory)
+                        else:
+                            self.save_pretrained(directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
                     for group_number, lr in enumerate(self.scheduler.get_last_lr()):
                         stats[f"learning_rate_group_{group_number}"] = lr
 
-                    if self.iter_count % self.config.train.eval_interval == 0:
+                    if self.iter_count % self.config.train.eval_interval == 0 or self.iter_count >= self.total_steps:
                         results = self.evaluate()
                         stats.update(results)
                         if ray.is_initialized():
@@ -571,28 +586,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             if torch.distributed.is_initialized():
                                 torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
-                                best_path = f"{self.config.train.checkpoint_dir}/best_checkpoint"
-                                logger.info(f"Saving the best state so far into {best_path}")
-                                self.save(best_path)
+                                directory = os.path.join(self.config.train.checkpoint_dir, "best_checkpoint")
+                                logger.info(f"Saving the best state so far into {directory}")
+                                if self.config.train.save_optimizer:
+                                    self.save(directory)
+                                else:
+                                    self.save_pretrained(directory)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
                     tbar.update()
 
-                    if self.iter_count >= self.total_steps:
-                        subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
-                        directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        results = self.evaluate()
-                        stats.update(results)
-
-                        if ray.is_initialized():
-                            session.report(filter_non_scalars(stats), checkpoint=checkpoint)
-                        self.accelerator.log(stats, step=self.iter_count)
-
-                        self.save(directory)
-                        return results
-
                     self.accelerator.log(stats, step=self.iter_count)
+
+                    if self.iter_count >= self.total_steps:
+                        return results
 
                 self.post_backward_callback()
 
