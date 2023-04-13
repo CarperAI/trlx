@@ -34,5 +34,5 @@ if __name__ == "__main__":
         config=default_ilql_config(),
         samples=prompts,
         rewards=ratings,
-        eval_prompts=["Hatsune Miku, Red Dress"] * 64,
+        eval_prompts=["An astronaut riding a horse"] * 64,
     )

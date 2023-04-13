@@ -846,14 +846,17 @@ class LlamaModelBranch(ModelBranch):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        output_shape: Tuple[int, int],
-        attention_mask: Optional[torch.Tensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        output_shape: torch.Tensor,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        return_dict: Optional[bool] = False,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         """Reference:
         https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L491
@@ -868,9 +871,20 @@ class LlamaModelBranch(ModelBranch):
         batch_size, seq_length = hidden_states.shape[:2]
         seq_length_with_past = seq_length
         past_key_values_length = 0
+
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
             seq_length_with_past = seq_length_with_past + past_key_values_length
+
+        if position_ids is None:
+            device = hidden_states.device if hidden_states is not None else encoder_hidden_states.device
+            position_ids = torch.arange(
+                past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
+            )
+            position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
+        else:
+            position_ids = position_ids.view(-1, seq_length).long()
+
         # embed positions
         if attention_mask is None:
             attention_mask = torch.ones(
@@ -894,6 +908,7 @@ class LlamaModelBranch(ModelBranch):
             layer_outputs = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
+                position_ids=position_ids,
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
@@ -1253,6 +1268,7 @@ def hf_get_branch_class(
                 gpt_branch_supported_archs,
                 opt_branch_supported_archs,
                 bloom_branch_supported_archs,
+                llama_branch_supported_archs,
             ],
             [],
         )
