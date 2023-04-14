@@ -64,9 +64,14 @@ def tokenize_dialogue(  # noqa: C901
         truncated = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in truncated[::-1]]
 
     # remove empty messages
-    truncated = [t for t in truncated if len(t.tokens) > 0]
+    out = [t for t in truncated if len(t.tokens) > 0]
 
-    return truncated
+    if len(out) % 2 == 1:
+        if sum(map(lambda msg: len(msg.tokens), out)) == max_length:
+            out[0].tokens = out[0].tokens[1:]
+        out.insert(0, DialogMessage(False, (tokenizer.bos_token_id,)))
+
+    return out
 
 
 class DialogStore(BaseRolloutStore):

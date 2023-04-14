@@ -11,6 +11,20 @@ class TestTokenizeDialog(TestCase):
     def setUp(self):
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
+    def test_tokenize_dialogue_truncation(self):
+        dialogue = ["will be truncated", "ø" * 1024]
+
+        tokenized_response = tuple(self.tokenizer("ø" * 1023, add_special_tokens=False).input_ids)
+        tokenized_response = tokenized_response + (self.tokenizer.eos_token_id,)
+        dialog = tokenize_dialogue(dialogue, self.tokenizer)
+
+        assert len(dialog) == 2
+        user_dm, bot_dm = dialog
+
+        assert user_dm == DialogMessage(is_output=False, tokens=(self.tokenizer.bos_token_id,))
+        assert bot_dm == DialogMessage(is_output=True, tokens=tokenized_response)
+
+
     @given(st.lists(st.text(), max_size=32))
     def test_tokenize_dialogue_single_turn(self, response_words):
         response = " ".join(response_words)  # space seperate to make it multiple tokens
