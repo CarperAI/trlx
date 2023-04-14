@@ -28,7 +28,6 @@ class TestTokenizeDialog(TestCase):
         assert user_dm == DialogMessage(is_output=False, tokens=(self.tokenizer.bos_token_id,))
         assert bot_dm == DialogMessage(is_output=True, tokens=tokenized_response)
 
-
     @given(st.lists(st.text(), max_size=32))
     def test_tokenize_dialogue_single_turn(self, response_words):
         response = " ".join(response_words)  # space seperate to make it multiple tokens
