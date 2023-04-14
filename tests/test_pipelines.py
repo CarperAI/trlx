@@ -13,14 +13,18 @@ class TestTokenizeDialog(TestCase):
 
     def test_tokenize_dialogue_truncation(self):
         dialogue = ["will be truncated", "ø" * 1024]
+        self.tokenizer.truncation_side = "left"
 
-        tokenized_response = tuple(self.tokenizer("ø" * 1023, add_special_tokens=False).input_ids)
+        tokenized_response = tuple(self.tokenizer("ø" * 1024, add_special_tokens=False).input_ids)
         tokenized_response = tokenized_response + (self.tokenizer.eos_token_id,)
-        dialog = tokenize_dialogue(dialogue, self.tokenizer)
+        tokenized_response = tokenized_response[-1023:]
+        dialog = tokenize_dialogue(dialogue, self.tokenizer, max_length=1024)
 
         assert len(dialog) == 2
         user_dm, bot_dm = dialog
-
+        assert len(user_dm.tokens) == 1
+        assert len(bot_dm.tokens) == 1023
+        assert bot_dm.tokens[-1] == self.tokenizer.eos_token_id
         assert user_dm == DialogMessage(is_output=False, tokens=(self.tokenizer.bos_token_id,))
         assert bot_dm == DialogMessage(is_output=True, tokens=tokenized_response)
 
