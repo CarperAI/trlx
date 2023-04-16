@@ -39,8 +39,8 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
-from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
-from trlx.models.modeling_ilql import ILQLConfig, batched_index_select
+from trlx.data.ppo_types import PPOBatch, unflatten_dataclass
+from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils import to_device, tree_map
 
 
@@ -249,8 +249,8 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
     return state_dict
 
 
-class ILQLGPT(MegatronGPTModel):
-    ilql_config: ILQLConfig
+class PPOGPT(MegatronGPTModel):
+    ppo_config: PPOConfig
 
     def __init__(self, ilql_config, metric_fn=None, **kwargs):
         self.ilql_config = ilql_config
@@ -348,7 +348,7 @@ class ILQLGPT(MegatronGPTModel):
         gpt.post_process = False
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
-        # If running on the last pipeline stage, add the ILQL heads
+        # If running on the last pipeline stage, add the PPO value head and hydra reference model
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
@@ -631,10 +631,10 @@ class ILQLGPT(MegatronGPTModel):
         def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:
-                batch = unflatten_dataclass(ILQLBatch)(batch)
+                batch = unflatten_dataclass(PPOBatch)(batch)
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                inputs = batch.input_ids
+                inputs = batch.query_tensors
                 pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
 
@@ -669,22 +669,10 @@ class ILQLGPT(MegatronGPTModel):
 
             def loss_func(model_output):
                 # # TODO: implement this in a sequence parallel way
-                logits, (qs, target_qs, vs) = model_output
+                logits, vs, ref_logits = model_output
 
                 if self.cfg.sequence_parallel:
-                    qs, target_qs, vs = tree_map(gather_ntc, (qs, target_qs, vs))
-
-                qs = tree_map(
-                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
-                    qs,
-                )
-
-                target_qs = tree_map(
-                    lambda t: batched_index_select(t, batch.actions_ixs, 1),
-                    target_qs,
-                )
-
-                vs = batched_index_select(vs, batch.states_ixs, 1)
+                    vs = gather_ntc(vs)
 
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
