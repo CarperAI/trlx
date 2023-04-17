@@ -26,7 +26,7 @@ class DialogMessage:
 
 
 def tokenize_dialogue(  # noqa: C901
-    dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+    dialogue: Union[str, Iterable[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
 ) -> List[DialogMessage]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
