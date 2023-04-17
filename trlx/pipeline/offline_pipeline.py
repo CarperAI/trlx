@@ -34,7 +34,7 @@ def tokenize_dialogue(  # noqa: C901
     if isinstance(dialogue, str):
         bos_token = tokenizer.bos_token or tokenizer.eos_token
         dialogue = [bos_token, dialogue]
-    elif isinstance(dialogue, tuple):
+    elif isinstance(dialogue, Iterable):
         if len(dialogue) % 2 != 0:
             raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
         dialogue = list(dialogue)
@@ -66,11 +66,14 @@ def tokenize_dialogue(  # noqa: C901
     # remove empty messages
     out = [t for t in truncated if len(t.tokens) > 0]
 
-    if len(out) % 2 == 1:
+    if out[0].is_output:
         if sum(map(lambda msg: len(msg.tokens), out)) == max_length:
-            out[0].tokens = out[0].tokens[1:]
-        out.insert(0, DialogMessage(False, (tokenizer.bos_token_id,)))
+            if tokenizer.truncation_side == "left":
+                out[0].tokens = out[0].tokens[1:]
+            else:
+                out[-1].tokens = out[-1].tokens[:-1]
 
+        out.insert(0, DialogMessage(False, (tokenizer.bos_token_id,)))
     return out
 
 
