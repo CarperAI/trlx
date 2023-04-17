@@ -42,6 +42,7 @@ from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from trlx.data.ppo_types import PPOBatch, unflatten_dataclass
 from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils import to_device, tree_map
+from trlx.utils.modeling import logprobs_of_labels
 
 
 class ParallelLinear(nn.Module):
@@ -634,7 +635,7 @@ class PPOGPT(MegatronGPTModel):
                 batch = unflatten_dataclass(PPOBatch)(batch)
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                inputs = batch.query_tensors
+                inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
                 pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
 
@@ -673,6 +674,37 @@ class PPOGPT(MegatronGPTModel):
 
                 if self.cfg.sequence_parallel:
                     vs = gather_ntc(vs)
+
+                response_length = batch.rewards.shape[1]
+
+                start = batch.query_tensors.shape[1]
+                end = start + response_length
+
+                label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
+                label_logprobs = label_logprobs[:, start:end]
+
+                ref_label_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], inputs[:, 1:])
+                ref_label_logprobs = ref_label_logprobs[:, start:end]
+
+                log_ratio = (label_logprobs - ref_label_logprobs) * attention_mask[:, start:end]
+
+                kl_penalty = self.kl_ctl.value * -log_ratio
+
+                rewards = batch.rewards + kl_penalty
+                advatanges, returns = self.ppo_config.get_advantages_and_returns(batch.values, rewards, response_length)
+
+                values_pred = vs[:, :-1][:, start:end]
+                mask = loss_mask[:, start:end]
+
+                loss_for_mb, stats = self.ppo_config.loss(
+                    logprobs=logits,
+                    values=values_pred,
+                    old_logprobs=ref_logits,
+                    old_values=batch.values,
+                    advantages=advatanges,
+                    returns=returns,
+                    mask=attention_mask,
+                )
 
                 model_output = (logits, (qs, target_qs, vs))
                 loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
