@@ -26,7 +26,7 @@ class DialogMessage:
 
 
 def tokenize_dialogue(  # noqa: C901
-    dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+    dialogue: Union[str, Iterable[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
 ) -> List[DialogMessage]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
@@ -34,7 +34,7 @@ def tokenize_dialogue(  # noqa: C901
     if isinstance(dialogue, str):
         bos_token = tokenizer.bos_token or tokenizer.eos_token
         dialogue = [bos_token, dialogue]
-    elif isinstance(dialogue, tuple):
+    elif isinstance(dialogue, Iterable):
         if len(dialogue) % 2 != 0:
             raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
         dialogue = list(dialogue)
@@ -64,9 +64,17 @@ def tokenize_dialogue(  # noqa: C901
         truncated = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in truncated[::-1]]
 
     # remove empty messages
-    truncated = [t for t in truncated if len(t.tokens) > 0]
+    out = [t for t in truncated if len(t.tokens) > 0]
 
-    return truncated
+    if out[0].is_output:
+        if sum(map(lambda msg: len(msg.tokens), out)) == max_length:
+            if tokenizer.truncation_side == "left":
+                out[0].tokens = out[0].tokens[1:]
+            else:
+                out[-1].tokens = out[-1].tokens[:-1]
+
+        out.insert(0, DialogMessage(False, (tokenizer.bos_token_id,)))
+    return out
 
 
 class DialogStore(BaseRolloutStore):
