@@ -62,8 +62,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
         stats = {}
 
         device = self.model.device
+        group = parallel_state.get_data_parallel_group()
 
-        while len(ppo_rl_elements) < num_rollouts:
+        while num_rollouts > 0:
             batch: PromptBatch = next(self.prompt_iterator)
 
             samples = self.model.generate(batch["input_ids"], batch["attention_mask"])
@@ -75,8 +76,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
             all_tokens = torch.cat((batch["input_ids"], samples["tokens"]), dim=1)
             attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
 
-            with torch.no_grad():
-                logits, ref_logits, values = self.model.infer_logits_and_values(all_tokens, attention_mask)
+            model_output = self.model.infer_logits_and_values(all_tokens, attention_mask)
+
+            # Model output is None on intermediate pipeline stages
+            if model_output is None:
+                num_elements_added = torch.tensor(0, device=device)
+                torch.distributed.all_reduce(num_elements_added, op=torch.distributed.ReduceOp.SUM, group=group)
+                num_elements_added = num_elements_added.item()
+                num_rollouts -= num_elements_added
+
+            logits, ref_logits, values = model_output["logits"], model_output["ref_logits"], model_output["values"]
 
             logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
@@ -100,6 +109,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             all_kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
             all_kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
+            num_elements_added = torch.tensor(0, device=device)
             for query_tensor, response_tensor, logprobs, values, kl_penalty, score in zip(
                 prompt_tensors, sample_outputs, all_logprobs, all_values, all_kl_penalty, scores
             ):
@@ -114,6 +124,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         rewards=rewards,
                     )
                 )
+                num_elements_added += 1
+
+            torch.distributed.all_reduce(num_elements_added, op=torch.distributed.ReduceOp.SUM, group=group)
 
     def learn(self):
         def add_special_token_ids(input_ids: List[int], add_bos: bool, add_eos: bool):

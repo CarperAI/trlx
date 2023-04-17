@@ -83,7 +83,7 @@ class ParallelLinear(nn.Module):
             self.layer = tensor_parallel.RowParallelLinear(
                 in_size,
                 out_size,
-                input_is_parallel=input_is_parallel,
+                input_is_parallel=inpuPMt_is_parallel,
                 init_method=init_method,
                 skip_bias_add=False,
                 use_cpu_initialization=use_cpu_initialization,
@@ -164,7 +164,7 @@ class HydraLMHeads(MegatronModule):
         get_key_value=False,
         forward_method_parallel_output=None,
         run_reference_model=False,
-        **kwargs,
+        run_value_head=False**kwargs,
     ):
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
         logits = post_language_model_processing(
@@ -184,7 +184,10 @@ class HydraLMHeads(MegatronModule):
             logits, presents = logits
             lm_output, lm_output_presents = lm_output
 
-        heads_output = self.other_heads(lm_output)
+        if run_value_head:
+            heads_output = self.other_heads(lm_output)
+        else:
+            heads_output = None
 
         if run_reference_model:
             ref_lm_output = self.reference_model(*args, get_key_value=get_key_value, **kwargs)
@@ -655,6 +658,8 @@ class PPOGPT(MegatronGPTModel):
                     input_ids=inputs,
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
+                    run_reference_model=False,
+                    run_value_head=True,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
@@ -670,7 +675,7 @@ class PPOGPT(MegatronGPTModel):
 
             def loss_func(model_output):
                 # # TODO: implement this in a sequence parallel way
-                logits, vs, ref_logits = model_output
+                logits, vs = model_output
 
                 if self.cfg.sequence_parallel:
                     vs = gather_ntc(vs)
@@ -683,13 +688,6 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
-                ref_label_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], inputs[:, 1:])
-                ref_label_logprobs = ref_label_logprobs[:, start:end]
-
-                log_ratio = (label_logprobs - ref_label_logprobs) * attention_mask[:, start:end]
-
-                kl_penalty = self.kl_ctl.value * -log_ratio
-
                 rewards = batch.rewards + kl_penalty
                 advatanges, returns = self.ppo_config.get_advantages_and_returns(batch.values, rewards, response_length)
 
@@ -699,15 +697,12 @@ class PPOGPT(MegatronGPTModel):
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=logits,
                     values=values_pred,
-                    old_logprobs=ref_logits,
+                    old_logprobs=batch.logprobs,
                     old_values=batch.values,
                     advantages=advatanges,
                     returns=returns,
-                    mask=attention_mask,
+                    mask=attention_mask[:, start:end],
                 )
-
-                model_output = (logits, (qs, target_qs, vs))
-                loss_for_mb, stats = self.ilql_config.loss(model_output, batch)
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
@@ -725,6 +720,8 @@ class PPOGPT(MegatronGPTModel):
         set_inference_key_value_memory=False,
         inference_max_sequence_len=None,
         checkpoint_activations_all_layers=None,
+        run_reference_model=False,
+        run_value_head=False,
     ):
         def fwd_output_only_func(
             batch: torch.Tensor,
@@ -733,7 +730,7 @@ class PPOGPT(MegatronGPTModel):
             if batch is not None:
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                extra_arg = {}
+                extra_arg = dict(run_reference_model=run_reference_model, run_value_head=run_value_head)
 
                 if len(batch) == 3:
                     tokens, attention_mask, position_ids = batch
@@ -758,23 +755,39 @@ class PPOGPT(MegatronGPTModel):
             else:
                 model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
-            def ilql_postprocess(model_output):
+            def ppo_postprocess(model_output):
                 model_output = tree_map(lambda t: t.float(), model_output)
 
-                logits, (_, target_qs, vs) = model_output
+                logits, vs, ref_logits = model_output
 
-                target_q = reduce(torch.minimum, target_qs)
-                advantage = target_q - vs
-                pi_beta = F.log_softmax(logits, -1)
-                beta = self.ilql_config.gen_kwargs.get("beta", 1.0)
+                return logits, {"logits": logits, "vs": vs, "ref_logits": ref_logits}
 
-                logits = pi_beta + beta * advantage
-
-                return logits, {"logits": logits}
-
-            return model_output, ilql_postprocess
+            return model_output, ppo_postprocess
 
         return fwd_output_only_func
+
+    def infer_logits_and_values(input_ids: torch.Tensor, attention_mask: torch.Tensor):
+        fwd_bwd_func = self.get_forward_backward_func()
+        fwd_output_only_func = self.get_forward_output_only_func()
+        self.model.eval()
+
+        with torch.no_grad():
+            stage_output = fwd_bwd_func(
+                forward_step_func=fwd_output_only_func,
+                batch=[input_ids, attention_mask],
+                model=self.model,
+                forward_only=True,
+                sequence_parallel=self.cfg.sequence_parallel,
+                dtype=self.autocast_dtype,
+                sync_batch_comm=self.cfg.get("sync_batch_comm", False),
+                tensor_shape=[self.cfg.encoder_seq_length, self.cfg.micro_batch_size, self.cfg.hidden_size],
+            )
+
+        if stage_output:
+            outputs = {k: [output[k] for output in stage_output] for k in stage_output[0].keys()}
+            return tree_map(lambda t: torch.cat(t, dim=0), outputs)
+        else:
+            return None
 
     def generate(
         self,

@@ -275,6 +275,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         stats = {}
         clock = Clock()
 
+        self.mean_kl = torch.tensor(0.0, device=self.accelerator.device)
+
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset
             batch: PromptBatch = next(self.prompt_iterator)
@@ -435,7 +437,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 start = prompt_tensors.shape[1] - 1
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
-            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean().to(device)
+            self.mean_kl += (log_ratio.exp() - 1 - log_ratio).sum().to(device)
 
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
@@ -474,6 +476,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
+
+        # Note that this average of average is only valid for the case where the
+        # number of rollouts is equal per rank
+        self.mean_kl /= len(ppo_rl_elements)
 
         if torch.distributed.is_initialized():
             torch.distributed.all_reduce(self.mean_kl, torch.distributed.ReduceOp.AVG)
