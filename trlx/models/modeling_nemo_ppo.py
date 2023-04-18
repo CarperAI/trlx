@@ -256,8 +256,8 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
 class PPOGPT(MegatronGPTModel):
     ppo_config: PPOConfig
 
-    def __init__(self, ilql_config, metric_fn=None, **kwargs):
-        self.ilql_config = ilql_config
+    def __init__(self, ppo_config, metric_fn=None, **kwargs):
+        self.ppo_config = ppo_config
         self.metric_fn = metric_fn
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:

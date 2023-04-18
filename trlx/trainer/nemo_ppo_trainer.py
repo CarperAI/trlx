@@ -3,9 +3,11 @@ from typing import Any, Callable, List, Optional, Tuple, Union, cast
 
 import torch
 import transformers
+from apex.transformer import parallel_state
 from nemo.utils import logging
 from omegaconf.omegaconf import OmegaConf
 
+from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ppo_types import PPORLElement
 from trlx.models.modeling_nemo_ppo import PPOGPT
@@ -40,7 +42,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         self.trainer = megatron_trainer(megatron_cfg)
         self.model = PPOGPT(
-            sft_config=self.sft_config,
+            ppo_config=self.ppo_config,
             cfg=megatron_cfg.model,
             trainer=self.trainer,
             metric_fn=self.metric_fn,
@@ -67,7 +69,13 @@ class NeMoPPOTrainer(BaseRLTrainer):
         while num_rollouts > 0:
             batch: PromptBatch = next(self.prompt_iterator)
 
-            samples = self.model.generate(batch["input_ids"], batch["attention_mask"])
+            lengths = batch.attention_mask.sum(dim=1)
+
+            max_new_tokens = self.ppo_config.method.gen_kwargs.get("max_new_tokens", 128)
+            if self.ppo_config.method.gen_experience_kwargs is not None:
+                max_new_tokens = self.ppo_config.method.gen_experience_kwargs.get("max_new_tokens", max_new_tokens)
+
+            samples = self.model.generate((batch["input_ids"], lengths), dict(max_length=max_new_tokens, min_length=1))
 
             scores = torch.tensor(self.reward_fn(samples["sentences"]), device=device)
 
@@ -109,7 +117,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             all_kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
             all_kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
-            num_elements_added = torch.tensor(0, device=device)
+            num_elements_added = torch.tensor(0, device=device, requires_grad=False)
             for query_tensor, response_tensor, logprobs, values, kl_penalty, score in zip(
                 prompt_tensors, sample_outputs, all_logprobs, all_values, all_kl_penalty, scores
             ):
@@ -127,6 +135,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 num_elements_added += 1
 
             torch.distributed.all_reduce(num_elements_added, op=torch.distributed.ReduceOp.SUM, group=group)
+            num_elements_added = num_elements_added.item()
+            num_rollouts -= num_elements_added
+
+        return ppo_rl_elements, stats
 
     def learn(self):
         def add_special_token_ids(input_ids: List[int], add_bos: bool, add_eos: bool):

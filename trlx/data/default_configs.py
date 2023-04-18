@@ -32,8 +32,8 @@ def default_ppo_config():
         scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=3e-5)),
         method=PPOConfig(
             name="PPOConfig",
-            num_rollouts=128,
-            chunk_size=128,
+            num_rollouts=256,
+            chunk_size=64,
             ppo_epochs=4,
             init_kl_coef=0.001,
             target=None,

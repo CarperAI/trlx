@@ -275,7 +275,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         stats = {}
         clock = Clock()
 
-        self.mean_kl = torch.tensor(0.0, device=self.accelerator.device)
+        self.mean_kl = torch.tensor(0.0, device=self.accelerator.device, requires_grad=False)
 
         while len(ppo_rl_elements) < num_rollouts:
             # Get next batch in prompt dataset
