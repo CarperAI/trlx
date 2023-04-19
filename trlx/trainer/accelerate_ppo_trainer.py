@@ -489,4 +489,3 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
-
