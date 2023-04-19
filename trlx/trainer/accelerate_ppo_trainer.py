@@ -231,7 +231,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.make_experience(self.config.method.num_rollouts, self.iter_count)
 
     def post_backward_callback(self):
-        self.kl_ctl.update(self.mean_kl.item(), n_steps=self.config.train.batch_size)
+        self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
@@ -271,19 +271,20 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             leave=logging.get_verbosity() < logging.WARNING,
         )
 
-        ppo_rl_elements = []
-        stats = {}
         clock = Clock()
+        ppo_rl_elements = []
+        accumulated_stats = []
 
         while len(ppo_rl_elements) < num_rollouts:
+            stats = {}
             # Get next batch in prompt dataset
             batch: PromptBatch = next(self.prompt_iterator)
 
-            exp_generate_time = time()
+            rollout_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
             samples = self.generate(batch["input_ids"], batch["attention_mask"])
-            stats["time/exp_generate"] = time() - exp_generate_time
+            stats["time/rollout_generate"] = time() - rollout_generate_time
 
             prompt_tensors = batch.input_ids
             device = samples.device
@@ -305,7 +306,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True
                 )
 
-                exp_score_time = time()
+                rollout_score_time = time()
                 all_scores = torch.tensor(
                     self.reward_fn(
                         samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, **metadata
@@ -313,7 +314,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     dtype=torch.float,
                     device=device,
                 )
-                stats["time/exp_score"] = time() - exp_score_time
+                stats["time/rollout_score"] = time() - rollout_score_time
 
                 all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1).unbind())
             else:
@@ -346,23 +347,22 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             ]
             sample_outputs = torch.vstack(outputs).to(device)
 
+            if self.config.method.cliprange_reward:
+                scores = torch.clip(scores, -self.config.method.cliprange_reward, self.config.method.cliprange_reward)
+
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = scores.mean(), scores.std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores)
-            stats["exp_scores/mean"] = all_scores_mean.item()
-            stats["exp_scores/std"] = all_scores_std.item()
-            stats["exp_scores/running_mean"] = self.running_moments.mean.item()
-            stats["exp_scores/running_std"] = self.running_moments.std.item()
+            stats["rollout_scores/mean"] = all_scores_mean.item()
+            stats["rollout_scores/std"] = all_scores_std.item()
+            stats["rollout_scores/running_mean"] = self.running_moments.mean.item()
+            stats["rollout_scores/running_std"] = self.running_moments.std.item()
 
             if self.config.method.scale_reward == "running":
                 scores /= self.running_moments.std
             elif self.config.method.scale_reward == "ref":
                 scores /= self.ref_std
-
-            clip_reward = self.config.method.cliprange_reward
-            if clip_reward:
-                scores = torch.clip(scores, -clip_reward, clip_reward)
 
             # Precompute logprobs, values
             if self.config.model.model_arch_type == "seq2seq":
@@ -435,7 +435,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 start = prompt_tensors.shape[1] - 1
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
-            self.mean_kl = (log_ratio.exp() - 1 - log_ratio).mean().to(device)
+            mean_kl = (log_ratio.exp() - 1 - log_ratio).sum(1).mean().to(device)
 
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
@@ -470,19 +470,23 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 )
 
                 rollout_count += 1
-            exp_time = clock.tick()
+
+            if torch.distributed.is_initialized():
+                torch.distributed.all_reduce(mean_kl, torch.distributed.ReduceOp.AVG)
+
+            stats["time/rollout_time"] = clock.tick()
+            stats["policy/sqrt_kl"] = torch.sqrt(mean_kl).item()
+            accumulated_stats.append(stats)
+
             tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
             tbar.update(min(rollout_count, num_rollouts))
         tbar.close()
 
-        if torch.distributed.is_initialized():
-            torch.distributed.all_reduce(self.mean_kl, torch.distributed.ReduceOp.AVG)
-
-        stats["policy/sqrt_kl"] = torch.sqrt(self.mean_kl).item()
+        stats = {k: sum([xs[k] for xs in accumulated_stats]) / len(accumulated_stats) for k in stats}
         stats["kl_ctl_value"] = self.kl_ctl.value
-        stats["time/exp"] = exp_time
-
+        self.mean_kl = stats["policy/sqrt_kl"] ** 2
         self.accelerator.log(stats, step=iter_count)
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
+
