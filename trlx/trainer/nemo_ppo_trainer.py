@@ -1,4 +1,5 @@
 from pathlib import Path
+from math import ceil
 from typing import Any, Callable, List, Optional, Tuple, Union, cast
 
 import torch
@@ -39,6 +40,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
             megatron_cfg = OmegaConf.load(cfg_path)
         elif megatron_cfg is None:
             raise ValueError("megatron_cfg must be a path or a config")
+        
+        train_samples = self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
+        if (train_samples % megatron_cfg.model.global_batch_size) != 0:
+            train_samples = ceil(train_samples / megatron_cfg.model.global_batch_size) * megatron_cfg.model.global_batch_size
+            print("Rounding up (num_rollouts * ppo_epochs) to", train_samples)
+
+        megatron_cfg.model.train_steps = train_samples // megatron_cfg.model.global_batch_size
+
 
         self.trainer = megatron_trainer(megatron_cfg)
         self.model = PPOGPT(
@@ -58,6 +67,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.tokenizer.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.max_length = megatron_cfg.model.encoder_seq_length
+
+    def add_prompt_pipeline(self, pipeline: PromptPipeline):
+        self.prompt_pipeline = pipeline
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):
         ppo_rl_elements = []
@@ -184,12 +196,12 @@ class NeMoPPOTrainer(BaseRLTrainer):
         train_dataset = ShuffledCyclicSequence(train_samples, self.store, self.config.train.seed)
         self.model.set_train_dataset(train_dataset, collate_fn=collate_fn)
 
-        def eval_collate(elems):
+        def generate_collate(elems):
             context_tokens = [
                 add_special_token_ids(e["input_ids"], add_bos=self.model.cfg.data.get("add_bos", False), add_eos=False)
                 for e in elems
             ]
-            max_new_tokens = self.sft_config.gen_kwargs.get("max_new_tokens", 64)
+            max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 64)
 
             context_lengths = [len(x) for x in context_tokens]
             max_context = max(context_lengths)
@@ -202,7 +214,28 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 torch.as_tensor(context_lengths, device="cpu"),
             ]
 
-        max_train_steps = self.trainer.max_steps
+
+        prompt_dataset = ShuffledCyclicSequence(
+            new_length=self.config.train.total_steps * self.batch_size,
+            data=self.prompt_pipeline,
+            seed=self.config.train.seed,
+        )
+
+        prompt_dataloader = DataLoader(
+            prompt_dataset,
+            batch_size=self.batch_size,
+            collate_fn=generate_collate,
+            num_workers=0,
+            pin_memory=True,
+        )
+
+        prompt_dataloader = infinite_dataloader(prompt_dataloader)
+        for global_step in range(config.train.total_steps, self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs):
+            ppo_rl_rollouts, stats = self.make_experience(num_rollouts=self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs)
+
+
+
+
         eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size
 
