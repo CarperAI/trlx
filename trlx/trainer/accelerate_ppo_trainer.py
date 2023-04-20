@@ -435,7 +435,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 start = prompt_tensors.shape[1] - 1
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
-            mean_kl = (log_ratio.exp() - 1 - log_ratio).sum(1).mean().to(device)
+            kl = log_ratio.exp() - 1 - log_ratio
+            mean_kl_per_token = kl.mean()
+            mean_kl = kl.sum(1).mean()
 
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
@@ -476,6 +478,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             stats["time/rollout_time"] = clock.tick()
             stats["policy/sqrt_kl"] = torch.sqrt(mean_kl).item()
+            stats["policy/kl_per_token"] = torch.sqrt(mean_kl_per_token).item()
             accumulated_stats.append(stats)
 
             tbar.set_description(f"[rollout {len(ppo_rl_elements)} / {num_rollouts}]")
