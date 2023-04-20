@@ -404,16 +404,22 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         attention_mask=attention_mask,
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
+
+                    _, seq_len = all_tokens.shape
+                    position_ids = torch.arange(seq_len, dtype=torch.long, device=device)
+
                     if hasattr(self.model, "frozen_head"):
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                     else:
                         ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                         ref_logits = ref_logits.to(device)
