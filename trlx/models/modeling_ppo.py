@@ -227,7 +227,7 @@ class PPOConfig(MethodConfig):
             returns=get_tensor_stats(returns, mask, n),
             policy=dict(approx_kl=approx_kl.item(), clipfrac=pg_clipfrac.item()),
             ratio=(ratio * mask).sum() / n,
-            padding_percentage=n / mask.numel(),
+            padding_percentage=1 - n / mask.numel(),
         )
 
         return loss, flatten_dict(stats)
