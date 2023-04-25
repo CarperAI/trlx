@@ -507,30 +507,27 @@ class GPTModelBranch(ModelBranch):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
+            kwargs = dict(
+                layer_past=layer_past,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                head_mask=head_mask[i],
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+            )
+
             # Assumes we are never training the branch
             block_params = inspect.getfullargspec(block.forward).args
-            if "encoder_hidden_states" in block_params:
-                outputs = block(
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    head_mask=head_mask[i],
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                )
-            else:
-                outputs = block(
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    head_mask=head_mask[i],
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                )
+            if "encoder_hidden_states" not in block_params:
+                kwargs.pop("encoder_hidden_states")
+                kwargs.pop("encoder_attention_mask")
+            # Remove position_ids for GPT2Block
+            elif "position_ids" not in block_params:
+                kwargs.pop("position_ids")
+
+            outputs = block(hidden_states, **kwargs)
 
             hidden_states = outputs[0]
             if use_cache is True:
