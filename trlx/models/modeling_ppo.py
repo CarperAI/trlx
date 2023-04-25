@@ -524,7 +524,7 @@ class GPTModelBranch(ModelBranch):
                 kwargs.pop("encoder_hidden_states")
                 kwargs.pop("encoder_attention_mask")
             # Remove position_ids for GPT2Block
-            elif "position_ids" not in block_params:
+            if "position_ids" not in block_params:
                 kwargs.pop("position_ids")
 
             outputs = block(hidden_states, **kwargs)
