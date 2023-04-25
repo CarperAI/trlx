@@ -39,7 +39,8 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 
-from trlx.data.ppo_types import PPOBatch, unflatten_dataclass
+from trlx.data.ilql_types import unflatten_dataclass
+from trlx.data.ppo_types import PPORLBatch
 from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils import to_device, tree_map
 from trlx.utils.modeling import logprobs_of_labels
@@ -83,7 +84,7 @@ class ParallelLinear(nn.Module):
             self.layer = tensor_parallel.RowParallelLinear(
                 in_size,
                 out_size,
-                input_is_parallel=inpuPMt_is_parallel,
+                input_is_parallel=input_is_parallel,
                 init_method=init_method,
                 skip_bias_add=False,
                 use_cpu_initialization=use_cpu_initialization,
@@ -120,7 +121,7 @@ def make_parallel_head(n_embd: int, out: int, sequence_parallel=False) -> nn.Seq
 
 
 class ValueHead(nn.Module):
-    def __ini__(self, hidden_size: int, sequence_parallel=False):
+    def __init__(self, hidden_size: int, sequence_parallel=False):
         super().__init__()
         self.hidden_size = hidden_size
         self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel)
@@ -164,7 +165,8 @@ class HydraLMHeads(MegatronModule):
         get_key_value=False,
         forward_method_parallel_output=None,
         run_reference_model=False,
-        run_value_head=False**kwargs,
+        run_value_head=False,
+        **kwargs,
     ):
         lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
         logits = post_language_model_processing(
@@ -362,7 +364,7 @@ class PPOGPT(MegatronGPTModel):
 
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
-    def training_step(self, batch: ILQLBatch, batch_idx: int):  # noqa: C901
+    def training_step(self, batch: PPORLBatch, batch_idx: int):  # noqa: C901
         """
         Our dataloaders produce a micro-batch and then we fetch
         a number of microbatches depending on the global batch size and model parallel size
@@ -635,7 +637,7 @@ class PPOGPT(MegatronGPTModel):
         def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
             if batch is not None:
-                batch = unflatten_dataclass(PPOBatch)(batch)
+                batch = unflatten_dataclass(PPORLBatch)(batch)
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
