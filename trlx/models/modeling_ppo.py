@@ -606,6 +606,7 @@ class OPTModelBranch(ModelBranch):
                 input_shape,
                 hidden_states.dtype,
                 past_key_values_length=past_key_values_length,
+                device=attention_mask.device,
             ).to(hidden_states.device)
 
         if attention_mask is not None:
