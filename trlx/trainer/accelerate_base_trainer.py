@@ -219,9 +219,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             # Recover the last <eos> if it was present in the original sample
             # or add one if it was trimmed with `self.stop_sequences`.
-            # Only in cases when a generation ended due to `max_new_tokens` exhaustion,
-            # <eos> token would not be present in the original sample
-            if append_eos_token and (trimmed or self.tokenizer.eos_token_id in sample):
+            # When a generation ended due to `max_new_tokens` exhaustion,
+            # only then <pad> or <eos> token would not be present in the original sample at the end
+            if append_eos_token and (
+                trimmed or sample[-1] == self.tokenizer.eos_token_id or sample[-1] == self.tokenizer.pad_token_id
+            ):
                 str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
