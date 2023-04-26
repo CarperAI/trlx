@@ -55,7 +55,7 @@ python-dateutil==2.8.2
 python-rapidjson==1.10
 pytz==2022.7.1
 PyYAML==6.0
-ray==2.3.0
+ray==2.4.0
 regex==2022.10.31
 requests==2.28.2
 responses==0.18.0
