@@ -112,7 +112,11 @@ class PromptPipeline(BasePipeline):
     """
 
     def __init__(
-        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer, add_special_tokens: bool
+        self,
+        prompts: Union[Dict[str, Any], List[str]],
+        max_prompt_length: int,
+        tokenizer: PreTrainedTokenizer,
+        add_special_tokens: bool,
     ):
         super().__init__()
 

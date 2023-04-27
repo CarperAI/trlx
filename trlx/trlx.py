@@ -95,8 +95,7 @@ def train(  # noqa: C901
             eval_prompts = prompts[:batch_size]
 
         pipeline = get_pipeline(config.train.pipeline)(
-            prompts, max_prompt_length, trainer.tokenizer,
-            add_special_tokens=config.model.model_arch_type == "seq2seq"
+            prompts, max_prompt_length, trainer.tokenizer, add_special_tokens=config.model.model_arch_type == "seq2seq"
         )
         trainer.add_prompt_pipeline(pipeline)
 
@@ -122,8 +121,7 @@ def train(  # noqa: C901
         raise ValueError("Either `samples` or `reward_fn` should be given for training")
 
     eval_pipeline = get_pipeline(config.train.pipeline)(
-        eval_prompts, max_prompt_length, trainer.tokenizer,
-        add_special_tokens=config.model.model_arch_type == "seq2seq"
+        eval_prompts, max_prompt_length, trainer.tokenizer, add_special_tokens=config.model.model_arch_type == "seq2seq"
     )
     trainer.add_eval_pipeline(eval_pipeline)
 
