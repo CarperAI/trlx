@@ -129,8 +129,18 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "Set `tracker` to `None` to disable tracking."
                 )
 
-        self.generate_sweep_kwarg = None
+        self.setup_generate_sweep_kwarg()
         self.nth_evaluation = 0
+
+    def setup_generate_sweep_kwarg(self):
+        self.generate_sweep_kwarg = None
+        for k, v in self.config.method.gen_kwargs.items():
+            if isinstance(v, list):
+                if self.generate_sweep_kwarg is not None:
+                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
+                    self.generate_kwargs[k] = v[0]
+                else:
+                    self.generate_sweep_kwarg = (k, v)
 
     def setup_model(self):
         """
@@ -480,14 +490,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
         logger.info("Starting training")
-
-        for k, v in self.config.method.gen_kwargs.items():
-            if isinstance(v, list):
-                if self.generate_sweep_kwarg is not None:
-                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
-                    self.generate_kwargs[k] = v[0]
-                else:
-                    self.generate_sweep_kwarg = (k, v)
 
         self.prepare_learning()
         self.iter_count = 0
