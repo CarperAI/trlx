@@ -130,6 +130,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
 
         self.generate_sweep_kwarg = None
+        self.nth_evaluation = 0
 
     def setup_model(self):
         """
