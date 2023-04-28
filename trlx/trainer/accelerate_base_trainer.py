@@ -129,10 +129,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "Set `tracker` to `None` to disable tracking."
                 )
 
-        self.setup_generate_sweep_kwarg()
         self.nth_evaluation = 0
-
-    def setup_generate_sweep_kwarg(self):
         self.generate_sweep_kwarg = None
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
