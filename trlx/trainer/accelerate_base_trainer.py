@@ -129,6 +129,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "Set `tracker` to `None` to disable tracking."
                 )
 
+        self.generate_sweep_kwarg = None
+
     def setup_model(self):
         """
         Returns a model derived from an instance's TRLConfig
@@ -478,7 +480,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         """
         logger.info("Starting training")
 
-        self.generate_sweep_kwarg = None
         for k, v in self.config.method.gen_kwargs.items():
             if isinstance(v, list):
                 if self.generate_sweep_kwarg is not None:
