@@ -54,7 +54,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Setup the rollout store
         # Rollouts contain the prompt & response, log probs, values and rewards - from each rollout
-        self.store = PPORolloutStorage(self.tokenizer.pad_token_id)
+        self.store = PPORolloutStorage(self.tokenizer.pad_token_id, self.tokenizer.padding_side)
 
         # Create the rollout store dataloader (for batching up rollouts)
         # TODO (jon-tow): This is only used to satisfy to `accelerator.prepare` call constraint below - remove in future

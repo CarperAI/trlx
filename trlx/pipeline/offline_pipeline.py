@@ -117,10 +117,16 @@ class PromptPipeline(BasePipeline):
         max_prompt_length (`int`): max length of the prompt, if exceeded the prompt will be truncated according to
             tokenizer's truncation setting.
         tokenizer (`transformers.PreTrainedTokenizer`): a tokenizer to tokenize prompts with.
+        add_special_tokens (`bool`): whether to encode prompts with tokenizer's special tokens (passed directly
+            into `tokenizer.encode`)
     """
 
     def __init__(
-        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
+        self,
+        prompts: Union[Dict[str, Any], List[str]],
+        max_prompt_length: int,
+        tokenizer: PreTrainedTokenizer,
+        add_special_tokens: bool = False,
     ):
         super().__init__()
 
@@ -131,7 +137,7 @@ class PromptPipeline(BasePipeline):
             metadata = [{}] * len(prompts)
 
         model_inputs = tokenizer(
-            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
+            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=add_special_tokens
         )
 
         prompts_tokens = model_inputs["input_ids"]
