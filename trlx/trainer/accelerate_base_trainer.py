@@ -489,7 +489,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         Samples batches from `self.store`, updates model and periodically evaluates it on `self.eval_dataloader`
         """
         logger.info("Starting training")
-        self.prepare_learning()
 
         self.prepare_learning()
         self.iter_count = 0
