@@ -106,7 +106,7 @@ class PPOConfig(MethodConfig):
     :param vf_coef: Value loss scale w.r.t policy loss
     :type vf_coef: float
 
-    :param gen_kwargs: Additioanl kwargs for the generation
+    :param gen_kwargs: Additional kwargs for the generation
     :type gen_kwargs: Dict[str, Any]
 
     :param gen_experience_kwargs: if this is not None, then the experience is generated using this
@@ -445,7 +445,7 @@ class GPTModelBranch(ModelBranch):
         """Reference:
         https://github.com/huggingface/transformers/blob/2411f0e465e761790879e605a4256f3d4afb7f82/src/transformers/models/gpt2/modeling_gpt2.py#L743  # noqa: E501
         """
-        batch_size = hidden_states.size()[0]
+        batch_size, seq_length = hidden_states.shape[:2]
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -457,7 +457,16 @@ class GPTModelBranch(ModelBranch):
         device = hidden_states.device
 
         if past_key_values is None:
+            past_length = 0
             past_key_values = tuple([None] * len(self.decoder_blocks))
+        else:
+            past_length = past_key_values[0][0].size(-2)
+
+        if position_ids is None:
+            position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=device)
+            position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
+        else:
+            position_ids = position_ids.view(-1, seq_length)
 
         if attention_mask is not None:
             if batch_size <= 0:
@@ -498,28 +507,27 @@ class GPTModelBranch(ModelBranch):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
+            kwargs = dict(
+                layer_past=layer_past,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                head_mask=head_mask[i],
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+            )
+
             # Assumes we are never training the branch
             block_params = inspect.getfullargspec(block.forward).args
-            if "encoder_hidden_states" in block_params:
-                outputs = block(
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    head_mask=head_mask[i],
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                )
-            else:
-                outputs = block(
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    head_mask=head_mask[i],
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                )
+            if "encoder_hidden_states" not in block_params:
+                kwargs.pop("encoder_hidden_states")
+                kwargs.pop("encoder_attention_mask")
+            # Remove position_ids for GPT2Block
+            if "position_ids" not in block_params:
+                kwargs.pop("position_ids")
+
+            outputs = block(hidden_states, **kwargs)
 
             hidden_states = outputs[0]
             if use_cache is True:
@@ -594,10 +602,17 @@ class OPTModelBranch(ModelBranch):
         input_shape = hidden_states.size()[:-1]
         combined_attention_mask = None
         if input_shape[-1] > 1:
+            # `modeling_opt._make_causal_mask` @ transformers==4.27.1 doesn't have the `device` argument
+            if "device" in inspect.getfullargspec(modeling_opt._make_causal_mask).args:
+                kwargs = dict(device=hidden_state.device)
+            else:
+                kwargs = {}
+
             combined_attention_mask = modeling_opt._make_causal_mask(
                 input_shape,
                 hidden_states.dtype,
                 past_key_values_length=past_key_values_length,
+                **kwargs,
             ).to(hidden_states.device)
 
         if attention_mask is not None:

@@ -129,6 +129,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     "Set `tracker` to `None` to disable tracking."
                 )
 
+        self.nth_evaluation = 0
+        self.generate_sweep_kwarg = None
+        for k, v in self.config.method.gen_kwargs.items():
+            if isinstance(v, list):
+                if self.generate_sweep_kwarg is not None:
+                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
+                    self.generate_kwargs[k] = v[0]
+                else:
+                    self.generate_sweep_kwarg = (k, v)
+
     def setup_model(self):
         """
         Returns a model derived from an instance's TRLConfig
@@ -219,9 +229,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             # Recover the last <eos> if it was present in the original sample
             # or add one if it was trimmed with `self.stop_sequences`.
-            # Only in cases when a generation ended due to `max_new_tokens` exhaustion,
-            # <eos> token would not be present in the original sample
-            if append_eos_token and (trimmed or sample[-1] == self.tokenizer.eos_token_id):
+            # When a generation ended due to `max_new_tokens` exhaustion,
+            # only then <pad> or <eos> token would not be present in the original sample at the end
+            if append_eos_token and (
+                trimmed or sample[-1] == self.tokenizer.eos_token_id or sample[-1] == self.tokenizer.pad_token_id
+            ):
                 str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
@@ -479,16 +491,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         logger.info("Starting training")
         self.prepare_learning()
 
+        self.prepare_learning()
         self.iter_count = 0
         self.nth_evaluation = 0
-        self.generate_sweep_kwarg = None
-        for k, v in self.config.method.gen_kwargs.items():
-            if isinstance(v, list):
-                if self.generate_sweep_kwarg is not None:
-                    logger.info("Only a single sweep is allowed, {k} is going to be set to {v[0]}")
-                    self.generate_kwargs[k] = v[0]
-                else:
-                    self.generate_sweep_kwarg = (k, v)
 
         if ray.is_initialized():
             checkpoint = session.get_checkpoint()
