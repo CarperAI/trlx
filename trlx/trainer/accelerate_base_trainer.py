@@ -621,6 +621,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
         pass
 
     @abstractmethod
+    def prepare_learning(self):
+        """Do something before the start of training"""
+        pass
+
+    @abstractmethod
     def post_backward_callback(self):
         """Do something after model update"""
         pass
