@@ -604,7 +604,7 @@ class OPTModelBranch(ModelBranch):
         if input_shape[-1] > 1:
             # `modeling_opt._make_causal_mask` @ transformers==4.27.1 doesn't have the `device` argument
             if "device" in inspect.getfullargspec(modeling_opt._make_causal_mask).args:
-                kwargs = dict(device=hidden_state.device)
+                kwargs = dict(device=hidden_states.device)
             else:
                 kwargs = {}
 
