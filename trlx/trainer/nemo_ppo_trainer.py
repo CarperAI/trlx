@@ -1,3 +1,4 @@
+from logging import getLogger
 from math import ceil
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, List, Optional, Tuple, Union, cast
@@ -21,6 +22,144 @@ from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.nemo_ilql_trainer import ShuffledCyclicSequence, megatron_trainer
 from trlx.utils import infinite_dataloader
 from trlx.utils.modeling import logprobs_of_labels
+
+logging = getLogger(__name__)
+
+
+def fake_initialize_model_parallel(
+    world_size,
+    rank,
+    tensor_model_parallel_size_,
+    pipeline_model_parallel_size_,
+    pipeline_model_parallel_split_rank_=None,
+    virtual_pipeline_model_parallel_size_=None,
+):
+    """
+    Fake initialize model data parallel groups so that we can instantiate model parallel models before DDP is initialized.
+    This is needed because PTL execution flow is init model, init trainer -> call trainer.fit(model). DDP is initialized during .fit.
+    This function is taken from megatron.core.parallel_state and modified so that the distributed groups are not created.
+    We only need the tensor parallel and pipeline parallel ranks to instantiate the model.
+    Arguments:
+        tensor_model_parallel_size: number of GPUs used to parallelize model tensor.
+        pipeline_model_parallel_size: number of GPUs used to parallelize model pipeline.
+    Let's say we have a total of 16 GPUs denoted by g0 ... g15 and we
+    use 2 GPUs to parallelize the model tensor, and 4 GPUs to parallelize
+    the model pipeline. The present function will
+    create 8 tensor model-parallel groups, 4 pipeline model-parallel groups
+    and 8 data-parallel groups as:
+        8 data_parallel groups:
+            [g0, g2], [g1, g3], [g4, g6], [g5, g7], [g8, g10], [g9, g11], [g12, g14], [g13, g15]
+        8 tensor model-parallel groups:
+            [g0, g1], [g2, g3], [g4, g5], [g6, g7], [g8, g9], [g10, g11], [g12, g13], [g14, g15]
+        4 pipeline model-parallel groups:
+            [g0, g4, g8, g12], [g1, g5, g9, g13], [g2, g6, g10, g14], [g3, g7, g11, g15]
+    Note that for efficiency, the caller should make sure adjacent ranks
+    are on the same DGX box. For example if we are using 2 DGX-1 boxes
+    with a total of 16 GPUs, rank 0 to 7 belong to the first box and
+    ranks 8 to 15 belong to the second box.
+    """
+
+    # Get world size and rank. Ensure some consistencies.
+    tensor_model_parallel_size = min(tensor_model_parallel_size_, world_size)
+    pipeline_model_parallel_size = min(pipeline_model_parallel_size_, world_size)
+    model_parallel_size = tensor_model_parallel_size * pipeline_model_parallel_size
+
+    assert (
+        world_size % tensor_model_parallel_size * pipeline_model_parallel_size == 0
+    ), f"world_size: {world_size} must be divisible by tensor_model_parallel_size: {tensor_model_parallel_size} times pipeline_model_parallel_size {pipeline_model_parallel_size}"
+    data_parallel_size = world_size // (tensor_model_parallel_size * pipeline_model_parallel_size)
+
+    num_tensor_model_parallel_groups = world_size // tensor_model_parallel_size
+    num_pipeline_model_parallel_groups = world_size // pipeline_model_parallel_size
+
+    virtual_pipeline_model_parallel_rank = None
+    if virtual_pipeline_model_parallel_size_ is not None:
+        virtual_pipeline_model_parallel_rank = 0
+
+    # Build the data-parallel groups.
+    all_data_parallel_group_ranks = []
+    for i in range(pipeline_model_parallel_size):
+        start_rank = i * num_pipeline_model_parallel_groups
+        end_rank = (i + 1) * num_pipeline_model_parallel_groups
+        for j in range(tensor_model_parallel_size):
+            ranks = range(start_rank + j, end_rank, tensor_model_parallel_size)
+            all_data_parallel_group_ranks.append(list(ranks))
+            if rank in ranks:
+                data_parallel_group = list(ranks)
+                logging.info(f"Rank {rank} has data parallel group: {data_parallel_group}")
+
+    data_parallel_rank = data_parallel_group.index(rank)
+    logging.info(f"All data parallel group ranks: {all_data_parallel_group_ranks}")
+    logging.info(f"Ranks {rank} has data parallel rank: {data_parallel_rank}")
+
+    # Build the model-parallel groups.
+    all_model_parallel_group_ranks = []
+    for i in range(data_parallel_size):
+        ranks = [data_parallel_group_ranks[i] for data_parallel_group_ranks in all_data_parallel_group_ranks]
+        all_model_parallel_group_ranks.append(ranks)
+        if rank in ranks:
+            logging.info(f"Rank {rank} has model parallel group: {list(ranks)}")
+    logging.info(f"All model parallel group ranks: {all_model_parallel_group_ranks}")
+
+    # Build the tensor model-parallel groups.
+    all_tensor_model_parallel_group_ranks = []
+    tensor_model_parallel_group = None
+    for i in range(num_tensor_model_parallel_groups):
+        ranks = range(i * tensor_model_parallel_size, (i + 1) * tensor_model_parallel_size)
+        all_tensor_model_parallel_group_ranks.append(list(ranks))
+        if rank in ranks:
+            tensor_model_parallel_group = list(ranks)
+            logging.info(f"Rank {rank} has tensor model parallel group: {tensor_model_parallel_group}")
+
+    tensor_model_parallel_rank = tensor_model_parallel_group.index(rank)
+
+    logging.info(f"All tensor model parallel group ranks: {all_tensor_model_parallel_group_ranks}")
+    logging.info(f"Rank {rank} has tensor model parallel rank: {tensor_model_parallel_rank}")
+
+    # Build the pipeline model-parallel groups and embedding groups
+    # (first and last rank in each pipeline model-parallel group).
+    all_pipeline_model_parallel_group_ranks = []
+    all_embedding_group_ranks = []
+    pipeline_model_parallel_group = None
+    embedding_group = None
+    embedding_rank = None
+    for i in range(num_pipeline_model_parallel_groups):
+        ranks = range(i, world_size, num_pipeline_model_parallel_groups)
+        all_pipeline_model_parallel_group_ranks.append(list(ranks))
+        if rank in ranks:
+            pipeline_model_parallel_group = list(ranks)
+            logging.info(f"Rank {rank} has pipeline model parallel group: {pipeline_model_parallel_group}")
+
+        # Setup embedding group (to exchange gradients between
+        # first and last stages).
+        if len(ranks) > 1:
+            embedding_ranks = [ranks[0], ranks[-1]]
+            all_embedding_group_ranks.append(embedding_ranks)
+        else:
+            embedding_ranks = ranks
+            all_embedding_group_ranks.append(list(embedding_ranks))
+        if rank in embedding_ranks:
+            embedding_group = list(embedding_ranks)
+            logging.info(f"Rank {rank} has embedding group: {embedding_group}")
+
+    pipeline_model_parallel_rank = pipeline_model_parallel_group.index(rank)
+    if embedding_group is not None:
+        embedding_rank = embedding_group.index(rank)
+
+    logging.info(f"All pipeline model parallel group ranks: {all_pipeline_model_parallel_group_ranks}")
+    logging.info(f"Rank {rank} has pipeline model parallel rank {pipeline_model_parallel_rank}")
+    logging.info(f"All embedding group ranks: {all_pipeline_model_parallel_group_ranks}")
+    logging.info(f"Rank {rank} has embedding rank: {embedding_rank}")
+
+    return (
+        tensor_model_parallel_rank,
+        pipeline_model_parallel_rank,
+        data_parallel_rank,
+        model_parallel_size,
+        data_parallel_size,
+        pipeline_model_parallel_split_rank_,
+        virtual_pipeline_model_parallel_rank,
+    )
 
 
 @register_trainer
@@ -64,6 +203,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             trainer=self.trainer,
             metric_fn=self.metric_fn,
         )
+        self.megatron_cfg = megatron_cfg
 
         if pretrained_model is not None:
             self.model.load_from_pretrained(pretrained_model)
@@ -79,39 +219,57 @@ class NeMoPPOTrainer(BaseRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         self.prompt_pipeline = pipeline
 
-    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, iter_count: int = 0):
+    def make_experience(
+        self, prompt_iterator: Iterator, num_rollouts: int = 1024, iter_count: int = 0, data_parallel_size=1
+    ):
         ppo_rl_elements = []
         stats = {}
 
-        device = self.model.device
-        group = parallel_state.get_data_parallel_group()
-
-        while num_rollouts > 0:
+        device = torch.device("cuda")
+        rank_rollouts = num_rollouts // data_parallel_size
+        while rank_rollouts > 0:
             batch: PromptBatch = next(prompt_iterator)
 
             lengths = batch.attention_mask.sum(dim=1)
 
-            max_new_tokens = self.ppo_config.method.gen_kwargs.get("max_new_tokens", 128)
-            if self.ppo_config.method.gen_experience_kwargs is not None:
-                max_new_tokens = self.ppo_config.method.gen_experience_kwargs.get("max_new_tokens", max_new_tokens)
+            max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 128)
+            if self.ppo_config.gen_experience_kwargs is not None:
+                max_new_tokens = self.ppo_config.gen_experience_kwargs.get("max_new_tokens", max_new_tokens)
 
-            samples = self.model.generate((batch["input_ids"], lengths), dict(max_length=max_new_tokens, min_length=1))
+            input_ids = batch["input_ids"].to(device)
+            lengths = lengths.to(device)
+            pad_to = lengths.max().item() + max_new_tokens
+            pad_to = ceil(pad_to / 128) * 128
+            input_ids = torch.nn.functional.pad(
+                input_ids, (0, pad_to - input_ids.shape[1]), value=self.tokenizer.pad_token_id
+            )
+
+            samples = self.model.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=1))
 
             scores = torch.tensor(self.reward_fn(samples["sentences"]), device=device)
 
-            scores = torch.clip(scores, -self.config.method.cliprange_reward, self.config.method.cliprange_reward)
+            scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
+            print(samples.keys())
 
-            all_tokens = torch.cat((batch["input_ids"], samples["tokens"]), dim=1)
+            output_tokens = samples["token_ids"]
+            print([len(t) for t in output_tokens])
+
+            io_split = [(t[:l], t[l:]) for t, l in zip(output_tokens, lengths)]
+            print(f"{io_split[0][0]=}")
+            print(f"{io_split[0][1]=}")
+            print(f"{self.tokenizer.decode(batch['input_ids'][0])=}")
+            print(f"{self.tokenizer.decode(io_split[0][0])=}")
+            print(f"{self.tokenizer.decode(io_split[0][1])=}")
+            print(f"{samples['sentences'][0]=}")
+
+            all_tokens = torch.tensor(output_tokens, device=device)
             attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
 
             model_output = self.model.infer_logits_and_values(all_tokens, attention_mask)
 
             # Model output is None on intermediate pipeline stages
             if model_output is None:
-                num_elements_added = torch.tensor(0, device=device)
-                torch.distributed.all_reduce(num_elements_added, op=torch.distributed.ReduceOp.SUM, group=group)
-                num_elements_added = num_elements_added.item()
-                num_rollouts -= num_elements_added
+                continue
 
             logits, ref_logits, values = model_output["logits"], model_output["ref_logits"], model_output["values"]
 
@@ -137,7 +295,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
             all_kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
             all_kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
 
-            num_elements_added = torch.tensor(0, device=device, requires_grad=False)
             for query_tensor, response_tensor, logprobs, values, kl_penalty, score in zip(
                 prompt_tensors, sample_outputs, all_logprobs, all_values, all_kl_penalty, scores
             ):
@@ -152,11 +309,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         rewards=rewards,
                     )
                 )
-                num_elements_added += 1
-
-            torch.distributed.all_reduce(num_elements_added, op=torch.distributed.ReduceOp.SUM, group=group)
-            num_elements_added = num_elements_added.item()
-            num_rollouts -= num_elements_added
+                rank_rollouts -= 1
 
         return ppo_rl_elements, stats
 
@@ -192,8 +345,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 torch.as_tensor(context_lengths, device="cpu"),
             ]
 
-        parallel_state.initialize_model_parallel(
-            self.model.cfg.tensor_model_parallel_size, self.model.cfg.pipeline_model_parallel_size, None
+        world_size = self.trainer.world_size
+        global_rank = self.trainer.global_rank
+        local_rank = self.trainer.local_rank
+
+        tp_rank, pp_rank, dp_rank, mp_world, dp_world, *_ = fake_initialize_model_parallel(
+            world_size,
+            global_rank,
+            self.model.cfg.tensor_model_parallel_size,
+            self.model.cfg.pipeline_model_parallel_size,
         )
 
         prompt_dataset = ShuffledCyclicSequence(
@@ -202,20 +362,17 @@ class NeMoPPOTrainer(BaseRLTrainer):
             seed=self.config.train.seed,
         )
 
-        sampler = DistributedSampler(self.prompt_pipeline, rank=parallel_state.get_data_parallel_rank(), shuffle=True)
-        prompt_dataloader = DataLoader(
-            self.prompt_pipeline,
-            batch_size=self.batch_size,
-            collate_fn=generate_collate,
-            num_workers=0,
-            pin_memory=True,
-            sampler=sampler,
+        prompt_dataloader = infinite_dataloader(
+            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=True)
         )
-
-        prompt_dataloader = infinite_dataloader(prompt_dataloader, sampler=sampler)
-        for global_step in range(config.train.total_steps, self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs):
+        prompt_iter = iter(prompt_dataloader)
+        for global_step in range(
+            self.config.train.total_steps, self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
+        ):
             ppo_rl_rollouts, stats = self.make_experience(
-                iter(prompt_dataloader), num_rollouts=self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
+                prompt_iter,
+                num_rollouts=self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs,
+                data_parallel_size=dp_world,
             )
 
             rollout_dataset = ShuffledCyclicSequence(
@@ -235,7 +392,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             seed=self.config.train.seed,
         )
 
-        self.model.set_valid_dataset(eval_dataset, collate_fn=eval_collate)
+        self.model.set_valid_dataset(eval_dataset, collate_fn=generate_collate)
 
         torch.set_float32_matmul_precision("medium")
         self.trainer.validate(self.model)

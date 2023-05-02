@@ -29,7 +29,7 @@ def main(hparams={}):
             total_steps=200,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model=None,
+                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
         ),
@@ -51,7 +51,6 @@ def main(hparams={}):
         truncation=True,
         batch_size=256,
         device=local_rank,
-        dtype=torch.float16,
     )
 
     def reward_fn(samples: List[str], **kwargs) -> List[float]:

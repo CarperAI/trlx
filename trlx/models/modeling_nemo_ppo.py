@@ -11,6 +11,7 @@ import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
 from apex.transformer import parallel_state, tensor_parallel
+from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
@@ -38,6 +39,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     SamplingParam,
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from nemo.utils import AppState
 
 from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
@@ -212,7 +214,7 @@ class HydraLMHeads(MegatronModule):
 
             return logits, heads_output, ref_logits
 
-        return logits, heads_output
+        return logits, heads_output, None
 
 
 def unwrap_float16_module(module):
@@ -560,15 +562,6 @@ class PPOGPT(MegatronGPTModel):
         if self.metric_fn is None:
             raise ValueError("Must set metric_fn to use validation")
 
-        sp_was_enabled = self.cfg.get("sequence_parallel", False)
-        if sp_was_enabled:
-            self.sequence_parallel_(False)
-
-        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
-
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(False)
-
         input_ids, lengths = batch
         input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
 
@@ -586,26 +579,6 @@ class PPOGPT(MegatronGPTModel):
         rows = list(zip(gen["sentences"], *metric_values))
 
         avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
-
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(True)
-
-        if sp_was_enabled:
-            self.sequence_parallel_(True)
-
-        # NeMo generate resets the microbatch calculator
-        from apex.transformer.pipeline_parallel.utils import (
-            _reconfigure_microbatch_calculator,
-        )
-        from nemo.utils import AppState
-
-        _reconfigure_microbatch_calculator(
-            rank=AppState().global_rank,
-            rampup_batch_size=None,
-            global_batch_size=self.cfg.global_batch_size,
-            micro_batch_size=self.cfg.micro_batch_size,
-            data_parallel_size=AppState().data_parallel_size,
-        )
 
         return avg_metrics, (rows, columns)
 
@@ -758,7 +731,7 @@ class PPOGPT(MegatronGPTModel):
                 model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
             def ppo_postprocess(model_output):
-                model_output = tree_map(lambda t: t.float(), model_output)
+                model_output = tree_map(lambda t: t.float() if t is not None else t, model_output)
 
                 logits, vs, ref_logits = model_output
 
@@ -768,15 +741,18 @@ class PPOGPT(MegatronGPTModel):
 
         return fwd_output_only_func
 
-    def infer_logits_and_values(input_ids: torch.Tensor, attention_mask: torch.Tensor):
-        fwd_bwd_func = self.get_forward_backward_func()
-        fwd_output_only_func = self.get_forward_output_only_func()
-        self.model.eval()
+    def infer_logits_and_values(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+        fwd_bwd_func = self._get_fwd_bwd_function()
+        fwd_output_only_func = self.get_forward_output_only_func(run_reference_model=True, run_value_head=True)
 
+        self.model.eval()
+        position_ids = torch.arange(input_ids.shape[1], dtype=torch.long, device=input_ids.device)
+        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+        print(f"{input_ids.shape=} {attention_mask.shape=} {position_ids.shape=}")
         with torch.no_grad():
             stage_output = fwd_bwd_func(
                 forward_step_func=fwd_output_only_func,
-                batch=[input_ids, attention_mask],
+                batch=[input_ids, attention_mask, position_ids],
                 model=self.model,
                 forward_only=True,
                 sequence_parallel=self.cfg.sequence_parallel,
@@ -800,8 +776,8 @@ class PPOGPT(MegatronGPTModel):
         if sampling_params is None:
             sampling_params = {
                 "use_greedy": False,
-                "temperature": self.ilql_config.gen_kwargs.get("temperature", 1.0),
-                "top_k": self.ilql_config.gen_kwargs.get("top_k", 0),
+                "temperature": self.ppo_config.gen_kwargs.get("temperature", 1.0),
+                "top_k": self.ppo_config.gen_kwargs.get("top_k", 0),
                 "top_p": 0.9,
                 "repetition_penalty": 1.2,
                 "add_BOS": False,
@@ -809,4 +785,28 @@ class PPOGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        return super().generate(inputs, length_params, sampling_params)
+        sp_was_enabled = self.cfg.get("sequence_parallel", False)
+        if sp_was_enabled:
+            self.sequence_parallel_(False)
+
+        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(False)
+
+        try:
+            return super().generate(inputs, length_params, sampling_params)
+        finally:
+            if sp_was_enabled:
+                self.sequence_parallel_(True)
+
+            if activations_checkpointing_was_enabled:
+                self.activation_checkpointing_(True)
+
+            _reconfigure_microbatch_calculator(
+                rank=AppState().global_rank,
+                rampup_batch_size=None,
+                global_batch_size=self.cfg.global_batch_size,
+                micro_batch_size=self.cfg.micro_batch_size,
+                data_parallel_size=AppState().data_parallel_size,
+            )
