@@ -8,7 +8,8 @@ import transformers
 from apex.transformer import parallel_state
 from nemo.utils import logging
 from omegaconf.omegaconf import OmegaConf
-from torch.utils.data import DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler
+from tqdm import tqdm
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
@@ -173,6 +174,13 @@ class NeMoPPOTrainer(BaseRLTrainer):
     ):
         super().__init__(config, metric_fn=metric_fn, **kwargs)
 
+        if metric_fn is None:
+
+            def metric_fn(*args, **kwargs):
+                return {"metric": self.reward_fn(*args, **kwargs)}
+
+            self.metric_fn = metric_fn
+
         if not isinstance(config.method, PPOConfig):
             raise ValueError("config.method must be PPOConfig")
 
@@ -191,12 +199,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
             )
             print("Rounding up (num_rollouts * ppo_epochs) to", train_samples)
 
-        megatron_cfg.model.train_steps = train_samples // megatron_cfg.model.global_batch_size
-
         # Disable validation within nemo, run it ourselves
+        self.limit_val_batches = megatron_cfg.trainer.limit_val_batches
+        self.val_check_interval = megatron_cfg.trainer.val_check_interval
+
         megatron_cfg.trainer.limit_val_batches = 0.0
         megatron_cfg.trainer.val_check_interval = None
         self.train_samples = train_samples
+        # megatron_cfg.trainer.max_steps = train_samples // megatron_cfg.model.global_batch_size
 
         self.trainer = megatron_trainer(megatron_cfg)
         self.model = PPOGPT(
@@ -229,15 +239,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         self.prompt_pipeline = pipeline
 
-    def make_experience(
-        self, prompt_iterator: Iterator, num_rollouts: int = 1024, iter_count: int = 0, data_parallel_size=1
-    ):
+    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024):
         ppo_rl_elements = []
         stats = {}
 
         device = torch.device("cuda")
-        rank_rollouts = num_rollouts // data_parallel_size
-        while rank_rollouts > 0:
+
+        if torch.distributed.get_rank() == 0:
+            tbar = tqdm(range(num_rollouts), desc="Generating experience")
+
+        while num_rollouts > 0:
             batch: PromptBatch = next(prompt_iterator)
 
             lengths = batch.attention_mask.sum(dim=1)
@@ -255,24 +266,21 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 input_ids, (0, pad_to - input_ids.shape[1]), value=self.tokenizer.pad_token_id
             )
 
-            print("generating...")
             samples = self.model.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=1))
 
             scores = torch.tensor(self.reward_fn(samples["sentences"]), device=device)
 
             scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
-            print(samples.keys())
 
             output_tokens = samples["token_ids"]
 
             output_tokens = [
                 x + [self.tokenizer.pad_token_id] * ((ceil(len(x) / 8) * 8) - len(x)) for x in output_tokens
             ]
-            print([len(t) for t in output_tokens])
 
             all_tokens = torch.tensor(output_tokens, device=device)
             attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
-            print(f"{all_tokens.shape=}")
+
             model_output = self.model.infer_logits_and_values(all_tokens, attention_mask)
 
             # Model output is None on intermediate pipeline stages
@@ -300,20 +308,24 @@ class NeMoPPOTrainer(BaseRLTrainer):
             for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
                 query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
-                end = mask.sum()
+                response_end = mask[start:].sum()
+                end = start + response_end + 1  # include last EOS
                 rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
                 rewards[-1] += score.cpu()
-                print(f"{rewards.shape=} {vs.shape=} {logps.shape=} {start=} {end=} {score=}")
+
                 ppo_rl_elements.append(
                     PPORLElement(
                         query_tensor=query_tensor,
-                        response_tensor=response_tensor,
+                        response_tensor=response_tensor[:response_end],
                         logprobs=logps[start:end],
                         values=vs[start:end],
                         rewards=rewards,
                     )
                 )
-                rank_rollouts -= 1
+                num_rollouts = num_rollouts - 1
+
+            if torch.distributed.get_rank() == 0:
+                tbar.update(len(query_tensors))
 
         return ppo_rl_elements, stats
 
@@ -366,39 +378,57 @@ class NeMoPPOTrainer(BaseRLTrainer):
             seed=self.config.train.seed,
         )
 
-        prompt_dataloader = infinite_dataloader(
-            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=True)
-        )
-        prompt_iter = iter(prompt_dataloader)
-        for global_step in range(
-            self.config.train.total_steps, self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
-        ):
-            ppo_rl_rollouts, stats = self.make_experience(
-                prompt_iter,
-                num_rollouts=self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs,
-                data_parallel_size=dp_world,
-            )
-
-            rollout_dataset = ShuffledCyclicSequence(
-                new_length=self.train_samples,
-                data=ppo_rl_rollouts,
-                seed=self.config.train.seed,
-            )
-            # Dataloader must be initialized inside fit since PTL hasn't initalized DDP yet
-            self.model.set_train_dataset(rollout_dataset, collate_fn=collate_fn)
-            self.trainer.fit(self.model)
-            print("fitted!")
-
-        eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
+        eval_iters = (self.config.train.total_steps // self.trainer.val_check_interval + 1) * 2
         eval_samples = eval_iters * self.model.cfg.global_batch_size
-
+        print(f"{eval_iters=} {eval_samples=}")
         eval_dataset = ShuffledCyclicSequence(
-            new_length=eval_samples,
+            new_length=int(eval_samples),
             data=self.eval_pipeline,
             seed=self.config.train.seed,
         )
 
         self.model.set_valid_dataset(eval_dataset, collate_fn=generate_collate)
 
-        torch.set_float32_matmul_precision("medium")
-        self.trainer.validate(self.model)
+        prompt_dataloader = infinite_dataloader(
+            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=True)
+        )
+
+        def dummy():
+            return
+
+        if self.trainer.strategy.launcher is not None:
+            self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
+        self.trainer.strategy.setup_environment()
+
+        if self.model.cfg.get("transformer_engine", False):
+            self.model.setup_transformer_engine_tp_groups()
+
+        self.model.setup()
+        opts, schedulers = self.model.configure_optimizers()
+        prompt_iter = iter(prompt_dataloader)
+        local_batch_idx = 0
+
+        for epoch in range(self.config.train.epochs):
+            ppo_rl_rollouts, stats = self.make_experience(
+                prompt_iter,
+                num_rollouts=self.ppo_config.num_rollouts,
+            )
+
+            rank_batch_size = self.batch_size // dp_world
+            dataloader = DataLoader(ppo_rl_rollouts, batch_size=rank_batch_size, collate_fn=collate_fn)
+
+            for batch in dataloader:
+                for _ in range(self.ppo_config.ppo_epochs):
+                    self.model.training_step(batch, local_batch_idx)
+                local_batch_idx += 1
+                self.trainer.global_step += 1
+
+                if local_batch_idx % self.val_check_interval == 0:
+                    val_loader = self.eval_pipeline.create_loader(self.batch_size, shuffle=True)
+                    val_stats = [self.model.validation_step(val_batch, local_batch_idx) for val_batch in val_loader]
+                    self.model.validation_epoch_end(val_stats)
+
+            # Dataloader must be initialized inside fit since PTL hasn't initalized DDP yet
+
+            print("fitted!")
+            # self.trainer.validate(self.model)

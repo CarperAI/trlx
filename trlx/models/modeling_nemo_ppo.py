@@ -145,11 +145,12 @@ class HydraLMHeads(MegatronModule):
         self.language_model = language_model
         self.reference_model = deepcopy(language_model)
         self.reference_model.eval()
-        # self.reference_model.cpu()
+        self.reference_model.cpu()
+        self.reference_model_offloaded = True
 
         for p in self.reference_model.parameters():
             p.requires_grad_(False)
-            # p.data.pin_memory()
+            p.data.pin_memory()
 
         self.other_heads = other_heads
 
@@ -158,7 +159,9 @@ class HydraLMHeads(MegatronModule):
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
-        return self.language_model.set_input_tensor(input_tensor)
+        self.language_model.set_input_tensor(input_tensor)
+        if not self.reference_model_offloaded:
+            self.reference_model.set_input_tensor(input_tensor)
 
     def word_embeddings_weight(self):
         return self.language_model.word_embeddings_weight()
@@ -172,11 +175,13 @@ class HydraLMHeads(MegatronModule):
         """Move reference model to CPU."""
         self.reference_model.to("cpu", non_blocking=True)
         self.language_model.to(torch.cuda.current_device(), non_blocking=True)
+        self.reference_model_offloaded = True
 
     def offload_policy_model(self):
         """Move language model to CPU."""
         self.reference_model.to(torch.cuda.current_device(), non_blocking=True)
         self.language_model.to("cpu", non_blocking=True)
+        self.reference_model_offloaded = False
 
     def forward(
         self,
@@ -207,7 +212,6 @@ class HydraLMHeads(MegatronModule):
 
         if run_value_head:
             heads_output = self.other_heads(lm_output)
-            print(f"{heads_output.shape=} {lm_output.shape=}")
         else:
             heads_output = None
 
@@ -653,7 +657,7 @@ class PPOGPT(MegatronGPTModel):
     # Need to override this otherwise distributed fused adam won't work
     # with frozen layers
     def parameters(self):
-        return (p for p in self.model.parameters() if p.requires_grad)
+        return (p for p in unwrap_float16_module(self.model).language_model.parameters() if p.requires_grad)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(flat_batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
@@ -709,6 +713,9 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
+                print(
+                    f"train {vs.shape=} {start} {end} {batch.rewards.shape=} {batch.values.shape=} {loss_mask.shape=}"
+                )
                 advatanges, returns = self.ppo_config.get_advantages_and_returns(
                     batch.values, batch.rewards, response_length
                 )
