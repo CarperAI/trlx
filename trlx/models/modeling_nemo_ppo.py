@@ -1,8 +1,9 @@
 # Extensible version of the GPT model
 import sys
+from contextlib import contextmanager
 from copy import deepcopy
 from functools import partial, reduce
-from math import sqrt
+from math import ceil, sqrt
 from pathlib import Path
 from typing import List, Mapping, Optional, Tuple, Union
 
@@ -40,6 +41,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import AppState
+from torch.cuda import current_device
 
 from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
@@ -129,7 +131,9 @@ class ValueHead(nn.Module):
         self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel)
 
     def forward(self, x):
-        return self.v_head(x)
+        vs = self.v_head(x)
+        vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
+        return rearrange(vs, "T N 1 -> N T").contiguous()
 
 
 class HydraLMHeads(MegatronModule):
@@ -140,9 +144,12 @@ class HydraLMHeads(MegatronModule):
         self.post_process = language_model.post_process
         self.language_model = language_model
         self.reference_model = deepcopy(language_model)
+        self.reference_model.eval()
+        # self.reference_model.cpu()
 
         for p in self.reference_model.parameters():
             p.requires_grad_(False)
+            # p.data.pin_memory()
 
         self.other_heads = other_heads
 
@@ -160,6 +167,16 @@ class HydraLMHeads(MegatronModule):
         """Load GPTModel state dict."""
         self.language_model.language_model.load_state_dict(lm_state_dict, strict=strict)
         self.reference_model.language_model.load_state_dict(lm_state_dict, strict=strict)
+
+    def offload_reference_model(self):
+        """Move reference model to CPU."""
+        self.reference_model.to("cpu", non_blocking=True)
+        self.language_model.to(torch.cuda.current_device(), non_blocking=True)
+
+    def offload_policy_model(self):
+        """Move language model to CPU."""
+        self.reference_model.to(torch.cuda.current_device(), non_blocking=True)
+        self.language_model.to("cpu", non_blocking=True)
 
     def forward(
         self,
@@ -190,10 +207,14 @@ class HydraLMHeads(MegatronModule):
 
         if run_value_head:
             heads_output = self.other_heads(lm_output)
+            print(f"{heads_output.shape=} {lm_output.shape=}")
         else:
             heads_output = None
 
         if run_reference_model:
+            device = lm_output.device
+            # self.language_model.to("cpu", non_blocking=True)
+            self.reference_model.to(device, non_blocking=True)
             ref_lm_output = self.reference_model(*args, get_key_value=get_key_value, **kwargs)
             ref_logits = post_language_model_processing(
                 ref_lm_output,
@@ -207,6 +228,8 @@ class HydraLMHeads(MegatronModule):
                 sequence_parallel=self.reference_model.sequence_parallel,
                 gradient_accumulation_fusion=self.reference_model.gradient_accumulation_fusion,
             )
+            # self.language_model.to(device, non_blocking=True)
+            # self.reference_model.to("cpu", non_blocking=True)
 
             if get_key_value:
                 ref_logits, ref_presents = ref_logits
@@ -394,7 +417,7 @@ class PPOGPT(MegatronGPTModel):
         # stage. The model is given input of this shape if not the first pipeline
         # stage via .set_input_tensor
         tensor_shape = [
-            self.cfg.encoder_seq_length,
+            batch_for_pipeline[0].shape[1],  # self.cfg.encoder_seq_length,
             self.cfg.micro_batch_size,
             self.cfg.hidden_size,
         ]
@@ -423,6 +446,8 @@ class PPOGPT(MegatronGPTModel):
         # This gets the correct fwd/bwd pipeline step depending on the pipeline
         # parallelism configuration
         fwd_bwd_function = self._get_fwd_bwd_function()
+
+        unwrap_float16_module(self.model).offload_reference_model()
 
         last_stage_output = fwd_bwd_function(
             forward_step_func=self.get_forward_output_and_loss_func(),
@@ -502,10 +527,6 @@ class PPOGPT(MegatronGPTModel):
             rank_zero_only=True,
         )
 
-        if self.trainer.global_step % self.ilql_config.steps_for_target_q_sync == 0 and self.trainer.global_step > 0:
-            if parallel_state.is_pipeline_last_stage():
-                unwrap_float16_module(self.model).other_heads.sync_target_q_heads()
-
         return loss_mean
 
     def activation_checkpointing_(self, enable: bool):
@@ -558,6 +579,34 @@ class PPOGPT(MegatronGPTModel):
 
         self.model.apply(toggle_sp)
 
+    @contextmanager
+    def inference_mode(self):
+        sp_was_enabled = self.cfg.get("sequence_parallel", False)
+        if sp_was_enabled:
+            self.sequence_parallel_(False)
+
+        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(False)
+
+        try:
+            yield
+        finally:
+            if sp_was_enabled:
+                self.sequence_parallel_(True)
+
+            if activations_checkpointing_was_enabled:
+                self.activation_checkpointing_(True)
+
+            _reconfigure_microbatch_calculator(
+                rank=AppState().global_rank,
+                rampup_batch_size=None,
+                global_batch_size=self.cfg.global_batch_size,
+                micro_batch_size=self.cfg.micro_batch_size,
+                data_parallel_size=AppState().data_parallel_size,
+            )
+
     def validation_step(self, batch: Tuple[List[int], List[int]], batch_idx: int):
         if self.metric_fn is None:
             raise ValueError("Must set metric_fn to use validation")
@@ -567,7 +616,7 @@ class PPOGPT(MegatronGPTModel):
 
         input_ids, lengths = to_device((input_ids, lengths), torch.cuda.current_device(), non_blocking=True)
 
-        max_new_tokens = self.ilql_config.gen_kwargs.get("max_new_tokens", 64)
+        max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 64)
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
@@ -607,16 +656,19 @@ class PPOGPT(MegatronGPTModel):
         return (p for p in self.model.parameters() if p.requires_grad)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
-        def fwd_output_and_loss_func(batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
+        def fwd_output_and_loss_func(flat_batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
             # On first and last pipeline stages, the input data is passed in
-            if batch is not None:
-                batch = unflatten_dataclass(PPORLBatch)(batch)
+            if flat_batch is not None:
+                batch = unflatten_dataclass(PPORLBatch)(flat_batch)
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
                 inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
-                pad_by = self.cfg.encoder_seq_length - inputs.shape[1]
+                pad_by = ceil(inputs.shape[1] / 8) * 8 - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
 
+                # Note that the inputs to this are left padded as well as right padded
+                # Due to combining the left padded queries and right padded responses
+                # `get_ltor_masks_and_position_ids` will 0 mask all tokens == eos_token_id
                 (
                     attention_mask,
                     loss_mask,
@@ -624,36 +676,30 @@ class PPOGPT(MegatronGPTModel):
                 ) = get_ltor_masks_and_position_ids(
                     data=inputs,
                     eod_token=self.tokenizer.eos_id,
-                    reset_position_ids=False,
-                    reset_attention_mask=False,
-                    eod_mask_loss=False,
+                    reset_position_ids=True,
+                    reset_attention_mask=True,
+                    eod_mask_loss=True,
                 )
+
+                if isinstance(unwrap_float16_module(self.model), HydraLMHeads):
+                    extra_args = dict(run_reference_model=False, run_value_head=True)
+                else:
+                    extra_args = dict()
 
                 model_output = model(
                     input_ids=inputs,
                     position_ids=position_ids.long(),
                     attention_mask=attention_mask,
-                    run_reference_model=False,
-                    run_value_head=True,
+                    **extra_args,
                 )
             else:
                 # In-between stages are given data via the pipeline engine
                 # Still need to specify thes arguments to avoid errors
                 model_output = model(input_ids=None, position_ids=None, attention_mask=None)
 
-            def gather_ntc(t: torch.Tensor):
-                """Gather sequence parallel tensor [batch, seq, hidden]"""
-                t = rearrange(t, "N T ... -> T N ...")
-                t = gather_from_sequence_parallel_region(t, to_model_parallel=False)
-                t = rearrange(t, "T N ... -> N T ...")
-                return t
-
             def loss_func(model_output):
                 # # TODO: implement this in a sequence parallel way
-                logits, vs = model_output
-
-                if self.cfg.sequence_parallel:
-                    vs = gather_ntc(vs)
+                logits, vs, _ = model_output
 
                 response_length = batch.rewards.shape[1]
 
@@ -663,20 +709,23 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
-                rewards = batch.rewards + kl_penalty
-                advatanges, returns = self.ppo_config.get_advantages_and_returns(batch.values, rewards, response_length)
+                advatanges, returns = self.ppo_config.get_advantages_and_returns(
+                    batch.values, batch.rewards, response_length
+                )
 
+                print(
+                    f"train {vs.shape=} {start} {end} {returns.shape=} {batch.rewards.shape=} {batch.values.shape=} {loss_mask.shape=}"
+                )
                 values_pred = vs[:, :-1][:, start:end]
-                mask = loss_mask[:, start:end]
 
                 loss_for_mb, stats = self.ppo_config.loss(
-                    logprobs=logits,
+                    logprobs=label_logprobs,
                     values=values_pred,
                     old_logprobs=batch.logprobs,
                     old_values=batch.values,
                     advantages=advatanges,
                     returns=returns,
-                    mask=attention_mask[:, start:end],
+                    mask=loss_mask[:, start:end],
                 )
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
@@ -733,9 +782,9 @@ class PPOGPT(MegatronGPTModel):
             def ppo_postprocess(model_output):
                 model_output = tree_map(lambda t: t.float() if t is not None else t, model_output)
 
-                logits, vs, ref_logits = model_output
+                logits, values, ref_logits = model_output
 
-                return logits, {"logits": logits, "vs": vs, "ref_logits": ref_logits}
+                return logits, {"logits": logits, "values": values, "ref_logits": ref_logits}
 
             return model_output, ppo_postprocess
 
@@ -746,24 +795,44 @@ class PPOGPT(MegatronGPTModel):
         fwd_output_only_func = self.get_forward_output_only_func(run_reference_model=True, run_value_head=True)
 
         self.model.eval()
-        position_ids = torch.arange(input_ids.shape[1], dtype=torch.long, device=input_ids.device)
+
+        bs, seq_len = input_ids.shape
+        position_ids = torch.arange(seq_len, dtype=torch.long, device=input_ids.device)
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
-        print(f"{input_ids.shape=} {attention_mask.shape=} {position_ids.shape=}")
-        with torch.no_grad():
-            stage_output = fwd_bwd_func(
-                forward_step_func=fwd_output_only_func,
-                batch=[input_ids, attention_mask, position_ids],
-                model=self.model,
-                forward_only=True,
-                sequence_parallel=self.cfg.sequence_parallel,
-                dtype=self.autocast_dtype,
-                sync_batch_comm=self.cfg.get("sync_batch_comm", False),
-                tensor_shape=[self.cfg.encoder_seq_length, self.cfg.micro_batch_size, self.cfg.hidden_size],
+
+        # Using get_ltor_masks_and_position_ids
+        attention_mask, _, position_ids = get_ltor_masks_and_position_ids(
+            data=input_ids,
+            eod_token=self.tokenizer.eos_id,
+            reset_position_ids=True,
+            reset_attention_mask=True,
+            eod_mask_loss=True,
+        )
+
+        with self.inference_mode():
+            _reconfigure_microbatch_calculator(
+                rank=AppState().global_rank,
+                rampup_batch_size=None,
+                global_batch_size=input_ids.shape[0] * AppState().data_parallel_size,
+                micro_batch_size=self.cfg.micro_batch_size,
+                data_parallel_size=AppState().data_parallel_size,
             )
+
+            with torch.no_grad():
+                stage_output = fwd_bwd_func(
+                    forward_step_func=fwd_output_only_func,
+                    batch=[input_ids, attention_mask, position_ids],
+                    model=self.model,
+                    forward_only=True,
+                    sequence_parallel=False,
+                    dtype=self.autocast_dtype,
+                    sync_batch_comm=self.cfg.get("sync_batch_comm", False),
+                    tensor_shape=[seq_len, self.cfg.micro_batch_size, self.cfg.hidden_size],
+                )
 
         if stage_output:
             outputs = {k: [output[k] for output in stage_output] for k in stage_output[0].keys()}
-            return tree_map(lambda t: torch.cat(t, dim=0), outputs)
+            return {k: torch.cat(v, dim=0) for k, v in outputs.items()}
         else:
             return None
 
@@ -785,28 +854,5 @@ class PPOGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        sp_was_enabled = self.cfg.get("sequence_parallel", False)
-        if sp_was_enabled:
-            self.sequence_parallel_(False)
-
-        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
-
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(False)
-
-        try:
+        with self.inference_mode():
             return super().generate(inputs, length_params, sampling_params)
-        finally:
-            if sp_was_enabled:
-                self.sequence_parallel_(True)
-
-            if activations_checkpointing_was_enabled:
-                self.activation_checkpointing_(True)
-
-            _reconfigure_microbatch_calculator(
-                rank=AppState().global_rank,
-                rampup_batch_size=None,
-                global_batch_size=self.cfg.global_batch_size,
-                micro_batch_size=self.cfg.micro_batch_size,
-                data_parallel_size=AppState().data_parallel_size,
-            )

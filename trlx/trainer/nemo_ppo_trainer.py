@@ -15,7 +15,7 @@ from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import flatten_dataclass
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
 from trlx.models.modeling_nemo_ppo import PPOGPT
-from trlx.models.modeling_ppo import PPOConfig
+from trlx.models.modeling_ppo import AdaptiveKLController, FixedKLController, PPOConfig
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
@@ -38,7 +38,6 @@ def fake_initialize_model_parallel(
     Fake initialize model data parallel groups so that we can instantiate model parallel models before DDP is initialized.
     This is needed because PTL execution flow is init model, init trainer -> call trainer.fit(model). DDP is initialized during .fit.
     This function is taken from megatron.core.parallel_state and modified so that the distributed groups are not created.
-    We only need the tensor parallel and pipeline parallel ranks to instantiate the model.
     Arguments:
         tensor_model_parallel_size: number of GPUs used to parallelize model tensor.
         pipeline_model_parallel_size: number of GPUs used to parallelize model pipeline.
@@ -194,6 +193,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         megatron_cfg.model.train_steps = train_samples // megatron_cfg.model.global_batch_size
 
+        # Disable validation within nemo, run it ourselves
+        megatron_cfg.trainer.limit_val_batches = 0.0
+        megatron_cfg.trainer.val_check_interval = None
         self.train_samples = train_samples
 
         self.trainer = megatron_trainer(megatron_cfg)
@@ -212,9 +214,17 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.tokenizer = self.model.tokenizer.tokenizer
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             self.tokenizer.pad_token = self.tokenizer.eos_token
+
         self.max_length = megatron_cfg.model.encoder_seq_length
+
+        if self.ppo_config.target is not None:
+            self.kl_ctl = AdaptiveKLController(
+                self.ppo_config.init_kl_coef, self.ppo_config.target, self.ppo_config.horizon
+            )
+        else:
+            self.kl_ctl = FixedKLController(self.ppo_config.init_kl_coef)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         self.prompt_pipeline = pipeline
@@ -239,11 +249,13 @@ class NeMoPPOTrainer(BaseRLTrainer):
             input_ids = batch["input_ids"].to(device)
             lengths = lengths.to(device)
             pad_to = lengths.max().item() + max_new_tokens
-            pad_to = ceil(pad_to / 128) * 128
+
+            pad_to = ceil(pad_to / 8) * 8
             input_ids = torch.nn.functional.pad(
                 input_ids, (0, pad_to - input_ids.shape[1]), value=self.tokenizer.pad_token_id
             )
 
+            print("generating...")
             samples = self.model.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=1))
 
             scores = torch.tensor(self.reward_fn(samples["sentences"]), device=device)
@@ -252,19 +264,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
             print(samples.keys())
 
             output_tokens = samples["token_ids"]
-            print([len(t) for t in output_tokens])
 
-            io_split = [(t[:l], t[l:]) for t, l in zip(output_tokens, lengths)]
-            print(f"{io_split[0][0]=}")
-            print(f"{io_split[0][1]=}")
-            print(f"{self.tokenizer.decode(batch['input_ids'][0])=}")
-            print(f"{self.tokenizer.decode(io_split[0][0])=}")
-            print(f"{self.tokenizer.decode(io_split[0][1])=}")
-            print(f"{samples['sentences'][0]=}")
+            output_tokens = [
+                x + [self.tokenizer.pad_token_id] * ((ceil(len(x) / 8) * 8) - len(x)) for x in output_tokens
+            ]
+            print([len(t) for t in output_tokens])
 
             all_tokens = torch.tensor(output_tokens, device=device)
             attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
-
+            print(f"{all_tokens.shape=}")
             model_output = self.model.infer_logits_and_values(all_tokens, attention_mask)
 
             # Model output is None on intermediate pipeline stages
@@ -276,36 +284,32 @@ class NeMoPPOTrainer(BaseRLTrainer):
             logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
             ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
-            start = batch["input_ids"].shape[1] - 1
+            query_responses = [(t[:l], t[l:]) for t, l in zip(output_tokens, lengths)]
+            query_tokens, response_tokens = zip(*query_responses)
 
+            query_tensors = [torch.tensor(t, device="cpu") for t in query_tokens]
+            response_tensors = [torch.tensor(t, device="cpu") for t in response_tokens]
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
-            prompt_tensors = batch["input_ids"].cpu()
-            sample_outputs = samples["tokens"].cpu()
+
             values = values.cpu()[:, :-1]
 
-            n_samples = values.shape[0]
+            masks = attention_mask.cpu()
+            log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
 
-            ends = start + attention_mask[:, start:].sum(dim=1)
-            all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
-            all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
-
-            log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
-
-            all_kl_penalty = self.kl_ctl.value * -log_ratio.cpu()
-            all_kl_penalty = [xs[start : ends[ix]] for ix, xs in enumerate(kl_penalty)]
-
-            for query_tensor, response_tensor, logprobs, values, kl_penalty, score in zip(
-                prompt_tensors, sample_outputs, all_logprobs, all_values, all_kl_penalty, scores
+            for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
+                query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
-                rewards = kl_penalty[:]
+                end = mask.sum()
+                rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
                 rewards[-1] += score.cpu()
+                print(f"{rewards.shape=} {vs.shape=} {logps.shape=} {start=} {end=} {score=}")
                 ppo_rl_elements.append(
                     PPORLElement(
                         query_tensor=query_tensor,
                         response_tensor=response_tensor,
-                        logprobs=logprobs,
-                        values=values,
+                        logprobs=logps[start:end],
+                        values=vs[start:end],
                         rewards=rewards,
                     )
                 )
@@ -324,7 +328,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             return input_ids
 
         def collate_fn(elems: Iterable[PPORLElement]):
-            batch = ppo_collate_fn(elems)
+            batch = ppo_collate_fn(self.tokenizer.eos_token_id, elems)
             return flatten_dataclass(PPORLBatch)(batch)
 
         def generate_collate(elems):
@@ -380,8 +384,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 data=ppo_rl_rollouts,
                 seed=self.config.train.seed,
             )
+            # Dataloader must be initialized inside fit since PTL hasn't initalized DDP yet
             self.model.set_train_dataset(rollout_dataset, collate_fn=collate_fn)
             self.trainer.fit(self.model)
+            print("fitted!")
 
         eval_iters = (max_train_steps // self.trainer.val_check_interval + 1) * self.trainer.limit_val_batches
         eval_samples = eval_iters * self.model.cfg.global_batch_size

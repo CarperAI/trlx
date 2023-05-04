@@ -48,13 +48,13 @@ exp_manager:
     buffer_size: 5
 
 model:
-  micro_batch_size: 4
-  global_batch_size: 512
+  micro_batch_size: 2
+  global_batch_size: 64
   tensor_model_parallel_size: 4
   pipeline_model_parallel_size: 1
   resume_from_checkpoint: null # manually set the checkpoint file to load from
   # model architecture
-  encoder_seq_length: 1024
+  encoder_seq_length: 2048
   max_position_embeddings: 2048
   num_layers: 44
   hidden_size: 6144
@@ -98,7 +98,6 @@ model:
   fp16_lm_cross_entropy: False # Move the cross entropy unreduced loss calculation for lm head to fp16
 
   # Megatron O2-style half-precision
-  # TODO: this causes hangs for some reason
   megatron_amp_O2: True # Enable O2-level automatic mixed precision using main parameters
   grad_allreduce_chunk_size_mb: 125
   sync_batch_comm: False
