@@ -24,9 +24,10 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
-            seq_length=1024,
-            batch_size=512,
-            total_steps=200,
+            seq_length=2048,
+            batch_size=64,
+            epochs=100,
+            eval_interval=32,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
@@ -35,9 +36,9 @@ def main(hparams={}):
         ),
         method=dict(
             gen_kwargs=dict(
-                beta=2.0,
                 temperature=0.9,
-            )
+            ),
+            chunk_size=16,
         ),
     )
 

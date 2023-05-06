@@ -5,6 +5,7 @@ from typing import Any, Callable, Iterable, Iterator, List, Optional, Tuple, Uni
 
 import torch
 import transformers
+import wandb
 from apex.transformer import parallel_state
 from nemo.utils import logging
 from omegaconf.omegaconf import OmegaConf
@@ -206,7 +207,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         megatron_cfg.trainer.limit_val_batches = 0.0
         megatron_cfg.trainer.val_check_interval = None
         self.train_samples = train_samples
-        # megatron_cfg.trainer.max_steps = train_samples // megatron_cfg.model.global_batch_size
+        megatron_cfg.trainer.max_steps = train_samples // megatron_cfg.model.global_batch_size
 
         self.trainer = megatron_trainer(megatron_cfg)
         self.model = PPOGPT(
@@ -239,14 +240,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         self.prompt_pipeline = pipeline
 
-    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024):
+    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):
         ppo_rl_elements = []
         stats = {}
 
         device = torch.device("cuda")
 
         if torch.distributed.get_rank() == 0:
-            tbar = tqdm(range(num_rollouts), desc="Generating experience")
+            tbar = tqdm(total=num_rollouts * dp_world, desc="Generating experience")
 
         while num_rollouts > 0:
             batch: PromptBatch = next(prompt_iterator)
@@ -300,8 +301,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
             logprobs = logprobs.cpu()
             ref_logprobs = ref_logprobs.cpu()
 
-            values = values.cpu()[:, :-1]
-
             masks = attention_mask.cpu()
             log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
 
@@ -309,23 +308,27 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
                 response_end = mask[start:].sum()
-                end = start + response_end + 1  # include last EOS
+                end = start + response_end  # include last EOS
                 rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
                 rewards[-1] += score.cpu()
+
+                assert (
+                    vs[:-1][start:end].shape[0] == rewards.shape[0]
+                ), f"{vs[start:end].shape} != {rewards.shape} {kl_penalty[start:end].shape=} {values.shape=} {start=} {end=}"
 
                 ppo_rl_elements.append(
                     PPORLElement(
                         query_tensor=query_tensor,
                         response_tensor=response_tensor[:response_end],
                         logprobs=logps[start:end],
-                        values=vs[start:end],
+                        values=vs[:-1][start:end],
                         rewards=rewards,
                     )
                 )
                 num_rollouts = num_rollouts - 1
 
             if torch.distributed.get_rank() == 0:
-                tbar.update(len(query_tensors))
+                tbar.update(len(query_tensors) * dp_world)
 
         return ppo_rl_elements, stats
 
@@ -365,29 +368,19 @@ class NeMoPPOTrainer(BaseRLTrainer):
         global_rank = self.trainer.global_rank
         local_rank = self.trainer.local_rank
 
+        if global_rank == 0:
+            wandb.init(
+                project=self.config.train.project_name,
+                mode="online" if self.config.train.tracker == "wandb" else "disabled",
+                group=self.config.train.group_name,
+                entity=self.config.train.entity_name,
+            )
         tp_rank, pp_rank, dp_rank, mp_world, dp_world, *_ = fake_initialize_model_parallel(
             world_size,
             global_rank,
             self.model.cfg.tensor_model_parallel_size,
             self.model.cfg.pipeline_model_parallel_size,
         )
-
-        prompt_dataset = ShuffledCyclicSequence(
-            new_length=self.config.train.total_steps * self.batch_size,
-            data=self.prompt_pipeline,
-            seed=self.config.train.seed,
-        )
-
-        eval_iters = (self.config.train.total_steps // self.trainer.val_check_interval + 1) * 2
-        eval_samples = eval_iters * self.model.cfg.global_batch_size
-        print(f"{eval_iters=} {eval_samples=}")
-        eval_dataset = ShuffledCyclicSequence(
-            new_length=int(eval_samples),
-            data=self.eval_pipeline,
-            seed=self.config.train.seed,
-        )
-
-        self.model.set_valid_dataset(eval_dataset, collate_fn=generate_collate)
 
         prompt_dataloader = infinite_dataloader(
             self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=True)
@@ -408,27 +401,36 @@ class NeMoPPOTrainer(BaseRLTrainer):
         prompt_iter = iter(prompt_dataloader)
         local_batch_idx = 0
 
+        rank_batch_size = self.batch_size // dp_world
+        total_batches = self.config.train.epochs * (self.train_samples // self.batch_size)
+        if global_rank == 0:
+            train_tbar = tqdm(desc="Training", total=total_batches)
+
         for epoch in range(self.config.train.epochs):
             ppo_rl_rollouts, stats = self.make_experience(
                 prompt_iter,
                 num_rollouts=self.ppo_config.num_rollouts,
+                dp_world=dp_world,
             )
 
-            rank_batch_size = self.batch_size // dp_world
             dataloader = DataLoader(ppo_rl_rollouts, batch_size=rank_batch_size, collate_fn=collate_fn)
+            self.model.offload_reference_model()
 
             for batch in dataloader:
                 for _ in range(self.ppo_config.ppo_epochs):
                     self.model.training_step(batch, local_batch_idx)
+                    if global_rank == 0:
+                        train_tbar.update(1)
                 local_batch_idx += 1
-                self.trainer.global_step += 1
 
                 if local_batch_idx % self.val_check_interval == 0:
-                    val_loader = self.eval_pipeline.create_loader(self.batch_size, shuffle=True)
-                    val_stats = [self.model.validation_step(val_batch, local_batch_idx) for val_batch in val_loader]
+                    mbs = self.ppo_config.chunk_size
+                    if global_rank == 0:
+                        tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
+                    else:
+                        tbar = lambda x: x
+                    val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
+                    val_stats = [
+                        self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
+                    ]
                     self.model.validation_epoch_end(val_stats)
-
-            # Dataloader must be initialized inside fit since PTL hasn't initalized DDP yet
-
-            print("fitted!")
-            # self.trainer.validate(self.model)

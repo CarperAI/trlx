@@ -158,7 +158,7 @@ class PPOConfig(MethodConfig):
         """
         lastgaelam = 0
         advantages_reversed = []
-        print(f"{rewards.shape=} {values.shape=} {response_length=}")
+
         for t in reversed(range(response_length)):
             nextvalues = values[:, t + 1] if t < response_length - 1 else 0.0
             delta = rewards[:, t] + self.gamma * nextvalues - values[:, t]
@@ -194,7 +194,7 @@ class PPOConfig(MethodConfig):
         vf_loss1 = (values - returns) ** 2
         vf_loss2 = (values_clipped - returns) ** 2
         vf_loss = 0.5 * torch.sum(torch.max(vf_loss1, vf_loss2) * mask) / n
-        print(f"{vf_loss1.shape=} {vf_loss2.shape=} {vf_loss.shape=}")
+
         vf_clipfrac = torch.sum((vf_loss2 > vf_loss1).float() * mask) / n
 
         log_ratio = (logprobs - old_logprobs) * mask

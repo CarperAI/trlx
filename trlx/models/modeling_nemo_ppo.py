@@ -11,6 +11,7 @@ import torch
 import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
@@ -129,11 +130,13 @@ class ValueHead(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel)
+        self.sequence_parallel = sequence_parallel
 
     def forward(self, x):
         vs = self.v_head(x)
-        vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
-        return rearrange(vs, "T N 1 -> N T").contiguous()
+        if self.sequence_parallel:
+            vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
+        return rearrange(vs, "T N 1 -> N T")
 
 
 class HydraLMHeads(MegatronModule):
@@ -508,28 +511,15 @@ class PPOGPT(MegatronGPTModel):
         # we can avoid this broadcast by updating the PTL log function to accept specific ranks
         torch.distributed.broadcast(loss_mean, get_last_rank())
 
-        if self.cfg.precision == 16:
-            loss_scale = self.trainer.precision_plugin.scaler._scale
-            if loss_scale is not None:
-                self.log("loss_scale", loss_scale)
+        if torch.distributed.get_rank() == 0:
+            logs = dict(mean_outputs, reduced_train_loss=loss_mean, global_step=batch_idx)
 
-        self.log(
-            "reduced_train_loss",
-            loss_mean,
-            prog_bar=True,
-            rank_zero_only=True,
-        )
+            if self.cfg.precision == 16:
+                loss_scale = self.trainer.precision_plugin.scaler._scale
+                if loss_scale is not None:
+                    logs["loss_scale"] = loss_scale
 
-        for k, v in mean_outputs.items():
-            if k != "avg_loss":
-                self.log(k, v)
-
-        self.log(
-            "global_step",
-            float(self.trainer.global_step),
-            prog_bar=True,
-            rank_zero_only=True,
-        )
+            wandb.log(logs)
 
         return loss_mean
 
@@ -620,6 +610,7 @@ class PPOGPT(MegatronGPTModel):
 
         input_ids, lengths = to_device((input_ids, lengths), torch.cuda.current_device(), non_blocking=True)
 
+        print(f"{input_ids.shape=} {lengths.shape=}")
         max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 64)
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
@@ -631,9 +622,9 @@ class PPOGPT(MegatronGPTModel):
         columns = ["sentences", *metric_keys]
         rows = list(zip(gen["sentences"], *metric_values))
 
-        avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
+        metrics = {f"{k}": torch.as_tensor(v) for k, v in metrics.items()}
 
-        return avg_metrics, (rows, columns)
+        return metrics, (rows, columns)
 
     def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]):
         metrics, tables = zip(*outputs)
@@ -642,22 +633,24 @@ class PPOGPT(MegatronGPTModel):
 
         self.logger.log_text(key="samples", columns=columns, data=rows)
 
-        outputs_soa = {k: torch.as_tensor([d[k] for d in metrics]) for k in metrics[0].keys()}
-        # this assumes all validation microbatches are the same size
-        avg_outputs = {k: v.mean() for k, v in outputs_soa.items()}
-        for k, v in avg_outputs.items():
-            self.log(
-                f"val_metrics/{k}",
-                v,
-                prog_bar=True,
-                rank_zero_only=True,
-                sync_dist=True,
-            )
+        outputs_soa = {k: torch.cat([d[k] for d in metrics]).cuda() for k in metrics[0].keys()}
+        dp_world = parallel_state.get_data_parallel_world_size()
+        dp_group = parallel_state.get_data_parallel_group()
+        outputs_gathered = {}
+        for k, v in outputs_soa.items():
+            gathered = torch.empty((v.shape[0] * dp_world), dtype=v.dtype, device=v.device)
+            torch.distributed.all_gather_into_tensor(gathered, v, group=dp_group)
+            outputs_gathered[k] = gathered
+        if torch.distributed.get_rank() == 0:
+            wandb.log({f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()})
 
     # Need to override this otherwise distributed fused adam won't work
     # with frozen layers
     def parameters(self):
         return (p for p in unwrap_float16_module(self.model).language_model.parameters() if p.requires_grad)
+
+    def offload_reference_model(self):
+        unwrap_float16_module(self.model).offload_reference_model()
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(flat_batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
@@ -713,16 +706,10 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
-                print(
-                    f"train {vs.shape=} {start} {end} {batch.rewards.shape=} {batch.values.shape=} {loss_mask.shape=}"
-                )
                 advatanges, returns = self.ppo_config.get_advantages_and_returns(
                     batch.values, batch.rewards, response_length
                 )
 
-                print(
-                    f"train {vs.shape=} {start} {end} {returns.shape=} {batch.rewards.shape=} {batch.values.shape=} {loss_mask.shape=}"
-                )
                 values_pred = vs[:, :-1][:, start:end]
 
                 loss_for_mb, stats = self.ppo_config.loss(
@@ -831,10 +818,9 @@ class PPOGPT(MegatronGPTModel):
                     batch=[input_ids, attention_mask, position_ids],
                     model=self.model,
                     forward_only=True,
-                    sequence_parallel=False,
                     dtype=self.autocast_dtype,
+                    sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
                     sync_batch_comm=self.cfg.get("sync_batch_comm", False),
-                    tensor_shape=[seq_len, self.cfg.micro_batch_size, self.cfg.hidden_size],
                 )
 
         if stage_output:
