@@ -74,7 +74,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         # Disable validation within nemo, run it ourselves
         self.limit_val_batches = megatron_cfg.trainer.limit_val_batches
-        self.val_check_interval = megatron_cfg.trainer.val_check_interval
+        self.val_check_interval = config.train.eval_interval
 
         megatron_cfg.trainer.limit_val_batches = 0.0
         megatron_cfg.trainer.val_check_interval = None
@@ -309,7 +309,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     scheduler.step()
                 local_batch_idx += 1
 
-                if local_batch_idx % self.val_check_interval == 0:
+                if local_batch_idx % (dp_world * self.val_check_interval) == 0:
                     mbs = self.ppo_config.chunk_size
                     if global_rank == 0:
                         tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
