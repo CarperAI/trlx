@@ -48,7 +48,7 @@ from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
 from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils import to_device, tree_map
-from trlx.utils.modeling import logprobs_of_labels
+from trlx.utils.modeling import logprobs_of_labels, whiten
 
 
 class ParallelLinear(nn.Module):
@@ -715,9 +715,9 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
-                advatanges, returns = self.ppo_config.get_advantages_and_returns(
-                    batch.values, batch.rewards, response_length
-                )
+                advantages, returns = self.ppo_config.get_advantages_and_returns(
+                    batch.values, batch.rewards, response_length, use_whitening=False)
+                advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, :-1][:, start:end]
 
@@ -729,7 +729,7 @@ class PPOGPT(MegatronGPTModel):
                     values=values_pred,
                     old_logprobs=batch.logprobs,
                     old_values=batch.values,
-                    advantages=advatanges,
+                    advantages=advantages,
                     returns=returns,
                     mask=loss_mask[:, start:end],
                 )

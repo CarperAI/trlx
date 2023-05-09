@@ -35,7 +35,7 @@ def main(hparams={}):
             ),
         ),
         method=dict(
-            num_rollouts=256, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=64, ppo_epochs=1
+            num_rollouts=128, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=1
         ),
     )
 
