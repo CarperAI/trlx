@@ -5,7 +5,7 @@ trainer:
   devices: 8
   num_nodes: 4
   accelerator: gpu
-  precision: 16
+  precision: bf16
   logger: False # logger provided by exp_manager
   enable_checkpointing: False
   replace_sampler_ddp: False
@@ -132,7 +132,7 @@ model:
 
   optim:
     name: distributed_fused_adam
-    lr: 5.0e-5
+    lr: 1e-6
     weight_decay: 1.0e-6
     betas:
     - 0.9
@@ -140,4 +140,4 @@ model:
     sched:
       name: CosineAnnealing
       max_steps: 200
-      min_lr: 5.0e-5
+      min_lr: 1e-6

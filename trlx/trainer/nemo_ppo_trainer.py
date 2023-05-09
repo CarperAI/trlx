@@ -306,10 +306,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     self.model.training_step(batch, local_batch_idx)
                     if global_rank == 0:
                         train_tbar.update(1)
+                    self.model._optimizer.step()
                     scheduler.step()
-                local_batch_idx += 1
-
-                if local_batch_idx % (dp_world * self.val_check_interval) == 0:
+                    local_batch_idx += 1
+                # break
+                if local_batch_idx % self.val_check_interval == 0:
                     mbs = self.ppo_config.chunk_size
                     if global_rank == 0:
                         tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
