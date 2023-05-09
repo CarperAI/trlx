@@ -469,7 +469,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             if self.two_qs:
                 qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
-                qs = target_qs[:, -1, :]
+                qs = target_qs[0][:, -1, :]
 
             logits = logits[:, -1, :]
             vs = vs[:, -1, :]
