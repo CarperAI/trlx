@@ -7,7 +7,7 @@ from typing import List
 
 import torch
 from datasets import load_dataset
-from transformers import pipeline
+from transformers import DistilBertForSequenceClassification, pipeline
 
 import trlx
 from trlx.data.default_configs import TRLConfig, default_ppo_config
@@ -27,27 +27,25 @@ def main(hparams={}):
             seq_length=2048,
             batch_size=64,
             epochs=100,
-            eval_interval=32,
+            eval_interval=256,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
         ),
-        method=dict(
-            gen_kwargs=dict(
-                temperature=0.9,
-            ),
-            chunk_size=16,
-        ),
+        method=dict(gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=1),
     )
 
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8
 
+    reward_model = DistilBertForSequenceClassification.from_pretrained("lvwerra/distilbert-imdb")
+    reward_model.to(local_rank)
     sentiment_fn = pipeline(
         "sentiment-analysis",
-        "lvwerra/distilbert-imdb",
+        model=reward_model,  # "lvwerra/distilbert-imdb",
+        tokenizer="lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
         batch_size=256,
@@ -55,7 +53,9 @@ def main(hparams={}):
     )
 
     def reward_fn(samples: List[str], **kwargs) -> List[float]:
+        reward_model.to(local_rank)
         sentiments = list(map(get_positive_score, sentiment_fn(samples)))
+        reward_model.to("cpu")
         return sentiments
 
     # Take few words off of movies reviews as prompts

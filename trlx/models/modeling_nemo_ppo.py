@@ -139,6 +139,30 @@ class ValueHead(nn.Module):
         return rearrange(vs, "T N 1 -> N T")
 
 
+class OffloadedModel(object):
+    def __init__(self, model, device):
+        self.model = model
+        self.device = device
+        self.model.eval()
+        self.model.cpu()
+        self.offloaded = True
+
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+            p.data.pin_memory()
+
+    def offload(self):
+        self.model.to("cpu", non_blocking=True)
+        self.offloaded = True
+
+    def onload(self):
+        self.model.to(self.device, non_blocking=True)
+        self.offloaded = False
+
+    def set_input_tensor(self, input_tensor):
+        self.model.set_input_tensor(input_tensor)
+
+
 class HydraLMHeads(MegatronModule):
     def __init__(self, language_model, other_heads):
         super().__init__()
@@ -146,14 +170,7 @@ class HydraLMHeads(MegatronModule):
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
         self.language_model = language_model
-        self.reference_model = deepcopy(language_model)
-        self.reference_model.eval()
-        self.reference_model.cpu()
-        self.reference_model_offloaded = True
-
-        for p in self.reference_model.parameters():
-            p.requires_grad_(False)
-            p.data.pin_memory()
+        self.reference_model = OffloadedModel(deepcopy(language_model), device=torch.cuda.current_device())
 
         self.other_heads = other_heads
 
@@ -163,7 +180,7 @@ class HydraLMHeads(MegatronModule):
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
         self.language_model.set_input_tensor(input_tensor)
-        if not self.reference_model_offloaded:
+        if not self.reference_model.offloaded:
             self.reference_model.set_input_tensor(input_tensor)
 
     def word_embeddings_weight(self):
@@ -172,19 +189,17 @@ class HydraLMHeads(MegatronModule):
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
         self.language_model.language_model.load_state_dict(lm_state_dict, strict=strict)
-        self.reference_model.language_model.load_state_dict(lm_state_dict, strict=strict)
+        self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
 
     def offload_reference_model(self):
         """Move reference model to CPU."""
-        self.reference_model.to("cpu", non_blocking=True)
+        self.reference_model.offload()
         self.language_model.to(torch.cuda.current_device(), non_blocking=True)
-        self.reference_model_offloaded = True
 
     def offload_policy_model(self):
         """Move language model to CPU."""
-        self.reference_model.to(torch.cuda.current_device(), non_blocking=True)
+        self.reference_model.onload()
         self.language_model.to("cpu", non_blocking=True)
-        self.reference_model_offloaded = False
 
     def forward(
         self,
@@ -220,23 +235,20 @@ class HydraLMHeads(MegatronModule):
 
         if run_reference_model:
             device = lm_output.device
-            # self.language_model.to("cpu", non_blocking=True)
-            self.reference_model.to(device, non_blocking=True)
-            ref_lm_output = self.reference_model(*args, get_key_value=get_key_value, **kwargs)
+            self.reference_model.model.to(device, non_blocking=True)
+            ref_lm_output = self.reference_model.model(*args, get_key_value=get_key_value, **kwargs)
             ref_logits = post_language_model_processing(
                 ref_lm_output,
                 labels=None,
-                logit_weights=self.reference_model.word_embeddings_weight(),
+                logit_weights=self.reference_model.model.word_embeddings_weight(),
                 get_key_value=get_key_value,
-                parallel_output=False,  # self.reference_model.parallel_output,
+                parallel_output=False,  # self.reference_model.model.parallel_output,
                 forward_method_parallel_output=forward_method_parallel_output,
-                fp16_lm_cross_entropy=self.reference_model.fp16_lm_cross_entropy,
+                fp16_lm_cross_entropy=self.reference_model.model.fp16_lm_cross_entropy,
                 return_logits=True,
-                sequence_parallel=self.reference_model.sequence_parallel,
-                gradient_accumulation_fusion=self.reference_model.gradient_accumulation_fusion,
+                sequence_parallel=self.reference_model.model.sequence_parallel,
+                gradient_accumulation_fusion=self.reference_model.model.gradient_accumulation_fusion,
             )
-            # self.language_model.to(device, non_blocking=True)
-            # self.reference_model.to("cpu", non_blocking=True)
 
             if get_key_value:
                 ref_logits, ref_presents = ref_logits
@@ -454,8 +466,6 @@ class PPOGPT(MegatronGPTModel):
         # parallelism configuration
         fwd_bwd_function = self._get_fwd_bwd_function()
 
-        unwrap_float16_module(self.model).offload_reference_model()
-
         last_stage_output = fwd_bwd_function(
             forward_step_func=self.get_forward_output_and_loss_func(),
             batch=batch_for_pipeline,
@@ -512,7 +522,8 @@ class PPOGPT(MegatronGPTModel):
         torch.distributed.broadcast(loss_mean, get_last_rank())
 
         if torch.distributed.get_rank() == 0:
-            logs = dict(mean_outputs, reduced_train_loss=loss_mean, global_step=batch_idx)
+            lr = self._optimizer.param_groups[0]["lr"]
+            logs = dict(mean_outputs, reduced_train_loss=loss_mean, global_step=batch_idx, lr=lr)
 
             if self.cfg.precision == 16:
                 loss_scale = self.trainer.precision_plugin.scaler._scale
@@ -610,7 +621,6 @@ class PPOGPT(MegatronGPTModel):
 
         input_ids, lengths = to_device((input_ids, lengths), torch.cuda.current_device(), non_blocking=True)
 
-        print(f"{input_ids.shape=} {lengths.shape=}")
         max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 64)
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
@@ -662,7 +672,6 @@ class PPOGPT(MegatronGPTModel):
                 inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
                 pad_by = ceil(inputs.shape[1] / 8) * 8 - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
-
                 # Note that the inputs to this are left padded as well as right padded
                 # Due to combining the left padded queries and right padded responses
                 # `get_ltor_masks_and_position_ids` will 0 mask all tokens == eos_token_id
@@ -712,6 +721,9 @@ class PPOGPT(MegatronGPTModel):
 
                 values_pred = vs[:, :-1][:, start:end]
 
+                assert (
+                    values_pred.shape[1] == batch.values.shape[1]
+                ), f"{values_pred.shape=} {batch.values.shape=} {batch.rewards.shape=} {start=} {end=} {response_length=} {inputs.shape=} {label_logprobs.shape[1]=}"
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,
                     values=values_pred,
@@ -724,7 +736,7 @@ class PPOGPT(MegatronGPTModel):
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
-                # TODO: figure out why this sync is needed (crashes otherwise)
+                # Needed for async grad allreduce
                 torch.cuda.synchronize()
 
                 return loss_for_mb, {"avg_loss": reduced_loss, **stats}
