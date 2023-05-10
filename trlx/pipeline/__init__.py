@@ -124,7 +124,7 @@ class MiniBatchIterator:
     def __iter__(self):
         return self
 
-    def __next__(self):
+    def __next__(self):  # noqa: C901
         batch = next(self.data_loader_iter)
         if batch is None:
             logger.warning(
