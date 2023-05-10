@@ -127,7 +127,10 @@ class MiniBatchIterator:
     def __next__(self):
         batch = next(self.data_loader_iter)
         if batch is None:
-            logger.warning("WARNING: Not enough samples to saturate the minibatch size. Increase the number of prompts or samples or decrease the minibatch size.")
+            logger.warning(
+                "WARNING: Not enough samples to saturate the minibatch size. Increase the number "
+                "of prompts or samples or decrease the minibatch size."
+            )
             raise StopIteration
 
         minibatches = []
