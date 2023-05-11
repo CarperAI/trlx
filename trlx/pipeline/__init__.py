@@ -124,8 +124,15 @@ class MiniBatchIterator:
     def __iter__(self):
         return self
 
-    def __next__(self):
+    def __next__(self):  # noqa: C901
         batch = next(self.data_loader_iter)
+        if batch is None:
+            logger.warning(
+                "WARNING: Not enough samples to saturate the minibatch size. Increase the number "
+                "of prompts or samples or decrease the minibatch size."
+            )
+            raise StopIteration
+
         minibatches = []
 
         for mbi in range(self.num_mb):
@@ -138,7 +145,7 @@ class MiniBatchIterator:
                 end_idx = (mbi + 1) * self.mb_size
                 sliced_data[key] = value[start_idx:end_idx]
 
-                if len(sliced_data[key]) == 0:
+                if self.num_mb > 1 and len(sliced_data[key]) == 0:
                     logger.warning(
                         "WARNING: MiniBatchIterator generated a minibatch with 0 elements. "
                         "This may be due to the wrong mb_size and/or num_mb or the last batch"
@@ -146,7 +153,7 @@ class MiniBatchIterator:
                     )
                     sliced_data.pop(key)
                     break
-                elif len(sliced_data[key]) < self.mb_size:
+                elif self.num_mb > 1 and len(sliced_data[key]) < self.mb_size:
                     logger.warning(
                         "WARNING: MiniBatchIterator generated a minibatch with fewer elements than mb_size. "
                         "This may be due to the wrong mb_size and/or num_mb or the last batch in the dataset "

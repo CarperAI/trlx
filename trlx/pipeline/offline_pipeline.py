@@ -207,13 +207,13 @@ class ILQLRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int, drop_last=True):
+    def create_loader(self, batch_size: int):
         return DataLoader(
             self,
             batch_size=batch_size,
             shuffle=True,
             collate_fn=ilql_collate_fn,
-            drop_last=drop_last,
+            drop_last=torch.distributed.is_initialized(),
         )
 
 
@@ -259,11 +259,11 @@ class ILQLSeq2SeqRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int, drop_last=True):
+    def create_loader(self, batch_size: int):
         return DataLoader(
             self,
             batch_size=batch_size,
             shuffle=True,
             collate_fn=ilql_seq2seq_collate_fn,
-            drop_last=drop_last,
+            drop_last=torch.distributed.is_initialized(),
         )
