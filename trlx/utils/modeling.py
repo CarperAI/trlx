@@ -203,10 +203,10 @@ def get_global_statistics(xs: torch.Tensor, group=None) -> Tuple[float, float, i
     return global_mean, global_var, count
 
 
-def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
+def whiten(xs: torch.Tensor, shift_mean=True, distributed=True, group=None) -> torch.Tensor:
     """Whitens values"""
     if distributed and dist.is_initialized():
-        mean, var, _ = get_global_statistics(xs)
+        mean, var, _ = get_global_statistics(xs, group=group)
     else:
         var, mean = torch.var_mean(xs)
 

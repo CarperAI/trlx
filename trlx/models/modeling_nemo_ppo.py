@@ -637,6 +637,8 @@ class PPOGPT(MegatronGPTModel):
         return metrics, (rows, columns)
 
     def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]):
+        self.free_kv_cache()
+
         metrics, tables = zip(*outputs)
         _, columns = tables[0]
         rows = [r for trows, _ in tables for r in trows]
@@ -661,6 +663,14 @@ class PPOGPT(MegatronGPTModel):
 
     def offload_reference_model(self):
         unwrap_float16_module(self.model).offload_reference_model()
+
+    def free_kv_cache(self):
+        def clear(m):
+            if hasattr(m, "inference_key_memory"):
+                m.inference_key_memory = None
+                m.inference_value_memory = None
+
+        unwrap_float16_module(self.model).apply(clear)
 
     def get_forward_output_and_loss_func(self, validation_step=False):
         def fwd_output_and_loss_func(flat_batch: List[torch.Tensor], model, checkpoint_activations_all_layers=None):
@@ -716,7 +726,8 @@ class PPOGPT(MegatronGPTModel):
                 label_logprobs = label_logprobs[:, start:end]
 
                 advantages, returns = self.ppo_config.get_advantages_and_returns(
-                    batch.values, batch.rewards, response_length, use_whitening=False)
+                    batch.values, batch.rewards, response_length, use_whitening=False
+                )
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, :-1][:, start:end]
@@ -787,8 +798,14 @@ class PPOGPT(MegatronGPTModel):
 
             def ppo_postprocess(model_output):
                 model_output = tree_map(lambda t: t.float() if t is not None else t, model_output)
-
                 logits, values, ref_logits = model_output
+
+                # Logits can become large so best to pick out the logprobs per microbatch here
+                # to save memory
+                if run_reference_model:
+                    logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+                    ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], tokens[:, 1:])
+                    return logprobs, {"logprobs": logprobs, "values": values, "ref_logprobs": ref_logprobs}
 
                 return logits, {"logits": logits, "values": values, "ref_logits": ref_logits}
 
@@ -796,7 +813,7 @@ class PPOGPT(MegatronGPTModel):
 
         return fwd_output_only_func
 
-    def infer_logits_and_values(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+    def infer_logprobs_and_values(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
         fwd_bwd_func = self._get_fwd_bwd_function()
         fwd_output_only_func = self.get_forward_output_only_func(run_reference_model=True, run_value_head=True)
 

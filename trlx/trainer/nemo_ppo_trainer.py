@@ -142,8 +142,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 input_ids, (0, pad_to - input_ids.shape[1]), value=self.tokenizer.pad_token_id
             )
 
-            self.model.offload_reference_model()
-
             samples = self.model.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=1))
 
             inputs_samples.append((input_ids.cpu(), lengths.cpu(), samples))
@@ -151,6 +149,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
             if torch.distributed.get_rank() == 0:
                 tbar.update(len(input_ids) * dp_world)
             num_rollouts = num_rollouts - len(input_ids)
+
+        self.model.free_kv_cache()
 
         all_sents = [sentence for _, _, samples in inputs_samples for sentence in samples["sentences"]]
         scores = torch.tensor(self.reward_fn(all_sents), device=device)
@@ -171,16 +171,17 @@ class NeMoPPOTrainer(BaseRLTrainer):
             all_tokens = torch.tensor(output_tokens, device=device)
             attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
 
-            model_output = self.model.infer_logits_and_values(all_tokens, attention_mask)
+            model_output = self.model.infer_logprobs_and_values(all_tokens, attention_mask)
 
             # Model output is None on intermediate pipeline stages
             if model_output is None:
                 continue
 
-            logits, ref_logits, values = model_output["logits"], model_output["ref_logits"], model_output["values"]
-
-            logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-            ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
+            logprobs, ref_logprobs, values = (
+                model_output["logprobs"],
+                model_output["ref_logprobs"],
+                model_output["values"],
+            )
 
             query_responses = [(t[:l], t[l:]) for t, l in zip(output_tokens, lengths)]
             query_tokens, response_tokens = zip(*query_responses)
@@ -309,15 +310,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     self.model._optimizer.step()
                     scheduler.step()
                     local_batch_idx += 1
-                # break
-                if local_batch_idx % self.val_check_interval == 0:
-                    mbs = self.ppo_config.chunk_size
-                    if global_rank == 0:
-                        tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
-                    else:
-                        tbar = lambda x: x
-                    val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
-                    val_stats = [
-                        self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
-                    ]
-                    self.model.validation_epoch_end(val_stats)
+                    # break
+                    if local_batch_idx % self.val_check_interval == 0:
+                        mbs = self.ppo_config.chunk_size
+                        if global_rank == 0:
+                            tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
+                        else:
+                            tbar = lambda x: x
+                        val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
+                        val_stats = [
+                            self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
+                        ]
+                        self.model.validation_epoch_end(val_stats)

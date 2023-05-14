@@ -30,12 +30,12 @@ def main(hparams={}):
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+                pretrained_model=None,  # "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
         ),
         method=dict(
-            num_rollouts=128, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=1
+            num_rollouts=128, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=128, ppo_epochs=1
         ),
     )
 
