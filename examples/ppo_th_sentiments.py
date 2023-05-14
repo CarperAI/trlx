@@ -50,7 +50,7 @@ def main(hparams={}):
         return sentiments
 
     # Take few words off of movies reviews as prompts
-    imdb = load_dataset("nakcnx/Thai-IMDB")
+    imdb = load_dataset("nakcnx/Thai-IMDB")   
     df = pd.DataFrame( imdb['train'] )
     df = df.dropna()
     df['sentiment_int'] = df['sentiment'].replace(['positive', 'negative'],[1, 0])
