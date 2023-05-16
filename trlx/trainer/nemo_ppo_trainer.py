@@ -318,7 +318,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         train_tbar.update(1)
                     self.model._optimizer.step()
                     scheduler.step()
-                    local_batch_idx += 1
 
                     if local_batch_idx % self.val_check_interval == 0:
                         mbs = self.ppo_config.chunk_size
@@ -332,7 +331,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         ]
                         self.model.validation_epoch_end(val_stats)
 
+                    local_batch_idx += 1
+
         mbs = self.ppo_config.chunk_size
         val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
-        val_stats = [self.model.validation_step(val_batch, local_batch_idx + 1) for val_batch in val_loader]
+        val_stats = [self.model.validation_step(val_batch, local_batch_idx) for val_batch in val_loader]
         self.model.validation_epoch_end(val_stats)
