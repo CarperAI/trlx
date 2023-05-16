@@ -1,13 +1,11 @@
 from logging import getLogger
 from math import ceil
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Iterable, Iterator, List, Optional, Union, cast
 
 import torch
-import transformers
 import wandb
 from apex.transformer import parallel_state
-from nemo.utils import logging
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
@@ -21,9 +19,8 @@ from trlx.models.modeling_ppo import AdaptiveKLController, FixedKLController, PP
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
-from trlx.trainer.nemo_ilql_trainer import ShuffledCyclicSequence, megatron_trainer
+from trlx.trainer.nemo_ilql_trainer import megatron_trainer
 from trlx.utils import infinite_dataloader
-from trlx.utils.modeling import logprobs_of_labels
 
 logging = getLogger(__name__)
 
@@ -115,7 +112,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
     def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):
         ppo_rl_elements = []
-        stats = {}
 
         device = torch.device("cuda")
 
@@ -227,9 +223,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
             if torch.distributed.get_rank() == 0:
                 lps_tbar.update(len(query_tensors) * dp_world)
 
-        return ppo_rl_elements, stats
+        return ppo_rl_elements
 
-    def learn(self):
+    def learn(self):  # noqa: C901
         def add_special_token_ids(input_ids: List[int], add_bos: bool, add_eos: bool):
             if add_bos:
                 input_ids = [self.tokenizer.bos_token_id] + input_ids
@@ -261,9 +257,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 torch.as_tensor(context_lengths, device="cpu"),
             ]
 
-        world_size = self.trainer.world_size
         global_rank = self.trainer.global_rank
-        local_rank = self.trainer.local_rank
 
         if global_rank == 0:
             wandb.init(
@@ -273,10 +267,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 entity=self.config.train.entity_name,
             )
 
-        prompt_dataloader = infinite_dataloader(
-            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=True)
-        )
-
         def dummy():
             return
 
@@ -285,6 +275,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.trainer.strategy.setup_environment()
 
         dp_world = parallel_state.get_data_parallel_world_size()
+        dp_rank = parallel_state.get_data_parallel_rank()
+
+        sampler = DistributedSampler(
+            self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True, seed=self.config.train.seed
+        )
+        prompt_dataloader = infinite_dataloader(
+            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False, sampler=sampler),
+            sampler=sampler,
+        )
 
         if self.model.cfg.get("transformer_engine", False):
             self.model.setup_transformer_engine_tp_groups()
@@ -302,7 +301,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             train_tbar = tqdm(desc="Training", total=total_batches)
 
         for epoch in range(self.config.train.epochs):
-            ppo_rl_rollouts, stats = self.make_experience(
+            ppo_rl_rollouts = self.make_experience(
                 prompt_iter,
                 num_rollouts=self.ppo_config.num_rollouts,
                 dp_world=dp_world,
@@ -322,9 +321,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     if local_batch_idx % self.val_check_interval == 0:
                         mbs = self.ppo_config.chunk_size
                         if global_rank == 0:
-                            tbar = lambda x: tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
+
+                            def tbar(x):
+                                return tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
+
                         else:
-                            tbar = lambda x: x
+
+                            def tbar(x):
+                                return x
+
                         val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
                         val_stats = [
                             self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)

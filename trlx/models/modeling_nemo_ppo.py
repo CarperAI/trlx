@@ -2,15 +2,14 @@
 import sys
 from contextlib import contextmanager
 from copy import deepcopy
-from functools import partial, reduce
+from functools import partial
 from math import ceil, sqrt
 from pathlib import Path
-from typing import List, Mapping, Optional, Tuple, Union
+from typing import List, Mapping, Optional, Tuple
 
 import torch
 import torch.distributed
 import torch.nn as nn
-import torch.nn.functional as F
 import wandb
 from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
@@ -42,7 +41,6 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import AppState
-from torch.cuda import current_device
 
 from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
@@ -733,9 +731,6 @@ class PPOGPT(MegatronGPTModel):
 
                 values_pred = vs[:, :-1][:, start:end]
 
-                assert (
-                    values_pred.shape[1] == batch.values.shape[1]
-                ), f"{values_pred.shape=} {batch.values.shape=} {batch.rewards.shape=} {start=} {end=} {response_length=} {inputs.shape=} {label_logprobs.shape[1]=}"
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,
                     values=values_pred,
