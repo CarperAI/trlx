@@ -26,16 +26,16 @@ def main(hparams={}):
         train=dict(
             seq_length=2048,
             batch_size=256,
-            epochs=100,
+            epochs=20,
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model=None,  # "/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
+                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
         ),
         method=dict(
-            num_rollouts=128, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=128, ppo_epochs=1
+            num_rollouts=256, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=256, ppo_epochs=4
         ),
     )
 

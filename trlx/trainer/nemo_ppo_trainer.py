@@ -282,7 +282,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.model.setup_transformer_engine_tp_groups()
 
         self.model.setup()
-        opts, schedulers = self.model.configure_optimizers()
+        _, schedulers = self.model.configure_optimizers()
+        scheduler = schedulers[0]["scheduler"]
+
         prompt_iter = iter(prompt_dataloader)
         local_batch_idx = 0
 
@@ -291,7 +293,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
         if global_rank == 0:
             train_tbar = tqdm(desc="Training", total=total_batches)
 
-        scheduler = schedulers[0]["scheduler"]
         for epoch in range(self.config.train.epochs):
             ppo_rl_rollouts, stats = self.make_experience(
                 prompt_iter,
@@ -310,7 +311,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     self.model._optimizer.step()
                     scheduler.step()
                     local_batch_idx += 1
-                    # break
+
                     if local_batch_idx % self.val_check_interval == 0:
                         mbs = self.ppo_config.chunk_size
                         if global_rank == 0:
@@ -322,3 +323,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
                             self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
                         ]
                         self.model.validation_epoch_end(val_stats)
+
+        mbs = self.ppo_config.chunk_size
+        val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
+        val_stats = [self.model.validation_step(val_batch, local_batch_idx + 1) for val_batch in val_loader]
+        self.model.validation_epoch_end(val_stats)
