@@ -278,8 +278,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         ppo_rl_elements = []
         accumulated_stats = []
 
-        self.mean_kl = torch.tensor(0.0, device=self.accelerator.device, requires_grad=False)
-
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
             # Get next batch in prompt dataset
