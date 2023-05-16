@@ -626,7 +626,7 @@ class PPOGPT(MegatronGPTModel):
 
         gen = self.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=0))
 
-        metrics = self.metric_fn(gen["sentences"])
+        metrics = self.metric_fn(samples=gen["sentences"], prompts=gen["prompts"], outputs=gen["responses"])
 
         metric_keys, metric_values = zip(*metrics.items())
 
