@@ -13,19 +13,22 @@ from trlx.pipeline import BaseRolloutStore
 
 def ppo_collate_fn(padding_side: str, pad_token_id: int, elems: Iterable[PPORLElement]):
     if padding_side == "left":
+        # Left padding of already left-padded queries
         query_tensors = pad_sequence(
             [elem.query_tensor.flip(0) for elem in elems],
             padding_value=pad_token_id,
             batch_first=True,
         ).flip(1)
-    else:
+    elif padding_side == "right":
         query_tensors = pad_sequence(
             [elem.query_tensor for elem in elems],
             padding_value=pad_token_id,
             batch_first=True,
         )
+    else:
+        raise ValueError(f"Invalid padding side: {padding_side}")
+
     return PPORLBatch(
-        # Left padding of already left-padded queries
         query_tensors,
         # Right pad the rest, to have a single horizontal query/response split
         pad_sequence(
