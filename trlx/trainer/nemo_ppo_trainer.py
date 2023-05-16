@@ -7,7 +7,7 @@ import torch
 import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
@@ -275,14 +275,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.trainer.strategy.setup_environment()
 
         dp_world = parallel_state.get_data_parallel_world_size()
-        dp_rank = parallel_state.get_data_parallel_rank()
 
-        sampler = DistributedSampler(
-            self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True, seed=self.config.train.seed
-        )
         prompt_dataloader = infinite_dataloader(
-            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False, sampler=sampler),
-            sampler=sampler,
+            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False)
         )
 
         if self.model.cfg.get("transformer_engine", False):
