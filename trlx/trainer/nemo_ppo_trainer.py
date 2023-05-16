@@ -87,6 +87,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             cfg=megatron_cfg.model,
             trainer=self.trainer,
             metric_fn=self.metric_fn,
+            stop_sequences=self.stop_sequences,
         )
         self.megatron_cfg = megatron_cfg
 
@@ -153,19 +154,26 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.model.free_kv_cache()
 
         all_sents = [sentence for _, _, samples in inputs_samples for sentence in samples["sentences"]]
-        scores = torch.tensor(self.reward_fn(all_sents), device=device)
+        all_prompts = [prompt for _, _, samples in inputs_samples for prompt in samples["prompts"]]
+        all_responses = [response for _, _, samples in inputs_samples for response in samples["responses"]]
+        scores = torch.tensor(
+            self.reward_fn(samples=all_sents, prompts=all_prompts, outputs=all_responses), device=device
+        )
         scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
 
         if torch.distributed.get_rank() == 0:
-            tbar = tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
+            tbar.close()
+            lps_tbar = tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
 
         for (_, lengths, samples), scores in zip(inputs_samples, scores):
             output_tokens = samples["token_ids"]
 
+            max_length = max(len(x) for x in output_tokens)
+
             output_tokens = [
-                x + [self.tokenizer.pad_token_id] * ((ceil(len(x) / 8) * 8) - len(x)) for x in output_tokens
+                x + [self.tokenizer.pad_token_id] * ((ceil(max_length / 8) * 8) - len(x)) for x in output_tokens
             ]
 
             all_tokens = torch.tensor(output_tokens, device=device)
@@ -217,7 +225,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 )
 
             if torch.distributed.get_rank() == 0:
-                tbar.update(len(query_tensors) * dp_world)
+                lps_tbar.update(len(query_tensors) * dp_world)
 
         return ppo_rl_elements, stats
 
@@ -232,7 +240,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             return input_ids
 
         def collate_fn(elems: Iterable[PPORLElement]):
-            batch = ppo_collate_fn(self.tokenizer.eos_token_id, elems)
+            batch = ppo_collate_fn("left", self.tokenizer.eos_token_id, elems)
             return flatten_dataclass(PPORLBatch)(batch)
 
         def generate_collate(elems):

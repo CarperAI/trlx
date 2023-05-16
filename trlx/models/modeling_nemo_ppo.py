@@ -302,9 +302,10 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
 class PPOGPT(MegatronGPTModel):
     ppo_config: PPOConfig
 
-    def __init__(self, ppo_config, metric_fn=None, **kwargs):
+    def __init__(self, ppo_config, metric_fn=None, stop_sequences=(), **kwargs):
         self.ppo_config = ppo_config
         self.metric_fn = metric_fn
+        self.stop_sequences = stop_sequences
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
@@ -860,7 +861,7 @@ class PPOGPT(MegatronGPTModel):
 
     def generate(
         self,
-        inputs: Union[List[str], torch.Tensor, List[dict]],
+        inputs: Tuple[torch.Tensor, torch.Tensor],
         length_params: LengthParam,
         sampling_params: SamplingParam = None,
     ) -> OutputType:
@@ -877,4 +878,29 @@ class PPOGPT(MegatronGPTModel):
             }
 
         with self.inference_mode():
-            return super().generate(inputs, length_params, sampling_params)
+            output = super().generate(inputs, length_params, sampling_params)
+
+            if output is None:
+                return None
+
+            _, lengths = inputs
+            prompts = [
+                sentence[: offset[l]] for sentence, offset, l in zip(output["sentences"], output["offsets"], lengths)
+            ]
+            responses = [
+                sentence[offset[l] :] for sentence, offset, l in zip(output["sentences"], output["offsets"], lengths)
+            ]
+
+            if self.stop_sequences:
+                for stop in self.stop_sequences:
+                    responses = [response.split(stop)[0] for response in responses]
+                output["sentences"] = [prompt + response for prompt, response in zip(prompts, responses)]
+                output["token_ids"] = self.tokenizer.tokenizer(output["sentences"])["input_ids"]
+                # Offsets and str tokens are no longer correct after slicing at stop sequences
+                del output["offsets"]
+                del output["tokens"]
+
+            output["prompts"] = prompts
+            output["responses"] = responses
+
+            return output
