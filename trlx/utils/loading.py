@@ -14,9 +14,7 @@ try:
     from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
     from trlx.trainer.nemo_ppo_trainer import NeMoPPOTrainer
     from trlx.trainer.nemo_sft_trainer import NeMoSFTTrainer
-except ImportError as e:
-    raise e
-
+except ImportError:
     # NeMo is not installed
     def _trainers_unavailble(names: List[str]):
         def log_error(*args, **kwargs):
