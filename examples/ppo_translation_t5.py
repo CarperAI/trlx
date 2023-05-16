@@ -54,6 +54,7 @@ default_config = TRLConfig(
     ),
     tokenizer=TokenizerConfig(
         tokenizer_path="t5-large",
+        padding_side="right",
         truncation_side="right",
     ),
     optimizer=OptimizerConfig(

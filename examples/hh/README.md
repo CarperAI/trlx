@@ -6,7 +6,7 @@ Launch training of [GPT-J](https://huggingface.co/EleutherAI/gpt-j-6B) on 7 GPUs
 ```sh
 accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
 ```
-Or if you want to train a smaller model or start from a supervised checkpoint, you can use one of the [configs](./configs)
+Or if you want to train a smaller model or start from a supervised checkpoint, you can use one of the [configs](../../configs)
 ```sh
 CONFIG_NAME=125M accelerate launch --num_processes 7 --config_file ../../configs/accelerate/zero2-bf16.yaml ppo_hh.py
 ```

@@ -26,7 +26,7 @@ class DialogMessage:
 
 
 def tokenize_dialogue(  # noqa: C901
-    dialogue: Union[str, List[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+    dialogue: Union[str, Iterable[str]], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
 ) -> List[DialogMessage]:
     """
     Tokenize sample with the interleaved form of (prompt_1, output_1, prompt_2, output_2...)
@@ -34,7 +34,7 @@ def tokenize_dialogue(  # noqa: C901
     if isinstance(dialogue, str):
         bos_token = tokenizer.bos_token or tokenizer.eos_token
         dialogue = [bos_token, dialogue]
-    elif isinstance(dialogue, tuple):
+    elif isinstance(dialogue, Iterable):
         if len(dialogue) % 2 != 0:
             raise ValueError("Dialogue must have an even number of phrases, alternating prompt and output")
         dialogue = list(dialogue)
@@ -64,9 +64,17 @@ def tokenize_dialogue(  # noqa: C901
         truncated = [DialogMessage(is_output=m.is_output, tokens=m.tokens[::-1]) for m in truncated[::-1]]
 
     # remove empty messages
-    truncated = [t for t in truncated if len(t.tokens) > 0]
+    out = [t for t in truncated if len(t.tokens) > 0]
 
-    return truncated
+    if out[0].is_output:
+        if sum(map(lambda msg: len(msg.tokens), out)) == max_length:
+            if tokenizer.truncation_side == "left":
+                out[0].tokens = out[0].tokens[1:]
+            else:
+                out[-1].tokens = out[-1].tokens[:-1]
+
+        out.insert(0, DialogMessage(False, (tokenizer.bos_token_id,)))
+    return out
 
 
 class DialogStore(BaseRolloutStore):
@@ -109,10 +117,16 @@ class PromptPipeline(BasePipeline):
         max_prompt_length (`int`): max length of the prompt, if exceeded the prompt will be truncated according to
             tokenizer's truncation setting.
         tokenizer (`transformers.PreTrainedTokenizer`): a tokenizer to tokenize prompts with.
+        add_special_tokens (`bool`): whether to encode prompts with tokenizer's special tokens (passed directly
+            into `tokenizer.encode`)
     """
 
     def __init__(
-        self, prompts: Union[Dict[str, Any], List[str]], max_prompt_length: int, tokenizer: PreTrainedTokenizer
+        self,
+        prompts: Union[Dict[str, Any], List[str]],
+        max_prompt_length: int,
+        tokenizer: PreTrainedTokenizer,
+        add_special_tokens: bool = False,
     ):
         super().__init__()
 
@@ -123,7 +137,7 @@ class PromptPipeline(BasePipeline):
             metadata = [{}] * len(prompts)
 
         model_inputs = tokenizer(
-            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=False
+            prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=add_special_tokens
         )
 
         prompts_tokens = model_inputs["input_ids"]
@@ -193,13 +207,13 @@ class ILQLRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int, drop_last=True):
+    def create_loader(self, batch_size: int):
         return DataLoader(
             self,
             batch_size=batch_size,
             shuffle=True,
             collate_fn=ilql_collate_fn,
-            drop_last=drop_last,
+            drop_last=torch.distributed.is_initialized(),
         )
 
 
@@ -245,11 +259,11 @@ class ILQLSeq2SeqRolloutStorage(BaseRolloutStore):
     def __len__(self) -> int:
         return len(self.input_ids)
 
-    def create_loader(self, batch_size: int, drop_last=True):
+    def create_loader(self, batch_size: int):
         return DataLoader(
             self,
             batch_size=batch_size,
             shuffle=True,
             collate_fn=ilql_seq2seq_collate_fn,
-            drop_last=drop_last,
+            drop_last=torch.distributed.is_initialized(),
         )

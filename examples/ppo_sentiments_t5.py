@@ -43,6 +43,7 @@ default_config = TRLConfig(
     ),
     tokenizer=TokenizerConfig(
         tokenizer_path="lvwerra/t5-imdb",
+        padding_side="right",
         truncation_side="right",
     ),
     optimizer=OptimizerConfig(
