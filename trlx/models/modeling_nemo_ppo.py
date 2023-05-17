@@ -48,6 +48,10 @@ from trlx.models.modeling_ppo import PPOConfig
 from trlx.utils import to_device, tree_map
 from trlx.utils.modeling import logprobs_of_labels, whiten
 
+# Track a per dp rank RNG to sample different rollouts
+# per dp rank
+_PER_DP_RANK_RNG = "per-data-parallel-rank-rng"
+
 
 class ParallelLinear(nn.Module):
     """Linear layer parallelized over the longer dimension."""
@@ -311,6 +315,14 @@ class PPOGPT(MegatronGPTModel):
         self._ori_activations_checkpoint_granularity = self.cfg.get("activations_checkpoint_granularity", None)
         self._ori_activations_checkpoint_method = self.cfg.get("activations_checkpoint_method", None)
         self._ori_activations_checkpoint_num_layers = self.cfg.get("activations_checkpoint_num_layers", None)
+
+    def maybe_initalize_per_dp_rng(self):
+        tracker = tensor_parallel.random.get_cuda_rng_tracker()
+        if _PER_DP_RANK_RNG in tracker.get_states():
+            return
+        seed = torch.cuda.initial_seed()
+        dp_rank = parallel_state.get_data_parallel_rank()
+        tracker.add(_PER_DP_RANK_RNG, seed * dp_rank)
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -874,8 +886,12 @@ class PPOGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
+        self.maybe_initalize_per_dp_rng()
+
         with self.inference_mode():
-            output = super().generate(inputs, length_params, sampling_params)
+            # Fork the RNG per dp rank to ensure that each dp rank generates different samples
+            with tensor_parallel.random.get_cuda_rng_tracker().fork(_PER_DP_RANK_RNG):
+                output = super().generate(inputs, length_params, sampling_params)
 
             if output is None:
                 return None

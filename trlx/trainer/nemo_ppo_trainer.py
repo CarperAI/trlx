@@ -7,7 +7,7 @@ import torch
 import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
@@ -58,6 +58,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         megatron_cfg.trlx = config.to_dict()
 
         megatron_cfg.model.global_batch_size = config.train.batch_size
+        megatron_cfg.model.seed = config.train.seed
 
         world_size = megatron_cfg.trainer.num_nodes * megatron_cfg.trainer.devices
         dp_world = world_size // (
@@ -123,9 +124,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.model.offload_reference_model()
 
         inputs_samples = []
+
         while num_rollouts > 0:
             batch: PromptBatch = next(prompt_iterator)
-
             lengths = batch.attention_mask.sum(dim=1)
 
             max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 128)
@@ -278,9 +279,12 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.trainer.strategy.setup_environment()
 
         dp_world = parallel_state.get_data_parallel_world_size()
+        dp_rank = parallel_state.get_data_parallel_rank()
 
+        sampler = DistributedSampler(self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True)
         prompt_dataloader = infinite_dataloader(
-            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False)
+            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False, sampler=sampler),
+            sampler=sampler,
         )
 
         if self.model.cfg.get("transformer_engine", False):
