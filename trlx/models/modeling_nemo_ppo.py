@@ -741,6 +741,8 @@ class PPOGPT(MegatronGPTModel):
                     mask=loss_mask[:, start:end],
                 )
 
+                loss_for_mb = torch.clip(loss_for_mb, -10.0, 10.0)
+
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
                 # Needed for async grad allreduce

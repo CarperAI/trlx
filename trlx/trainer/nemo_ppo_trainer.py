@@ -55,6 +55,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
         elif megatron_cfg is None:
             raise ValueError("megatron_cfg must be a path or a config")
 
+        megatron_cfg.trlx = config.to_dict()
+
         megatron_cfg.model.global_batch_size = config.train.batch_size
 
         world_size = megatron_cfg.trainer.num_nodes * megatron_cfg.trainer.devices
@@ -265,6 +267,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 mode="online" if self.config.train.tracker == "wandb" else "disabled",
                 group=self.config.train.group_name,
                 entity=self.config.train.entity_name,
+                config=OmegaConf.to_container(self.megatron_cfg, resolve=True),
             )
 
         def dummy():
