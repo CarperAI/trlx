@@ -24,18 +24,18 @@ def main(hparams={}):
     config = default_config.evolve(
         train=dict(
             seq_length=2048,
-            batch_size=256,
-            epochs=20,
+            batch_size=32,
+            epochs=100,
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
                 megatron_cfg="megatron_20b.yaml",
             ),
+            seed=1910,
         ),
-        method=dict(
-            num_rollouts=1024, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=256, ppo_epochs=1
-        ),
+        model=dict(num_layers_unfrozen=-1),
+        method=dict(num_rollouts=32, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=4),
     )
 
     rank = int(os.environ["SLURM_PROCID"])

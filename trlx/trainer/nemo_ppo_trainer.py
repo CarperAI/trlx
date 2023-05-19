@@ -64,14 +64,13 @@ class NeMoPPOTrainer(BaseRLTrainer):
         dp_world = world_size // (
             megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
         )
+        rank_batch_size = megatron_cfg.model.global_batch_size // dp_world
+
+        if (self.ppo_config.chunk_size % rank_batch_size) != 0:
+            self.ppo_config.chunk_size = rank_batch_size * ceil(self.ppo_config.chunk_size / rank_batch_size)
+            print("Rounding chunk size to", self.ppo_config.chunk_size)
 
         train_samples = dp_world * self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
-        if (train_samples % megatron_cfg.model.global_batch_size) != 0:
-            train_samples = (
-                ceil(train_samples / megatron_cfg.model.global_batch_size) * megatron_cfg.model.global_batch_size
-            )
-            print("Rounding up dp_world * (num_rollouts * ppo_epochs) to", train_samples)
-
         # Disable validation within nemo, run it ourselves
         self.limit_val_batches = megatron_cfg.trainer.limit_val_batches
         self.val_check_interval = config.train.eval_interval
@@ -82,12 +81,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
         megatron_cfg.trainer.max_steps = config.train.epochs * (train_samples // megatron_cfg.model.global_batch_size)
 
         self.trainer = megatron_trainer(megatron_cfg)
+
         self.model = PPOGPT(
             ppo_config=self.ppo_config,
             cfg=megatron_cfg.model,
             trainer=self.trainer,
             metric_fn=self.metric_fn,
             stop_sequences=self.stop_sequences,
+            num_layers_unfrozen=config.model.num_layers_unfrozen,
         )
         self.megatron_cfg = megatron_cfg
 
@@ -270,6 +271,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 entity=self.config.train.entity_name,
                 config=OmegaConf.to_container(self.megatron_cfg, resolve=True),
             )
+            print(OmegaConf.to_container(self.megatron_cfg, resolve=True))
 
         def dummy():
             return
@@ -281,7 +283,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
         dp_world = parallel_state.get_data_parallel_world_size()
         dp_rank = parallel_state.get_data_parallel_rank()
 
-        sampler = DistributedSampler(self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True)
+        sampler = DistributedSampler(
+            self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True, drop_last=True
+        )
         prompt_dataloader = infinite_dataloader(
             self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False, sampler=sampler),
             sampler=sampler,
@@ -309,8 +313,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 dp_world=dp_world,
             )
 
-            dataloader = DataLoader(ppo_rl_rollouts, batch_size=rank_batch_size, collate_fn=collate_fn)
+            dataloader = DataLoader(ppo_rl_rollouts, batch_size=rank_batch_size, collate_fn=collate_fn, drop_last=True)
             self.model.offload_reference_model()
+            self.model.train()
 
             for batch in dataloader:
                 for _ in range(self.ppo_config.ppo_epochs):
@@ -336,11 +341,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         val_stats = [
                             self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
                         ]
-                        self.model.validation_epoch_end(val_stats)
+                        self.model.validation_epoch_end(val_stats, local_batch_idx)
 
                     local_batch_idx += 1
+
+            if local_batch_idx > self.config.train.total_steps:
+                break
 
         mbs = self.ppo_config.chunk_size
         val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
         val_stats = [self.model.validation_step(val_batch, local_batch_idx) for val_batch in val_loader]
-        self.model.validation_epoch_end(val_stats)
+        self.model.validation_epoch_end(val_stats, local_batch_idx)

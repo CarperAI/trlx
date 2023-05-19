@@ -165,7 +165,11 @@ class PromptPipeline(BasePipeline):
 
             return out
 
-        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle, sampler=sampler)
+        # Since all data is already pre-processed, no need to have
+        # multi-process data loading
+        return DataLoader(
+            self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle, sampler=sampler, num_workers=0
+        )
 
 
 def ilql_collate_fn(elems: Iterable[ILQLElement]):

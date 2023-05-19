@@ -30,6 +30,9 @@ from nemo.collections.nlp.modules.common.megatron.module import (
     Float16Module,
     MegatronModule,
 )
+from nemo.collections.nlp.modules.common.megatron.transformer import (
+    ParallelTransformerLayer,
+)
 from nemo.collections.nlp.modules.common.megatron.utils import (
     average_losses_across_data_parallel_group,
     get_ltor_masks_and_position_ids,
@@ -165,7 +168,7 @@ class OffloadedModel(object):
         self.model.set_input_tensor(input_tensor)
 
 
-class HydraLMHeads(MegatronModule):
+class RefLMHeads(MegatronModule):
     def __init__(self, language_model, other_heads):
         super().__init__()
         # must be this attribute name
@@ -304,10 +307,15 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
 class PPOGPT(MegatronGPTModel):
     ppo_config: PPOConfig
 
-    def __init__(self, ppo_config, metric_fn=None, stop_sequences=(), **kwargs):
+    def __init__(self, ppo_config, metric_fn=None, stop_sequences=(), num_layers_unfrozen=None, **kwargs):
         self.ppo_config = ppo_config
         self.metric_fn = metric_fn
         self.stop_sequences = stop_sequences
+        if num_layers_unfrozen == -1:
+            self.num_layers_unfrozen = None
+        else:
+            self.num_layers_unfrozen = num_layers_unfrozen
+
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
@@ -409,11 +417,24 @@ class PPOGPT(MegatronGPTModel):
         gpt.post_process = False
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
+
+        # Unfreeze only last N layers if specified
+        if self.num_layers_unfrozen is not None:
+
+            def freeze_layers(m):
+                if isinstance(m, ParallelTransformerLayer):
+                    if m.layer_number < (self.cfg.num_layers - self.num_layers_unfrozen):
+                        m.eval()
+                        for p in m.parameters():
+                            p.requires_grad_(False)
+
+            gpt.language_model.apply(freeze_layers)
+
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
-            return HydraLMHeads(gpt, value_head)
+            return RefLMHeads(gpt, value_head)
         else:
             return gpt
 
@@ -540,8 +561,8 @@ class PPOGPT(MegatronGPTModel):
                 loss_scale = self.trainer.precision_plugin.scaler._scale
                 if loss_scale is not None:
                     logs["loss_scale"] = loss_scale
-
-            wandb.log(logs)
+            logs["trainer/global_step"] = batch_idx
+            wandb.log(logs, step=batch_idx)
 
         return loss_mean
 
@@ -606,6 +627,9 @@ class PPOGPT(MegatronGPTModel):
         if activations_checkpointing_was_enabled:
             self.activation_checkpointing_(False)
 
+        was_training = self.model.training
+        self.model.eval()
+
         try:
             yield
         finally:
@@ -614,6 +638,9 @@ class PPOGPT(MegatronGPTModel):
 
             if activations_checkpointing_was_enabled:
                 self.activation_checkpointing_(True)
+
+            if was_training:
+                self.model.train()
 
             _reconfigure_microbatch_calculator(
                 rank=AppState().global_rank,
@@ -647,7 +674,7 @@ class PPOGPT(MegatronGPTModel):
 
         return metrics, (rows, columns)
 
-    def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]]):
+    def validation_epoch_end(self, outputs: List[Tuple[dict, Tuple[List[str], List[str]]]], batch_idx: int):
         self.free_kv_cache()
 
         metrics, tables = zip(*outputs)
@@ -665,7 +692,9 @@ class PPOGPT(MegatronGPTModel):
             torch.distributed.all_gather_into_tensor(gathered, v, group=dp_group)
             outputs_gathered[k] = gathered
         if torch.distributed.get_rank() == 0:
-            wandb.log({f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()})
+            metrics = {f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()}
+            metrics["trainer/global_step"] = batch_idx
+            wandb.log(metrics)
 
     # Need to override this otherwise distributed fused adam won't work
     # with frozen layers
@@ -708,7 +737,7 @@ class PPOGPT(MegatronGPTModel):
                     eod_mask_loss=True,
                 )
 
-                if isinstance(unwrap_float16_module(self.model), HydraLMHeads):
+                if isinstance(unwrap_float16_module(self.model), RefLMHeads):
                     extra_args = dict(run_reference_model=False, run_value_head=True)
                 else:
                     extra_args = dict()
@@ -752,8 +781,6 @@ class PPOGPT(MegatronGPTModel):
                     returns=returns,
                     mask=loss_mask[:, start:end],
                 )
-
-                loss_for_mb = torch.clip(loss_for_mb, -10.0, 10.0)
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
