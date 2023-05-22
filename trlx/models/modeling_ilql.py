@@ -326,7 +326,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         """
         base_model_state_dict = self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
-        return base_model_state_dict | ilql_heads_state_dict
+        return {**base_model_state_dict, **ilql_heads_state_dict}
 
     def post_init(self, state_dict):
         """

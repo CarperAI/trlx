@@ -309,11 +309,8 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
         base_model_state_dict = self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))
-        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
-        for k, v in v_head_state_dict.items():
-            base_model_state_dict[f"v_head.{k}"] = v
-
-        return base_model_state_dict
+        v_head_state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        return {**base_model_state_dict, **v_head_state_dict}
 
     def post_init(self, state_dict):
         """
