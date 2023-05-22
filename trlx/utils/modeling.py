@@ -32,9 +32,10 @@ def make_head(n_embd: int, out: int, dtype: type = torch.float32) -> nn.Sequenti
     )
 
 
-def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: Union[int, float] = 0):
     """Freezes the bottom transformer block layers of the specified model."""
     hidden_layers = hf_get_decoder_blocks(model)
+    num_layers_unfrozen = int(num_layers_unfrozen * len(hidden_layers)) if type(num_layers_unfrozen) is float else num_layers_unfrozen
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
     elif num_layers_unfrozen > 0:
@@ -45,7 +46,7 @@ def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
         layer.requires_grad_(False)
 
 
-def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: Union[int, float] = 0):
     """Freezes the bottom transformer block layers of the specified model."""
     if num_layers_unfrozen == -1:
         return
@@ -54,6 +55,9 @@ def freeze_bottom_seq2seq_layers(model: nn.Module, num_layers_unfrozen: int = 0)
     encoder_blocks = model.encoder.block
     encoder_norm_layer = model.encoder.final_layer_norm
     decoder_norm_layer = model.decoder.final_layer_norm
+
+    num_layers_unfrozen = int(num_layers_unfrozen * len(decoder_blocks)) if type(num_layers_unfrozen) is float else num_layers_unfrozen
+    
     decoder_blocks = model.decoder.block[:-num_layers_unfrozen]
     blocks_to_freeze = (
         list(encoder_blocks)
@@ -421,7 +425,7 @@ MODIFIED_MODULES_DICT = {
 }
 
 
-def generate_layer_regex(config: transformers.PretrainedConfig, num_layers_unfrozen: int = -1) -> str:
+def generate_layer_regex(config: transformers.PretrainedConfig, num_layers_unfrozen: Union[int, float] = -1) -> str:
     """Generates a regex range for the specified number of learnable layers."""
     if num_layers_unfrozen == -1:
         return "(\d)+."
@@ -436,7 +440,7 @@ def generate_layer_regex(config: transformers.PretrainedConfig, num_layers_unfro
 def get_delta_modified_modules(
     config: transformers.PretrainedConfig,
     modified_modules: List[str],
-    num_layers_unfrozen: int = -1,
+    num_layers_unfrozen: Union[int, float] = -1,
 ) -> List[str]:
     """Returns a list of module names to be modified for a given delta method with
     the specified number of learnable layers."""
@@ -466,7 +470,7 @@ def get_delta_model_class(model_type: str):
 def parse_delta_kwargs(
     config: transformers.PretrainedConfig,
     delta_kwargs: Dict[str, Any],
-    num_layers_unfrozen: int = -1,
+    num_layers_unfrozen: Union[int, float] = -1,
 ) -> Tuple[str, Dict[str, Any]]:
     """Parses through delta kwargs to get delta type and proper modified modules."""
     # This function is needed to parse through the `delta_kwargs` in order to:

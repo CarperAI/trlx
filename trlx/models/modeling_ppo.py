@@ -336,7 +336,7 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int = -1,
+        num_layers_unfrozen: Union[int, float] = -1,
     ):
         super().__init__(base_model)
         self.num_layers_unfrozen = num_layers_unfrozen
@@ -400,7 +400,7 @@ class ModelBranch(transformers.PreTrainedModel):
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int,
+        num_layers_unfrozen: Union[int, float],
     ):
         """
         Args:
@@ -1071,7 +1071,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int = -1,
+        num_layers_unfrozen: Union[int, float] = -1,
     ):
         super().__init__(base_model)
         self.num_layers_unfrozen = num_layers_unfrozen
@@ -1147,7 +1147,7 @@ class T5Branch(ModelBranch):
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int,
+        num_layers_unfrozen: Union[int, float],
     ):
         super().__init__(base_model, num_layers_unfrozen=num_layers_unfrozen)
         self.dropout = hf_get_decoder(base_model).dropout
