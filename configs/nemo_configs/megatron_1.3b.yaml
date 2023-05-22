@@ -1,4 +1,4 @@
-name: megatron_gpt
+name: megatron_gpt_1.3b
 restore_from_path: null  # used when starting from a .nemo file
 
 trainer:

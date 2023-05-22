@@ -267,7 +267,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
         world_size = self.trainer.world_size
         if global_rank == 0:
             script = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
-            config_name = str(self.config.train.trainer_kwargs["megatron_cfg"]).rsplit(".", 1)[0]
+            cfg_name = self.config.train.trainer_kwargs["megatron_cfg"]
+            if isinstance(cfg_name, str):
+                config_name = cfg_name.rsplit(".", 1)[0]
+            else:
+                config_name = cfg_name.get("name", "unknown")
             branch = get_git_tag()[0]
             name = f"{script}/{config_name}/{world_size}gpus:{branch}"
             wandb.init(
