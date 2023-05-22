@@ -23,6 +23,7 @@ def train(  # noqa: C901
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
     stop_sequences: Optional[List[str]] = [],
+    resume_from: Optional[str] = None,
 ):
     """
     Dispatches online, offline reinforcement training or supervised finetuning
@@ -124,6 +125,9 @@ def train(  # noqa: C901
         eval_prompts, max_prompt_length, trainer.tokenizer, add_special_tokens=config.model.model_arch_type == "seq2seq"
     )
     trainer.add_eval_pipeline(eval_pipeline)
+
+    if config.train.resume_from_checkpoint and os.path.exists(config.train.resume_from_checkpoint):
+        trainer.load(config.train.resume_from_checkpoint)
 
     trainer.learn()
     return trainer
