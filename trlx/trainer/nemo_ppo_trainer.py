@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, List, Optional, Union, cast
 
 import torch
-import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
+import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import flatten_dataclass
@@ -354,8 +354,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         ]
                         metrics = self.model.validation_epoch_end(val_stats, local_batch_idx)
 
-                    local_batch_idx += 1
-
                     if (local_batch_idx % self.config.train.checkpoint_interval) == 0:
                         if self.config.train.save_best and metrics is not None:
                             if best_metric is None or metrics["val_metrics/reward"] > best_metric:
@@ -363,6 +361,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
                                 self.model.save_pretrained(self.config.train.checkpoint_dir)
                         else:
                             self.model.save_pretrained(self.config.train.checkpoint_dir)
+
+                    local_batch_idx += 1
 
             if local_batch_idx > self.config.train.total_steps:
                 break

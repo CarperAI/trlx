@@ -9,7 +9,12 @@ from datasets import load_dataset
 from transformers import DistilBertForSequenceClassification, pipeline
 
 import trlx
-from trlx.data.default_configs import TRLConfig, default_ppo_config
+from trlx.data.default_configs import (
+    TRLConfig,
+    default_nemo_1_3b_config,
+    default_nemo_20b_config,
+    default_ppo_config,
+)
 
 
 def get_positive_score(scores):
@@ -21,6 +26,14 @@ def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
 
+    cfg_name = os.environ.get("NEMO_CONFIG", "1.3B")
+    if cfg_name == "1.3B":
+        nemo_config = default_nemo_1_3b_config()
+    elif cfg_name == "20B":
+        nemo_config = default_nemo_20b_config()
+    else:
+        raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
+
     config = default_config.evolve(
         train=dict(
             seq_length=2048,
@@ -29,13 +42,14 @@ def main(hparams={}):
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/mnt/nvme/home/uwu/nemo-megatron-gpt-20B/",
-                megatron_cfg="megatron_20b.yaml",
+                pretrained_model=f"/mnt/nvme/home/uwu/nemo-megatron-gpt-{cfg_name}/",
+                megatron_cfg=nemo_config,
             ),
-            checkpoint_interval=1,
-            checkpoint_dir="nemo_ppo_sentiments",
+            checkpoint_interval=64,
+            checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
             seed=1910,
             project_name="trlxnemo",
+            tags=["nemo", "ppo", "sentiments", cfg_name],
         ),
         model=dict(num_layers_unfrozen=-1),
         method=dict(num_rollouts=32, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=4),
