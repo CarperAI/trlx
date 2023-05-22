@@ -23,7 +23,6 @@ def train(  # noqa: C901
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
     stop_sequences: Optional[List[str]] = [],
-    resume_from: Optional[str] = None,
 ):
     """
     Dispatches online, offline reinforcement training or supervised finetuning
