@@ -5,12 +5,11 @@ from copy import deepcopy
 from functools import partial
 from math import ceil, sqrt
 from pathlib import Path
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.distributed
 import torch.nn as nn
-import wandb
 from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
@@ -45,6 +44,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import AppState
 
+import wandb
 from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
 from trlx.models.modeling_ppo import PPOConfig
@@ -169,13 +169,17 @@ class OffloadedModel(object):
 
 
 class RefLMHeads(MegatronModule):
-    def __init__(self, language_model, other_heads):
+    def __init__(self, language_model, other_heads, build_reference_model=True):
         super().__init__()
         # must be this attribute name
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
         self.language_model = language_model
-        self.reference_model = OffloadedModel(deepcopy(language_model), device=torch.cuda.current_device())
+
+        if build_reference_model:
+            self.reference_model = OffloadedModel(deepcopy(language_model), device=torch.cuda.current_device())
+        else:
+            self.reference_model = None
 
         self.other_heads = other_heads
 
@@ -185,7 +189,7 @@ class RefLMHeads(MegatronModule):
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
         self.language_model.set_input_tensor(input_tensor)
-        if not self.reference_model.offloaded:
+        if self.reference_model is not None and not self.reference_model.offloaded:
             self.reference_model.set_input_tensor(input_tensor)
 
     def word_embeddings_weight(self):
@@ -194,7 +198,12 @@ class RefLMHeads(MegatronModule):
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
         self.language_model.language_model.load_state_dict(lm_state_dict, strict=strict)
-        self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
+        if self.reference_model is not None:
+            self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
+
+    def pretrained_state_dict(self):
+        """Load GPTModel state dict."""
+        return self.language_model.state_dict()
 
     def offload_reference_model(self):
         """Move reference model to CPU."""
@@ -307,7 +316,15 @@ def reshard_for_pipeline_parallelism(num_layers, state_dict):
 class PPOGPT(MegatronGPTModel):
     ppo_config: PPOConfig
 
-    def __init__(self, ppo_config, metric_fn=None, stop_sequences=(), num_layers_unfrozen=None, **kwargs):
+    def __init__(
+        self,
+        ppo_config,
+        metric_fn=None,
+        stop_sequences=(),
+        num_layers_unfrozen=None,
+        build_reference_model=True,
+        **kwargs,
+    ):
         self.ppo_config = ppo_config
         self.metric_fn = metric_fn
         self.stop_sequences = stop_sequences
@@ -315,6 +332,7 @@ class PPOGPT(MegatronGPTModel):
             self.num_layers_unfrozen = None
         else:
             self.num_layers_unfrozen = num_layers_unfrozen
+        self.build_reference_model = build_reference_model
 
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
@@ -329,8 +347,11 @@ class PPOGPT(MegatronGPTModel):
         if _PER_DP_RANK_RNG in tracker.get_states():
             return
         seed = torch.cuda.initial_seed()
-        dp_rank = parallel_state.get_data_parallel_rank()
-        tracker.add(_PER_DP_RANK_RNG, seed * dp_rank)
+        if parallel_state._DATA_PARALLEL_GROUP is not None:
+            dp_rank = parallel_state.get_data_parallel_rank()
+        else:
+            dp_rank = 0
+        tracker.add(_PER_DP_RANK_RNG, seed * (1 + dp_rank))
 
     @classmethod
     def list_available_models(cls) -> Optional[Mapping[str, str]]:
@@ -381,6 +402,24 @@ class PPOGPT(MegatronGPTModel):
     def setup_validation_data(self, _):
         if hasattr(self, "_valid_dataset"):
             self._validation_dl = self.build_data_loader(self._valid_dataset, self._valid_collate_fn)
+
+    def save_pretrained(self, checkpoint_dir):
+        torch.cuda.synchronize()
+        torch.distributed.barrier()
+        assert (
+            parallel_state.get_pipeline_model_parallel_world_size() == 1
+        ), "Pipeline parallelism not supported for saving"
+
+        if parallel_state.get_data_parallel_rank() == 0:
+            state_dict = unwrap_float16_module(self.model).pretrained_state_dict()
+            state_dict = {f"model.{k}": v for k, v in state_dict.items()}
+
+            mp_rank = parallel_state.get_tensor_model_parallel_rank()
+            rank_params = Path(checkpoint_dir) / f"mp_rank_{mp_rank:02d}" / "model_weights.ckpt"
+            rank_params.parent.mkdir(parents=True, exist_ok=True)
+
+            print(f"Saving to {rank_params}")
+            torch.save(state_dict, rank_params)
 
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
@@ -434,7 +473,7 @@ class PPOGPT(MegatronGPTModel):
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
-            return RefLMHeads(gpt, value_head)
+            return RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
             return gpt
 
@@ -681,7 +720,7 @@ class PPOGPT(MegatronGPTModel):
         _, columns = tables[0]
         rows = [r for trows, _ in tables for r in trows]
 
-        self.logger.log_text(key="samples", columns=columns, data=rows)
+        table = wandb.Table(data=rows, columns=columns)
 
         outputs_soa = {k: torch.cat([d[k] for d in metrics]).cuda() for k in metrics[0].keys()}
         dp_world = parallel_state.get_data_parallel_world_size()
@@ -691,10 +730,15 @@ class PPOGPT(MegatronGPTModel):
             gathered = torch.empty((v.shape[0] * dp_world), dtype=v.dtype, device=v.device)
             torch.distributed.all_gather_into_tensor(gathered, v, group=dp_group)
             outputs_gathered[k] = gathered
+
+        metrics = {f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()}
+        metrics["trainer/global_step"] = batch_idx
+        metrics["val_samples"] = table
+
         if torch.distributed.get_rank() == 0:
-            metrics = {f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()}
-            metrics["trainer/global_step"] = batch_idx
             wandb.log(metrics)
+
+        return metrics
 
     # Need to override this otherwise distributed fused adam won't work
     # with frozen layers
@@ -897,23 +941,39 @@ class PPOGPT(MegatronGPTModel):
 
     def generate(
         self,
-        inputs: Tuple[torch.Tensor, torch.Tensor],
+        inputs: Union[Sequence[str], Tuple[torch.Tensor, torch.Tensor]],
         length_params: LengthParam,
         sampling_params: SamplingParam = None,
     ) -> OutputType:
+        default_sampling_params = {
+            "use_greedy": False,
+            "temperature": self.ppo_config.gen_kwargs.get("temperature", 1.0),
+            "top_k": self.ppo_config.gen_kwargs.get("top_k", 0),
+            "top_p": 0.9,
+            "repetition_penalty": 1.2,
+            "add_BOS": False,
+            "all_probs": False,
+            "compute_logprob": False,
+        }
+
         if sampling_params is None:
-            sampling_params = {
-                "use_greedy": False,
-                "temperature": self.ppo_config.gen_kwargs.get("temperature", 1.0),
-                "top_k": self.ppo_config.gen_kwargs.get("top_k", 0),
-                "top_p": 0.9,
-                "repetition_penalty": 1.2,
-                "add_BOS": False,
-                "all_probs": False,
-                "compute_logprob": False,
-            }
+            sampling_params = default_sampling_params
+        else:
+            sampling_params = {**default_sampling_params, **sampling_params}
 
         self.maybe_initalize_per_dp_rng()
+
+        if isinstance(inputs[0], str):
+            inputs = self.tokenizer.tokenizer(inputs)
+            context_tokens = inputs["input_ids"]
+            max_new_tokens = length_params["max_length"]
+            context_lengths = [len(x) for x in context_tokens]
+            max_context_length = max(context_lengths)
+
+            pad_id = self.tokenizer.tokenizer.eos_token_id
+            padded = [x + [pad_id] * (max_context_length + max_new_tokens - len(x)) for x in context_tokens]
+
+            inputs = (torch.as_tensor(padded).cuda(), torch.as_tensor(context_lengths).cuda())
 
         with self.inference_mode():
             # Fork the RNG per dp rank to ensure that each dp rank generates different samples

@@ -1,15 +1,17 @@
+import os
+import sys
 from logging import getLogger
 from math import ceil
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, List, Optional, Union, cast
 
 import torch
-import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
+import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import flatten_dataclass
@@ -20,7 +22,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.nemo_ilql_trainer import megatron_trainer
-from trlx.utils import infinite_dataloader
+from trlx.utils import get_git_tag, infinite_dataloader
 
 logging = getLogger(__name__)
 
@@ -40,7 +42,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         if metric_fn is None:
 
             def metric_fn(*args, **kwargs):
-                return {"metric": self.reward_fn(*args, **kwargs)}
+                return {"reward": self.reward_fn(*args, **kwargs)}
 
             self.metric_fn = metric_fn
 
@@ -262,9 +264,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
             ]
 
         global_rank = self.trainer.global_rank
-
+        world_size = self.trainer.world_size
         if global_rank == 0:
+            script = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
+            config_name = str(self.config.train.trainer_kwargs["megatron_cfg"]).rsplit(".", 1)[0]
+            branch = get_git_tag()[0]
+            name = f"{script}/{config_name}/{world_size}gpus:{branch}"
             wandb.init(
+                name=name,
                 project=self.config.train.project_name,
                 mode="online" if self.config.train.tracker == "wandb" else "disabled",
                 group=self.config.train.group_name,
@@ -295,6 +302,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.model.setup_transformer_engine_tp_groups()
 
         self.model.setup()
+        self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]
 
@@ -305,6 +313,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
         total_batches = self.config.train.epochs * (self.train_samples // self.batch_size)
         if global_rank == 0:
             train_tbar = tqdm(desc="Training", total=total_batches)
+
+        metrics = None
+        best_metric = None
 
         for epoch in range(self.config.train.epochs):
             ppo_rl_rollouts = self.make_experience(
@@ -341,9 +352,17 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         val_stats = [
                             self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
                         ]
-                        self.model.validation_epoch_end(val_stats, local_batch_idx)
+                        metrics = self.model.validation_epoch_end(val_stats, local_batch_idx)
 
                     local_batch_idx += 1
+
+                    if (local_batch_idx % self.config.train.checkpoint_interval) == 0:
+                        if self.config.train.save_best and metrics is not None:
+                            if best_metric is None or metrics["val_metrics/reward"] > best_metric:
+                                best_metric = metrics["val_metrics/reward"]
+                                self.model.save_pretrained(self.config.train.checkpoint_dir)
+                        else:
+                            self.model.save_pretrained(self.config.train.checkpoint_dir)
 
             if local_batch_idx > self.config.train.total_steps:
                 break
