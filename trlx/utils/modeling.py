@@ -317,6 +317,28 @@ class RunningMoments:
 
 
 MODIFIED_MODULES_DICT = {
+    "llama": {
+        "attention": [
+            "self_attn.k_proj", 
+            "self_attn.q_proj", 
+            "self_attn.k_proj", 
+            "self_attn.o_proj",
+        ],
+        "mlp": [
+            "down_proj",
+            "gate_proj",
+            "up_proj",
+        ],
+        "all": [
+            "self_attn.k_proj", 
+            "self_attn.q_proj", 
+            "self_attn.k_proj", 
+            "self_attn.o_proj",
+            "down_proj",
+            "gate_proj",
+            "up_proj",
+        ],
+    },
     "gptj": {
         "attention": ["attn.q_proj", "attn.k_proj", "attn.v_proj"],
         "mlp": ["mlp.fc_in", "mlp.fc_out"],
