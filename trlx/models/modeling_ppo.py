@@ -336,10 +336,10 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int = -1,
+        num_layers_unfrozen: Union[int, float] = -1,
     ):
         super().__init__(base_model)
-        self.num_layers_unfrozen = num_layers_unfrozen
+        self.num_layers_unfrozen = int(num_layers_unfrozen * len(hf_get_decoder_blocks(self.base_model))) if type(num_layers_unfrozen) is float else num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             config = self.base_model.config
             branch_class = hf_get_branch_class(config)
@@ -1071,10 +1071,10 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         self,
         base_model: transformers.PreTrainedModel,
         *,
-        num_layers_unfrozen: int = -1,
+        num_layers_unfrozen: Union[int, float] = -1,
     ):
         super().__init__(base_model)
-        self.num_layers_unfrozen = num_layers_unfrozen
+        self.num_layers_unfrozen = int(num_layers_unfrozen * len(hf_get_decoder_blocks(self.base_model))) if type(num_layers_unfrozen) is float else num_layers_unfrozen
         if self.num_layers_unfrozen > 0:
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(

@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 import yaml
 
@@ -47,7 +47,7 @@ class ModelConfig:
 
     :param num_layers_unfrozen: Number of layers to unfreeze for fine-tuning.
         -1 means all layers are unfrozen.
-    :type num_layers_unfrozen: int
+    :type num_layers_unfrozen: Union[int, float]
 
     :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
         Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
@@ -66,7 +66,7 @@ class ModelConfig:
 
     model_path: str
     model_arch_type: str = "causal"
-    num_layers_unfrozen: int = -1
+    num_layers_unfrozen: Union[int, float] = -1
     delta_kwargs: Optional[Dict[str, Any]] = None
 
     @classmethod
