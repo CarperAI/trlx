@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, List, Optional, Union, cast
 
 import torch
+import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
-import wandb
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import flatten_dataclass
