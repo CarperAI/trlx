@@ -1,5 +1,6 @@
 import gc
 import inspect
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
@@ -254,13 +255,14 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["v_head"]
-    _supported_args = []
+    _supported_args = ["peft_config"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
@@ -275,6 +277,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        bypass_peft_prompt_adapter: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
@@ -291,7 +294,16 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
-        outputs = self.base_model(**forward_kwargs)
+        if self.peft_type == "PREFIX_TUNING":
+            # In this case peft redefines past_key_values, remove it to avoid an exception.
+            forward_kwargs.pop("past_key_values", None)
+
+        if bypass_peft_prompt_adapter:
+            # Call the base model of the PeftModel, to avoid the peft processing.
+            # Not effective for LORA adapters.
+            outputs = self.base_model.base_model(**forward_kwargs)
+        else:
+            outputs = self.base_model(**forward_kwargs)
         value = self.v_head(outputs.hidden_states[-1]).squeeze(-1)
 
         if not return_dict:
@@ -303,16 +315,21 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.base_model.generate(*args, **kwargs)
 
-    def state_dict(self, *args, **kwargs):
+    def state_dict(self, heads_only=False, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
+        if heads_only:
+            model_state_dict = OrderedDict()
+        else:
+            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         for k, v in v_head_state_dict.items():
-            base_model_state_dict[f"v_head.{k}"] = v
-        return base_model_state_dict
+            model_state_dict[f"v_head.{k}"] = v
+
+        return model_state_dict
 
     def post_init(self, state_dict):
         """
@@ -320,6 +337,8 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
         keys of the value head state dictionary.
         """
+        super().post_init()
+
         for k in list(state_dict.keys()):
             if "v_head." in k:
                 state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
@@ -330,17 +349,19 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
 class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen"]
+    _supported_args = ["num_layers_unfrozen", "peft_config"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int = -1,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         self.num_layers_unfrozen = num_layers_unfrozen
-        if self.num_layers_unfrozen > 0:
+
+        if self.num_layers_unfrozen > 0 and not self.peft_type:
             config = self.base_model.config
             branch_class = hf_get_branch_class(config)
             self.frozen_head = branch_class(
@@ -377,14 +398,26 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         forward_kwargs["return_dict"] = True
         forward_kwargs["output_hidden_states"] = True
 
-        outputs = self.forward(**forward_kwargs)
-        # Select the hidden state before the first branching layer
-        input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
+        if self.peft_type:
+            # To save memory, instead of using a frozen head :
+            # For LORA, temporarily disable the adapter
+            # For prompt or prefix adapters, just use the base model of PeftModel
+            if "LORA" in self.peft_type:
+                lora_model = self.base_model.base_model
+                lora_model.disable_adapter_layers()
+                hydra_outputs = self.forward(**forward_kwargs)
+                lora_model.enable_adapter_layers()
+            else:
+                hydra_outputs = self.forward(**forward_kwargs, bypass_peft_prompt_adapter=True)
+        else:
+            outputs = self.forward(**forward_kwargs)
+            # Select the hidden state before the first branching layer
+            input_hidden_state = outputs.hidden_states[-(self.num_layers_unfrozen + 1)]
 
-        output_shape = outputs.hidden_states[-1].size()
-        forward_kwargs.pop("input_ids", None)  # Ignore `input_ids` for branch head
-        forward_kwargs.pop("inputs_embeds", None)  # Ignore `inputs_embeds` for branch head
-        hydra_outputs = self.frozen_head(input_hidden_state, output_shape, **forward_kwargs)
+            output_shape = outputs.hidden_states[-1].size()
+            forward_kwargs.pop("input_ids", None)  # Ignore `input_ids` for branch head
+            forward_kwargs.pop("inputs_embeds", None)  # Ignore `inputs_embeds` for branch head
+            hydra_outputs = self.frozen_head(input_hidden_state, output_shape, **forward_kwargs)
 
         if not return_dict:
             return hydra_outputs.logits
@@ -982,13 +1015,14 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["v_head"]
-    _supported_args = []
+    _supported_args = ["peft_config"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
@@ -1008,6 +1042,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = True,
         return_dict: Optional[bool] = None,
+        bypass_peft_prompt_adapter: Optional[bool] = None,
     ) -> Seq2SeqLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
@@ -1029,7 +1064,16 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
-        outputs = self.base_model(**forward_kwargs)
+        if self.peft_type == "PREFIX_TUNING":
+            # In this case peft redefines past_key_values, remove it to avoid an exception.
+            forward_kwargs.pop("past_key_values", None)
+
+        if bypass_peft_prompt_adapter:
+            # Call the base model of the PeftModel, to avoid the peft processing.
+            # Not effective for LORA adapters.
+            outputs = self.base_model.base_model(**forward_kwargs)
+        else:
+            outputs = self.base_model(**forward_kwargs)
         last_hidden_state = outputs.decoder_hidden_states[-1]
         value = self.v_head(last_hidden_state).squeeze(-1)
 
@@ -1038,16 +1082,21 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.base_model.generate(*args, **kwargs)
 
-    def state_dict(self, *args, **kwargs):
+    def state_dict(self, heads_only=False, *args, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
+        if heads_only:
+            model_state_dict = OrderedDict()
+        else:
+            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         for k, v in v_head_state_dict.items():
-            base_model_state_dict[f"v_head.{k}"] = v
-        return base_model_state_dict
+            model_state_dict[f"v_head.{k}"] = v
+
+        return model_state_dict
 
     def post_init(self, state_dict):
         """
@@ -1055,6 +1104,8 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
         keys of the value head state dictionary.
         """
+        super().post_init()
+
         for k in list(state_dict.keys()):
             if "v_head." in k:
                 state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
@@ -1065,17 +1116,19 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
 class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen"]
+    _supported_args = ["num_layers_unfrozen", "peft_config"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int = -1,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         self.num_layers_unfrozen = num_layers_unfrozen
-        if self.num_layers_unfrozen > 0:
+
+        if self.num_layers_unfrozen > 0 and not self.peft_type:
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
                 self.base_model,
@@ -1121,19 +1174,31 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         forward_kwargs["output_hidden_states"] = True
         forward_kwargs["return_dict"] = True
 
-        outputs = self.forward(**forward_kwargs)
-        # Select the hidden state before the first branching layer
-        input_hidden_state = outputs.decoder_hidden_states[-(self.num_layers_unfrozen + 1)]
-        hydra_outputs = self.frozen_head(
-            hidden_states=input_hidden_state,
-            attention_mask=decoder_attention_mask,
-            encoder_hidden_states=outputs.encoder_last_hidden_state,
-            encoder_attention_mask=attention_mask,
-            use_cache=False,
-            output_attentions=False,
-            output_hidden_states=True,
-            return_dict=return_dict,
-        )
+        if self.peft_type:
+            # To save memory, instead of using a frozen head :
+            # For LORA, temporarily disable the adapter
+            # For prompt or prefix adapters, just use the base model of PeftModel
+            if "LORA" in self.peft_type:
+                lora_model = self.base_model.base_model
+                lora_model.disable_adapter_layers()
+                hydra_outputs = self.forward(**forward_kwargs)
+                lora_model.enable_adapter_layers()
+            else:
+                hydra_outputs = self.forward(**forward_kwargs, bypass_peft_prompt_adapter=True)
+        else:
+            outputs = self.forward(**forward_kwargs)
+            # Select the hidden state before the first branching layer
+            input_hidden_state = outputs.decoder_hidden_states[-(self.num_layers_unfrozen + 1)]
+            hydra_outputs = self.frozen_head(
+                hidden_states=input_hidden_state,
+                attention_mask=decoder_attention_mask,
+                encoder_hidden_states=outputs.encoder_last_hidden_state,
+                encoder_attention_mask=attention_mask,
+                use_cache=False,
+                output_attentions=False,
+                output_hidden_states=True,
+                return_dict=return_dict,
+            )
 
         if not return_dict:
             return hydra_outputs.logits

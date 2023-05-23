@@ -38,7 +38,21 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return AutoModelForCausalLM.from_pretrained(config.model.model_path)
+        model = AutoModelForCausalLM.from_pretrained(config.model.model_path)
+
+        if config.model.peft_config is not None:
+            # Initialize the peft adapter
+            import peft
+
+            peft_config = config.model.peft_config
+            if not isinstance(peft_config, peft.PeftConfig):
+                if isinstance(peft_config, dict):
+                    peft_config = peft.get_peft_config(peft_config)
+                else:
+                    raise ValueError("`peft_config` should be an instance of `peft.PeftConfig` or a dict.")
+            model = peft.get_peft_model(model, peft_config)
+
+        return model
 
     def loss(self, batch):
         if "labels" in batch:
