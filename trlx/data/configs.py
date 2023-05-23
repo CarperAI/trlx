@@ -49,25 +49,29 @@ class ModelConfig:
         -1 means all layers are unfrozen.
     :type num_layers_unfrozen: int
 
-    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
-        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
-        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_r`)
-            {"delta_type": "lora", "modified_modules": "all", "lora_r": 8, "lora_alpha": 16, "lora_dropout": 0.0}
-        or in YAML format:
-            delta_kwargs:
-                delta_type: lora
-                modified_modules: "all"
-                lora_r: 8
-                lora_alpha: 16
-                lora_dropout: 0.0
-        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
-    :type delta_kwargs: Optional[Dict[str, Any]]
+    :param peft_config: Can be either a peft config, or the kwargs arguments used
+        by the peft (Parameter Efficient Fine-Tuning) library to create the config.
+
+        Here is an example of LORA configuration:
+            {"peft_type": "LORA", "target_modules": "all", "r": 8, "lora_alpha": 32, "lora_dropout": 0.1}
+
+        Some examples of peft configurations can be found here :
+        https://github.com/huggingface/peft/blob/main/src/peft/peft_model.py
+
+        peft supports multiple types of parameter-efficient fine-tuning such as prefix tuning or adaptive lora.
+
+        (parameter-efficient fine-tuning was previously done with OpenDelta, which is no longer supported)
+    :type peft_config: Optional[PeftConfig, Dict[str, Any]]
+
+    :param peft_adapter_path: If the aim is to retrain a peft model, path of the peft adapter model.
+    :type model_path: str
     """
 
     model_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
-    delta_kwargs: Optional[Dict[str, Any]] = None
+    peft_config: Optional[Dict[str, Any]] = None
+    peft_adapter_path: Optional[str] = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
