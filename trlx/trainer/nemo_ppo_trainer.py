@@ -27,6 +27,10 @@ from trlx.utils import get_git_tag, infinite_dataloader
 logging = getLogger(__name__)
 
 
+def rank_0_tqdm(*args, **kwargs):
+    return tqdm(*args, **kwargs, disable=torch.distributed.get_rank() != 0)
+
+
 @register_trainer
 class NeMoPPOTrainer(BaseRLTrainer):
     def __init__(
@@ -70,7 +74,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         if (self.ppo_config.chunk_size % rank_batch_size) != 0:
             self.ppo_config.chunk_size = rank_batch_size * ceil(self.ppo_config.chunk_size / rank_batch_size)
-            print("Rounding chunk size to", self.ppo_config.chunk_size)
+            logging.info("Rounding chunk size to", self.ppo_config.chunk_size)
 
         train_samples = dp_world * self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
         # Disable validation within nemo, run it ourselves
@@ -121,8 +125,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         device = torch.device("cuda")
 
-        if torch.distributed.get_rank() == 0:
-            tbar = tqdm(total=num_rollouts * dp_world, desc="Generating experience")
+        tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Generating experience")
 
         self.model.offload_reference_model()
 
@@ -165,9 +168,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
 
-        if torch.distributed.get_rank() == 0:
-            tbar.close()
-            lps_tbar = tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
+        tbar.close()
+        lps_tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
 
         for (_, lengths, samples), scores in zip(inputs_samples, scores):
             output_tokens = samples["token_ids"]
@@ -282,7 +284,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 entity=self.config.train.entity_name,
                 config=OmegaConf.to_container(self.megatron_cfg, resolve=True),
             )
-            print(OmegaConf.to_container(self.megatron_cfg, resolve=True))
 
         def dummy():
             return
@@ -315,8 +316,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         rank_batch_size = self.batch_size // dp_world
         total_batches = self.config.train.epochs * (self.train_samples // self.batch_size)
-        if global_rank == 0:
-            train_tbar = tqdm(desc="Training", total=total_batches)
+
+        train_tbar = rank_0_tqdm(desc="Training", total=total_batches)
 
         metrics = None
         best_metric = None
@@ -335,26 +336,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
             for batch in dataloader:
                 for _ in range(self.ppo_config.ppo_epochs):
                     self.model.training_step(batch, local_batch_idx)
-                    if global_rank == 0:
-                        train_tbar.update(1)
+                    train_tbar.update(1)
                     self.model._optimizer.step()
                     scheduler.step()
 
                     if local_batch_idx % self.val_check_interval == 0:
                         mbs = self.ppo_config.chunk_size
-                        if global_rank == 0:
-
-                            def tbar(x):
-                                return tqdm(x, desc="Validation", total=len(self.eval_pipeline) // mbs)
-
-                        else:
-
-                            def tbar(x):
-                                return x
-
                         val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
                         val_stats = [
-                            self.model.validation_step(val_batch, local_batch_idx) for val_batch in tbar(val_loader)
+                            self.model.validation_step(val_batch, local_batch_idx)
+                            for val_batch in rank_0_tqdm(val_loader)
                         ]
                         metrics = self.model.validation_epoch_end(val_stats, local_batch_idx)
 
