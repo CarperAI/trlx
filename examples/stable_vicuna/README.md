@@ -42,22 +42,25 @@ Accelerate config:
 ```yaml
 compute_environment: LOCAL_MACHINE
 deepspeed_config:
-  deepspeed_config_file: ds_config.json
+  deepspeed_multinode_launcher: standard
+  gradient_accumulation_steps: 1
+  gradient_clipping: 1.0
+  offload_optimizer_device: none
+  offload_param_device: none
   zero3_init_flag: false
+  zero_stage: 2
 distributed_type: DEEPSPEED
-downcast_bf16: 'no'
+downcast_bf16: no
 dynamo_config: {}
 fsdp_config: {}
 machine_rank: 0
 main_training_function: main
 megatron_lm_config: {}
+mixed_precision: bf16
 num_machines: 1
-num_processes: 1
+num_processes: 7
 rdzv_backend: static
 same_network: true
-tpu_env: []
-tpu_use_cluster: false
-tpu_use_sudo: false
 use_cpu: false
 ```
 
