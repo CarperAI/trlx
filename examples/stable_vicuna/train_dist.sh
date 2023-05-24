@@ -20,7 +20,7 @@ conda activate trlx_env
 cd trlx/examples/stable_vicuna
 
 if [[ $RANK -eq 0 ]]; then
-    accelerate launch --num_processes $((8 * $COUNT_NODE - 1)) --num_machines $COUNT_NODE --machine_rank $RANK --main_process_port 1234 --main_process_ip $MASTER_ADDR --config_file configs/accelerate/zero2-bf16.yaml examples/stable_vicuna_version_1_max_cls_original.py
+    accelerate launch --num_processes $((8 * $COUNT_NODE - 1)) --num_machines $COUNT_NODE --machine_rank $RANK --main_process_port 1234 --main_process_ip $MASTER_ADDR --config_file configs/accelerate/zero2-bf16.yaml rl_training.py
 else
-    accelerate launch --num_processes $((8 * $COUNT_NODE)) --num_machines $COUNT_NODE --machine_rank $RANK --main_process_port 1234 --main_process_ip $MASTER_ADDR --config_file configs/accelerate/zero2-bf16.yaml examples/stable_vicuna_version_1_max_cls_original.py
+    accelerate launch --num_processes $((8 * $COUNT_NODE)) --num_machines $COUNT_NODE --machine_rank $RANK --main_process_port 1234 --main_process_ip $MASTER_ADDR --config_file configs/accelerate/zero2-bf16.yaml rl_training.py
 fi
