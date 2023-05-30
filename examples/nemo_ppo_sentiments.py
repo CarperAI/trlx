@@ -42,7 +42,7 @@ def main(hparams={}):
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model=f"/mnt/nvme/home/uwu/nemo-megatron-gpt-{cfg_name}/",
+                pretrained_model=f"/mnt/hdd/nemo-megatron-gpt-{cfg_name}/",
                 megatron_cfg=nemo_config,
             ),
             checkpoint_interval=64,
