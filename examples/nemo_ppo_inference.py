@@ -2,10 +2,6 @@ import os.path
 import sys
 from glob import glob
 
-from nemo.collections.nlp.modules.common.megatron.megatron_init import (
-    fake_initialize_model_parallel,
-)
-from nemo.utils.app_state import AppState
 from omegaconf.omegaconf import OmegaConf
 
 from trlx.data.default_configs import default_ppo_config
@@ -36,34 +32,28 @@ def main(megatron_cfg_path, checkpoint_path):
 
     megatron_cfg = OmegaConf.load(megatron_cfg_path)
     megatron_cfg.trainer.num_nodes = 1
-    megatron_cfg.trainer.devices = 4
+    megatron_cfg.trainer.devices = (
+        megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
+    )
+    # Overriden in generate
+    megatron_cfg.model.global_batch_size = megatron_cfg.model.micro_batch_size
     megatron_cfg.model.resume_from_checkpoint = checkpoint_path
     megatron_cfg.exp_manager.create_wandb_logger = False
     megatron_cfg.exp_manager.create_checkpoint_callback = False
 
     trainer = megatron_trainer(megatron_cfg)
 
-    # Manually set up the TP and PP groups
-    app_state = AppState()
-    app_state.model_parallel_size = (
-        megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
-    )
-    app_state.tensor_model_parallel_size = megatron_cfg.model.tensor_model_parallel_size
-    app_state.pipeline_model_parallel_size = megatron_cfg.model.pipeline_model_parallel_size
-    (
-        app_state.tensor_model_parallel_rank,
-        app_state.pipeline_model_parallel_rank,
-        app_state.model_parallel_size,
-        app_state.data_parallel_size,
-        app_state.pipeline_model_parallel_split_rank,
-        app_state.virtual_pipeline_model_parallel_rank,
-    ) = fake_initialize_model_parallel(
-        world_size=app_state.model_parallel_size,
-        rank=trainer.global_rank,
-        tensor_model_parallel_size_=megatron_cfg.model.tensor_model_parallel_size,
-        pipeline_model_parallel_size_=megatron_cfg.model.pipeline_model_parallel_size,
-        pipeline_model_parallel_split_rank_=None,
-    )
+    if trainer.world_size != megatron_cfg.trainer.devices:
+        raise ValueError("Inference only supports data parallel world size of 1")
+
+    # Initialize PyTorch Lightning DDP
+
+    def dummy():
+        return
+
+    if trainer.strategy.launcher is not None:
+        trainer.strategy.launcher.launch(dummy, trainer=trainer)
+    trainer.strategy.setup_environment()
 
     model = PPOGPT(ppo_config=ppo_config, cfg=megatron_cfg.model, trainer=trainer, build_reference_model=False)
     model.load_from_pretrained(checkpoint_path)
