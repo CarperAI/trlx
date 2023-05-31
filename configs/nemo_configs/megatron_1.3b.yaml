@@ -48,6 +48,7 @@ exp_manager:
     buffer_size: 5
 
 model:
+  global_batch_size: 256
   micro_batch_size: 4
   tensor_model_parallel_size: 1
   pipeline_model_parallel_size: 1
@@ -86,7 +87,7 @@ model:
   activations_checkpoint_num_layers: 1
 
   gradient_as_bucket_view: True
-  resume_from_checkpoint: False
+  resume_from_checkpoint: null
   sequence_parallel: True
 
   data:
@@ -159,7 +160,7 @@ model:
     dataloader_type: single
     reset_position_ids: false
     reset_attention_mask: false
-    eod_mask_loss: false
+    eod_mask_loss: True
   optim:
     name: distributed_fused_adam
     lr: 0.0002
