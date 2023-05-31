@@ -130,7 +130,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         return from_fn(
             config.model.model_path,
-            num_layers_unfrozen=config.model.num_layers_unfrozen,
+            num_layers_unfrozen=config.model.num_layers_unfrozen if config.method.init_kl_coef > 0 else -1, # If init_kl_coef is 0 then do not create ref_head
         )
 
     def loss(self, batch: PPORLBatch):

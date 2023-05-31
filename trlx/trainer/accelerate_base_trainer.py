@@ -539,7 +539,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             loss, stats = self.loss(mb)
                             forward_time += time()
                             backward_time -= time()
+                            # TODO(dahoas): Hacky fix. Zero3 requires all parameters trainable but inferencing with dropout is unstable
+                            self.model.train()
                             self.accelerator.backward(loss)
+                            self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
 
