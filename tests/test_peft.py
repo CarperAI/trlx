@@ -12,7 +12,7 @@ import torch
 import transformers
 from peft import get_peft_config, get_peft_model
 from peft.utils.config import PeftType, TaskType
-from transformers import AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from trlx.data.configs import TokenizerConfig
 from trlx.data.default_configs import (
@@ -120,7 +120,7 @@ class TestPeft(unittest.TestCase):
             # Classification tasks not implemented
             raise NotImplementedError
 
-    def _get_trainer(self, training_type, model_path: str, task_type: str, peft_config):
+    def _get_trainer(self, training_type, model_path: str, task_type: str, peft_config, tokenizer_path: str = None):
         if training_type == PPO:
             config = default_ppo_config()
             trainer_type = AcceleratePPOTrainer
@@ -133,7 +133,7 @@ class TestPeft(unittest.TestCase):
         else:
             raise ValueError(f"Training type {training_type} not recognized.")
 
-        config.tokenizer = TokenizerConfig(tokenizer_path=model_path)
+        config.tokenizer = TokenizerConfig(tokenizer_path=tokenizer_path if tokenizer_path else model_path)
         config.model = ModelConfig(model_path=model_path, peft_config=peft_config, model_arch_type=task_type)
         config.train.tracker = None
 
@@ -155,7 +155,7 @@ class TestPeft(unittest.TestCase):
 
         raise ValueError(f"Training type {training_type} for the task {task_type} not recognized.")
 
-    def _get_peft_config(self, peft_type: str, task_type: str, tokenizer_name_or_path: str = None):
+    def _get_peft_config(self, peft_type: str, task_type: str):
         assert task_type in [CAUSAL, SEQ2SEQ]
         task_type = TaskType.CAUSAL_LM if task_type == "causal" else TaskType.SEQ_2_SEQ_LM
 
@@ -262,6 +262,16 @@ class TestPeft(unittest.TestCase):
 
                     loaded_model = auto_model_type.from_pretrained(tmp_dir)
                     self._check_that_models_are_equivalent(loaded_model, self.model, training_type, True)
+
+    def test_from_config(self):
+        """Check that from_config will add a peft adapter if given the argument peft_config"""
+        for training_type in TRAINING_TYPES:
+            peft_config = self._get_peft_config(PeftType.LORA, CAUSAL)
+            gpt2_config = AutoConfig.from_pretrained("gpt2")
+            trainer = self._get_trainer(training_type, gpt2_config, CAUSAL, peft_config, tokenizer_path="gpt2")
+            state_dict = trainer.model.state_dict()
+
+            self.assertTrue(any(["lora" in layer_name for layer_name in state_dict.keys()]))
 
     def test_save_and_load_without_peft(self):
         """Similar to test_save_load, but with peft not installed. Should not raise any error."""
@@ -434,7 +444,7 @@ class TestPeft(unittest.TestCase):
                 self.assertTrue(torch.equal(trained_model_logits, loaded_model_logits))
 
     @unittest.skipUnless(
-        importlib.util.find_spec("peft") and torch.cuda.is_available(),
+        importlib.util.find_spec("bitsandbytes") and torch.cuda.is_available(),
         "bitsandbytes and GPU needed to execute test_8bits",
     )
     def test_8bits(self):

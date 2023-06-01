@@ -64,7 +64,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     # TODO (jon-tow): Supported args should come from a `PretrainedConfig` of the
     # specific underlying type similar to how config instances can be used to instantiate
     # `transformers.PreTrainedModel`s.
-    _supported_args: List[str] = ["peft_config"]
+    _supported_args: List[str] = []
 
     def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, peft_config=None, **kwargs):
         super().__init__()
@@ -90,12 +90,13 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         return supported_kwargs, unsupported_kwargs
 
     @classmethod
-    def from_config(cls, config: transformers.PretrainedConfig, **kwargs):
+    def from_config(cls, config: transformers.PretrainedConfig, peft_config=None, **kwargs):
         """Instantiate the pretrained pytorch model from a configuration.
 
         Args:
             config (transformers.PretrainedConfig): The configuration to use to
                 instantiate the base model.
+            peft_config (peft.PeftConfig or dict, *optional*): Configuration for the peft adapter
 
         NOTE: Loading a model from its configuration file does **not** load the
         model weights. It only affects the model's configuration. Use
@@ -107,6 +108,12 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             from_config_kwargs = {}
             wrapped_model_kwargs = {}
         base_model = cls._auto_model_parent_class.from_config(config, **from_config_kwargs)
+        if peft_config:
+            if isinstance(peft_config, dict):
+                peft_config = get_peft_config(peft_config)
+            base_model = get_peft_model(base_model, peft_config)
+            wrapped_model_kwargs["peft_config"] = peft_config
+
         model = cls(base_model, **wrapped_model_kwargs)
         return model
 
