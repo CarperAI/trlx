@@ -284,7 +284,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         eos_token_id=None,
     ):
         """
-        Generates samples akin to hf's `.generate` but with custom loop preprocessing:
+        Generates samples akin to hf's `.generate` but with custom logp preprocessing:
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
@@ -356,7 +356,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
 
-    def state_dict(self, heads_only=False, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
@@ -424,7 +424,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
 
-    def state_dict(self, heads_only=False, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
@@ -521,7 +521,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         eos_token_id=None,
     ):
         """
-        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        Generates samples akin to hf's `.generate` but with custom logp preprocessing:
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """

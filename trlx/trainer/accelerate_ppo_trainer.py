@@ -67,7 +67,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.store.clear_history()  # Clear the rollout store
 
-        # Setup the KL controller
+        # Set up a reference model when hydra heads are not used
+        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
+            self.ref_model = self.get_arch(self.config)
+            self.ref_model.to(self.accelerator.device)
+            self.ref_model.eval()
+
+        # Set up the KL controller
         # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
@@ -374,13 +380,22 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     )
                     logits = outputs.logits
                     values = outputs.value
-                    ref_logits = self.model.forward_hydra(
-                        input_ids=prompt_tensors,
-                        attention_mask=attention_mask,
-                        decoder_input_ids=sample_outputs,
-                        decoder_attention_mask=decoder_attention_mask,
-                        return_dict=True,
-                    ).logits
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
+                        ref_logits = self.model.forward_hydra(
+                            input_ids=prompt_tensors,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=sample_outputs,
+                            decoder_attention_mask=decoder_attention_mask,
+                            return_dict=True,
+                        ).logits
+                    else:
+                        ref_logits = self.ref_model(
+                            input_ids=prompt_tensors,
+                            attention_mask=attention_mask,
+                            decoder_input_ids=sample_outputs,
+                            decoder_attention_mask=decoder_attention_mask,
+                            return_dict=True,
+                        ).logits
             else:
                 all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
                 attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
@@ -390,11 +405,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         attention_mask=attention_mask,
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    ref_logits = self.model.forward_hydra(
-                        all_tokens,
-                        attention_mask=attention_mask,
-                        return_dict=True,
-                    ).logits
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
+                        ref_logits = self.model.forward_hydra(
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            return_dict=True,
+                        ).logits
+                    else:
+                        ref_logits = self.ref_model(
+                            all_tokens,
+                            attention_mask=attention_mask,
+                            return_dict=True,
+                        ).logits
+                        ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":
                 logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])

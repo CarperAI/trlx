@@ -18,7 +18,6 @@
 
 import inspect
 import json
-import logging
 import os
 from typing import Any, Dict, List, Optional, Union
 
@@ -27,9 +26,10 @@ import torch.nn as nn
 import transformers
 from huggingface_hub import hf_hub_download
 
+import trlx.utils.logging as logging
 from trlx.utils import is_peft_available
 
-logger = logging.getLogger(__name__)
+logger = logging.get_logger(__name__)
 
 if is_peft_available():
     from peft import (

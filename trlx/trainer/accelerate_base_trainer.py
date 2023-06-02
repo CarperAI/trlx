@@ -155,6 +155,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
             else:
                 freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
         else:
+            if self.accelerator.is_main_process and hasattr(model.base_model, "print_trainable_parameters"):
+                model.base_model.print_trainable_parameters()
             if self.config.model.num_layers_unfrozen >= 0:
                 logger.warning(
                     "The argument num_layers_unfrozen is ignored when using peft, to prevent unexpected behaviour."

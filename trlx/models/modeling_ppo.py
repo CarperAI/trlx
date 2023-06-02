@@ -277,7 +277,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        bypass_peft_prompt_adapter: Optional[bool] = None,
+        ignore_peft_adapter: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithValue]:
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
@@ -298,10 +298,16 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
             # In this case peft redefines past_key_values, remove it to avoid an exception.
             forward_kwargs.pop("past_key_values", None)
 
-        if bypass_peft_prompt_adapter:
-            # Call the base model of the PeftModel, to avoid the peft processing.
-            # Not effective for LORA adapters.
-            outputs = self.base_model.base_model(**forward_kwargs)
+        if self.peft_type and ignore_peft_adapter:
+            if "LORA" in self.peft_type:
+                # For LORA, temporarily disable the adapter
+                lora_model = self.base_model.base_model
+                lora_model.disable_adapter_layers()
+                outputs = self.base_model(**forward_kwargs)
+                lora_model.enable_adapter_layers()
+            else:
+                # For prompt or prefix adapters, just use the base model of PeftModel
+                outputs = self.base_model.base_model(**forward_kwargs)
         else:
             outputs = self.base_model(**forward_kwargs)
         value = self.v_head(outputs.hidden_states[-1]).squeeze(-1)
@@ -315,7 +321,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.base_model.generate(*args, **kwargs)
 
-    def state_dict(self, heads_only=False, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
@@ -399,16 +405,7 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         forward_kwargs["output_hidden_states"] = True
 
         if self.peft_type:
-            # To save memory, instead of using a frozen head :
-            # For LORA, temporarily disable the adapter
-            # For prompt or prefix adapters, just use the base model of PeftModel
-            if "LORA" in self.peft_type:
-                lora_model = self.base_model.base_model
-                lora_model.disable_adapter_layers()
-                hydra_outputs = self.forward(**forward_kwargs)
-                lora_model.enable_adapter_layers()
-            else:
-                hydra_outputs = self.forward(**forward_kwargs, bypass_peft_prompt_adapter=True)
+            hydra_outputs = self.forward(**forward_kwargs, ignore_peft_adapter=True)
         else:
             outputs = self.forward(**forward_kwargs)
             # Select the hidden state before the first branching layer
@@ -1042,7 +1039,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = True,
         return_dict: Optional[bool] = None,
-        bypass_peft_prompt_adapter: Optional[bool] = None,
+        ignore_peft_adapter: Optional[bool] = None,
     ) -> Seq2SeqLMOutputWithValue:
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
@@ -1068,12 +1065,19 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
             # In this case peft redefines past_key_values, remove it to avoid an exception.
             forward_kwargs.pop("past_key_values", None)
 
-        if bypass_peft_prompt_adapter:
-            # Call the base model of the PeftModel, to avoid the peft processing.
-            # Not effective for LORA adapters.
-            outputs = self.base_model.base_model(**forward_kwargs)
+        if self.peft_type and ignore_peft_adapter:
+            if "LORA" in self.peft_type:
+                # For LORA, temporarily disable the adapter
+                lora_model = self.base_model.base_model
+                lora_model.disable_adapter_layers()
+                outputs = self.base_model(**forward_kwargs)
+                lora_model.enable_adapter_layers()
+            else:
+                # For prompt or prefix adapters, just use the base model of PeftModel
+                outputs = self.base_model.base_model(**forward_kwargs)
         else:
             outputs = self.base_model(**forward_kwargs)
+
         last_hidden_state = outputs.decoder_hidden_states[-1]
         value = self.v_head(last_hidden_state).squeeze(-1)
 
@@ -1082,7 +1086,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
     def generate(self, *args, **kwargs) -> Union[ModelOutput, torch.LongTensor]:
         return self.base_model.generate(*args, **kwargs)
 
-    def state_dict(self, heads_only=False, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
@@ -1175,16 +1179,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         forward_kwargs["return_dict"] = True
 
         if self.peft_type:
-            # To save memory, instead of using a frozen head :
-            # For LORA, temporarily disable the adapter
-            # For prompt or prefix adapters, just use the base model of PeftModel
-            if "LORA" in self.peft_type:
-                lora_model = self.base_model.base_model
-                lora_model.disable_adapter_layers()
-                hydra_outputs = self.forward(**forward_kwargs)
-                lora_model.enable_adapter_layers()
-            else:
-                hydra_outputs = self.forward(**forward_kwargs, bypass_peft_prompt_adapter=True)
+            hydra_outputs = self.forward(**forward_kwargs, ignore_peft_adapter=True)
         else:
             outputs = self.forward(**forward_kwargs)
             # Select the hidden state before the first branching layer

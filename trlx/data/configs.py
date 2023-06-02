@@ -55,7 +55,7 @@ class ModelConfig:
         or prefix tuning (cf. https://github.com/huggingface/peft).
 
         Here is an example of LORA configuration:
-            {"peft_type": "LORA", "target_modules": "all", "r": 8, "lora_alpha": 32, "lora_dropout": 0.1}
+            {"peft_type": "LORA", "r": 8, "lora_alpha": 32, "lora_dropout": 0.1}
 
         (parameter-efficient fine-tuning was previously done in trlx with OpenDelta, but it is no longer supported)
     :type peft_config: Union[peft.PeftConfig, Dict[str, Any]]

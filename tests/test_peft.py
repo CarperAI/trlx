@@ -44,9 +44,9 @@ SEQ2SEQ = "seq2seq"
 
 MODEL_TASK_TYPE = {
     "gpt2": CAUSAL,
+    "google/t5-efficient-tiny": SEQ2SEQ,
     # "EleutherAI/pythia-160m": CAUSAL,
     # "facebook/opt-125m": CAUSAL,
-    "t5-small": SEQ2SEQ,
 }
 MODELS_TO_TEST = list(MODEL_TASK_TYPE.keys())
 

@@ -55,6 +55,8 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
                 else:
                     raise ValueError("`peft_config` should be an instance of `peft.PeftConfig` or a dict.")
             model = peft.get_peft_model(model, peft_config)
+            if self.accelerator.is_main_process:
+                model.print_trainable_parameters()
 
         return model
 
