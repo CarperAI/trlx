@@ -63,14 +63,20 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         megatron_cfg.trlx = config.to_dict()
 
-        megatron_cfg.model.global_batch_size = config.train.batch_size
-        megatron_cfg.model.seed = config.train.seed
-
         world_size = megatron_cfg.trainer.num_nodes * megatron_cfg.trainer.devices
         dp_world = world_size // (
             megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
         )
-        rank_batch_size = megatron_cfg.model.global_batch_size // dp_world
+        megatron_cfg.model.global_batch_size = config.train.batch_size * dp_world
+
+        if config.train.minibatch_size is not None:
+            megatron_cfg.model.micro_batch_size = config.train.minibatch_size
+        else:
+            megatron_cfg.model.micro_batch_size = config.train.batch_size
+
+        megatron_cfg.model.seed = config.train.seed
+
+        rank_batch_size = config.train.batch_size
 
         if (self.ppo_config.chunk_size % rank_batch_size) != 0:
             self.ppo_config.chunk_size = rank_batch_size * ceil(self.ppo_config.chunk_size / rank_batch_size)
@@ -85,6 +91,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         megatron_cfg.trainer.val_check_interval = None
         self.train_samples = train_samples
         megatron_cfg.trainer.max_steps = config.train.epochs * (train_samples // megatron_cfg.model.global_batch_size)
+        megatron_cfg.trainer.max_steps = min(megatron_cfg.trainer.max_steps, config.train.total_steps)
 
         self.trainer = megatron_trainer(megatron_cfg)
 
@@ -299,7 +306,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.prompt_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=True, drop_last=True
         )
         prompt_dataloader = infinite_dataloader(
-            self.prompt_pipeline.create_loader(self.ppo_config.chunk_size, shuffle=False, sampler=sampler),
+            self.prompt_pipeline.create_loader(
+                self.ppo_config.chunk_size, shuffle=False, sampler=sampler, drop_last=True
+            ),
             sampler=sampler,
         )
 
@@ -316,6 +325,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         rank_batch_size = self.batch_size // dp_world
         total_batches = self.config.train.epochs * (self.train_samples // self.batch_size)
+        total_batches = min(total_batches, self.config.train.total_steps)
 
         train_tbar = rank_0_tqdm(desc="Training", total=total_batches)
 

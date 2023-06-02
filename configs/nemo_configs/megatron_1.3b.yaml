@@ -49,7 +49,7 @@ exp_manager:
 
 model:
   global_batch_size: 256
-  micro_batch_size: 4
+  micro_batch_size: 32
   tensor_model_parallel_size: 1
   pipeline_model_parallel_size: 1
   encoder_seq_length: 2048
@@ -163,16 +163,16 @@ model:
     eod_mask_loss: True
   optim:
     name: distributed_fused_adam
-    lr: 0.0002
-    weight_decay: 0.1
+    lr: 6e-06
+    weight_decay: 0.0
     betas:
     - 0.9
     - 0.95
     sched:
       name: CosineAnnealing
-      warmup_steps: 400
+      warmup_steps: 0
       constant_steps: 30000
-      min_lr: 2.0e-05
-  precision: 16
+      min_lr: 5e-06
+  precision: bf16
   vocab_file: nemo:c4aec99015da48ba8cbcba41b48feb2c_vocab.json
   merges_file: nemo:50284f68eefe440e850c4fb42c4d13e7_merges.txt

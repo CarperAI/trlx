@@ -748,6 +748,7 @@ class PPOGPT(MegatronGPTModel):
         metrics["val_samples"] = table
 
         if torch.distributed.get_rank() == 0:
+            print(rows)
             wandb.log(metrics)
 
         return metrics
@@ -842,6 +843,14 @@ class PPOGPT(MegatronGPTModel):
 
                 # Needed for async grad allreduce
                 torch.cuda.synchronize()
+
+                tp_rank = parallel_state.get_tensor_model_parallel_rank()
+                tp_world = parallel_state.get_tensor_model_parallel_world_size()
+
+                if tp_rank == (tp_world - 1):
+                    loss_for_mb = 1.0 * loss_for_mb
+                else:
+                    loss_for_mb = 0.0 * loss_for_mb
 
                 return loss_for_mb, {"avg_loss": reduced_loss, **stats}
 
@@ -961,8 +970,8 @@ class PPOGPT(MegatronGPTModel):
             "use_greedy": False,
             "temperature": self.ppo_config.gen_kwargs.get("temperature", 1.0),
             "top_k": self.ppo_config.gen_kwargs.get("top_k", 0),
-            "top_p": 0.9,
-            "repetition_penalty": 1.2,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
             "add_BOS": False,
             "all_probs": False,
             "compute_logprob": False,

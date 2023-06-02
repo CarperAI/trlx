@@ -45,14 +45,20 @@ def main(hparams={}):
                 pretrained_model=f"/mnt/hdd/nemo-megatron-gpt-{cfg_name}/",
                 megatron_cfg=nemo_config,
             ),
-            checkpoint_interval=64,
+            checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
-            seed=1910,
+            seed=2023,
             project_name="trlxnemo",
             tags=["nemo", "ppo", "sentiments", cfg_name],
         ),
         model=dict(num_layers_unfrozen=-1),
-        method=dict(num_rollouts=32, gen_kwargs=dict(temperature=0.9, max_new_tokens=256), chunk_size=32, ppo_epochs=4),
+        method=dict(
+            num_rollouts=128,
+            init_kl_coef=0.04,
+            gen_kwargs=dict(temperature=0.9, max_new_tokens=40),
+            chunk_size=128,
+            ppo_epochs=4,
+        ),
     )
 
     rank = int(os.environ["SLURM_PROCID"])

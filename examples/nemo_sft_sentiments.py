@@ -32,6 +32,7 @@ def main(hparams={}):
         raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
 
     nemo_config.exp_manager.create_wandb_logger = True
+    nemo_config.exp_manager.wandb_logger_kwargs.name = f"nemo-sft-sentiments-{cfg_name}"
 
     config = default_config.evolve(
         train=dict(
