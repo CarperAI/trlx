@@ -308,9 +308,10 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))
-        v_head_state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
-        return {**base_model_state_dict, **v_head_state_dict}
+        return {
+            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+            **self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs)),
+        }
 
     def post_init(self, state_dict):
         """
@@ -385,6 +386,13 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         if not return_dict:
             return hydra_outputs.logits
         return hydra_outputs
+
+    def state_dict(self, *args, **kwargs):
+        # append the state dictionary of the frozen head to the state dictionary of the wrapped model
+        return {
+            **super().state_dict(*args, **kwargs),
+            **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))
+        }
 
 
 class ModelBranch(transformers.PreTrainedModel):
