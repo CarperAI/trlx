@@ -130,6 +130,15 @@ def default_nemo_20b_config():
     return OmegaConf.load(here.parent.parent / "configs" / "nemo_configs" / "megatron_20b.yaml")
 
 
+def default_nemo_2b_config():
+    """Load nemo-megatron-1.3b model and trainer config"""
+    # Import here to not require nemo as a dependency
+    from omegaconf import OmegaConf
+
+    here = Path(__file__).parent
+    return OmegaConf.load(here.parent.parent / "configs" / "nemo_configs" / "megatron_2b.yaml")
+
+
 def default_nemo_1_3b_config():
     """Load nemo-megatron-1.3b model and trainer config"""
     # Import here to not require nemo as a dependency

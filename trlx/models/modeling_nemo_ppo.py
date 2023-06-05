@@ -744,6 +744,7 @@ class PPOGPT(MegatronGPTModel):
             outputs_gathered[k] = gathered
 
         metrics = {f"val_metrics/{k}": v.mean() for k, v in outputs_gathered.items()}
+        metrics = {**metrics, **{f"val_metrics_distributions/{k}": v for k, v in outputs_gathered.items()}}
         metrics["trainer/global_step"] = batch_idx
         metrics["val_samples"] = table
 
@@ -844,14 +845,6 @@ class PPOGPT(MegatronGPTModel):
                 # Needed for async grad allreduce
                 torch.cuda.synchronize()
 
-                tp_rank = parallel_state.get_tensor_model_parallel_rank()
-                tp_world = parallel_state.get_tensor_model_parallel_world_size()
-                """
-                if tp_rank == (tp_world - 1):
-                    loss_for_mb = 1.0 * loss_for_mb
-                else:
-                    loss_for_mb = 1.0 * loss_for_mb
-                """
                 return loss_for_mb, {"avg_loss": reduced_loss, **stats}
 
             return model_output, loss_func

@@ -23,6 +23,7 @@ from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.nemo_ilql_trainer import megatron_trainer
 from trlx.utils import get_git_tag, infinite_dataloader
+from trlx.utils.modeling import whiten
 
 logging = getLogger(__name__)
 
@@ -92,6 +93,12 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.train_samples = train_samples
         megatron_cfg.trainer.max_steps = config.train.epochs * (train_samples // megatron_cfg.model.global_batch_size)
         megatron_cfg.trainer.max_steps = min(megatron_cfg.trainer.max_steps, config.train.total_steps)
+
+        if pretrained_model is not None and megatron_cfg.model.tokenizer.library == "sentencepiece":
+            megatron_cfg.model.tokenizer.model = Path(pretrained_model) / megatron_cfg.model.tokenizer.model
+            megatron_cfg.model.tokenizer.tokenizer_model = (
+                Path(pretrained_model) / megatron_cfg.model.tokenizer.tokenizer_model
+            )
 
         self.trainer = megatron_trainer(megatron_cfg)
 
@@ -172,6 +179,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.reward_fn(samples=all_sents, prompts=all_prompts, outputs=all_responses), device=device
         )
         scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
+
+        scores = whiten(scores, group=parallel_state.get_data_parallel_group())
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
 

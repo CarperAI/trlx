@@ -12,6 +12,7 @@ import trlx
 from trlx.data.default_configs import (
     TRLConfig,
     default_nemo_1_3b_config,
+    default_nemo_2b_config,
     default_nemo_20b_config,
     default_ppo_config,
 )
@@ -29,6 +30,8 @@ def main(hparams={}):
     cfg_name = os.environ.get("NEMO_CONFIG", "1.3B")
     if cfg_name == "1.3B":
         nemo_config = default_nemo_1_3b_config()
+    elif cfg_name == "2B":
+        nemo_config = default_nemo_2b_config()
     elif cfg_name == "20B":
         nemo_config = default_nemo_20b_config()
     else:
@@ -36,6 +39,7 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
+            total_steps=256,
             seq_length=2048,
             batch_size=32,
             epochs=100,
@@ -54,7 +58,7 @@ def main(hparams={}):
         model=dict(num_layers_unfrozen=2),
         method=dict(
             num_rollouts=128,
-            init_kl_coef=0.04,
+            init_kl_coef=0.044,
             vf_coef=0.94,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
