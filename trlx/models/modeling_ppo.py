@@ -1,5 +1,6 @@
 import gc
 import inspect
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
@@ -344,6 +345,8 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
                 self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
+        else:
+            self.frozen_head = None
 
     def forward_hydra(
         self,
@@ -389,10 +392,30 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
 
     def state_dict(self, *args, **kwargs):
         # append the state dictionary of the frozen head to the state dictionary of the wrapped model
-        return {
-            **super().state_dict(*args, **kwargs),
-            **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))
-        }
+        state_dict = super().state_dict(*args, **kwargs)
+        if self.frozen_head:
+            state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+        return state_dict
+
+    def post_init(self, state_dict):
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+
+        if self.frozen_head is None:
+            for k in state_dict:
+                match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
+                if match:
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
+
+            config = self.base_model.config
+            branch_class = hf_get_branch_class(config)
+            self.frozen_head = branch_class(
+                self.base_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
+            ).eval()
+
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        del state_dict
+        gc.collect()  # noqa: E702
 
 
 class ModelBranch(transformers.PreTrainedModel):
