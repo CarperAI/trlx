@@ -324,9 +324,10 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))
-        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
-        return {**base_model_state_dict, **ilql_heads_state_dict}
+        return {
+            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+            **self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs)),
+        }
 
     def post_init(self, state_dict):
         """
@@ -370,11 +371,10 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
-        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
-        for k, v in ilql_heads_state_dict.items():
-            base_model_state_dict[f"ilql_heads.{k}"] = v
-        return base_model_state_dict
+        return {
+            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+            **self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs)),
+        }
 
     def post_init(self, state_dict):
         """
@@ -382,10 +382,8 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         by preprending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
         keys of the value head state dictionary.
         """
-        for k in list(state_dict.keys()):
-            if "ilql_heads." in k:
-                state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
-        self.ilql_heads.load_state_dict(state_dict, strict=False)
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
         del state_dict
         gc.collect()
 

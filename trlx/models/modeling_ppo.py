@@ -1070,22 +1070,19 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
-        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
-        for k, v in v_head_state_dict.items():
-            base_model_state_dict[f"v_head.{k}"] = v
-        return base_model_state_dict
+        return {
+            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+            **self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs)),
+        }
 
     def post_init(self, state_dict):
         """
-        We add the state dictionary of the value head to the state dictionary of the wrapped model
+        Adds the state dictionary of the value head to the state dictionary of the wrapped model
         by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
         keys of the value head state dictionary.
         """
-        for k in list(state_dict.keys()):
-            if "v_head." in k:
-                state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
-        self.v_head.load_state_dict(state_dict, strict=False)
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
         del state_dict
         gc.collect()  # noqa: E702
 
@@ -1108,6 +1105,8 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
                 self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
+        else:
+            self.frozen_head = None
 
     def forward_hydra(
         self,
@@ -1165,6 +1164,33 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         if not return_dict:
             return hydra_outputs.logits
         return hydra_outputs
+
+    def state_dict(self, *args, **kwargs):
+        # append the state dictionary of the frozen head to the state dictionary of the wrapped model
+        state_dict = super().state_dict(*args, **kwargs)
+        if self.frozen_head:
+            state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+        return state_dict
+
+    def post_init(self, state_dict):
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+
+        if self.frozen_head is None:
+            for k in state_dict:
+                match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
+                if match:
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
+
+            config = self.base_model.config
+            branch_class = hf_get_branch_class(config)
+            self.frozen_head = branch_class(
+                self.base_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
+            ).eval()
+
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        del state_dict
+        gc.collect()  # noqa: E702
 
 
 class T5Branch(ModelBranch):
