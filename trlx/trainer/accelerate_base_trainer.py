@@ -457,7 +457,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.reward_fn:
                     logger.info("Computing rewards")
                     rewards = self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
-                    rewards = torch.tensor([sum(r) if type(r) is list else r for r in rewards], dtype=float)
+                    if type(rewards[0]) is torch.Tensor:
+                        rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
+                    elif type(rewards[0]) is list:
+                        rewards = torch.tensor([sum(reward) for reward in rewards])
+                    else:
+                        rewards = torch.tensor(rewards)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):

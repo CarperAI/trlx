@@ -319,11 +319,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
-            # Best-of-N Sampling. 
+            # Best-of-N Sampling.
+            scores_mask = scores != -1
             train_indices = self.get_topk_indices(input_tensor=scores, window_size=self.config.method.num_return_sequences,k=self.config.method.num_train_sequences, device=device)
             scores = scores.index_select(0, train_indices)
             samples = samples.index_select(0, train_indices)
             prompt_tensors = prompt_tensors.index_select(0, train_indices)
+            scores_mask = scores_mask[train_indices]
+            
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -351,7 +354,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
-                self.ref_mean, self.ref_std = scores.sum(dim=1).mean(), scores.sum(dim=1).std()
+                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(dim=1).std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores)
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
@@ -499,7 +502,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     rewards[-1] += scores[sample_idx][0].cpu()
                 else:
                     score = scores[sample_idx]
-                    score_right_padding = torch.sum(score != -1)
+                    score_right_padding = torch.sum(scores_mask[sample_idx])
                     score = score[:score_right_padding].cpu()
                     p_score = torch.zeros_like(rewards)
                     p_score[:score.shape[0]] += score
