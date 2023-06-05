@@ -1179,10 +1179,9 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
             for k in state_dict:
                 match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
                 if match:
-                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)))
 
-            config = self.base_model.config
-            branch_class = hf_get_branch_class(config)
+            branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
                 self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
