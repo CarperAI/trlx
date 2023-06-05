@@ -846,12 +846,12 @@ class PPOGPT(MegatronGPTModel):
 
                 tp_rank = parallel_state.get_tensor_model_parallel_rank()
                 tp_world = parallel_state.get_tensor_model_parallel_world_size()
-
+                """
                 if tp_rank == (tp_world - 1):
                     loss_for_mb = 1.0 * loss_for_mb
                 else:
-                    loss_for_mb = 0.0 * loss_for_mb
-
+                    loss_for_mb = 1.0 * loss_for_mb
+                """
                 return loss_for_mb, {"avg_loss": reduced_loss, **stats}
 
             return model_output, loss_func
@@ -971,7 +971,7 @@ class PPOGPT(MegatronGPTModel):
             "temperature": self.ppo_config.gen_kwargs.get("temperature", 1.0),
             "top_k": self.ppo_config.gen_kwargs.get("top_k", 0),
             "top_p": 1.0,
-            "repetition_penalty": 1.0,
+            "repetition_penalty": 1.2,
             "add_BOS": False,
             "all_probs": False,
             "compute_logprob": False,
