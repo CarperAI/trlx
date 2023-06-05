@@ -232,9 +232,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             # or add one if it was trimmed with `self.stop_sequences`.
             # When a generation ended due to `max_new_tokens` exhaustion,
             # only then <pad> or <eos> token would not be present in the original sample at the end
-            if append_eos_token and (
-                trimmed or sample[-1] == self.tokenizer.eos_token_id or sample[-1] == self.tokenizer.pad_token_id
-            ):
+            if append_eos_token:
                 str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
@@ -427,10 +425,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = torch.tensor(
-                        self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata),
-                        dtype=float,
-                    )
+                    rewards = self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
+                    rewards = torch.tensor([sum(r) if type(r) is list else r for r in rewards], dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):
