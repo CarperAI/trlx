@@ -39,7 +39,7 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
-            total_steps=256,
+            # total_steps=256,
             seq_length=2048,
             batch_size=32,
             epochs=100,
@@ -58,7 +58,7 @@ def main(hparams={}):
         model=dict(num_layers_unfrozen=2),
         method=dict(
             num_rollouts=128,
-            init_kl_coef=0.044,
+            init_kl_coef=0.44,
             vf_coef=0.94,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,

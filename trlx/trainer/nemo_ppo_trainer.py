@@ -125,9 +125,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.max_length = megatron_cfg.model.encoder_seq_length
 
         if self.ppo_config.target is not None:
-            self.kl_ctl = AdaptiveKLController(
-                self.ppo_config.init_kl_coef, self.ppo_config.target, self.ppo_config.horizon
-            )
+            raise ValueError("AdaptiveKLController not implemented yet")
         else:
             self.kl_ctl = FixedKLController(self.ppo_config.init_kl_coef)
 
@@ -175,17 +173,20 @@ class NeMoPPOTrainer(BaseRLTrainer):
         all_sents = [sentence for _, _, samples in inputs_samples for sentence in samples["sentences"]]
         all_prompts = [prompt for _, _, samples in inputs_samples for prompt in samples["prompts"]]
         all_responses = [response for _, _, samples in inputs_samples for response in samples["responses"]]
-        scores = torch.tensor(
+        unnorm_scores = torch.tensor(
             self.reward_fn(samples=all_sents, prompts=all_prompts, outputs=all_responses), device=device
         )
-        scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
+        unnorm_scores = torch.clip(unnorm_scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
-        scores = whiten(scores, group=parallel_state.get_data_parallel_group())
+        scores = whiten(unnorm_scores, shift_mean=False, group=parallel_state.get_data_parallel_group())
+
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
 
         tbar.close()
         lps_tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
+
+        stats = {"train/unnorm_scores": unnorm_scores, "train/scores": scores, "train/kl": [], "train/kl_penalty": []}
 
         for (_, lengths, samples), scores in zip(inputs_samples, scores):
             output_tokens = samples["token_ids"]
@@ -244,10 +245,21 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     )
                 )
 
+                ratio = kl_penalty[start:end]
+                kl = ratio.exp() - 1 - ratio
+                stats["train/kl_penalty"].append(self.kl_ctl.value * -ratio.mean(dim=0, keepdim=True))
+                stats["train/kl"].append(kl.mean(dim=0, keepdim=True))
+
             if torch.distributed.get_rank() == 0:
                 lps_tbar.update(len(query_tensors) * dp_world)
 
-        return ppo_rl_elements
+        for k, v in stats.items():
+            v = torch.cat(v).cuda() if isinstance(v, list) else v.cuda()
+            gathered = torch.empty((v.shape[0] * dp_world,), dtype=v.dtype).cuda()
+            torch.distributed.all_gather_into_tensor(gathered, v, group=parallel_state.get_data_parallel_group())
+            stats[k] = gathered.cpu().numpy()
+
+        return ppo_rl_elements, stats
 
     def learn(self):  # noqa: C901
         def add_special_token_ids(input_ids: List[int], add_bos: bool, add_eos: bool):
@@ -342,11 +354,18 @@ class NeMoPPOTrainer(BaseRLTrainer):
         best_metric = None
 
         for epoch in range(self.config.train.epochs):
-            ppo_rl_rollouts = self.make_experience(
+            ppo_rl_rollouts, stats = self.make_experience(
                 prompt_iter,
                 num_rollouts=self.ppo_config.num_rollouts,
                 dp_world=dp_world,
             )
+
+            if torch.distributed.get_rank() == 0:
+                hstats = {k: wandb.Histogram(v, num_bins=512) for k, v in stats.items()}
+                wandb.log(
+                    {**hstats, **{"train/mean_kl": stats["train/kl"].mean(), "trainer/global_step": local_batch_idx}},
+                    step=local_batch_idx,
+                )
 
             dataloader = DataLoader(ppo_rl_rollouts, batch_size=rank_batch_size, collate_fn=collate_fn, drop_last=True)
             self.model.offload_reference_model()

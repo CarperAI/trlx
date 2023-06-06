@@ -749,7 +749,6 @@ class PPOGPT(MegatronGPTModel):
         metrics["val_samples"] = table
 
         if torch.distributed.get_rank() == 0:
-            print(rows)
             wandb.log(metrics)
 
         return metrics
@@ -839,6 +838,11 @@ class PPOGPT(MegatronGPTModel):
                     returns=returns,
                     mask=loss_mask[:, start:end],
                 )
+
+                if stats["policy/approx_kl"] > 40:
+                    # loss_for_mb = 0.0 * loss_for_mb
+                    # print("Skipping batch due to high kl")
+                    pass
 
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
