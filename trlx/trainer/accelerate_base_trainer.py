@@ -74,6 +74,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = "<|padding|>"
 
+        if self.additional_special_tokens is not None and type(self.additional_special_tokens) is list:
+            self.tokenizer.add_special_tokens(
+                {"additional_special_tokens": self.additional_special_tokens}
+            )
+            self.model.base_model.resize_token_embeddings(len(self.tokenizer))
+
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
             model_name = str(config.model.model_path).split()[0]

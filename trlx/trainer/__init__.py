@@ -41,6 +41,7 @@ class BaseRLTrainer:
         logit_mask=None,
         stop_sequences=None,
         train_mode=False,
+        additional_special_tokens=None,
     ):
         self.store: BaseRolloutStore = None
         self.config = config
@@ -49,6 +50,7 @@ class BaseRLTrainer:
         self.train_mode = train_mode
         self.logit_mask = logit_mask
         self.stop_sequences = stop_sequences
+        self.additional_special_tokens = additional_special_tokens
 
     def push_to_store(self, data):
         self.store.push(data)
