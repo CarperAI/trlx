@@ -102,8 +102,6 @@ def train(  # noqa: C901
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
-        trainer.make_experience(config.method.num_rollouts)
-
     # Offline training from the collected samples (e.g. SFT, ILQL)
     elif samples:
         if rewards is not None:
