@@ -17,7 +17,7 @@ from trlx.data.configs import TRLConfig
 from trlx.data.ilql_types import flatten_dataclass
 from trlx.data.ppo_types import PPORLBatch, PPORLElement
 from trlx.models.modeling_nemo_ppo import PPOGPT
-from trlx.models.modeling_ppo import AdaptiveKLController, FixedKLController, PPOConfig
+from trlx.models.modeling_ppo import FixedKLController, PPOConfig
 from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
@@ -34,7 +34,7 @@ def rank_0_tqdm(*args, **kwargs):
 
 @register_trainer
 class NeMoPPOTrainer(BaseRLTrainer):
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         config: TRLConfig,
         metric_fn: Optional[Callable[[List[str]], Any]] = None,
@@ -178,7 +178,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         )
         unnorm_scores = torch.clip(unnorm_scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
-        scores = whiten(unnorm_scores, shift_mean=False, group=parallel_state.get_data_parallel_group())
+        scores = whiten(unnorm_scores, group=parallel_state.get_data_parallel_group())
 
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
