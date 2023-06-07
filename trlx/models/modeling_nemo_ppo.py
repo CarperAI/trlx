@@ -184,7 +184,11 @@ class RefLMHeads(MegatronModule):
         # must be this attribute name
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
-        self.language_model = language_model
+
+        # nest GPTModel
+        self._lm = language_model
+        # MegatronGPTModel expects this attribute so we un-nest it
+        self.language_model = language_model.language_model
 
         if build_reference_model:
             self.reference_model = OffloadedModel(deepcopy(language_model), device=torch.cuda.current_device())
@@ -198,32 +202,32 @@ class RefLMHeads(MegatronModule):
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
-        self.language_model.set_input_tensor(input_tensor)
+        self._lm.set_input_tensor(input_tensor)
         if self.reference_model is not None and not self.reference_model.offloaded:
             self.reference_model.set_input_tensor(input_tensor)
 
     def word_embeddings_weight(self):
-        return self.language_model.word_embeddings_weight()
+        return self._lm.word_embeddings_weight()
 
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
-        self.language_model.language_model.load_state_dict(lm_state_dict, strict=strict)
+        self.language_model.load_state_dict(lm_state_dict, strict=strict)
         if self.reference_model is not None:
             self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
 
     def pretrained_state_dict(self):
         """Load GPTModel state dict."""
-        return self.language_model.state_dict()
+        return self._lm.state_dict()
 
     def offload_reference_model(self):
         """Move reference model to CPU."""
         self.reference_model.offload()
-        self.language_model.to(torch.cuda.current_device(), non_blocking=True)
+        self._lm.to(torch.cuda.current_device(), non_blocking=True)
 
     def offload_policy_model(self):
         """Move language model to CPU."""
         self.reference_model.onload()
-        self.language_model.to("cpu", non_blocking=True)
+        self._lm.to("cpu", non_blocking=True)
 
     def forward(
         self,
@@ -234,18 +238,18 @@ class RefLMHeads(MegatronModule):
         run_value_head=False,
         **kwargs,
     ):
-        lm_output = self.language_model(*args, get_key_value=get_key_value, **kwargs)
+        lm_output = self._lm(*args, get_key_value=get_key_value, **kwargs)
         logits = post_language_model_processing(
             lm_output,
             labels=None,
-            logit_weights=self.language_model.word_embeddings_weight(),
+            logit_weights=self._lm.word_embeddings_weight(),
             get_key_value=get_key_value,
             parallel_output=False,  # self.language_model.parallel_output,
             forward_method_parallel_output=forward_method_parallel_output,
-            fp16_lm_cross_entropy=self.language_model.fp16_lm_cross_entropy,
+            fp16_lm_cross_entropy=self._lm.fp16_lm_cross_entropy,
             return_logits=True,
-            sequence_parallel=self.language_model.sequence_parallel,
-            gradient_accumulation_fusion=self.language_model.gradient_accumulation_fusion,
+            sequence_parallel=self._lm.sequence_parallel,
+            gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
         )
 
         if get_key_value:

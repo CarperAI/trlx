@@ -313,12 +313,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 config=OmegaConf.to_container(self.megatron_cfg, resolve=True),
             )
 
+        # Init DDP
         def dummy():
             return
 
         if self.trainer.strategy.launcher is not None:
             self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
         self.trainer.strategy.setup_environment()
+
+        if self.model.cfg.get("transformer_engine", False):
+            self.model.setup_transformer_engine_tp_groups()
 
         dp_world = parallel_state.get_data_parallel_world_size()
         dp_rank = parallel_state.get_data_parallel_rank()
@@ -332,9 +336,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
             ),
             sampler=sampler,
         )
-
-        if self.model.cfg.get("transformer_engine", False):
-            self.model.setup_transformer_engine_tp_groups()
 
         self.model.setup()
         self.trainer.strategy._lightning_module = self.model
