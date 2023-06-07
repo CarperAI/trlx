@@ -793,7 +793,7 @@ class PPOGPT(MegatronGPTModel):
                 inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
                 pad_by = ceil(inputs.shape[1] / 8) * 8 - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
-                print(f"{inputs.shape=}")
+
                 # Note that the inputs to this are left padded as well as right padded
                 # Due to combining the left padded queries and right padded responses
                 # `get_ltor_masks_and_position_ids` will 0 mask all tokens == eos_token_id
@@ -854,10 +854,6 @@ class PPOGPT(MegatronGPTModel):
                     mask=loss_mask[:, start:end],
                 )
 
-                if stats["policy/approx_kl"] > 1.0:
-                    # loss_for_mb = 0.0 * loss_for_mb
-                    # print("Skipping batch due to high kl")
-                    pass
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
                 # Needed for async grad allreduce
@@ -913,7 +909,6 @@ class PPOGPT(MegatronGPTModel):
                 model_output = tree_map(lambda t: t.float() if t is not None else t, model_output)
                 logits, values, ref_logits = model_output
 
-                print(f"{values=}")
                 # Logits can become large so best to pick out the logprobs per microbatch here
                 # to save memory
                 if run_reference_model:
