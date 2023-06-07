@@ -63,15 +63,19 @@ class ParallelLinear(nn.Module):
         self,
         in_size: int,
         out_size: int,
-        init_method=partial(nn.init.kaiming_uniform_, a=sqrt(5), nonlinearity="relu"),
+        init_method=None,
         use_cpu_initialization=False,
         bias=True,
         sequence_parallel=False,
         gradient_accumulation_fusion=False,
         gather_output=True,
         input_is_parallel=False,
+        dtype=torch.bfloat16,
     ):
         super().__init__()
+
+        if init_method is None:
+            init_method = partial(nn.init.uniform_, a=-sqrt(1.0 / in_size), b=sqrt(1.0 / in_size))
 
         no_async_tensor_model_parallel_allreduce = (
             parallel_state.get_tensor_model_parallel_world_size() == 1 or sequence_parallel
@@ -89,6 +93,7 @@ class ParallelLinear(nn.Module):
                 sequence_parallel_enabled=sequence_parallel,
                 no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
+                params_dtype=dtype,
             )
         else:
             self.layer = tensor_parallel.RowParallelLinear(
@@ -101,7 +106,9 @@ class ParallelLinear(nn.Module):
                 bias=bias,
                 sequence_parallel_enabled=sequence_parallel,
                 gradient_accumulation_fusion=gradient_accumulation_fusion,
+                params_dtype=dtype,
             )
+        self.layer.bias.data.uniform_(-sqrt(1.0 / out_size), sqrt(1.0 / out_size))
 
     def forward(self, x):
         output, bias = self.layer(x)
@@ -110,7 +117,7 @@ class ParallelLinear(nn.Module):
         return output
 
 
-def make_parallel_head(n_embd: int, out: int, sequence_parallel=False) -> nn.Sequential:
+def make_parallel_head(n_embd: int, out: int, sequence_parallel=False, dtype=torch.bfloat16) -> nn.Sequential:
     """Returns a generic sequential model parallel MLP head."""
     parallel_intermediate = out < (n_embd * 2)
     return nn.Sequential(
@@ -119,6 +126,7 @@ def make_parallel_head(n_embd: int, out: int, sequence_parallel=False) -> nn.Seq
             n_embd * 2,
             sequence_parallel=sequence_parallel,
             gather_output=not parallel_intermediate,
+            dtype=dtype,
         ),
         nn.ReLU(),
         ParallelLinear(
@@ -126,15 +134,17 @@ def make_parallel_head(n_embd: int, out: int, sequence_parallel=False) -> nn.Seq
             out,
             sequence_parallel=sequence_parallel,
             input_is_parallel=parallel_intermediate,
+            dtype=dtype,
         ),
     )
 
 
 class ValueHead(nn.Module):
-    def __init__(self, hidden_size: int, sequence_parallel=False):
+    def __init__(self, hidden_size: int, sequence_parallel=False, dtype=torch.bfloat16):
         super().__init__()
         self.hidden_size = hidden_size
-        self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel)
+        self.v_head = make_parallel_head(hidden_size, 1, sequence_parallel=sequence_parallel, dtype=dtype)
+
         self.sequence_parallel = sequence_parallel
 
     def forward(self, x):
@@ -779,6 +789,7 @@ class PPOGPT(MegatronGPTModel):
                 inputs = torch.cat((batch.query_tensors, batch.response_tensors), dim=1)
                 pad_by = ceil(inputs.shape[1] / 8) * 8 - inputs.shape[1]
                 inputs = torch.nn.functional.pad(inputs, (0, pad_by), value=self.tokenizer.eos_id)
+                print(f"{inputs.shape=}")
                 # Note that the inputs to this are left padded as well as right padded
                 # Due to combining the left padded queries and right padded responses
                 # `get_ltor_masks_and_position_ids` will 0 mask all tokens == eos_token_id
@@ -839,11 +850,10 @@ class PPOGPT(MegatronGPTModel):
                     mask=loss_mask[:, start:end],
                 )
 
-                if stats["policy/approx_kl"] > 40:
+                if stats["policy/approx_kl"] > 1.0:
                     # loss_for_mb = 0.0 * loss_for_mb
                     # print("Skipping batch due to high kl")
                     pass
-
                 reduced_loss = average_losses_across_data_parallel_group([loss_for_mb])
 
                 # Needed for async grad allreduce
@@ -899,6 +909,7 @@ class PPOGPT(MegatronGPTModel):
                 model_output = tree_map(lambda t: t.float() if t is not None else t, model_output)
                 logits, values, ref_logits = model_output
 
+                print(f"{values=}")
                 # Logits can become large so best to pick out the logprobs per microbatch here
                 # to save memory
                 if run_reference_model:
