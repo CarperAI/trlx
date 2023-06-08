@@ -18,25 +18,29 @@ def buil_layer_mapping(layer):
 llama_state_dict = AutoModelForCausalLM.from_pretrained("TheBloke/vicuna-7B-1.1-HF")
 llama_state_dict = llama_state_dict.state_dict()
 total_layers = 32
-total_tp = 1
+total_tp = 4 
 hidden_dim = 4096
 ffn_hidden_dim = 11008
 total_self_attn_dim = hidden_dim * 3
 part_self_attn_dim = int(total_self_attn_dim / total_tp)
+part_self_attn_dense_dim = int(hidden_dim / total_tp)
 part_mlp_dim = int(ffn_hidden_dim / total_tp)
 vocab_size = 32000
 embedding_dim = int(vocab_size / total_tp)
 
 def mapping(tp_idx):
-    #nemo_state_dict = torch.load(f"llama-nemo-7b/mp_rank_0{tp_idx}/model_weights.ckpt")
-    nemo_state_dict = torch.load(f"llama-nemo-7b/model_weights.ckpt")
+    inp_folder = "llama-nemo-7b-tp4"
+    if total_tp == 1:
+        nemo_state_dict = torch.load(f"{inp_folder}/model_weights.ckpt")
+    else:
+        nemo_state_dict = torch.load(f"{inp_folder}/mp_rank_0{tp_idx}/model_weights.ckpt")
     original_size = nemo_state_dict['model.language_model.embedding.word_embeddings.weight'].shape
     nemo_state_dict['model.language_model.embedding.word_embeddings.weight'] = llama_state_dict['model.embed_tokens.weight'][tp_idx * embedding_dim : (tp_idx + 1) * embedding_dim, :]
     print(f"Embedding - model.language_model.embedding.word_embeddings.weight - {original_size} -> {nemo_state_dict['model.language_model.embedding.word_embeddings.weight'].shape}")
     assert nemo_state_dict['model.language_model.embedding.word_embeddings.weight'].shape == original_size
     original_size = nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape
     nemo_state_dict['model.language_model.encoder.final_layernorm.weight'] = llama_state_dict['model.norm.weight']
-    
+    assert nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape == original_size 
     for layer in range(total_layers):
         mapp = buil_layer_mapping(layer)
         for k in mapp.keys():
@@ -44,15 +48,17 @@ def mapping(tp_idx):
             if "self_attention.query_key_value.weight" in k:
                 llama_attention_weight = torch.cat([llama_state_dict[mapp[k][0]], llama_state_dict[mapp[k][1]], llama_state_dict[mapp[k][2]]], dim=0)
                 nemo_state_dict[k] = llama_attention_weight[tp_idx * part_self_attn_dim: (tp_idx + 1) * part_self_attn_dim]
+            elif "self_attention.dense.weight" in k:
+                nemo_state_dict[k] = llama_state_dict[mapp[k]][:, tp_idx * part_self_attn_dense_dim : (tp_idx + 1) * part_self_attn_dense_dim]
             elif "mlp.dense_h_to_4h.weight" in k:
                 llama_weight = llama_state_dict[mapp[k]]
                 nemo_state_dict[k] = llama_weight[tp_idx * part_mlp_dim : (tp_idx + 1) * part_mlp_dim, :]
             elif "mlp.dense_h_to_4h_2.weight" in k:
                 llama_weight = llama_state_dict[mapp[k]]
-                nemo_state_dict[k] = llama_weight[:, tp_idx * part_mlp_dim : (tp_idx + 1) * part_mlp_dim]#.transpose(0, 1)
+                nemo_state_dict[k] = llama_weight[tp_idx * part_mlp_dim : (tp_idx + 1) * part_mlp_dim , :]
             elif "mlp.dense_4h_to_h.weight" in k:
                 llama_weight = llama_state_dict[mapp[k]]
-                nemo_state_dict[k] = llama_weight[tp_idx *  part_mlp_dim : (tp_idx + 1) * part_mlp_dim]#.transpose(0, 1)
+                nemo_state_dict[k] = llama_weight[:, tp_idx *  part_mlp_dim : (tp_idx + 1) * part_mlp_dim]
             else:
                 nemo_state_dict[k] = llama_state_dict[mapp[k]]
             print(f"Layer {layer} - {k} - {original_size} -> {nemo_state_dict[k].shape}")
@@ -61,9 +67,10 @@ def mapping(tp_idx):
 
 for tp_idx in range(total_tp):
     nemo_state_dict = mapping(tp_idx)
-    if not os.path.exists(f"llama-nemo-7b-converted/mp_rank_0{tp_idx}"):
-        os.makedirs(f"llama-nemo-7b-converted/mp_rank_0{tp_idx}")
-    torch.save(nemo_state_dict, f"llama-nemo-7b-converted/mp_rank_0{tp_idx}/model_weights.ckpt")
+    out_folder = "llama-nemo-7b-tp4-converted"
+    if not os.path.exists(f"{out_folder}/mp_rank_0{tp_idx}"):
+        os.makedirs(f"{out_folder}/mp_rank_0{tp_idx}")
+    torch.save(nemo_state_dict, f"{out_folder}/mp_rank_0{tp_idx}/model_weights.ckpt")
     
 
 #state_dict = lst_nemo[0]
