@@ -68,17 +68,20 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.scheduler = self.setup_scheduler()
 
         self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
+        self.tokenizer.add_tokens(self.additional_tokens)
+        # resize the model by-default
+        self.model.base_model.resize_token_embeddings(len(self.tokenizer))
+        if hasattr(self.model, "frozen_head"):
+            self.model.frozen_head.resize_token_embeddings(len(self.tokenizer))
+        else:
+            # resize a reference model when hydra heads are not used
+            self.ref_model.resize_token_embeddings(len(self.tokenizer))
+
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         self.tokenizer.sep_token = "<sep>"
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = "<|padding|>"
-
-        if self.additional_special_tokens is not None and type(self.additional_special_tokens) is list:
-            self.tokenizer.add_special_tokens(
-                {"additional_special_tokens": self.additional_special_tokens}
-            )
-            self.model.base_model.resize_token_embeddings(len(self.tokenizer))
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):

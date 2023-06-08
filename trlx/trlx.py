@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 from trlx.data.configs import TRLConfig
 from trlx.data.default_configs import (
@@ -23,7 +23,7 @@ def train(  # noqa: C901
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
     config: Optional[TRLConfig] = None,
     stop_sequences: Optional[List[str]] = [],
-    additional_special_tokens: Optional[List[str]] = None,
+    additional_tokens: Optional[Union[str, List[str]]] = None,
 ):
     """
     Dispatches online, offline reinforcement training or supervised finetuning
@@ -55,9 +55,9 @@ def train(  # noqa: C901
         stop_sequences (Optional[List[str]]):
             String sequences to trim generations (both for generating of experience and evaluation) up to its
             encounter in them. Generations will not contain them and also will also be right-stripped
-        additional_special_tokens (Optional[List[str]]):
-            A list of additional special tokens. Add them to the tokenizer to ensure they won’t be split by
-            the tokenization process.
+        additional_tokens (Optional[Union[str, List[str]]]):
+            A list of additional tokens. The given tokens are added only if they don’t already exist
+            in the vocabulary, each token then gets a new attributed id
     """
     if config is None:
         warnings.warn(
@@ -85,7 +85,7 @@ def train(  # noqa: C901
         reward_fn=reward_fn,
         metric_fn=metric_fn,
         stop_sequences=stop_sequences,
-        additional_special_tokens=additional_special_tokens,
+        additional_tokens=additional_tokens,
         **config.train.trainer_kwargs,
     )
 
