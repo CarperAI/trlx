@@ -275,9 +275,9 @@ class RefLMHeads(MegatronModule):
             ref_logits = post_language_model_processing(
                 ref_lm_output,
                 labels=None,
-                logit_weights=self.self.reference_model.model.output_layer.weight 
-                if self.self.reference_model.model.output_layer is not None
-                else self.self.reference_model.model.word_embeddings_weight(),
+                logit_weights=self.reference_model.model.language_model.output_layer.weight 
+                if self.reference_model.model.language_model.output_layer is not None
+                else self.reference_model.model.word_embeddings_weight(),
                 get_key_value=get_key_value,
                 parallel_output=False,  # self.reference_model.model.parallel_output,
                 forward_method_parallel_output=forward_method_parallel_output,
@@ -479,6 +479,10 @@ class PPOGPT(MegatronGPTModel):
         device = self.model.module.language_model.output_layer.weight.device
         params = torch.nn.Parameter(lm_state_dict['output_layer.weight'].to(device, dtype=dtype), requires_grad=True)
         self.model.module.language_model.output_layer.weight = params
+        print("Loaded output layer weight")
+        print(self.model.module.language_model.output_layer.weight)
+        print("Load layers 0 weight")
+        print(self.model.module.language_model.encoder.layers[0].self_attention.query_key_value.weight)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):

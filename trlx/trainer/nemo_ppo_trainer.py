@@ -339,15 +339,13 @@ class NeMoPPOTrainer(BaseRLTrainer):
         )
 
         self.model.setup()
-        """
         from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam
         length = LengthParam(min_length=10, max_length=100)
         generate = self.model.generate(['hello how are you'], length_params=length)
         print(generate)
-        self.model.save_pretrained("llama-nemo-7b-tp4")
-        exit()
-        import ipdb; ipdb.set_trace()
-        """
+        #self.model.save_pretrained("llama-nemo-7b-tp4")
+        #exit()
+        #import ipdb; ipdb.set_trace()
         self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]

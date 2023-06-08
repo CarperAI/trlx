@@ -14,8 +14,6 @@ export PYTORCH_CUDA_ALLOC_CONF='max_split_size_mb:512'
 ulimit -c unlimited
 
 
-export NCCL_DEBUG=INFO
-
 export NCCL_COLLNET_ENABLE=0
 
 
