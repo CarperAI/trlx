@@ -321,6 +321,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
         self.trainer.strategy.setup_environment()
 
+
         if self.model.cfg.get("transformer_engine", False):
             self.model.setup_transformer_engine_tp_groups()
 
@@ -338,6 +339,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
         )
 
         self.model.setup()
+        from nemo.collections.nlp.modules.common.transformer.text_generation import LengthParam
+        length = LengthParam(min_length=10, max_length=100)
+        generate = self.model.generate(['hello how are you'], length_params=length)
+        print(generate)
+        import ipdb; ipdb.set_trace()
         self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]

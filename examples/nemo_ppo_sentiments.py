@@ -23,20 +23,18 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
+def load_nemo_config():
+    """Load nemo-megatron-1.3b model and trainer config"""
+    # Import here to not require nemo as a dependency
+    from omegaconf import OmegaConf
+    return OmegaConf.load('/mnt/hdd/duyphung/nemo_converter/trlx/configs/nemo_configs/megatron_7b_llama.yaml')
+
+
 def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-
-    cfg_name = os.environ.get("NEMO_CONFIG", "1.3B")
-    if cfg_name == "1.3B":
-        nemo_config = default_nemo_1_3b_config()
-    elif cfg_name == "2B":
-        nemo_config = default_nemo_2b_config()
-    elif cfg_name == "20B":
-        nemo_config = default_nemo_20b_config()
-    else:
-        raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
-
+    cfg_name = "30b_llama"
+    nemo_config = load_nemo_config()
     config = default_config.evolve(
         train=dict(
             total_steps=256,
@@ -46,8 +44,8 @@ def main(hparams={}):
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model=f"/mnt/hdd/nemo-megatron-gpt-{cfg_name}/",
                 megatron_cfg=nemo_config,
+                pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-converted",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
