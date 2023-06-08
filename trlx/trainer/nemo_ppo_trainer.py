@@ -11,6 +11,7 @@ from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
+from transformers import LlamaTokenizer
 
 from trlx.data.accelerate_base_datatypes import PromptBatch
 from trlx.data.configs import TRLConfig
@@ -77,6 +78,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         megatron_cfg.model.seed = config.train.seed
 
+        megatron_cfg.model.optim = {"name": config.optimizer.name, **config.optimizer.kwargs}
+
+        megatron_cfg.model.optim.sched = {"name": config.scheduler.name, **config.scheduler.kwargs}
+
         rank_batch_size = config.train.batch_size
 
         if (self.ppo_config.chunk_size % rank_batch_size) != 0:
@@ -95,8 +100,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
         megatron_cfg.trainer.max_steps = min(megatron_cfg.trainer.max_steps, config.train.total_steps)
 
         if pretrained_model is not None and megatron_cfg.model.tokenizer.library == "sentencepiece":
-            megatron_cfg.model.tokenizer.model = Path(pretrained_model) / megatron_cfg.model.tokenizer.model
-            megatron_cfg.model.tokenizer.tokenizer_model = (
+            megatron_cfg.model.tokenizer.model = str(Path(pretrained_model) / megatron_cfg.model.tokenizer.model)
+            megatron_cfg.model.tokenizer.tokenizer_model = str(
                 Path(pretrained_model) / megatron_cfg.model.tokenizer.tokenizer_model
             )
 
@@ -116,8 +121,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
             self.model.load_from_pretrained(pretrained_model)
 
         self.batch_size = megatron_cfg.model.global_batch_size
-        self.tokenizer = self.model.tokenizer.tokenizer
+
+        if megatron_cfg.model.tokenizer.library != "sentencepiece":
+            self.tokenizer = self.model.tokenizer.tokenizer
+        else:
+            self.tokenizer = LlamaTokenizer(vocab_file=megatron_cfg.model.tokenizer.model)
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
+
+        self.tokenizer.pad_token
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -176,9 +187,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
         unnorm_scores = torch.tensor(
             self.reward_fn(samples=all_sents, prompts=all_prompts, outputs=all_responses), device=device
         )
-        unnorm_scores = torch.clip(unnorm_scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
-        scores = whiten(unnorm_scores, group=parallel_state.get_data_parallel_group())
+        if self.ppo_config.scale_reward == "whiten":
+            scores = whiten(unnorm_scores, shift_mean=False, group=parallel_state.get_data_parallel_group())
+
+        scores = torch.clip(unnorm_scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
@@ -381,7 +394,14 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
                     if local_batch_idx % self.val_check_interval == 0:
                         mbs = self.ppo_config.chunk_size
-                        val_loader = DataLoader(self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate)
+                        if (mbs * dp_world) > len(self.eval_pipeline):
+                            mbs = len(self.eval_pipeline) // dp_world
+                        sampler = DistributedSampler(
+                            self.eval_pipeline, num_replicas=dp_world, rank=dp_rank, shuffle=False
+                        )
+                        val_loader = DataLoader(
+                            self.eval_pipeline, batch_size=mbs, collate_fn=generate_collate, sampler=sampler
+                        )
                         val_stats = [
                             self.model.validation_step(val_batch, local_batch_idx)
                             for val_batch in rank_0_tqdm(val_loader)

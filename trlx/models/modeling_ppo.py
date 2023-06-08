@@ -223,6 +223,7 @@ class PPOConfig(MethodConfig):
             values=dict(
                 get_tensor_stats(values, mask, n),
                 values_error=torch.sum(((values - returns) * mask) ** 2) / n,
+                values_mape_error=torch.sum((abs(values - returns) * mask) / abs(returns * mask + 1e-2)) / n,
                 clipfrac=vf_clipfrac,
             ),
             old_values=get_tensor_stats(old_values, mask, n),

@@ -55,16 +55,28 @@ def main(hparams={}):
             project_name="trlxnemo",
             tags=["nemo", "ppo", "sentiments", cfg_name],
         ),
+        optimizer=dict(
+            name="distributed_fused_adam",
+            kwargs=dict(
+                lr=6e-5,
+                weight_decay=1e-06,
+                betas=(0.9, 0.95),
+            ),
+        ),
+        scheduler=dict(
+            name="CosineAnnealing",
+        ),
         model=dict(num_layers_unfrozen=2),
         method=dict(
             num_rollouts=128,
             init_kl_coef=0.044,
-            vf_coef=0.94,
+            vf_coef=15.04,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
             ppo_epochs=4,
         ),
     )
+    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=5e-5)
 
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8

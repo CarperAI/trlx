@@ -81,34 +81,36 @@ class ParallelLinear(nn.Module):
             parallel_state.get_tensor_model_parallel_world_size() == 1 or sequence_parallel
         )
 
-        if in_size < out_size:
-            self.layer = tensor_parallel.ColumnParallelLinear(
-                in_size,
-                out_size,
-                gather_output=gather_output,
-                init_method=init_method,
-                skip_bias_add=False,
-                use_cpu_initialization=use_cpu_initialization,
-                bias=bias,
-                sequence_parallel_enabled=sequence_parallel,
-                no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
-                gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=dtype,
-            )
-        else:
-            self.layer = tensor_parallel.RowParallelLinear(
-                in_size,
-                out_size,
-                input_is_parallel=input_is_parallel,
-                init_method=init_method,
-                skip_bias_add=False,
-                use_cpu_initialization=use_cpu_initialization,
-                bias=bias,
-                sequence_parallel_enabled=sequence_parallel,
-                gradient_accumulation_fusion=gradient_accumulation_fusion,
-                params_dtype=dtype,
-            )
-        self.layer.bias.data.uniform_(-sqrt(1.0 / out_size), sqrt(1.0 / out_size))
+        # Fork TP rng so each TP rank has different random weights
+        with tensor_parallel.random.get_cuda_rng_tracker().fork():
+            if in_size < out_size:
+                self.layer = tensor_parallel.ColumnParallelLinear(
+                    in_size,
+                    out_size,
+                    gather_output=gather_output,
+                    init_method=init_method,
+                    skip_bias_add=False,
+                    use_cpu_initialization=use_cpu_initialization,
+                    bias=bias,
+                    sequence_parallel_enabled=sequence_parallel,
+                    no_async_tensor_model_parallel_allreduce=no_async_tensor_model_parallel_allreduce,
+                    gradient_accumulation_fusion=gradient_accumulation_fusion,
+                    params_dtype=dtype,
+                )
+            else:
+                self.layer = tensor_parallel.RowParallelLinear(
+                    in_size,
+                    out_size,
+                    input_is_parallel=input_is_parallel,
+                    init_method=init_method,
+                    skip_bias_add=False,
+                    use_cpu_initialization=use_cpu_initialization,
+                    bias=bias,
+                    sequence_parallel_enabled=sequence_parallel,
+                    gradient_accumulation_fusion=gradient_accumulation_fusion,
+                    params_dtype=dtype,
+                )
+            self.layer.bias.data.uniform_(-sqrt(1.0 / out_size), sqrt(1.0 / out_size))
 
     def forward(self, x):
         output, bias = self.layer(x)
@@ -732,8 +734,8 @@ class PPOGPT(MegatronGPTModel):
 
         metric_keys, metric_values = zip(*metrics.items())
 
-        columns = ["sentences", *metric_keys]
-        rows = list(zip(gen["sentences"], *metric_values))
+        columns = ["prompts", "responses", *metric_keys]
+        rows = list(zip(gen["prompts"], gen["responses"], *metric_values))
 
         metrics = {f"{k}": torch.as_tensor(v) for k, v in metrics.items()}
 
@@ -746,11 +748,16 @@ class PPOGPT(MegatronGPTModel):
         _, columns = tables[0]
         rows = [r for trows, _ in tables for r in trows]
 
+        dp_world = parallel_state.get_data_parallel_world_size()
+        dp_group = parallel_state.get_data_parallel_group()
+
+        global_rows = [None for _ in range(dp_world)]
+        torch.distributed.all_gather_object(global_rows, rows, group=dp_group)
+        rows = [r for rlist in global_rows for r in rlist]
+
         table = wandb.Table(data=rows, columns=columns)
 
         outputs_soa = {k: torch.cat([d[k] for d in metrics]).cuda() for k in metrics[0].keys()}
-        dp_world = parallel_state.get_data_parallel_world_size()
-        dp_group = parallel_state.get_data_parallel_group()
         outputs_gathered = {}
         for k, v in outputs_soa.items():
             gathered = torch.empty((v.shape[0] * dp_world), dtype=v.dtype, device=v.device)
@@ -840,6 +847,7 @@ class PPOGPT(MegatronGPTModel):
                 advantages, returns = self.ppo_config.get_advantages_and_returns(
                     batch.values, batch.rewards, response_length, use_whitening=False
                 )
+
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, :-1][:, start:end]
