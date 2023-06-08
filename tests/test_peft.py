@@ -358,7 +358,7 @@ class TestPeft(unittest.TestCase):
         """
         Check that generate works, and that it's deterministic when the temperature is very low.
         """
-        temperature = 0.00000001
+        temperature = 0.0
 
         for training_type, model_path, peft_type in ALL_TEST_COMBINATIONS:
             task_type = MODEL_TASK_TYPE[model_path]
@@ -371,12 +371,6 @@ class TestPeft(unittest.TestCase):
                     pad_token_id=self.tokenizer.eos_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                 )
-
-                if training_type == ILQL:
-                    # Determinism checks may occasionally fail with ILQL due to PyTorch's multinomial sometimes
-                    # choosing tokens with a probability of 0 (https://github.com/pytorch/pytorch/issues/48841).
-                    # TODO: Remove this when the problem is fixed.
-                    continue
 
                 output2 = self.model.generate(
                     **self.inputs,

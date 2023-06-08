@@ -328,9 +328,13 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)
             pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
-            pi = F.softmax(pi_top_k / temperature, -1)
 
-            input_ids = torch.multinomial(pi, num_samples=1)
+            if temperature == 0.0:
+                input_ids = pi_top_k.argmax(dim=-1, keepdim=True)
+            else:
+                pi = F.softmax(pi_top_k / temperature, -1)
+                input_ids = torch.multinomial(pi, num_samples=1)
+
             input_ids = (1 - finished) * input_ids + finished * eos_token_id
             finished = (input_ids == eos_token_id).long()
 
@@ -562,8 +566,12 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)
             pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
-            pi = F.softmax(pi_top_k / temperature, -1)
-            next_tokens = torch.multinomial(pi, num_samples=1)
+
+            if temperature == 0.0:
+                next_tokens = pi_top_k.argmax(dim=-1, keepdim=True)
+            else:
+                pi = F.softmax(pi_top_k / temperature, -1)
+                next_tokens = torch.multinomial(pi, num_samples=1)
             next_tokens = (1 - finished) * next_tokens + finished * eos_token_id
             finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
