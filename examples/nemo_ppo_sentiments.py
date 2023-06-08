@@ -46,6 +46,7 @@ def main(hparams={}):
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
                 pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-tp4-converted",
+                #pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-converted",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",

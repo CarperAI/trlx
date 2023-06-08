@@ -40,7 +40,12 @@ def mapping(tp_idx):
     assert nemo_state_dict['model.language_model.embedding.word_embeddings.weight'].shape == original_size
     original_size = nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape
     nemo_state_dict['model.language_model.encoder.final_layernorm.weight'] = llama_state_dict['model.norm.weight']
-    assert nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape == original_size 
+    print(f"Final Layer Norm - model.language_model.encoder.final_layernorm.weight - {original_size} -> {nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape}")
+    assert nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape == original_size
+    original_size = nemo_state_dict['model.language_model.output_layer.weight'].shape
+    nemo_state_dict['model.language_model.output_layer.weight'] = llama_state_dict['lm_head.weight'][tp_idx * embedding_dim : (tp_idx + 1) * embedding_dim, :]
+    print(f"Output Layer - model.language_model.output_layer.weight - {original_size} -> {nemo_state_dict['model.language_model.output_layer.weight'].shape}")
+    assert nemo_state_dict['model.language_model.output_layer.weight'].shape == original_size
     for layer in range(total_layers):
         mapp = buil_layer_mapping(layer)
         for k in mapp.keys():
