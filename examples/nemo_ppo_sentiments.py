@@ -37,7 +37,7 @@ def main(hparams={}):
     nemo_config = load_nemo_config()
     config = default_config.evolve(
         train=dict(
-            total_steps=256,
+            total_steps=10000,
             seq_length=2048,
             batch_size=32,
             epochs=100,
@@ -45,7 +45,7 @@ def main(hparams={}):
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-converted",
+                pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-tp4-converted",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",

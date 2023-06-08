@@ -2,7 +2,7 @@ name: megatron_gpt_7b
 restore_from_path: null  # used when starting from a .nemo file
 
 trainer:
-  devices: 1
+  devices: 8
   num_nodes: 1
   accelerator: gpu
   precision: bf16
@@ -51,7 +51,7 @@ model:
   padded_vocab_size: 32000
   micro_batch_size: 1
   global_batch_size: 32
-  tensor_model_parallel_size: 1
+  tensor_model_parallel_size: 4
   pipeline_model_parallel_size: 1
   resume_from_checkpoint: null # manually set the checkpoint file to load from
   # model architecture

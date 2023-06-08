@@ -184,8 +184,8 @@ class RefLMHeads(MegatronModule):
         # must be this attribute name
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
-        from transformers import AutoModelForCausalLM
-        self.lm_head =  AutoModelForCausalLM.from_pretrained("TheBloke/vicuna-7B-1.1-HF").lm_head.to("cuda", dtype=torch.bfloat16)
+#        from transformers import AutoModelForCausalLM
+#        self.lm_head =  AutoModelForCausalLM.from_pretrained("TheBloke/vicuna-7B-1.1-HF").lm_head.to("cuda", dtype=torch.bfloat16)
         # nest GPTModel
         self._lm = language_model
         # MegatronGPTModel expects this attribute so we un-nest it
@@ -252,7 +252,7 @@ class RefLMHeads(MegatronModule):
             sequence_parallel=self._lm.sequence_parallel,
             gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
         )
-        logits = self.lm_head(lm_output.swapaxes(0,1))
+#        logits = self.lm_head(lm_output.swapaxes(0,1))
         if get_key_value:
             logits, presents = logits
             lm_output, lm_output_presents = lm_output
