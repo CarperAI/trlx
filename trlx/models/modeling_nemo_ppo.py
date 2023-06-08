@@ -184,7 +184,8 @@ class RefLMHeads(MegatronModule):
         # must be this attribute name
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
-
+        from transformers import AutoModelForCausalLM
+        self.lm_head =  AutoModelForCausalLM.from_pretrained("TheBloke/vicuna-7B-1.1-HF").lm_head.to("cuda", dtype=torch.bfloat16)
         # nest GPTModel
         self._lm = language_model
         # MegatronGPTModel expects this attribute so we un-nest it
@@ -251,7 +252,7 @@ class RefLMHeads(MegatronModule):
             sequence_parallel=self._lm.sequence_parallel,
             gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
         )
-
+        logits = self.lm_head(lm_output.swapaxes(0,1))
         if get_key_value:
             logits, presents = logits
             lm_output, lm_output_presents = lm_output
@@ -465,8 +466,7 @@ class PPOGPT(MegatronGPTModel):
         encoder_state_dict = {trim_key(k, "encoder."): v for k, v in lm_state_dict.items() if k.startswith("encoder.")}
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
-
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
