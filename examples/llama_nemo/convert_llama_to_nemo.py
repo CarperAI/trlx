@@ -11,8 +11,8 @@ PART_ATTN_DIM =  HIDDEN_DIM // TOTAL_TP
 PART_MLP_DIM = FFN_HIDDEN_DIM // TOTAL_TP
 VOCAB_SIZE = 32000
 EMBEDDING_DIM = VOCAB_SIZE // TOTAL_TP
-INPUT_FOLDER = "llama-nemo-7b" # NeMo initial checkpoint folder
-OUTPUT_FOLDER = "llama-nemo-7b-converted" # NeMo converted checkpoint folder with llama weights
+INPUT_FOLDER = "llama-nemo-7b-tp4" # NeMo initial checkpoint folder
+OUTPUT_FOLDER = "llama-nemo-7b-converted-test" # NeMo converted checkpoint folder with llama weights
 
 # Model Loading
 model = AutoModelForCausalLM.from_pretrained("TheBloke/vicuna-7B-1.1-HF")
@@ -65,11 +65,11 @@ def map_weights(tp_idx):
         for k in layer_mapping.keys():
             original_size = nemo_state_dict[k].shape
             if "self_attention.query_key_value.weight" in k:
-                nemo_state_dict[k] = get_self_attention_weight(model_state_dict, layer_mapping, tp_idx)
+                nemo_state_dict[k] = get_self_attention_weight(model_state_dict, layer_mapping, k, tp_idx)
             elif "self_attention.dense.weight" in k:
                 nemo_state_dict[k] = model_state_dict[layer_mapping[k]][:, tp_idx * PART_ATTN_DIM : (tp_idx + 1) * PART_ATTN_DIM]
             elif "mlp.dense_h_to_4h.weight" in k or "mlp.dense_h_to_4h_2.weight" in k:
-                nemo_state_dict[k] = get_mlp_weight(model_state_dict, layer_mapping, tp_idx)
+                nemo_state_dict[k] = get_mlp_weight(model_state_dict, layer_mapping, k, tp_idx)
             elif "mlp.dense_4h_to_h.weight" in k:
                 nemo_state_dict[k] = model_state_dict[layer_mapping[k]][:, tp_idx *  PART_MLP_DIM : (tp_idx + 1) * PART_MLP_DIM]
             else:
@@ -79,15 +79,14 @@ def map_weights(tp_idx):
     save_nemo_state_dict(nemo_state_dict, tp_idx)
 
 
-def get_self_attention_weight(model_state_dict, layer_mapping, tp_idx):
-    key = "self_attention.query_key_value.weight"
+def get_self_attention_weight(model_state_dict, layer_mapping, key, tp_idx):
     llama_query = model_state_dict[layer_mapping[key][0]][tp_idx * PART_ATTN_DIM : (tp_idx + 1) * PART_ATTN_DIM, :]
     llama_key = model_state_dict[layer_mapping[key][1]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
     llama_value = model_state_dict[layer_mapping[key][2]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
     return torch.cat([llama_query, llama_key, llama_value], dim=0)
 
-def get_mlp_weight(model_state_dict, layer_mapping, tp_idx):
-    llama_weight = model_state_dict[layer_mapping[k]]
+def get_mlp_weight(model_state_dict, layer_mapping, key, tp_idx):
+    llama_weight = model_state_dict[layer_mapping[key]]
     return llama_weight[tp_idx * PART_MLP_DIM : (tp_idx + 1) * PART_MLP_DIM, :]
 
 for tp_idx in range(TOTAL_TP):
