@@ -152,7 +152,7 @@ class ValueHead(nn.Module):
         if self.sequence_parallel:
             vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
         return rearrange(vs, "T N 1 -> N T")
-
+    
 
 class OffloadedModel(object):
     def __init__(self, model, device):
@@ -184,7 +184,6 @@ class RefLMHeads(MegatronModule):
         # must be this attribute name
         self.pre_process = language_model.pre_process
         self.post_process = language_model.post_process
-
         # nest GPTModel
         self._lm = language_model
         # MegatronGPTModel expects this attribute so we un-nest it
@@ -197,8 +196,12 @@ class RefLMHeads(MegatronModule):
 
         self.other_heads = other_heads
 
-        if hasattr(language_model, "word_embeddings"):
-            self.word_embeddings = language_model.word_embeddings
+        if hasattr(language_model, "output_layer"):
+            self.output_layer = language_model.output_layer
+        else:
+            if hasattr(language_model, "word_embeddings"):
+                self.word_embeddings = language_model.word_embeddings
+            self.output_layer = None
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
@@ -242,7 +245,9 @@ class RefLMHeads(MegatronModule):
         logits = post_language_model_processing(
             lm_output,
             labels=None,
-            logit_weights=self._lm.word_embeddings_weight(),
+            logit_weights=self._lm.language_model.output_layer.weight 
+            if self._lm.language_model.output_layer is not None 
+            else self._lm.word_embeddings_weight(),
             get_key_value=get_key_value,
             parallel_output=False,  # self.language_model.parallel_output,
             forward_method_parallel_output=forward_method_parallel_output,
@@ -251,7 +256,6 @@ class RefLMHeads(MegatronModule):
             sequence_parallel=self._lm.sequence_parallel,
             gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
         )
-
         if get_key_value:
             logits, presents = logits
             lm_output, lm_output_presents = lm_output
@@ -268,7 +272,9 @@ class RefLMHeads(MegatronModule):
             ref_logits = post_language_model_processing(
                 ref_lm_output,
                 labels=None,
-                logit_weights=self.reference_model.model.word_embeddings_weight(),
+                logit_weights=self.reference_model.model.language_model.output_layer.weight 
+                if self.reference_model.model.language_model.output_layer is not None
+                else self.reference_model.model.word_embeddings_weight(),
                 get_key_value=get_key_value,
                 parallel_output=False,  # self.reference_model.model.parallel_output,
                 forward_method_parallel_output=forward_method_parallel_output,
@@ -465,8 +471,15 @@ class PPOGPT(MegatronGPTModel):
         encoder_state_dict = {trim_key(k, "encoder."): v for k, v in lm_state_dict.items() if k.startswith("encoder.")}
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
-
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
+        dtype = self.model.module.language_model.output_layer.weight.dtype
+        device = self.model.module.language_model.output_layer.weight.device
+        params = torch.nn.Parameter(lm_state_dict['output_layer.weight'].to(device, dtype=dtype), requires_grad=True)
+        self.model.module.language_model.output_layer.weight = params
+        print("Loaded output layer weight")
+        print(self.model.module.language_model.output_layer.weight)
+        print("Load layers 0 weight")
+        print(self.model.module.language_model.encoder.layers[0].self_attention.query_key_value.weight)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
