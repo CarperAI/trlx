@@ -80,9 +80,10 @@ def map_weights(tp_idx):
 
 
 def get_self_attention_weight(model_state_dict, layer_mapping, tp_idx):
-    llama_query = model_state_dict[layer_mapping[0]][tp_idx * PART_ATTN_DIM : (tp_idx + 1) * PART_ATTN_DIM, :]
-    llama_key = model_state_dict[layer_mapping[1]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
-    llama_value = model_state_dict[layer_mapping[2]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
+    key = "self_attention.query_key_value.weight"
+    llama_query = model_state_dict[layer_mapping[key][0]][tp_idx * PART_ATTN_DIM : (tp_idx + 1) * PART_ATTN_DIM, :]
+    llama_key = model_state_dict[layer_mapping[key][1]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
+    llama_value = model_state_dict[layer_mapping[key][2]][tp_idx * PART_ATTN_DIM: (tp_idx + 1) * PART_ATTN_DIM, :]
     return torch.cat([llama_query, llama_key, llama_value], dim=0)
 
 def get_mlp_weight(model_state_dict, layer_mapping, tp_idx):
