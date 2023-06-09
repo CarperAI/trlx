@@ -39,9 +39,9 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
-            total_steps=256,
+            total_steps=2048,
             seq_length=2048,
-            batch_size=32,
+            batch_size=4,
             epochs=100,
             eval_interval=64,
             trainer="NeMoPPOTrainer",
@@ -58,7 +58,7 @@ def main(hparams={}):
         optimizer=dict(
             name="distributed_fused_adam",
             kwargs=dict(
-                lr=6e-5,
+                lr=6e-6,
                 weight_decay=1e-06,
                 betas=(0.9, 0.95),
             ),
@@ -70,13 +70,13 @@ def main(hparams={}):
         method=dict(
             num_rollouts=128,
             init_kl_coef=0.044,
-            vf_coef=15.04,
+            vf_coef=16,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
             ppo_epochs=4,
         ),
     )
-    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=5e-5)
+    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=5e-6)
 
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8
