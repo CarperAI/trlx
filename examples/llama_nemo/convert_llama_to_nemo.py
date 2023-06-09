@@ -39,7 +39,7 @@ def save_nemo_state_dict(nemo_state_dict, tp_idx):
         os.makedirs(OUTPUT_FOLDER, exist_ok=True)
         torch.save(nemo_state_dict, f"{OUTPUT_FOLDER}/model_weights.ckpt")
     else:
-        os.makedirs(f"{output_folder}/mp_rank_0{tp_idx}", exist_ok=True)
+        os.makedirs(f"{OUTPUT_FOLDER}/mp_rank_0{tp_idx}", exist_ok=True)
         torch.save(nemo_state_dict, f"{OUTPUT_FOLDER}/mp_rank_0{tp_idx}/model_weights.ckpt")
 
 def map_weights(tp_idx):
