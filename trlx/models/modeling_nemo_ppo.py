@@ -26,6 +26,7 @@ from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
+from nemo.collections.nlp.modules.common.megatron.attention import ParallelAttention
 from nemo.collections.nlp.modules.common.megatron.module import (
     Float16Module,
     MegatronModule,
@@ -54,6 +55,11 @@ from trlx.utils.modeling import logprobs_of_labels, whiten
 # Track a per dp rank RNG to sample different rollouts
 # per dp rank
 _PER_DP_RANK_RNG = "per-data-parallel-rank-rng"
+
+
+def patch_attention_for_llama(m):
+    if isinstance(m, ParallelAttention):
+        m.megatron_legacy = True
 
 
 class ParallelLinear(nn.Module):
@@ -520,6 +526,7 @@ class PPOGPT(MegatronGPTModel):
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
+            gpt.apply(patch_attention_for_llama)
             return RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
             return gpt
