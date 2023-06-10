@@ -154,7 +154,7 @@ class ValueHead(nn.Module):
         if self.sequence_parallel:
             vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
         return rearrange(vs, "T N 1 -> N T")
-    
+
 
 class OffloadedModel(object):
     def __init__(self, model, device):
@@ -247,8 +247,8 @@ class RefLMHeads(MegatronModule):
         logits = post_language_model_processing(
             lm_output,
             labels=None,
-            logit_weights=self._lm.language_model.output_layer.weight 
-            if self._lm.language_model.output_layer is not None 
+            logit_weights=self._lm.language_model.output_layer.weight
+            if self._lm.language_model.output_layer is not None
             else self._lm.word_embeddings_weight(),
             get_key_value=get_key_value,
             parallel_output=False,  # self.language_model.parallel_output,
@@ -274,7 +274,7 @@ class RefLMHeads(MegatronModule):
             ref_logits = post_language_model_processing(
                 ref_lm_output,
                 labels=None,
-                logit_weights=self.reference_model.model.language_model.output_layer.weight 
+                logit_weights=self.reference_model.model.language_model.output_layer.weight
                 if self.reference_model.model.language_model.output_layer is not None
                 else self.reference_model.model.word_embeddings_weight(),
                 get_key_value=get_key_value,
@@ -476,9 +476,15 @@ class PPOGPT(MegatronGPTModel):
         unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
         dtype = self.model.module.language_model.output_layer.weight.dtype
         device = self.model.module.language_model.output_layer.weight.device
-        params = torch.nn.Parameter(lm_state_dict['output_layer.weight'].to(device, dtype=dtype), requires_grad=True)
+        params = torch.nn.Parameter(lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True)
         self.model.module.language_model.output_layer.weight = params
+        frozen = params.detach().clone()
+        frozen.requires_grad_(False)
+        self.model.module.reference_model.model.language_model.output_layer.weight = torch.nn.Parameter(
+            frozen, requires_grad=False
+        )
         print("Loaded output layer weight")
+
         print(self.model.module.language_model.output_layer.weight)
         print("Load layers 0 weight")
         print(self.model.module.language_model.encoder.layers[0].self_attention.query_key_value.weight)

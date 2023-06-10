@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 from typing import List
 
 from datasets import load_dataset
@@ -27,13 +28,16 @@ def load_nemo_config():
     """Load nemo-megatron-1.3b model and trainer config"""
     # Import here to not require nemo as a dependency
     from omegaconf import OmegaConf
-    return OmegaConf.load('/mnt/hdd/duyphung/nemo_converter/pvd_trlx/examples/llama_nemo/megatron_7b_llama.yaml')
+
+    path = Path(__file__).parent / "megatron_7b_llama.yaml"
+    return OmegaConf.load(str(path))
+    # return OmegaConf.load('/mnt/hdd/duyphung/nemo_converter/pvd_trlx/examples/llama_nemo/megatron_7b_llama.yaml')
 
 
 def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-    cfg_name = "30b_llama"
+    cfg_name = "7b_llama"
     nemo_config = load_nemo_config()
     config = default_config.evolve(
         train=dict(
@@ -51,18 +55,24 @@ def main(hparams={}):
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
             seed=2023,
             project_name="trlxnemo",
-            tags=["nemo", "ppo", "sentiments", cfg_name],
+            tags=["llama", "ppo", "sentiments", cfg_name],
         ),
+        optimizer=dict(
+            name="distributed_fused_adam",
+            kwargs=dict(lr=6e-6, weight_decay=1e-6, betas=(0.9, 0.95)),
+        ),
+        scheduler=dict(name="CosineAnnealing"),
         model=dict(num_layers_unfrozen=2),
         method=dict(
             num_rollouts=128,
             init_kl_coef=0.044,
-            vf_coef=0.94,
+            vf_coef=16,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
             ppo_epochs=4,
         ),
     )
+    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=5e-6)
 
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8

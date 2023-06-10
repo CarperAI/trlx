@@ -84,7 +84,7 @@ model:
   megatron_legacy: True
   position_embedding_type: 'rope' # Options ['rotary', 'learned', 'rope']
   share_embeddings_and_output_weights: false
-  
+
   ## Activation Checkpointing
   activations_checkpoint_granularity:  'selective' #'selective'  # 'selective' or 'full'
   activations_checkpoint_method: 'uniform' # 'uniform', 'block', not used with 'selective'
