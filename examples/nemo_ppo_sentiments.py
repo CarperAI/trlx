@@ -39,7 +39,7 @@ def main(hparams={}):
 
     config = default_config.evolve(
         train=dict(
-            total_steps=256,
+            total_steps=512,
             seq_length=2048,
             batch_size=32,
             epochs=100,
