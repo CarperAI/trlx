@@ -24,7 +24,7 @@ from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.nemo_ilql_trainer import megatron_trainer
 from trlx.utils import get_git_tag, infinite_dataloader
-from trlx.utils.modeling import whiten
+from trlx.utils.modeling import get_global_statistics, whiten
 
 logging = getLogger(__name__)
 
@@ -140,10 +140,12 @@ class NeMoPPOTrainer(BaseRLTrainer):
         else:
             self.kl_ctl = FixedKLController(self.ppo_config.init_kl_coef)
 
+        self.ref_std = None
+
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         self.prompt_pipeline = pipeline
 
-    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):
+    def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):  # noqa: C901
         ppo_rl_elements = []
 
         device = torch.device("cuda")
@@ -190,8 +192,15 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         if self.ppo_config.scale_reward == "whiten":
             scores = whiten(unnorm_scores, shift_mean=False, group=parallel_state.get_data_parallel_group())
+        elif self.ppo_config.scale_reward == "ref":
+            if self.ref_std is None:
+                _, variance, _ = get_global_statistics(unnorm_scores, group=parallel_state.get_data_parallel_group())
+                self.ref_std = torch.sqrt(variance + 1e-8)
+            scores = unnorm_scores / self.ref_std
+        else:
+            scores = unnorm_scores
 
-        scores = torch.clip(unnorm_scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
+        scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
         chunk_size = self.ppo_config.chunk_size
         scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
@@ -235,10 +244,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
             masks = attention_mask.cpu()
             log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
-
+            print(f"{log_ratio=}")
             for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
                 query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
+                start = start
                 response_end = mask[start:].sum()
                 end = start + response_end
                 rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
@@ -351,6 +361,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
         )
 
         self.model.setup()
+        from nemo.collections.nlp.modules.common.transformer.text_generation import (
+            LengthParam,
+        )
+
+        length = LengthParam(min_length=10, max_length=100)
+        generate = self.model.generate(["hello how are you"], length_params=length)
+        print(generate)
+        # self.model.save_pretrained("llama-nemo-7b-tp4")
+        # exit()
+        # import ipdb; ipdb.set_trace()
         self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]
