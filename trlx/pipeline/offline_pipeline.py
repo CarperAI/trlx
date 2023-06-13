@@ -155,7 +155,7 @@ class PromptPipeline(BasePipeline):
     def __len__(self) -> int:
         return len(self.prompts)
 
-    def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
+    def create_loader(self, batch_size: int, shuffle=False, sampler=None, drop_last=False) -> DataLoader:
         def collate_fn(xs):
             out = self.tokenizer.pad([{"input_ids": x["input_ids"]} for x in xs], return_tensors="pt")
 
@@ -165,7 +165,17 @@ class PromptPipeline(BasePipeline):
 
             return out
 
-        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
+        # Since all data is already pre-processed, no need to have
+        # multi-process data loading
+        return DataLoader(
+            self,
+            batch_size=batch_size,
+            collate_fn=collate_fn,
+            shuffle=shuffle,
+            sampler=sampler,
+            num_workers=0,
+            drop_last=drop_last,
+        )
 
 
 def ilql_collate_fn(elems: Iterable[ILQLElement]):

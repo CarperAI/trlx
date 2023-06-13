@@ -11,6 +11,7 @@ import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
 from apex.transformer import parallel_state, tensor_parallel
+from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
 )
@@ -38,6 +39,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
     SamplingParam,
 )
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
+from nemo.utils import AppState
 
 from trlx.data.ilql_types import ILQLBatch, unflatten_dataclass
 from trlx.models.modeling_ilql import ILQLConfig, batched_index_select
@@ -563,15 +565,6 @@ class ILQLGPT(MegatronGPTModel):
         if self.metric_fn is None:
             raise ValueError("Must set metric_fn to use validation")
 
-        sp_was_enabled = self.cfg.get("sequence_parallel", False)
-        if sp_was_enabled:
-            self.sequence_parallel_(False)
-
-        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
-
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(False)
-
         input_ids, lengths = batch
         input_ids, lengths = torch.as_tensor(input_ids), torch.as_tensor(lengths)
 
@@ -589,26 +582,6 @@ class ILQLGPT(MegatronGPTModel):
         rows = list(zip(gen["sentences"], *metric_values))
 
         avg_metrics = {f"avg_{k}": torch.as_tensor(v).mean() for k, v in metrics.items()}
-
-        if activations_checkpointing_was_enabled:
-            self.activation_checkpointing_(True)
-
-        if sp_was_enabled:
-            self.sequence_parallel_(True)
-
-        # NeMo generate resets the microbatch calculator
-        from apex.transformer.pipeline_parallel.utils import (
-            _reconfigure_microbatch_calculator,
-        )
-        from nemo.utils import AppState
-
-        _reconfigure_microbatch_calculator(
-            rank=AppState().global_rank,
-            rampup_batch_size=None,
-            global_batch_size=self.cfg.global_batch_size,
-            micro_batch_size=self.cfg.micro_batch_size,
-            data_parallel_size=AppState().data_parallel_size,
-        )
 
         return avg_metrics, (rows, columns)
 
@@ -783,4 +756,30 @@ class ILQLGPT(MegatronGPTModel):
                 "compute_logprob": False,
             }
 
-        return super().generate(inputs, length_params, sampling_params)
+        sp_was_enabled = self.cfg.get("sequence_parallel", False)
+        if sp_was_enabled:
+            self.sequence_parallel_(False)
+
+        activations_checkpointing_was_enabled = self.cfg.get("activations_checkpoint_granularity", None) is not None
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(False)
+
+        gen = super().generate(inputs, length_params, sampling_params)
+
+        if activations_checkpointing_was_enabled:
+            self.activation_checkpointing_(True)
+
+        if sp_was_enabled:
+            self.sequence_parallel_(True)
+
+        # NeMo generate resets the microbatch calculator
+        _reconfigure_microbatch_calculator(
+            rank=AppState().global_rank,
+            rampup_batch_size=None,
+            global_batch_size=self.cfg.global_batch_size,
+            micro_batch_size=self.cfg.micro_batch_size,
+            data_parallel_size=AppState().data_parallel_size,
+        )
+
+        return gen
