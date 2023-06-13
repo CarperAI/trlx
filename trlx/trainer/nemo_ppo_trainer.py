@@ -244,11 +244,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
             masks = attention_mask.cpu()
             log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
-            print(f"{log_ratio=}")
+
             for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
                 query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
-                start = start
                 response_end = mask[start:].sum()
                 end = start + response_end
                 rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
@@ -361,16 +360,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
         )
 
         self.model.setup()
-        from nemo.collections.nlp.modules.common.transformer.text_generation import (
-            LengthParam,
-        )
-
-        length = LengthParam(min_length=10, max_length=100)
-        generate = self.model.generate(["hello how are you"], length_params=length)
-        print(generate)
-        # self.model.save_pretrained("llama-nemo-7b-tp4")
-        # exit()
-        # import ipdb; ipdb.set_trace()
         self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]
