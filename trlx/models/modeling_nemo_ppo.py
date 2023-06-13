@@ -467,7 +467,7 @@ class PPOGPT(MegatronGPTModel):
 
         print(f"Loading from {rank_params}")
         state_dict = torch.load(rank_params)
-
+        state_dict = {k: v.to(torch.bfloat16) for k, v in state_dict.items()}
         state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
 
         def trim_key(key, prefix):
@@ -874,7 +874,7 @@ class PPOGPT(MegatronGPTModel):
                     batch.values, batch.rewards, response_length, use_whitening=False
                 )
 
-                advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
+                advantages = whiten(advantages, shift_mean=False, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, :-1][:, start:end]
 

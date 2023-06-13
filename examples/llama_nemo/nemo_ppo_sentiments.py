@@ -41,7 +41,7 @@ def main(hparams={}):
     nemo_config = load_nemo_config()
     config = default_config.evolve(
         train=dict(
-            total_steps=10000,
+            total_steps=1600,
             seq_length=2048,
             batch_size=32,
             epochs=100,
@@ -53,26 +53,27 @@ def main(hparams={}):
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
-            seed=2023,
+            seed=2024,
             project_name="trlxnemo",
             tags=["llama", "ppo", "sentiments", cfg_name],
         ),
         optimizer=dict(
             name="distributed_fused_adam",
-            kwargs=dict(lr=6e-6, weight_decay=1e-6, betas=(0.9, 0.95)),
+            kwargs=dict(lr=1.001e-5, weight_decay=1.0e-6, eps=1.0e-8, betas=(0.9, 0.95)),
         ),
         scheduler=dict(name="CosineAnnealing"),
         model=dict(num_layers_unfrozen=2),
         method=dict(
             num_rollouts=128,
-            init_kl_coef=0.044,
-            vf_coef=16,
+            init_kl_coef=0.05,
+            vf_coef=1,
+            scale_reward="whiten",
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
             ppo_epochs=4,
         ),
     )
-    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=5e-6)
+    config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=1.0e-5)
 
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8

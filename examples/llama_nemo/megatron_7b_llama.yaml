@@ -1,9 +1,9 @@
-name: megatron_gpt_7b
+name: megatron_vicuna1.1_7b
 restore_from_path: null  # used when starting from a .nemo file
 
 trainer:
   devices: 8
-  num_nodes: 1
+  num_nodes: 4
   accelerator: gpu
   precision: bf16
   logger: False # logger provided by exp_manager
