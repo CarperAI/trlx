@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from datasets import load_dataset
+from omegaconf import OmegaConf
 from transformers import DistilBertForSequenceClassification, pipeline
 
 import trlx
@@ -26,8 +27,6 @@ def get_positive_score(scores):
 
 def load_nemo_config():
     """Load nemo-megatron-1.3b model and trainer config"""
-    # Import here to not require nemo as a dependency
-    from omegaconf import OmegaConf
 
     path = Path(__file__).parent / "megatron_7b_llama.yaml"
     return OmegaConf.load(str(path))
@@ -37,8 +36,11 @@ def load_nemo_config():
 def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-    cfg_name = "7b_llama"
-    nemo_config = load_nemo_config()
+    cfg_name = "30b_llama"
+    # nemo_config = load_nemo_config()
+    nemo_config = OmegaConf.load("/mnt/hdd/uwu-logs/llama-nemo-30b-tp4-out/megatron_30b_llama.yaml")
+    nemo_config.trainer.devices = 8
+    nemo_config.trainer.num_nodes = 4
     config = default_config.evolve(
         train=dict(
             total_steps=1600,
@@ -49,7 +51,7 @@ def main(hparams={}):
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                pretrained_model="/mnt/hdd/duyphung/nemo_converter/trlx/llama-nemo-7b-tp4-converted",
+                pretrained_model="/mnt/hdd/uwu-logs/llama-nemo-30b-tp4-out/",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",

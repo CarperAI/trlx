@@ -438,7 +438,7 @@ class PPOGPT(MegatronGPTModel):
             parallel_state.get_pipeline_model_parallel_world_size() == 1
         ), "Pipeline parallelism not supported for saving"
 
-        if parallel_state.get_data_parallel_rank() == 0:
+        if True:  # parallel_state.get_data_parallel_rank() == 0:
             state_dict = unwrap_float16_module(self.model).pretrained_state_dict()
             state_dict = {f"model.{k}": v for k, v in state_dict.items()}
 
@@ -484,11 +484,12 @@ class PPOGPT(MegatronGPTModel):
         device = self.model.module.language_model.output_layer.weight.device
         params = torch.nn.Parameter(lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True)
         self.model.module.language_model.output_layer.weight = params
-        frozen = params.detach().clone()
-        frozen.requires_grad_(False)
-        self.model.module.reference_model.model.language_model.output_layer.weight = torch.nn.Parameter(
-            frozen, requires_grad=False
-        )
+        if self.build_reference_model:
+            frozen = params.detach().clone()
+            frozen.requires_grad_(False)
+            self.model.module.reference_model.model.language_model.output_layer.weight = torch.nn.Parameter(
+                frozen, requires_grad=False
+            )
         print("Loaded output layer weight")
 
         print(self.model.module.language_model.output_layer.weight)
