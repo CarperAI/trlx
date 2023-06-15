@@ -1,5 +1,5 @@
 import functools
-from typing import Any, Dict, List, MutableMapping, Tuple, Union
+from typing import Any, Dict, List, MutableMapping, Tuple, Union, Optional
 
 import accelerate
 import numpy as np
@@ -289,8 +289,11 @@ class RunningMoments:
         self.var = 1
         self.count = 1e-24
 
-    def update(self, xs: torch.Tensor) -> Tuple[float, float]:
+    def update(self, xs: torch.Tensor, xs_mask: Optional[torch.Tensor] = None) -> Tuple[float, float]:
         """Updates running moments from batch's moments computed across ranks"""
+        if xs_mask is None:
+            xs_mask = torch.ones_like(xs)
+        xs = torch.sum(xs * xs_mask, dim=1)
         if dist.is_initialized():
             xs_mean, xs_var, xs_count = get_global_statistics(xs)
         else:
