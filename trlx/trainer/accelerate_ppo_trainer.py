@@ -355,7 +355,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
                 self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(dim=1).std()
-            all_scores_mean, all_scores_std = self.running_moments.update(scores)
+            all_scores_mean, all_scores_std = self.running_moments.update(scores, scores_mask)
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
             stats["rollout_scores/running_mean"] = self.running_moments.mean.item()
