@@ -55,7 +55,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.mb_size = config.train.batch_size
         self.num_mb = config.train.batch_size // self.mb_size
         self.mb_count = 0
-        self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+        self.accelerator = Accelerator(log_with=config.train.tracker, project_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
             # by accelerate's default, arguments in `model.forward` would be casted to half
