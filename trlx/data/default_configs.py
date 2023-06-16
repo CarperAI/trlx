@@ -49,12 +49,12 @@ def default_ppo_config():
             ref_mean=None,
             ref_std=None,
             cliprange_reward=10,
+            num_return_sequences=10,
             gen_kwargs=dict(
                 max_new_tokens=40,
                 top_k=0,
                 top_p=1.0,
                 do_sample=True,
-                num_return_sequences=16,
             ),
         ),
     )

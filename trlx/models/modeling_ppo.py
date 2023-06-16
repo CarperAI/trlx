@@ -130,6 +130,7 @@ class PPOConfig(MethodConfig):
     ref_std: Optional[float]
     cliprange_reward: float
     gen_kwargs: dict
+    num_return_sequences: int
     gen_experience_kwargs: Optional[dict] = None
 
     def get_advantages_and_returns(
