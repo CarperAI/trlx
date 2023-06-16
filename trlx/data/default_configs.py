@@ -54,6 +54,7 @@ def default_ppo_config():
                 top_k=0,
                 top_p=1.0,
                 do_sample=True,
+                num_return_sequences=16,
             ),
         ),
     )
