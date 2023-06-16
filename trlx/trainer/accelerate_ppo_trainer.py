@@ -274,10 +274,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
-            samples = self.generate(batch["input_ids"], batch["attention_mask"])
+            samples = self.generate(batch["input_ids"], batch["attention_mask"], num_return_sequences=self.config.method.num_return_sequences)
             stats["time/rollout_generate"] = time() - rollout_generate_time
 
-            prompt_tensors = batch.input_ids
+            prompt_tensors = batch.input_ids.repeat_interleave(self.config.method.num_return_sequences, dim=0) # TODO: It is hard-coded to 10 here. Change it to a variable
             device = samples.device
 
             prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
@@ -319,6 +319,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
+            # Best-of-N Sampling. 
+            max_score_indices = self.get_max_indices(scores, self.config.method.num_return_sequences, device)
+            scores = scores.index_select(0, max_score_indices)
+            samples = samples.index_select(0, max_score_indices)
+            prompt_tensors = prompt_tensors.index_select(0, max_score_indices)
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -507,3 +512,16 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
+    
+    @staticmethod
+    def get_max_indices(input_tensor, window_size, device):
+        # Use unfold to create the sliding windows
+        unfolded = input_tensor.unfold(0, window_size, window_size)
+
+        # Find the max values and indices along the unfolded dimension
+        values, indices = unfolded.max(dim=2)
+
+        # Adjust indices to be relative to original tensor
+        indices += torch.arange(0, input_tensor.size(0) - window_size + 1, window_size).to(device).unsqueeze(1)
+
+        return indices.squeeze()
