@@ -7,6 +7,7 @@ from typing import Any, Callable, Iterable, Iterator, List, Optional, Union, cas
 
 import torch
 import wandb
+from accelerate import init_empty_weights
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
@@ -107,6 +108,24 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         self.trainer = megatron_trainer(megatron_cfg)
 
+        # Init DDP
+        def dummy():
+            return
+
+        if self.trainer.strategy.launcher is not None:
+            self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
+        self.trainer.strategy.setup_environment()
+        assert torch.distributed.is_initialized()
+        # from nemo.utils import AppState
+        # state = AppState()
+        # state.model_parallel_size = megatron_cfg.model.tensor_model_parallel_size * megatron_cfg.model.pipeline_model_parallel_size
+
+        # self.trainer.strategy.init_model_parallel(self.trainer.global_rank, self.trainer.world_size)
+        parallel_state.initialize_model_parallel(
+            tensor_model_parallel_size_=megatron_cfg.model.tensor_model_parallel_size,
+            pipeline_model_parallel_size_=megatron_cfg.model.pipeline_model_parallel_size,
+        )
+
         self.model = PPOGPT(
             ppo_config=self.ppo_config,
             cfg=megatron_cfg.model,
@@ -114,11 +133,19 @@ class NeMoPPOTrainer(BaseRLTrainer):
             metric_fn=self.metric_fn,
             stop_sequences=self.stop_sequences,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            pretrained_model=pretrained_model,
         )
+
+        if self.model.cfg.get("transformer_engine", False):
+            self.model.setup_transformer_engine_tp_groups()
+
+        self.trainer.strategy._lightning_module = self.model
+        self.model.setup()
+
         self.megatron_cfg = megatron_cfg
 
-        if pretrained_model is not None:
-            self.model.load_from_pretrained(pretrained_model)
+        # if pretrained_model is not None:
+        #   self.model.load_from_pretrained(pretrained_model)
 
         self.batch_size = megatron_cfg.model.global_batch_size
 
@@ -336,17 +363,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 config=OmegaConf.to_container(self.megatron_cfg, resolve=True),
             )
 
-        # Init DDP
-        def dummy():
-            return
-
-        if self.trainer.strategy.launcher is not None:
-            self.trainer.strategy.launcher.launch(dummy, trainer=self.trainer)
-        self.trainer.strategy.setup_environment()
-
-        if self.model.cfg.get("transformer_engine", False):
-            self.model.setup_transformer_engine_tp_groups()
-
         dp_world = parallel_state.get_data_parallel_world_size()
         dp_rank = parallel_state.get_data_parallel_rank()
 
@@ -360,18 +376,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
             sampler=sampler,
         )
 
-        self.model.setup()
-        from nemo.collections.nlp.modules.common.transformer.text_generation import (
-            LengthParam,
-        )
+        print(self.model.generate(["heyy"], dict(max_length=10, min_length=1)), flush=True)
 
-        length = LengthParam(min_length=10, max_length=100)
-        generate = self.model.generate(["hello how are you"], length_params=length)
-        print(generate)
-        # self.model.save_pretrained("llama-nemo-7b-tp4")
-        # exit()
-        # import ipdb; ipdb.set_trace()
-        self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]
 

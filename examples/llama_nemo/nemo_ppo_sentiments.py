@@ -38,20 +38,20 @@ def main(hparams={}):
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
     cfg_name = "30b_llama"
     # nemo_config = load_nemo_config()
-    nemo_config = OmegaConf.load("/mnt/hdd/uwu-logs/llama-nemo-30b-tp4-out/megatron_30b_llama.yaml")
+    nemo_config = OmegaConf.load("/mnt/nvme/home/uwu/llama-nemo-30b-tp4-out/megatron_30b_llama.yaml")
     nemo_config.trainer.devices = 8
     nemo_config.trainer.num_nodes = 4
     config = default_config.evolve(
         train=dict(
             total_steps=1600,
             seq_length=2048,
-            batch_size=32,
+            batch_size=8,
             epochs=100,
             eval_interval=64,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                pretrained_model="/mnt/hdd/uwu-logs/llama-nemo-30b-tp4-out/",
+                pretrained_model="/mnt/nvme/home/uwu/llama-nemo-30b-tp4-out/",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
@@ -71,7 +71,7 @@ def main(hparams={}):
             vf_coef=1,
             scale_reward="whiten",
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
-            chunk_size=128,
+            chunk_size=32,
             ppo_epochs=4,
         ),
     )
@@ -81,7 +81,7 @@ def main(hparams={}):
     local_rank = rank % 8
 
     reward_model = DistilBertForSequenceClassification.from_pretrained("lvwerra/distilbert-imdb")
-    reward_model.to(local_rank)
+    reward_model.to("cpu")
     sentiment_fn = pipeline(
         "sentiment-analysis",
         model=reward_model,  # "lvwerra/distilbert-imdb",

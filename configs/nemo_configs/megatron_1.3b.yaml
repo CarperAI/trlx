@@ -2,7 +2,7 @@ name: megatron_gpt_1.3b
 restore_from_path: null  # used when starting from a .nemo file
 
 trainer:
-  devices: 1
+  devices: 8
   num_nodes: 1
   accelerator: gpu
   precision: bf16
@@ -59,7 +59,10 @@ model:
   ffn_hidden_size: 3072
   num_attention_heads: 16
   init_method_std: 0.015
-  hidden_dropout: 0.1
+  hidden_dropout: 0.0
+  attention_dropout: 0.0
+  ffn_dropout: 0.0
+  bias_dropout_add_fusion: False
   kv_channels: null
   apply_query_key_layer_scaling: true
   layernorm_epsilon: 1.0e-05

@@ -11,7 +11,9 @@ import torch
 import torch.distributed
 import torch.nn as nn
 import wandb
+from accelerate.big_modeling import init_empty_weights
 from apex.transformer import parallel_state, tensor_parallel
+from apex.transformer.functional.fused_softmax import FusedScaleMaskSoftmax
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
     gather_from_sequence_parallel_region,
@@ -83,10 +85,10 @@ class ParallelLinear(nn.Module):
         if init_method is None:
             init_method = partial(nn.init.uniform_, a=-sqrt(1.0 / in_size), b=sqrt(1.0 / in_size))
 
-        no_async_tensor_model_parallel_allreduce = (
+        no_async_tensor_model_parallel_allreduce = sequence_parallel
+        """(
             parallel_state.get_tensor_model_parallel_world_size() == 1 or sequence_parallel
-        )
-
+        )"""
         # Fork TP rng so each TP rank has different random weights
         with tensor_parallel.random.get_cuda_rng_tracker().fork():
             if in_size < out_size:
@@ -222,9 +224,26 @@ class RefLMHeads(MegatronModule):
 
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
+        print("loading lm dict")
         self.language_model.load_state_dict(lm_state_dict, strict=strict)
+        print("loading reference state dict")
         if self.reference_model is not None:
             self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
+
+        if "output_layer.weight" in lm_state_dict:
+            dtype = self.language_model.output_layer.weight.dtype
+            device = self.language_model.output_layer.weight.device
+            params = torch.nn.Parameter(
+                lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True
+            )
+            self.language_model.output_layer.weight = params
+            if self.reference_model is not None:
+                frozen = params.detach().clone()
+                frozen.requires_grad_(False)
+                self.reference_model.model.language_model.output_layer.weight = torch.nn.Parameter(
+                    frozen, requires_grad=False
+                )
+            print("Loaded output layer weight")
 
     def pretrained_state_dict(self):
         """Load GPTModel state dict."""
@@ -254,7 +273,7 @@ class RefLMHeads(MegatronModule):
             lm_output,
             labels=None,
             logit_weights=self._lm.language_model.output_layer.weight
-            if self._lm.language_model.output_layer is not None
+            if self.output_layer is not None
             else self._lm.word_embeddings_weight(),
             get_key_value=get_key_value,
             parallel_output=False,  # self.language_model.parallel_output,
@@ -281,7 +300,7 @@ class RefLMHeads(MegatronModule):
                 ref_lm_output,
                 labels=None,
                 logit_weights=self.reference_model.model.language_model.output_layer.weight
-                if self.reference_model.model.language_model.output_layer is not None
+                if self.output_layer is not None
                 else self.reference_model.model.word_embeddings_weight(),
                 get_key_value=get_key_value,
                 parallel_output=False,  # self.reference_model.model.parallel_output,
@@ -351,6 +370,7 @@ class PPOGPT(MegatronGPTModel):
         stop_sequences=(),
         num_layers_unfrozen=None,
         build_reference_model=True,
+        pretrained_model=None,
         **kwargs,
     ):
         self.ppo_config = ppo_config
@@ -362,6 +382,13 @@ class PPOGPT(MegatronGPTModel):
             self.num_layers_unfrozen = num_layers_unfrozen
         self.build_reference_model = build_reference_model
 
+        self.pretrained_model = pretrained_model
+
+        from nemo.collections.nlp.modules.common.megatron.megatron_init import (
+            _set_random_seed,
+        )
+
+        _set_random_seed(kwargs["cfg"].seed)
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
             raise ValueError("No parameters in model")
@@ -438,7 +465,9 @@ class PPOGPT(MegatronGPTModel):
             parallel_state.get_pipeline_model_parallel_world_size() == 1
         ), "Pipeline parallelism not supported for saving"
 
-        if True:  # parallel_state.get_data_parallel_rank() == 0:
+        if torch.distributed.get_rank() < (
+            self.cfg.tensor_model_parallel_size * self.cfg.pipeline_model_parallel_size
+        ):  # parallel_state.get_data_parallel_rank() == 0:
             state_dict = unwrap_float16_module(self.model).pretrained_state_dict()
             state_dict = {f"model.{k}": v for k, v in state_dict.items()}
 
@@ -455,7 +484,7 @@ class PPOGPT(MegatronGPTModel):
             print(f"Saving to {rank_params}")
             torch.save(state_dict, rank_params)
 
-    def load_from_pretrained(self, checkpoint_dir):
+    def load_from_pretrained(self, checkpoint_dir, load_into=None):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
         mp_world = parallel_state.get_tensor_model_parallel_world_size()
 
@@ -466,7 +495,9 @@ class PPOGPT(MegatronGPTModel):
             rank_params = Path(checkpoint_dir) / "model_weights.ckpt"
 
         print(f"Loading from {rank_params}")
-        state_dict = torch.load(rank_params)
+        state_dict = torch.load(rank_params, map_location="cpu")
+
+        print("loaded state dict from disk")
         state_dict = {k: v.to(torch.bfloat16) for k, v in state_dict.items()}
         state_dict = reshard_for_pipeline_parallelism(self.cfg.num_layers, state_dict)
 
@@ -479,23 +510,11 @@ class PPOGPT(MegatronGPTModel):
         encoder_state_dict = {trim_key(k, "encoder."): v for k, v in lm_state_dict.items() if k.startswith("encoder.")}
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
-        dtype = self.model.module.language_model.output_layer.weight.dtype
-        device = self.model.module.language_model.output_layer.weight.device
-        params = torch.nn.Parameter(lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True)
-        self.model.module.language_model.output_layer.weight = params
-        if self.build_reference_model:
-            frozen = params.detach().clone()
-            frozen.requires_grad_(False)
-            self.model.module.reference_model.model.language_model.output_layer.weight = torch.nn.Parameter(
-                frozen, requires_grad=False
-            )
-        print("Loaded output layer weight")
 
-        print(self.model.module.language_model.output_layer.weight)
-        print("Load layers 0 weight")
-        print(self.model.module.language_model.encoder.layers[0].self_attention.query_key_value.weight)
-        print(f"Loaded from pretrained {rank_params}")
+        print(encoder_state_dict.keys())
+        if load_into is None:
+            load_into = unwrap_float16_module(self.model)
+        load_into.load_state_dict(lm_state_dict, strict=True)
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
         """
@@ -505,11 +524,23 @@ class PPOGPT(MegatronGPTModel):
         On the first rank, pre_process will be True
         On the last rank, post_process will be True
         """
+
         gpt = super().model_provider_func(pre_process, post_process=post_process)
         # This disables post-processing the lm output to the vocab
         gpt.post_process = False
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
+        # gpt.to(torch.bfloat16)
+
+        # Bug with FusedScaleMaskSoftmax when no scaling & using kernel
+        # Need to enable scaling then later patch scales to 1.0
+        if not self.cfg.get("apply_query_key_layer_scaling", False):
+
+            def force_fp32_softmax(m):
+                if isinstance(m, FusedScaleMaskSoftmax):
+                    m.softmax_in_fp32 = True
+
+            gpt.apply(force_fp32_softmax)
 
         # Unfreeze only last N layers if specified
         if self.num_layers_unfrozen is not None:
@@ -527,10 +558,19 @@ class PPOGPT(MegatronGPTModel):
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
-            gpt.apply(patch_attention_for_llama)
-            return RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
+            # Llama wants alternative QKV format
+            if self.cfg.get("megatron_legacy", False):
+                gpt.apply(patch_attention_for_llama)
+            model = RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
-            return gpt
+            model = gpt
+
+        if self.pretrained_model is not None:
+            self.load_from_pretrained(self.pretrained_model, load_into=model)
+
+        print(f"{next(model.parameters())=}")
+
+        return model
 
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
@@ -590,6 +630,26 @@ class PPOGPT(MegatronGPTModel):
         # we do this inside training_step to support pipeline parallelism
         # This gets the correct fwd/bwd pipeline step depending on the pipeline
         # parallelism configuration
+
+        # handle asynchronous grad reduction
+        custom_sync_context_handler = None
+        custom_grad_sync_func = None
+        custom_param_sync_func = None
+        if self.with_distributed_adam:
+            if self.megatron_amp_o2:
+                # copy grads to main grad
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=True)
+            else:
+                # keep grad tensors around
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=False)
+            custom_grad_sync_func = self.reduce_overlap_gradients
+            custom_param_sync_func = self.sync_overlap_parameters
+        else:
+            if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
+                custom_sync_context_handler = self._optimizer.no_sync
+            else:
+                # TODO: enable async grad all reduce for O1/autocast mixed precision training
+                custom_sync_context_handler = None
         fwd_bwd_function = self._get_fwd_bwd_function()
 
         last_stage_output = fwd_bwd_function(
@@ -601,6 +661,8 @@ class PPOGPT(MegatronGPTModel):
             dtype=self.autocast_dtype,
             grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
             custom_sync_context_handler=custom_sync_context_handler,
+            custom_grad_sync_func=custom_grad_sync_func,
+            custom_param_sync_func=custom_param_sync_func,
             sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
             sync_batch_comm=self.cfg.get("sync_batch_comm", False),
             num_micro_batches_with_partial_activation_checkpoints=self.cfg.get(
@@ -629,6 +691,7 @@ class PPOGPT(MegatronGPTModel):
             # reduced
             if not parallel_state.is_pipeline_first_stage():
                 self.reduce_overlap_gradients()
+            self._optimizer._finish_bucket_grad_sync()
         elif self.megatron_amp_o2:
             # when using pipeline parallelism grads must be all-reduced after the pipeline (not asynchronously)
             if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get("sequence_parallel", False):
@@ -639,7 +702,9 @@ class PPOGPT(MegatronGPTModel):
             # so we all-reduce gradients after the pipeline
             self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
 
-        if self.cfg.get("pipeline_model_parallel_size", 1) > 1:
+        if self.cfg.get("pipeline_model_parallel_size", 1) > 1 and self.cfg.get(
+            "share_embeddings_and_output_weights", True
+        ):
             # when using pipeline parallelism the first and last stage must keep embeddings in sync
             self.allreduce_first_last_embeddings()
 
