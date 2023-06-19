@@ -226,12 +226,13 @@ class RefLMHeads(MegatronModule):
         """Load GPTModel state dict."""
         print("loading lm dict")
         self.language_model.load_state_dict(lm_state_dict, strict=strict)
-        print("loading reference state dict")
+
         if self.reference_model is not None:
+            print("loading reference state dict")
             self.reference_model.model.language_model.load_state_dict(lm_state_dict, strict=strict)
 
         if "output_layer.weight" in lm_state_dict:
-            dtype = self.language_model.output_layer.weight.dtype
+            dtype = lm_state_dict["output_layer.weight"].dtype
             device = self.language_model.output_layer.weight.device
             params = torch.nn.Parameter(
                 lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True
@@ -511,7 +512,6 @@ class PPOGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        print(encoder_state_dict.keys())
         if load_into is None:
             load_into = unwrap_float16_module(self.model)
         load_into.load_state_dict(lm_state_dict, strict=True)
@@ -530,7 +530,7 @@ class PPOGPT(MegatronGPTModel):
         gpt.post_process = False
         # This enables the final layernorm in the GPT model if there is one
         gpt.language_model.post_process = post_process
-        # gpt.to(torch.bfloat16)
+        gpt.to(torch.bfloat16)
 
         # Bug with FusedScaleMaskSoftmax when no scaling & using kernel
         # Need to enable scaling then later patch scales to 1.0
@@ -540,7 +540,7 @@ class PPOGPT(MegatronGPTModel):
                 if isinstance(m, FusedScaleMaskSoftmax):
                     m.softmax_in_fp32 = True
 
-            gpt.apply(force_fp32_softmax)
+            # gpt.apply(force_fp32_softmax)
 
         # Unfreeze only last N layers if specified
         if self.num_layers_unfrozen is not None:
@@ -559,10 +559,14 @@ class PPOGPT(MegatronGPTModel):
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
             # Llama wants alternative QKV format
-            if self.cfg.get("megatron_legacy", False):
+            if True or self.cfg.get("megatron_legacy", False):
+                print("LEGACY QKV")
                 gpt.apply(patch_attention_for_llama)
             model = RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
+            if True or self.cfg.get("megatron_legacy", False):
+                print("LEGACY QKV")
+                gpt.apply(patch_attention_for_llama)
             model = gpt
 
         if self.pretrained_model is not None:

@@ -38,7 +38,7 @@ def main(hparams={}):
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
     cfg_name = "30b_llama"
     # nemo_config = load_nemo_config()
-    nemo_config = OmegaConf.load("/mnt/nvme/home/uwu/llama-nemo-30b-tp4-out/megatron_30b_llama.yaml")
+    nemo_config = OmegaConf.load("/fsx/home-uwu/llama-nemo-30b/megatron_llama_30b.yaml")
     nemo_config.trainer.devices = 8
     nemo_config.trainer.num_nodes = 4
     config = default_config.evolve(
@@ -51,7 +51,7 @@ def main(hparams={}):
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                pretrained_model="/mnt/nvme/home/uwu/llama-nemo-30b-tp4-out/",
+                pretrained_model="/fsx/home-uwu/llama-nemo-30b/",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",

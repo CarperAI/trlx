@@ -9,14 +9,14 @@ from transformers import AutoModelForCausalLM
 # from trlx.trainer.nemo_ppo_trainer import PPOGPT, megatron_trainer
 
 
-def main():  # noqa: C901
+def main(args):  # noqa: C901
     print("loading model...")
-    model = AutoModelForCausalLM.from_pretrained("/mnt/hdd/llama-hf/30B", torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(args.model_path, torch_dtype=torch.bfloat16)
     model_state_dict = model.state_dict()
     print("model loaded")
     # Constants
     TOTAL_LAYERS = model.config.num_hidden_layers
-    TOTAL_TP = 4
+    TOTAL_TP = args.total_tp
     HIDDEN_DIM = model.config.hidden_size
     FFN_HIDDEN_DIM = model.config.intermediate_size
     PART_ATTN_DIM = HIDDEN_DIM // TOTAL_TP
@@ -24,7 +24,7 @@ def main():  # noqa: C901
     VOCAB_SIZE = model.config.vocab_size
     EMBEDDING_DIM = VOCAB_SIZE // TOTAL_TP
     # INPUT_FOLDER = "llama-nemo-65b-tp4-in"  # NeMo initial checkpoint folder
-    OUTPUT_FOLDER = "llama-nemo-30b-tp4-out"  # NeMo converted checkpoint folder with llama weights
+    OUTPUT_FOLDER = args.output_folder  # NeMo converted checkpoint folder with llama weights
 
     # Model Loading
 
@@ -132,6 +132,7 @@ def main():  # noqa: C901
     megatron_cfg_path = Path(__file__).parent / "megatron_7b_llama.yaml"
 
     megatron_cfg = OmegaConf.load(megatron_cfg_path)
+    megatron_cfg.name = f"megatron_{args.name}"
     megatron_cfg.trainer.num_nodes = 1
     megatron_cfg.trainer.devices = TOTAL_TP
     megatron_cfg.model.padded_vocab_size = model.config.vocab_size
@@ -181,8 +182,15 @@ def main():  # noqa: C901
     for tp in range(TOTAL_TP):
         map_weights(tp)
 
-    OmegaConf.save(megatron_cfg, str(Path(OUTPUT_FOLDER) / "megatron_30b_llama.yaml"))
+    OmegaConf.save(megatron_cfg, str(Path(OUTPUT_FOLDER) / f"megatron_{args.name}.yaml"))
 
 
 if __name__ == "__main__":
-    main()
+    from argparse import ArgumentParser
+
+    args = ArgumentParser()
+    args.add_argument("--model_path", type=str, required=True)
+    args.add_argument("--output_folder", type=str, required=True)
+    args.add_argument("--total_tp", type=int, required=True)
+    args.add_argument("--name", type=str, required=True)
+    main(args.parse_args())
