@@ -141,6 +141,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 else:
                     self.generate_sweep_kwarg = (k, v)
 
+        # Allows for flexible breaking of inner train loop
+        self.break_train = False
+
     def setup_model(self):
         """
         Returns a model derived from an instance's TRLConfig
@@ -629,6 +632,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         return results
 
                 self.post_backward_callback()
+
+                if self.break_train:
+                    self.break_train = False
+                    break
 
             self.post_epoch_callback()
         tbar.close()

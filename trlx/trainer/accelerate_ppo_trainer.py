@@ -20,7 +20,7 @@ from trlx.models.modeling_ppo import (
     AutoModelForSeq2SeqLMWithHydraValueHead,
     FixedKLController,
 )
-from trlx.pipeline.offline_pipeline import PromptPipeline
+from trlx.pipeline.offline_pipeline import PromptPipeline, DialogStore
 from trlx.pipeline.ppo_pipeline import PPORolloutStorage
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
@@ -101,6 +101,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.ref_mean = self.config.method.ref_mean
         self.ref_std = self.config.method.ref_std
 
+        # Set training mode conditions
+        self.num_sampled_rollouts = 0
+        self.rollouts_per_sft = self.config.method.rollouts_per_sft
+        self.mix_sft = self.config.method.rollouts_per_sft > 0
+        self.sft = False
+
     def get_arch(self, config: TRLConfig):
         """Get the model"""
         model_class = AutoModelForCausalLMWithHydraValueHead
@@ -124,72 +130,83 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         Args:
             batch: Previous batch of episodes
         """
-        # Move `batch` data to `accelerator` device
-        query_tensors = batch.query_tensors.to(self.accelerator.device)
-        response_tensors = batch.response_tensors.to(self.accelerator.device)
-        old_logprobs = batch.logprobs.to(self.accelerator.device)
-        old_values = batch.values.to(self.accelerator.device)
-        old_rewards = batch.rewards.to(self.accelerator.device)
-        response_length = old_rewards.shape[1]
+        # Case on type of loss
+        if not self.sft:
+            # Move `batch` data to `accelerator` device
+            query_tensors = batch.query_tensors.to(self.accelerator.device)
+            response_tensors = batch.response_tensors.to(self.accelerator.device)
+            old_logprobs = batch.logprobs.to(self.accelerator.device)
+            old_values = batch.values.to(self.accelerator.device)
+            old_rewards = batch.rewards.to(self.accelerator.device)
+            response_length = old_rewards.shape[1]
 
-        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
+            advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
 
-        if self.config.model.model_arch_type == "seq2seq":
-            input_ids = query_tensors
-            decoder_input_ids = response_tensors
-            attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            decoder_attention_mask = (
-                decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            )
-            decoder_attention_mask[:, 0] = 1
+            if self.config.model.model_arch_type == "seq2seq":
+                input_ids = query_tensors
+                decoder_input_ids = response_tensors
+                attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+                decoder_attention_mask = (
+                    decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+                )
+                decoder_attention_mask[:, 0] = 1
 
-            # Forward pass
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
-                decoder_attention_mask=decoder_attention_mask,
-            )
+                # Forward pass
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    decoder_input_ids=decoder_input_ids,
+                    decoder_attention_mask=decoder_attention_mask,
+                )
 
-            logits = outputs.logits
-            values_pred = outputs.value
-            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
-            mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
-            start = 0
-            end = start + response_length
-            logprobs, values_pred, mask = (
-                logprobs[:, start:end],
-                values_pred[:, start:end],
-                mask[:, start + 1 : end + 1],
+                logits = outputs.logits
+                values_pred = outputs.value
+                logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
+                mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
+                start = 0
+                end = start + response_length
+                logprobs, values_pred, mask = (
+                    logprobs[:, start:end],
+                    values_pred[:, start:end],
+                    mask[:, start:end],
+                )
+            else:
+                tokens = torch.cat((query_tensors, response_tensors), dim=1)
+                attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
+                outputs = self.model(tokens, attention_mask, return_dict=True)
+                logits = outputs.logits
+                values_pred = outputs.value
+                values_pred = values_pred[:, :-1]
+                logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+
+                start = query_tensors.shape[1] - 1
+                end = start + response_length
+                logprobs, values_pred, mask = (
+                    logprobs[:, start:end],
+                    values_pred[:, start:end],
+                    attention_mask[:, start:end],
+                )
+
+            loss, stats = self.config.method.loss(
+                logprobs=logprobs,
+                values=values_pred,
+                old_logprobs=old_logprobs,
+                old_values=old_values,
+                advantages=advantages,
+                returns=returns,
+                mask=mask,
             )
         else:
-            tokens = torch.cat((query_tensors, response_tensors), dim=1)
-            attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            outputs = self.model(tokens, attention_mask, return_dict=True, position_ids=position_ids)
-            logits = outputs.logits
-            values_pred = outputs.value
-            values_pred = values_pred[:, :-1]
-            logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+            # Trainer in sft mode
+            if "labels" in batch:
+                labels = batch.labels.clone()
+            else:
+                labels = batch.input_ids.clone()
+            labels[~batch.attention_mask.bool()] = -100
 
-            start = query_tensors.shape[1] - 1
-            end = start + response_length
-            logprobs, values_pred, mask = (
-                logprobs[:, start:end],
-                values_pred[:, start:end],
-                attention_mask[:, start + 1 : end + 1],
-            )
-
-        loss, stats = self.config.method.loss(
-            logprobs=logprobs,
-            values=values_pred,
-            old_logprobs=old_logprobs,
-            old_values=old_values,
-            advantages=advantages,
-            returns=returns,
-            mask=mask,
-        )
+            # TODO(dahoas): Fix. This may break with zero3.
+            loss = self.model.base_model(input_ids=batch.input_ids, attention_mask=batch.attention_mask, labels=labels).loss
+            stats = {"sft_loss": loss.item()}
 
         return loss, stats
 
@@ -211,22 +228,44 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         Clears the store and creates `num_rollouts` new episodes.
         """
+        # Log and clear rollouts
         if self.log_rollouts:
             self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
-        # Collect more rollouts for training
-        self.make_experience(self.config.method.num_rollouts, self.iter_count)
+
+        # Case on whether in SFT mode or RL mode
+        if self.mix_sft and not self.sft and self.num_sampled_rollouts % self.rollouts_per_sft == 0 and self.num_sampled_rollouts > 0:
+            logger.info("Mixing in SFT grads")
+            self.sft = True
+            self.cur_sft_updates = 0
+            self.n_updates_per_batch = 1
+            self.train_dataloader = self.sft_dataloader
+        else:
+            # Collect more rollouts for RL training
+            self.sft = False
+            self.n_updates_per_batch = self.config.method.ppo_epochs
+            self.train_dataloader = self.ppo_dataloader
+            self.make_experience(self.config.method.num_rollouts, self.iter_count)
 
     def post_backward_callback(self):
-        self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
+        if self.sft:
+            self.cur_sft_updates += self.config.train.batch_size
+            if self.cur_sft_updates >= self.config.method.sft_sample_updates:
+                self.break_train = True
+        else:
+            self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
-        self.make_experience(self.config.method.num_rollouts)
+        self.ppo_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
+        self.train_dataloader = self.ppo_dataloader
+        if self.mix_sft:
+            sft_dataloader = self.sft_store.create_loader(self.config.train.batch_size)
+            self.sft_dataloader = self.accelerator.prepare_data_loader(sft_dataloader)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
+        self.make_experience(self.config.method.num_rollouts)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
@@ -237,6 +276,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
         prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
         self.prompt_iterator = infinite_dataloader(prompt_dataloader)
+
+    def add_sft_store(self, store: DialogStore):
+        """Add a DialogStore as an SFT store if mixing in SFT gradients with RL gradients"""
+        self.sft_store = store
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
         """Make experiences
@@ -482,6 +525,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         stats["kl_ctl_value"] = self.kl_ctl.value
         self.mean_kl = stats["policy/sqrt_kl"] ** 2
         self.accelerator.log(stats, step=iter_count)
+        self.num_sampled_rollouts += num_rollouts
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)

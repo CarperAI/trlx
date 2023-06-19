@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Optional
 
 from torchtyping import TensorType
 
@@ -14,10 +14,14 @@ class PromptElement:
 
     :param tokens: The prompt tokens. Should be a long tensor
     :type tokens: torch.Tensor
+
+    :gt_response_tokens: The ground truth response tokens. Should be a long tensor.
+    :type gt_response_tokens: torch.Tensor
     """
 
     text: str
     tokens: TensorType["num_tokens"]
+    gt_response_tokens: Optional[TensorType["response_length"]] = None
 
 
 @dataclass
@@ -30,10 +34,14 @@ class PromptBatch:
 
     :param tokens: A long tensor batch of prompt tokens.
     :type tokens: torch.Tensor
+
+    :gt_response_tokens: The ground truth response tokens. Should be a long tensor.
+    :type gt_response_tokens: torch.Tensor
     """
 
     text: Iterable[str]
     tokens: TensorType["batch_size", "num_tokens"]
+    gt_response_tokens: Optional[TensorType["batch_size", "response_length"]]
 
 
 @dataclass

@@ -8,6 +8,7 @@ from trlx.data.default_configs import (
     default_ppo_config,
     default_sft_config,
 )
+from trlx.pipeline.offline_pipeline import DialogStore, tokenize_dialogue
 from trlx.utils import set_seed
 from trlx.utils.loading import get_pipeline, get_trainer
 
@@ -98,6 +99,12 @@ def train(  # noqa: C901
             prompts, max_prompt_length, trainer.tokenizer, add_special_tokens=config.model.model_arch_type == "seq2seq"
         )
         trainer.add_prompt_pipeline(pipeline)
+
+        # Add sft pipeline if mixing in sft gradients during RL
+        if config.method.rollouts_per_sft > 0:
+            dialogs = [tokenize_dialogue(d, trainer.tokenizer, config.train.seq_length) for d in samples]
+            sft_store = DialogStore(dialogs, trainer.tokenizer)
+            trainer.add_sft_store(sft_store)
 
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
