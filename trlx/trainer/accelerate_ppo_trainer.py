@@ -320,10 +320,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 scores = all_scores[0].clone().detach()
             # Best-of-N Sampling. 
-            max_score_indices = self.get_max_indices(scores, self.config.method.num_return_sequences, device)
-            scores = scores.index_select(0, max_score_indices)
-            samples = samples.index_select(0, max_score_indices)
-            prompt_tensors = prompt_tensors.index_select(0, max_score_indices)
+            train_indices = self.get_topk_indices(input_tensor=scores, window_size=self.config.method.num_return_sequences,k=self.config.method.num_train_sequences, device=device)
+            scores = scores.index_select(0, train_indices)
+            samples = samples.index_select(0, train_indices)
+            prompt_tensors = prompt_tensors.index_select(0, train_indices)
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -514,14 +514,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.push_to_store(ppo_rl_elements)
     
     @staticmethod
-    def get_max_indices(input_tensor, window_size, device):
+    def get_topk_indices(input_tensor, window_size: int, k: int, device):
         # Use unfold to create the sliding windows
         unfolded = input_tensor.unfold(0, window_size, window_size)
-
-        # Find the max values and indices along the unfolded dimension
-        values, indices = unfolded.max(dim=2)
-
+        # Find the topk values and indices along the unfolded dimension
+        _, indices = torch.topk(unfolded, k, dim=2)
         # Adjust indices to be relative to original tensor
-        indices += torch.arange(0, input_tensor.size(0) - window_size + 1, window_size).to(device).unsqueeze(1)
-
-        return indices.squeeze()
+        indices = indices.squeeze(1) +  torch.arange(0, input_tensor.size(0) - window_size + 1, window_size).to(device).unsqueeze(1)
+        return indices.reshape(-1)
