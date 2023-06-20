@@ -376,7 +376,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             sampler=sampler,
         )
 
-        print(self.model.generate(["heyy"], dict(max_length=10, min_length=1)), flush=True)
+        print(self.model.generate(["heyy"], dict(max_length=10, min_length=1), dict(use_greedy=True)), flush=True)
 
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]

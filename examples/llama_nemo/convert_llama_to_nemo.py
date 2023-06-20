@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 from omegaconf.omegaconf import OmegaConf
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # from trlx.data.default_configs import default_ppo_config
 # from trlx.trainer.nemo_ppo_trainer import PPOGPT, megatron_trainer
@@ -11,7 +11,14 @@ from transformers import AutoModelForCausalLM
 
 def main(args):  # noqa: C901
     print("loading model...")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    
+    toks = tokenizer("heyy", return_tensors="pt")
+    print(toks)
     model = AutoModelForCausalLM.from_pretrained(args.model_path, torch_dtype=torch.bfloat16)
+
+    print(model.generate(input_ids=toks.input_ids, attention_mask=toks.attention_mask, do_sample=False, max_length=10))
     model_state_dict = model.state_dict()
     print("model loaded")
     # Constants
@@ -31,7 +38,6 @@ def main(args):  # noqa: C901
     def build_layer_mapping(layer):
         return {
             f"model.language_model.encoder.layers.{layer}.input_layernorm.weight": f"model.layers.{layer}.input_layernorm.weight",
-            f"model.language_model.encoder.layers.{layer}.input_layernorm.bias": torch.zeros(HIDDEN_DIM),
             f"model.language_model.encoder.layers.{layer}.self_attention.query_key_value.weight": [
                 f"model.layers.{layer}.self_attn.q_proj.weight",
                 f"model.layers.{layer}.self_attn.k_proj.weight",
@@ -39,7 +45,6 @@ def main(args):  # noqa: C901
             ],
             f"model.language_model.encoder.layers.{layer}.self_attention.dense.weight": f"model.layers.{layer}.self_attn.o_proj.weight",
             f"model.language_model.encoder.layers.{layer}.post_attention_layernorm.weight": f"model.layers.{layer}.post_attention_layernorm.weight",
-            f"model.language_model.encoder.layers.{layer}.post_attention_layernorm.bias": torch.zeros(HIDDEN_DIM),
             f"model.language_model.encoder.layers.{layer}.mlp.dense_h_to_4h.weight": f"model.layers.{layer}.mlp.gate_proj.weight",
             f"model.language_model.encoder.layers.{layer}.mlp.dense_h_to_4h_2.weight": f"model.layers.{layer}.mlp.up_proj.weight",
             f"model.language_model.encoder.layers.{layer}.mlp.dense_4h_to_h.weight": f"model.layers.{layer}.mlp.down_proj.weight",
@@ -75,7 +80,6 @@ def main(args):  # noqa: C901
         # Final layer norm mapping
         # original_size = nemo_state_dict["model.language_model.encoder.final_layernorm.weight"].shape
         nemo_state_dict["model.language_model.encoder.final_layernorm.weight"] = model_state_dict["model.norm.weight"]
-        nemo_state_dict["model.language_model.encoder.final_layernorm.bias"] = torch.zeros(HIDDEN_DIM)
         # print(
         #    f"Final Layer Norm - model.language_model.encoder.final_layernorm.weight - {original_size} -> {nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape}"
         # )

@@ -75,6 +75,8 @@ model:
   pre_process: True # add embedding
   post_process: True # add pooler
   persist_layer_norm: True # Use of persistent fused layer norm kernel.
+  # Need to set this to remove bias terms in LN in NeMo
+  normalization: rmsnorm
   bias: False # Whether to use bias terms in all weight matrices.
   bias_activation_fusion: False # Use a kernel that fuses the bias addition from weight matrices with the subsequent activation function.
   bias_dropout_add_fusion: False # Use a kernel that fuses the bias addition, dropout and residual connection addition.

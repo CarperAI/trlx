@@ -540,7 +540,7 @@ class PPOGPT(MegatronGPTModel):
                 if isinstance(m, FusedScaleMaskSoftmax):
                     m.softmax_in_fp32 = True
 
-            # gpt.apply(force_fp32_softmax)
+            gpt.apply(force_fp32_softmax)
 
         # Unfreeze only last N layers if specified
         if self.num_layers_unfrozen is not None:
@@ -559,7 +559,7 @@ class PPOGPT(MegatronGPTModel):
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
 
             # Llama wants alternative QKV format
-            if True or self.cfg.get("megatron_legacy", False):
+            if self.cfg.get("megatron_legacy", False):
                 print("LEGACY QKV")
                 gpt.apply(patch_attention_for_llama)
             model = RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
@@ -610,25 +610,6 @@ class PPOGPT(MegatronGPTModel):
             self.cfg.micro_batch_size,
             self.cfg.hidden_size,
         ]
-
-        # handle asynchronous grad reduction
-        if self.with_distributed_adam:
-            if self.megatron_amp_o2:
-                # copy grads to main grad
-                def custom_sync_context_handler():
-                    return self._optimizer.no_sync(greedy_grad_copy=True)
-
-            else:
-                # keep grad tensors around
-                def custom_sync_context_handler():
-                    return self._optimizer.no_sync(greedy_grad_copy=False)
-
-        else:
-            if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
-                custom_sync_context_handler = self._optimizer.no_sync
-            else:
-                # TODO: enable async grad all reduce for O1/autocast mixed precision training
-                custom_sync_context_handler = None
 
         # run forward and backwards passes for an entire global batch
         # we do this inside training_step to support pipeline parallelism
