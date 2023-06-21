@@ -21,6 +21,7 @@ def get_positive_score(scores):
 def main(hparams={}):
     # Merge sweep config with default config if given
     config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
+    print(config)
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
