@@ -46,7 +46,7 @@ def main(hparams={}):
         nemo_config.model.hidden_size = 4096
         nemo_config.model.ffn_hidden_size = 16384
         nemo_config.model.num_attention_heads = 32
-        batch_size = 16
+        batch_size = 4
         mini_batch_size = 4
         chunk_size = 16
 
@@ -87,6 +87,8 @@ def main(hparams={}):
         chunk_size = 16
     elif cfg_name == "66B":
         nemo_config = default_nemo_1_3b_config()
+        nemo_config.trainer.num_nodes = 8
+        nemo_config.trainer.devices = 8
         nemo_config.name = "megatron_gpt_66b"
         nemo_config.model.num_layers = 64
         nemo_config.model.hidden_size = 9216
@@ -95,7 +97,7 @@ def main(hparams={}):
 
         nemo_config.model.tensor_model_parallel_size = 8
         batch_size = 16
-        mini_batch_size = 2
+        mini_batch_size = 1
         chunk_size = 4
     else:
         raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
@@ -134,7 +136,7 @@ def main(hparams={}):
         ),
         model=dict(num_layers_unfrozen=-1),
         method=dict(
-            num_rollouts=128,
+            num_rollouts=16,
             init_kl_coef=0.05,
             scale_reward="ref",
             vf_coef=1,
@@ -156,7 +158,7 @@ def main(hparams={}):
     def reward_fn(samples: List[str], **kwargs) -> List[float]:
         reward_model.to(local_rank)
         mbs = config.method.chunk_size
-        for i in range(0, len(samples), mbs):
+        for i in range(0, len(samples) // mbs):
             inputs = reward_tokenizer(samples[i * mbs : (i + 1) * mbs], return_tensors="pt", padding=True)
             inputs = inputs.to(local_rank)
             with torch.no_grad():

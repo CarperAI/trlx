@@ -86,7 +86,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         if (self.ppo_config.chunk_size % rank_batch_size) != 0:
             self.ppo_config.chunk_size = rank_batch_size * ceil(self.ppo_config.chunk_size / rank_batch_size)
-            logging.info("Rounding chunk size to", self.ppo_config.chunk_size)
+            logging.info(f"Rounding chunk size to {self.ppo_config.chunk_size}")
 
         train_samples = dp_world * self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
         # Disable validation within nemo, run it ourselves
