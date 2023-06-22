@@ -175,7 +175,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                mask[:, start:end],
+                mask[:, start + 1 : end + 1],
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
