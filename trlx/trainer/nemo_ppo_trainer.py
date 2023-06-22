@@ -148,6 +148,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
     def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):  # noqa: C901
         ppo_rl_elements = []
 
+        import gc
+
+        gc.collect()
+
         device = torch.device("cuda")
 
         tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Generating experience")
@@ -161,8 +165,10 @@ class NeMoPPOTrainer(BaseRLTrainer):
             lengths = batch.attention_mask.sum(dim=1)
 
             max_new_tokens = self.ppo_config.gen_kwargs.get("max_new_tokens", 128)
+            min_new_tokens = self.ppo_config.gen_kwargs.get("min_new_tokens", 1)
             if self.ppo_config.gen_experience_kwargs is not None:
                 max_new_tokens = self.ppo_config.gen_experience_kwargs.get("max_new_tokens", max_new_tokens)
+                min_new_tokens = self.ppo_config.gen_experience_kwargs.get("min_new_tokens", 1)
 
             input_ids = batch["input_ids"].to(device)
             lengths = lengths.to(device)
@@ -173,7 +179,9 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 input_ids, (0, pad_to - input_ids.shape[1]), value=self.tokenizer.pad_token_id
             )
 
-            samples = self.model.generate((input_ids, lengths), dict(max_length=max_new_tokens, min_length=1))
+            samples = self.model.generate(
+                (input_ids, lengths), dict(max_length=max_new_tokens, min_length=min_new_tokens)
+            )
 
             inputs_samples.append((input_ids.cpu(), lengths.cpu(), samples))
 
@@ -401,7 +409,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     self.model._optimizer.step()
                     scheduler.step()
 
-                    if local_batch_idx % self.val_check_interval == 0:
+                    if local_batch_idx % self.val_check_interval == 0 and local_batch_idx > 0:
                         mbs = self.ppo_config.chunk_size
                         if (mbs * dp_world) > len(self.eval_pipeline):
                             mbs = len(self.eval_pipeline) // dp_world
@@ -417,7 +425,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         ]
                         metrics = self.model.validation_epoch_end(val_stats, local_batch_idx)
 
-                    if (local_batch_idx % self.config.train.checkpoint_interval) == 0:
+                    if (local_batch_idx % self.config.train.checkpoint_interval) == 0 and local_batch_idx > 0:
                         if self.config.train.save_best and metrics is not None:
                             if best_metric is None or metrics["val_metrics/reward"] > best_metric:
                                 best_metric = metrics["val_metrics/reward"]
