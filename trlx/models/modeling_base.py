@@ -175,7 +175,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             )
         else:
             is_loaded_in_8bit = getattr(pretrained_model_name_or_path, "is_loaded_in_8bit", False)
-        
+
         if is_loaded_in_8bit:
             # TODO(glerzing): Fully test and support loading in 8-bit
             raise NotImplementedError(
