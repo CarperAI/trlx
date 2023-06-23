@@ -87,7 +87,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         if (self.ppo_config.chunk_size % rank_batch_size) != 0:
             self.ppo_config.chunk_size = rank_batch_size * ceil(self.ppo_config.chunk_size / rank_batch_size)
-            logging.info("Rounding chunk size to", self.ppo_config.chunk_size)
+            logging.info(f"Rounding chunk size to {self.ppo_config.chunk_size}")
 
         train_samples = dp_world * self.ppo_config.num_rollouts * self.ppo_config.ppo_epochs
         # Disable validation within nemo, run it ourselves
@@ -271,7 +271,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
             masks = attention_mask.cpu()
             log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
-            print(f"{log_ratio=}")
+
             for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
                 query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
             ):
@@ -376,7 +376,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             sampler=sampler,
         )
 
-        print(self.model.generate(["heyy"], dict(max_length=10, min_length=1), dict(use_greedy=True)), flush=True)
+        # print(self.model.generate(["heyy"], dict(max_length=10, min_length=1), dict(use_greedy=True)), flush=True)
 
         _, schedulers = self.model.configure_optimizers()
         scheduler = schedulers[0]["scheduler"]
@@ -418,7 +418,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                     self.model._optimizer.step()
                     scheduler.step()
 
-                    if local_batch_idx % self.val_check_interval == 0:
+                    if local_batch_idx % self.val_check_interval == 0 and local_batch_idx > 0:
                         mbs = self.ppo_config.chunk_size
                         if (mbs * dp_world) > len(self.eval_pipeline):
                             mbs = len(self.eval_pipeline) // dp_world
@@ -434,7 +434,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                         ]
                         metrics = self.model.validation_epoch_end(val_stats, local_batch_idx)
 
-                    if (local_batch_idx % self.config.train.checkpoint_interval) == 0:
+                    if (local_batch_idx % self.config.train.checkpoint_interval) == 0 and local_batch_idx > 0:
                         if self.config.train.save_best and metrics is not None:
                             if best_metric is None or metrics["val_metrics/reward"] > best_metric:
                                 best_metric = metrics["val_metrics/reward"]

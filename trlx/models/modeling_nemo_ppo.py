@@ -57,6 +57,7 @@ from trlx.utils.modeling import logprobs_of_labels, whiten
 # Track a per dp rank RNG to sample different rollouts
 # per dp rank
 _PER_DP_RANK_RNG = "per-data-parallel-rank-rng"
+HIDE_FROZEN_PARAMS = False
 
 
 def patch_attention_for_llama(m):
@@ -208,6 +209,7 @@ class RefLMHeads(MegatronModule):
 
         if hasattr(language_model, "output_layer"):
             self.output_layer = language_model.output_layer
+            self.word_embeddings = self.output_layer.weight
         else:
             if hasattr(language_model, "word_embeddings"):
                 self.word_embeddings = language_model.word_embeddings
@@ -221,6 +223,7 @@ class RefLMHeads(MegatronModule):
 
     def word_embeddings_weight(self):
         return self._lm.word_embeddings_weight()
+        return self.word_embeddings
 
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
@@ -265,28 +268,38 @@ class RefLMHeads(MegatronModule):
         *args,
         get_key_value=False,
         forward_method_parallel_output=None,
+        run_policy_model=True,
         run_reference_model=False,
         run_value_head=False,
         **kwargs,
     ):
-        lm_output = self._lm(*args, get_key_value=get_key_value, **kwargs)
-        logits = post_language_model_processing(
-            lm_output,
-            labels=None,
-            logit_weights=self._lm.language_model.output_layer.weight
-            if self.output_layer is not None
-            else self._lm.word_embeddings_weight(),
-            get_key_value=get_key_value,
-            parallel_output=False,  # self.language_model.parallel_output,
-            forward_method_parallel_output=forward_method_parallel_output,
-            fp16_lm_cross_entropy=self._lm.fp16_lm_cross_entropy,
-            return_logits=True,
-            sequence_parallel=self._lm.sequence_parallel,
-            gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
-        )
-        if get_key_value:
-            logits, presents = logits
-            lm_output, lm_output_presents = lm_output
+        if run_value_head:
+            assert run_policy_model
+
+        if run_policy_model:
+            if not self.reference_model.offloaded:
+                self.offload_reference_model()
+            lm_output = self._lm(*args, get_key_value=get_key_value, **kwargs)
+            logits = post_language_model_processing(
+                lm_output,
+                labels=None,
+                logit_weights=self._lm.language_model.output_layer.weight
+                if self.output_layer is not None
+                else self.word_embeddings_weight(),
+                get_key_value=get_key_value,
+                parallel_output=False,  # self.language_model.parallel_output,
+                forward_method_parallel_output=forward_method_parallel_output,
+                fp16_lm_cross_entropy=self._lm.fp16_lm_cross_entropy,
+                return_logits=True,
+                sequence_parallel=self._lm.sequence_parallel,
+                gradient_accumulation_fusion=self._lm.gradient_accumulation_fusion,
+            )
+            if get_key_value:
+                logits, presents = logits
+                lm_output, lm_output_presents = lm_output
+        else:
+            lm_output = None
+            logits = None
 
         if run_value_head:
             heads_output = self.other_heads(lm_output)
@@ -294,8 +307,9 @@ class RefLMHeads(MegatronModule):
             heads_output = None
 
         if run_reference_model:
-            device = lm_output.device
-            self.reference_model.model.to(device, non_blocking=True)
+            device = torch.cuda.current_device()
+            if self.reference_model.offloaded:
+                self.offload_policy_model()
             ref_lm_output = self.reference_model.model(*args, get_key_value=get_key_value, **kwargs)
             ref_logits = post_language_model_processing(
                 ref_lm_output,
@@ -392,7 +406,7 @@ class PPOGPT(MegatronGPTModel):
         _set_random_seed(kwargs["cfg"].seed)
         super().__init__(**kwargs)
         if len(list(self.parameters())) == 0:
-            raise ValueError("No parameters in model")
+            print("WARNING: Model has no parameters!")
 
         self._ori_activations_checkpoint_granularity = self.cfg.get("activations_checkpoint_granularity", None)
         self._ori_activations_checkpoint_method = self.cfg.get("activations_checkpoint_method", None)
@@ -415,6 +429,13 @@ class PPOGPT(MegatronGPTModel):
 
     def build_train_valid_test_datasets(self):
         pass
+
+    def configure_optimizers(self):
+        global HIDE_FROZEN_PARAMS
+        HIDE_FROZEN_PARAMS = True
+        ret = super().configure_optimizers()
+        HIDE_FROZEN_PARAMS = False
+        return ret
 
     def build_data_loader(self, dataset, collate_fn, consumed_samples=0):
         dp_rank = parallel_state.get_data_parallel_rank()
@@ -533,7 +554,6 @@ class PPOGPT(MegatronGPTModel):
         gpt.to(torch.bfloat16)
 
         # Bug with FusedScaleMaskSoftmax when no scaling & using kernel
-        # Need to enable scaling then later patch scales to 1.0
         if not self.cfg.get("apply_query_key_layer_scaling", False):
 
             def force_fp32_softmax(m):
@@ -552,6 +572,26 @@ class PPOGPT(MegatronGPTModel):
                         for p in m.parameters():
                             p.requires_grad_(False)
 
+                        # patch parameters method to return empty list
+                        # this hack is needed for DistributedFusedAdam as
+                        # it'll allocate a grad buffer for all params
+                        # even if frozen
+                        old_params = m.parameters
+
+                        def empty_parameters(self):
+                            if HIDE_FROZEN_PARAMS:
+                                return []
+                            return old_params()
+
+                        import types
+
+                        m.parameters = types.MethodType(empty_parameters, m)
+                        print("Freezing layer", m.layer_number, m.parameters())
+                    else:
+                        for p in m.parameters():
+                            p.requires_grad_(True)
+
+            gpt.requires_grad_(False)
             gpt.language_model.apply(freeze_layers)
 
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
@@ -564,7 +604,7 @@ class PPOGPT(MegatronGPTModel):
                 gpt.apply(patch_attention_for_llama)
             model = RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
-            if True or self.cfg.get("megatron_legacy", False):
+            if self.cfg.get("megatron_legacy", False):
                 print("LEGACY QKV")
                 gpt.apply(patch_attention_for_llama)
             model = gpt
@@ -857,7 +897,9 @@ class PPOGPT(MegatronGPTModel):
         return (p for p in unwrap_float16_module(self.model).language_model.parameters() if p.requires_grad)
 
     def offload_reference_model(self):
-        unwrap_float16_module(self.model).offload_reference_model()
+        model = unwrap_float16_module(self.model)
+        if isinstance(model, RefLMHeads):
+            model.offload_reference_model()
 
     def free_kv_cache(self):
         def clear(m):
@@ -955,6 +997,8 @@ class PPOGPT(MegatronGPTModel):
         set_inference_key_value_memory=False,
         inference_max_sequence_len=None,
         checkpoint_activations_all_layers=None,
+        compute_logprobs=False,
+        run_policy_model=True,
         run_reference_model=False,
         run_value_head=False,
     ):
@@ -965,7 +1009,14 @@ class PPOGPT(MegatronGPTModel):
             if batch is not None:
                 batch = to_device(batch, torch.cuda.current_device(), non_blocking=True)
 
-                extra_arg = dict(run_reference_model=run_reference_model, run_value_head=run_value_head)
+                if parallel_state.is_pipeline_last_stage():
+                    extra_arg = dict(
+                        run_policy_model=run_policy_model,
+                        run_reference_model=run_reference_model,
+                        run_value_head=run_value_head,
+                    )
+                else:
+                    extra_arg = dict()
 
                 if len(batch) == 3:
                     tokens, attention_mask, position_ids = batch
@@ -996,10 +1047,12 @@ class PPOGPT(MegatronGPTModel):
 
                 # Logits can become large so best to pick out the logprobs per microbatch here
                 # to save memory
-                if run_reference_model:
+                if run_policy_model and compute_logprobs:
                     logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+                    return logprobs, {"logprobs": logprobs, "values": values}
+                if run_reference_model and compute_logprobs:
                     ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], tokens[:, 1:])
-                    return logprobs, {"logprobs": logprobs, "values": values, "ref_logprobs": ref_logprobs}
+                    return ref_logprobs, {"ref_logprobs": ref_logprobs}
 
                 return logits, {"logits": logits, "values": values, "ref_logits": ref_logits}
 
@@ -1009,7 +1062,12 @@ class PPOGPT(MegatronGPTModel):
 
     def infer_logprobs_and_values(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
         fwd_bwd_func = self._get_fwd_bwd_function()
-        fwd_output_only_func = self.get_forward_output_only_func(run_reference_model=True, run_value_head=True)
+        policy_and_values = self.get_forward_output_only_func(
+            run_policy_model=True, run_reference_model=False, run_value_head=True, compute_logprobs=True
+        )
+        ref_model_only = self.get_forward_output_only_func(
+            run_policy_model=False, run_reference_model=True, run_value_head=False, compute_logprobs=True
+        )
 
         self.model.eval()
 
@@ -1036,8 +1094,17 @@ class PPOGPT(MegatronGPTModel):
             )
 
             with torch.no_grad():
-                stage_output = fwd_bwd_func(
-                    forward_step_func=fwd_output_only_func,
+                policy_stage_output = fwd_bwd_func(
+                    forward_step_func=policy_and_values,
+                    batch=[input_ids, attention_mask, position_ids],
+                    model=self.model,
+                    forward_only=True,
+                    dtype=self.autocast_dtype,
+                    sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
+                    sync_batch_comm=self.cfg.get("sync_batch_comm", False),
+                )
+                ref_stage_output = fwd_bwd_func(
+                    forward_step_func=ref_model_only,
                     batch=[input_ids, attention_mask, position_ids],
                     model=self.model,
                     forward_only=True,
@@ -1046,6 +1113,10 @@ class PPOGPT(MegatronGPTModel):
                     sync_batch_comm=self.cfg.get("sync_batch_comm", False),
                 )
 
+        if policy_stage_output is not None and ref_stage_output is not None:
+            stage_output = [{**po, **ro} for po, ro in zip(policy_stage_output, ref_stage_output)]
+        else:
+            stage_output = None
         if stage_output:
             outputs = {k: [output[k] for output in stage_output] for k in stage_output[0].keys()}
             return {k: torch.cat(v, dim=0) for k, v in outputs.items()}

@@ -91,7 +91,7 @@ model:
 
   gradient_as_bucket_view: True
   resume_from_checkpoint: null
-  sequence_parallel: True
+  sequence_parallel: False # True
 
   data:
     data_prefix:
