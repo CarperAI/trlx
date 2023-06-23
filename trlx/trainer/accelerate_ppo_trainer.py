@@ -218,12 +218,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
+        eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
         self.make_experience(self.config.method.num_rollouts)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
+        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
