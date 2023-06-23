@@ -437,10 +437,11 @@ class TestPeft(unittest.TestCase):
                 loaded_model_logits = loaded_model(**self.inputs, return_dict=True).logits
                 self.assertTrue(torch.equal(trained_model_logits, loaded_model_logits))
 
-    @unittest.skipUnless(
-        importlib.util.find_spec("bitsandbytes") and torch.cuda.is_available(),
-        "bitsandbytes and GPU needed to execute test_8bits",
-    )
+    # @unittest.skipUnless(
+    #     importlib.util.find_spec("bitsandbytes") and torch.cuda.is_available(),
+    #     "bitsandbytes and GPU needed to execute test_8bits",
+    # )
+    @unittest.skip("`8-bit` model loading support is not yet fully implemented")
     def test_8bits(self):
         """Test the behaviour of from_pretrained with 8 bits models"""
         from bitsandbytes.nn import Linear8bitLt
