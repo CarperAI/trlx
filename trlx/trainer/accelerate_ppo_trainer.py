@@ -83,34 +83,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Create the parameters for the Hugging Face language model's generator
         # method (that generates new tokens from a prompt).
         # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
-        if config.model.model_arch_type == "seq2seq":
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+        generate_kwargs = dict(
+            do_sample=True,
+            use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+        self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
+
+        if config.method.gen_experience_kwargs is not None:
+            self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+            self.generate_experience_kwargs = None
 
         # Setup stats tracker
         self.running_moments = RunningMoments()
@@ -236,12 +220,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
+        eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
         self.make_experience(self.config.method.num_rollouts)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
+        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
