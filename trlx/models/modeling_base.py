@@ -26,6 +26,20 @@ import torch.nn as nn
 import transformers
 from huggingface_hub import hf_hub_download
 
+import trlx.utils.logging as logging
+from trlx.utils import is_peft_available
+
+logger = logging.get_logger(__name__)
+
+if is_peft_available():
+    from peft import (
+        PeftConfig,
+        PeftModel,
+        get_peft_config,
+        get_peft_model,
+        prepare_model_for_int8_training,
+    )
+
 
 class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     """A wrapper around `transformers.PreTrainedModel`
@@ -50,13 +64,21 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     # TODO (jon-tow): Supported args should come from a `PretrainedConfig` of the
     # specific underlying type similar to how config instances can be used to instantiate
     # `transformers.PreTrainedModel`s.
-    _supported_args: List[str] = None
+    _supported_args: List[str] = []
 
-    def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, **kwargs):
+    def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, peft_config=None, **kwargs):
         super().__init__()
         self.base_model = base_model
         # cache `forward` args for general use (avoids incompatible args across architectures)
         self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
+        self.is_loaded_in_8bit = getattr(base_model, "is_loaded_in_8bit", False)
+        if self.is_loaded_in_8bit:
+            # TODO(glerzing): Fully test and support loading in 8-bit
+            raise NotImplementedError(
+                "`is_loaded_in_8bit` is an experimental feature not yet fully supported. Please do not use it."
+            )
+        self.peft_config = peft_config
+        self.peft_type = peft_config.peft_type if peft_config else None
 
     @classmethod
     def _split_kwargs(cls, kwargs: Dict[str, Any]):
@@ -73,12 +95,13 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         return supported_kwargs, unsupported_kwargs
 
     @classmethod
-    def from_config(cls, config: transformers.PretrainedConfig, **kwargs):
+    def from_config(cls, config: transformers.PretrainedConfig, peft_config=None, **kwargs):
         """Instantiate the pretrained pytorch model from a configuration.
 
         Args:
             config (transformers.PretrainedConfig): The configuration to use to
                 instantiate the base model.
+            peft_config (peft.PeftConfig or dict, *optional*): Configuration for the peft adapter
 
         NOTE: Loading a model from its configuration file does **not** load the
         model weights. It only affects the model's configuration. Use
@@ -90,6 +113,12 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             from_config_kwargs = {}
             wrapped_model_kwargs = {}
         base_model = cls._auto_model_parent_class.from_config(config, **from_config_kwargs)
+        if peft_config:
+            if isinstance(peft_config, dict):
+                peft_config = get_peft_config(peft_config)
+            base_model = get_peft_model(base_model, peft_config)
+            wrapped_model_kwargs["peft_config"] = peft_config
+
         model = cls(base_model, **wrapped_model_kwargs)
         return model
 
@@ -98,6 +127,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         cls,
         pretrained_model_name_or_path: Union[str, transformers.PreTrainedModel],
         revision=None,
+        peft_config=None,
         *model_args,
         **kwargs,
     ):
@@ -109,6 +139,17 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         Args:
             pretrained_model_name_or_path (str or `transformers.PreTrainedModel`):
                 The identifier of the pretrained model to load or the pretrained model itself.
+            revision (str, *optional*): Optional specific Git branch, tag or commit hash.
+            peft_config (peft.PeftConfig or dict, *optional*): The peft configuration to create a peft adapter.
+                This is *only useful when creating a new peft adapter, not when loading an already trained adapter*.
+                To load an already trained peft adapter, set `pretrained_model_name_or_path` to the directory containing
+                the trained adapter, which contains at least 2 files: a config file ("adapter_config.json" by default),
+                and a file containing the weights ("adapter_model.bin" by default). If there is a value head,
+                it will be loaded from this directory as well.
+                For additional argument to give to PeftModel.from_pretrained (such as adapter_name or subdir),
+                use the dict argument `peft_from_pretrained_kwargs`. There is also a dict argument
+                `peft_int8_kwargs` for specific options with 8-bit models. These arguments will be
+                retrieved from kwargs.
             *model_args (sequence of positional arguments, *optional*):
                 All remaining positional arguments will be passed to the `_auto_model_parent_class`.
             **kwargs (dict, *optional*):
@@ -119,23 +160,113 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         NOTE: You must pass in arguments specific to the wrapped model as keyword arguments.
         """
         if kwargs is not None:
+            peft_from_pretrained_kwargs = kwargs.pop("peft_from_pretrained_kwargs", {})
+            peft_int8_kwargs = kwargs.pop("peft_int8_kwargs", {})
             wrapped_model_kwargs, from_pretrained_kwargs = cls._split_kwargs(kwargs)
         else:
+            peft_from_pretrained_kwargs = {}
+            peft_int8_kwargs = {}
             from_pretrained_kwargs = {}
             wrapped_model_kwargs = {}
 
         if isinstance(pretrained_model_name_or_path, str):
-            # Load the base model using the `transformers` AutoClass (e.g. AutoModelForCausalLM)
-            base_model = cls._auto_model_parent_class.from_pretrained(
-                pretrained_model_name_or_path, *model_args, revision=revision, **from_pretrained_kwargs
+            is_loaded_in_8bit = (
+                from_pretrained_kwargs["load_in_8bit"] if "load_in_8bit" in from_pretrained_kwargs else False
             )
+        else:
+            is_loaded_in_8bit = getattr(pretrained_model_name_or_path, "is_loaded_in_8bit", False)
+
+        if is_loaded_in_8bit:
+            # TODO(glerzing): Fully test and support loading in 8-bit
+            raise NotImplementedError(
+                "`is_loaded_in_8bit` is an experimental feature not yet fully supported. Please do not use it."
+            )
+
+        if peft_config is not None:
+            if not is_peft_available():
+                raise ModuleNotFoundError("To use the argument peft_config, please install `peft`")
+            if not isinstance(peft_config, PeftConfig):
+                if isinstance(peft_config, dict):
+                    peft_config = get_peft_config(peft_config)
+                else:
+                    raise ValueError("`peft_config` should be an instance of `peft.PeftConfig` or a dict.")
+
+        if isinstance(pretrained_model_name_or_path, str):
+            # Check if there is a local peft adapter
+            local_peft_adapter = os.path.exists(os.path.join(pretrained_model_name_or_path, "adapter_config.json"))
+
+            if local_peft_adapter and not is_peft_available():
+                logger.warning("WARNING: peft adapter detected but peft is not installed. Ignoring the adapter...")
+
+            base_model = None
+            if is_peft_available():
+                try:
+                    trained_adapter_config = PeftConfig.from_pretrained(pretrained_model_name_or_path)
+                except ValueError:
+                    trained_adapter_config = None
+
+                if peft_config is not None:
+                    if trained_adapter_config is not None:
+                        logger.warning(
+                            f"WARNING: peft config file detected in {pretrained_model_name_or_path}"
+                            " but ignored since the argument `peft_config` is provided. Remove the"
+                            " argument `peft_config` to use the trained peft adapter."
+                        )
+
+                    # Create a new peft adapter with the given config
+                    base_model = cls._auto_model_parent_class.from_pretrained(
+                        pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
+                    )
+
+                    if is_loaded_in_8bit:
+                        base_model = prepare_model_for_int8_training(
+                            base_model,
+                            **peft_int8_kwargs,
+                        )
+                    base_model = get_peft_model(base_model, peft_config)
+                    logger.info("peft adapter initialised")
+
+                elif trained_adapter_config is not None:
+                    peft_config = trained_adapter_config
+
+                    # Use the pretrained (local or remote) peft adapter file "adapter_config.json"
+                    base_model = cls._auto_model_parent_class.from_pretrained(
+                        trained_adapter_config.base_model_name_or_path, *model_args, **from_pretrained_kwargs
+                    )
+
+                    # Load the peft weights in "adapter_model.bin" and wrap the base model with a PeftModel
+                    base_model = PeftModel.from_pretrained(
+                        base_model,
+                        pretrained_model_name_or_path,
+                        **peft_from_pretrained_kwargs,
+                    )
+                    logger.info("Trained peft adapter loaded")
+
+            if base_model is None:
+                # No peft
+                base_model = cls._auto_model_parent_class.from_pretrained(
+                    pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
+                )
+
         elif isinstance(pretrained_model_name_or_path, transformers.PreTrainedModel):
             base_model = pretrained_model_name_or_path
+
+            if peft_config is not None:
+                if is_loaded_in_8bit:
+                    base_model = prepare_model_for_int8_training(
+                        base_model,
+                        **peft_int8_kwargs,
+                    )
+                base_model = get_peft_model(base_model, peft_config)
+                logger.info("peft adapter initialised")
         else:
             raise ValueError(
                 f"Invalid type for `base_model_name_or_path`: {type(pretrained_model_name_or_path)}"
                 "Expected `str` or `transformers.PreTrainedModel`."
             )
+
+        if peft_config is not None:
+            wrapped_model_kwargs["peft_config"] = peft_config
 
         model = cls(base_model, **wrapped_model_kwargs)
 
@@ -203,6 +334,13 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             state_dict = self.state_dict()
             kwargs["state_dict"] = state_dict
 
+        if self.peft_type:
+            # Save the heads, which are not part of the peft adapter
+            save_path = os.path.join(args[0], "pytorch_model.bin")
+            head_state_dict = self.state_dict(heads_only=True)
+
+            torch.save(head_state_dict, save_path)
+
         return self.base_model.save_pretrained(*args, **kwargs)
 
     def state_dict(self, *args, **kwargs):
@@ -214,7 +352,11 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         instantiated and loaded from a checkpoint. It can be used to perform
         additional operations such as loading the state_dict.
         """
-        raise NotImplementedError
+        if self.peft_type:
+            # Don't use the interface of the peft model,
+            # use the interface of the underlying transformer model instead.
+            # (peft adds 2 "base_model" layers)
+            self.forward_kwargs = inspect.getfullargspec(self.base_model.base_model.base_model.forward).args
 
     def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of

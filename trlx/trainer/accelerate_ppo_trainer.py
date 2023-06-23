@@ -67,13 +67,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.store.clear_history()  # Clear the rollout store
 
-        # Setup a reference model when hydra heads are not used
-        if not hasattr(self.model, "frozen_head"):
+        # Set up a reference model when hydra heads are not used
+        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
             self.ref_model = self.get_arch(self.config)
             self.ref_model.to(self.accelerator.device)
             self.ref_model.eval()
 
-        # Setup the KL controller
+        # Set up the KL controller
         # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
@@ -115,6 +115,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            peft_config=self.config.model.peft_config,
         )
 
     def loss(self, batch: PPORLBatch):
@@ -368,7 +369,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     )
                     logits = outputs.logits
                     values = outputs.value
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
@@ -394,7 +395,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         all_tokens, attention_mask=attention_mask, position_ids=position_ids
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,

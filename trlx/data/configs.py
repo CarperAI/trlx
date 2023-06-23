@@ -49,25 +49,22 @@ class ModelConfig:
         -1 means all layers are unfrozen.
     :type num_layers_unfrozen: int
 
-    :param delta_kwargs: Keyword arguments for instantiating OpenDelta models for delta-tuning.
-        Follow the `OpenDelta.AutoDeltaConfig` specification, e.g. for LoRA style tuning, set
-        the `delta_type` to `lora` and include the model specific hyper-parameters (e.g. `lora_r`)
-            {"delta_type": "lora", "modified_modules": "all", "lora_r": 8, "lora_alpha": 16, "lora_dropout": 0.0}
-        or in YAML format:
-            delta_kwargs:
-                delta_type: lora
-                modified_modules: "all"
-                lora_r: 8
-                lora_alpha: 16
-                lora_dropout: 0.0
-        See: https://opendelta.readthedocs.io/en/latest/modules/auto_delta.html#opendelta.auto_delta.AutoDeltaConfig
-    :type delta_kwargs: Optional[Dict[str, Any]]
+    :param peft_config: configuration for peft (Parameter Efficient Fine-Tuning library).
+        Peft is designed to reduce the number of parameters to train and the memory footprint,
+        without significant performance loss. It supports multiple techniques such as LORA
+        or prefix tuning (cf. https://github.com/huggingface/peft).
+
+        Here is an example of LORA configuration:
+            {"peft_type": "LORA", "r": 8, "lora_alpha": 32, "lora_dropout": 0.1}
+
+        (parameter-efficient fine-tuning was previously done in trlx with OpenDelta, but it is no longer supported)
+    :type peft_config: Union[peft.PeftConfig, Dict[str, Any]]
     """
 
     model_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
-    delta_kwargs: Optional[Dict[str, Any]] = None
+    peft_config: Any = None
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
