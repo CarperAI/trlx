@@ -237,9 +237,14 @@ def get_git_tag() -> Tuple[str, str]:
 # Iter utils
 
 
-def infinite_dataloader(dataloader: Iterable) -> Iterable:
+def infinite_dataloader(dataloader: Iterable, sampler=None) -> Iterable:
     """
     Returns a cyclic infinite dataloader from a finite dataloader
     """
+    epoch = 0
     for _ in repeat(dataloader):
+        if sampler is not None:
+            sampler.set_epoch(epoch)
+        epoch += 1
+
         yield from dataloader

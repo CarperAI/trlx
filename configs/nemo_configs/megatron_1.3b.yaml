@@ -1,0 +1,178 @@
+name: megatron_gpt_1.3b
+restore_from_path: null  # used when starting from a .nemo file
+
+trainer:
+  devices: 8
+  num_nodes: 1
+  accelerator: gpu
+  precision: bf16
+  logger: False # logger provided by exp_manager
+  enable_checkpointing: False
+  replace_sampler_ddp: False
+  max_epochs: -1 # PTL default. In practice, max_steps will be reached first.
+  max_steps: 200 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
+  log_every_n_steps: 1
+  val_check_interval: 20
+  # check_val_every_n_epoch: null
+  limit_val_batches: 2
+  limit_test_batches: 0
+  accumulate_grad_batches: 1 # do not modify, grad acc is automatic for training megatron models
+  gradient_clip_val: 1.0
+  benchmark: False
+
+exp_manager:
+  # set this to save checkpoints
+  explicit_log_dir: ppo_sentiments_logs
+  exp_dir: null
+  name: megatron_gpt_1.3b_ppo_sentiments
+  create_tensorboard_logger: False
+  create_wandb_logger: False
+  wandb_logger_kwargs:
+    project: trlxnemo
+    name: megatron_gpt_1.3b_ppo_sentiments
+  resume_if_exists: False
+  resume_ignore_no_checkpoint: True
+  # set this to save checkpoints
+  create_checkpoint_callback: False
+  checkpoint_callback_params:
+    monitor: reduced_train_loss
+    save_top_k: 1
+    mode: min
+    always_save_nemo: False # saves nemo file during validation, not implemented for model parallel
+    save_nemo_on_train_end: True # not recommended when training large models on clusters with short time limits
+    filename: 'megatron_gpt-{reduced_train_loss:.2f}-{step}-{consumed_samples}'
+    model_parallel_size: ${multiply:${model.tensor_model_parallel_size}, ${model.pipeline_model_parallel_size}}
+  log_step_timing: True
+  step_timing_kwargs:
+    sync_cuda: True
+    buffer_size: 5
+
+model:
+  global_batch_size: 256
+  micro_batch_size: 32
+  tensor_model_parallel_size: 1
+  pipeline_model_parallel_size: 1
+  encoder_seq_length: 2048
+  max_position_embeddings: 2048
+  num_layers: 24
+  hidden_size: 2048
+  ffn_hidden_size: 3072
+  num_attention_heads: 16
+  init_method_std: 0.015
+  hidden_dropout: 0.1
+  kv_channels: null
+  apply_query_key_layer_scaling: true
+  layernorm_epsilon: 1.0e-05
+  make_vocab_size_divisible_by: 128
+  pre_process: true
+  post_process: true
+  tokenizer:
+    library: megatron
+    type: GPT2BPETokenizer
+    model: null
+    vocab_file: /artifacts/vocab.json
+    merge_file: /artifacts/merges.txt
+  native_amp_init_scale: 4294967296
+  native_amp_growth_interval: 1000
+  fp32_residual_connection: false
+  fp16_lm_cross_entropy: false
+
+  megatron_amp_O2: True
+  sync_batch_comm: False
+
+  seed: 1234
+  use_cpu_initialization: false
+  onnx_safe: false
+  activations_checkpoint_method: null
+  activations_checkpoint_num_layers: 1
+
+  gradient_as_bucket_view: True
+  resume_from_checkpoint: null
+  sequence_parallel: True
+
+  data:
+    data_prefix:
+    - 0.0333
+    - /preproc_data/my-gpt3_00_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_01_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_02_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_03_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_04_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_05_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_06_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_07_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_08_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_09_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_10_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_11_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_12_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_13_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_14_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_15_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_16_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_17_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_18_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_19_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_20_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_21_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_22_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_23_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_24_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_25_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_26_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_27_text_document
+    - 0.0333
+    - /preproc_data/my-gpt3_28_text_document
+    - 0.0334
+    - /preproc_data/my-gpt3_29_text_document
+    data_impl: mmap
+    splits_string: 99990,8,2
+    seq_length: 2048
+    skip_warmup: true
+    num_workers: 0
+    dataloader_type: single
+    reset_position_ids: false
+    reset_attention_mask: false
+    eod_mask_loss: True
+  optim:
+    name: distributed_fused_adam
+    lr: 6e-05
+    weight_decay: 1e-06
+    betas:
+    - 0.9
+    - 0.95
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 0
+      constant_steps: 100000000
+      min_lr: 5e-05
+  precision: bf16
+  vocab_file: nemo:c4aec99015da48ba8cbcba41b48feb2c_vocab.json
+  merges_file: nemo:50284f68eefe440e850c4fb42c4d13e7_merges.txt
