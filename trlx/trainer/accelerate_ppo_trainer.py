@@ -229,8 +229,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
 
-        self.make_experience(self.config.method.num_rollouts)
-
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
