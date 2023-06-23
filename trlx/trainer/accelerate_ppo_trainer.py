@@ -83,34 +83,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Create the parameters for the Hugging Face language model's generator
         # method (that generates new tokens from a prompt).
         # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
-        if config.model.model_arch_type == "seq2seq":
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+        generate_kwargs = dict(
+            do_sample=True,
+            use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+        self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
+
+        if config.method.gen_experience_kwargs is not None:
+            self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+            self.generate_experience_kwargs = None
 
         # Setup stats tracker
         self.running_moments = RunningMoments()
