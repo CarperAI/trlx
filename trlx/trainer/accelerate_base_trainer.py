@@ -253,10 +253,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
+        # Update max_new_tokens to respect max_seq_length
+        prompt_length = input_ids.shape[1]
         if self.generate_experience_kwargs is not None:
             kwargs = dict(self.generate_experience_kwargs, **kwargs)
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
+        if kwargs.get("max_new_tokens") is not None:
+            kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), kwargs["max_new_tokens"])
+        else:
+            kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
         if chunk_size is not None:
             # Chunk input_ids and attention_mask
             input_ids = input_ids.chunk(chunk_size, 0)
@@ -285,6 +291,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             attention_mask = attention_mask.to(self.accelerator.device)
 
         kwargs = dict(self.generate_kwargs, **kwargs)
+
+        if kwargs.get("max_new_tokens") is not None:
+            kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), kwargs["max_new_tokens"])
+        else:
+            kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
         if chunk_size is not None:
             # Chunk input_ids and attention_mask
