@@ -44,7 +44,9 @@ conda env create -f env.yaml
 4) install nemo
 ```
 git clone https://github.com/NVIDIA/NeMo/
-cd NeMo && pip install '.[all]'
+cd NeMo
+git checkout r1.15.0
+pip install '.[all]'
 ```
 
 6) install apex (or clone the github)

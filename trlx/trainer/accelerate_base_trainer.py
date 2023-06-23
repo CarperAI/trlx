@@ -55,7 +55,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.mb_size = config.train.batch_size
         self.num_mb = config.train.batch_size // self.mb_size
         self.mb_count = 0
-        self.accelerator = Accelerator(log_with=config.train.tracker, logging_dir=config.train.logging_dir)
+        self.accelerator = Accelerator(log_with=config.train.tracker, project_dir=config.train.logging_dir)
 
         if self.accelerator.state.deepspeed_plugin is not None:
             # by accelerate's default, arguments in `model.forward` would be casted to half
@@ -73,9 +73,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         self.tokenizer.sep_token = "<sep>"
-        if config.model.model_arch_type != "seq2seq":
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = "<|padding|>"
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):

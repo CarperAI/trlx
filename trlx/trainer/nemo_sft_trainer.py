@@ -8,6 +8,7 @@ from omegaconf.omegaconf import OmegaConf
 
 from trlx.data.configs import TRLConfig
 from trlx.models.modeling_nemo_sft import SFTGPT
+from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.accelerate_sft_trainer import SFTConfig
 from trlx.trainer.nemo_ilql_trainer import ShuffledCyclicSequence, megatron_trainer
@@ -131,3 +132,9 @@ class NeMoSFTTrainer(BaseRLTrainer):
 
         torch.set_float32_matmul_precision("medium")
         self.trainer.fit(self.model)
+
+    def make_experience(self, samples, seq_length):
+        if isinstance(samples[0], str):
+            self.store = PromptPipeline(samples, seq_length, self.tokenizer)
+        else:
+            raise ValueError("DialogStore not supported for NeMo SFT currently")
