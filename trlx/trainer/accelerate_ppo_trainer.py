@@ -515,6 +515,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     
     @staticmethod
     def get_topk_indices(input_tensor, window_size: int, k: int, device):
+        # Sum the scores along dim 1
+        input_tensor = input_tensor.sum(1)
         # Use unfold to create the sliding windows
         unfolded = input_tensor.unfold(0, window_size, window_size)
         # Find the topk values and indices along the unfolded dimension
