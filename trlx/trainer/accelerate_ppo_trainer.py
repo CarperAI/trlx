@@ -451,7 +451,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask = sample_outputs != self.tokenizer.pad_token_id
                 start = 0
             else:
-                # NOTE: -1 because kl[prompt_tensors.shape[1]] is kl of the second token in the response
                 start = prompt_tensors.shape[1] - 1
 
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
@@ -463,16 +462,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             ref_logprobs = ref_logprobs.cpu()
             prompt_tensors = prompt_tensors.cpu()
             sample_outputs = sample_outputs.cpu()
-            # TODO(dahoas): Why [:, :-1]? Redudant with clipping via start : ends[ix]?
-            # Actually I think it's just wrong?
             values = values.cpu()[:, :-1]
 
             # Get the logprobs and values, for tokens that are not padding,
             # from the end of the prompt up to the <eos> token, while also including the latter
             # (these are taken from the student model and not the reference model)
             ends = start + attention_mask[:, start:].sum(1) + 1
-            # NOTE: values[i] is the value of the state after response token i
-            # TODO(dahoas): Does it actually make sense to get the rewards one step early?
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 
@@ -482,8 +477,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_count = 0
 
             for sample_idx in range(n_samples):
-                # To compute per token reward first add in kl penalties over trajectory
-                # NOTE: kl_penalty[i] is kl_diff at token i+1 in the output (w/o EOS)
                 rewards = kl_penalty[sample_idx]
                 # Then add in rewards
                 if scores.shape[1] == 1:
