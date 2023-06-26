@@ -247,8 +247,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         return str_samples, str_prompts, str_outputs
 
-    def generate(self, input_ids, attention_mask=None, **kwargs):
+    def generate(self, input_ids, attention_mask=None, chunk_size=4, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
+        # Decide into chunk sizes and generate saples
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
@@ -256,11 +257,23 @@ class AccelerateRLTrainer(BaseRLTrainer):
             kwargs = dict(self.generate_experience_kwargs, **kwargs)
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
-
-        with torch.no_grad():
-            return self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask, **kwargs
-            )
+        # Chunk input_ids and attention_mask
+        
+        input_ids = input_ids.chunk(chunk_size, 0)
+        if attention_mask is not None:
+            attention_mask = attention_mask.chunk(chunk_size, 0)
+        
+        samples = []
+        for chunk_idx in range(chunk_size):
+            with torch.no_grad():
+                sample =  self.accelerator.unwrap_model(self.model).generate(
+                    input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
+                )
+            samples.append(sample)
+        # Concat samples
+        samples = torch.cat(samples, 0)
+        return samples
+            
 
     def generate_eval(self, input_ids, attention_mask=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
