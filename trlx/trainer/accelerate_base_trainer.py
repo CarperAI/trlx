@@ -257,25 +257,28 @@ class AccelerateRLTrainer(BaseRLTrainer):
             kwargs = dict(self.generate_experience_kwargs, **kwargs)
         else:
             kwargs = dict(self.generate_kwargs, **kwargs)
-        # Chunk input_ids and attention_mask
-        
-        input_ids = input_ids.chunk(chunk_size, 0)
-        if attention_mask is not None:
-            attention_mask = attention_mask.chunk(chunk_size, 0)
-        
-        samples = []
-        for chunk_idx in range(chunk_size):
+        if chunk_size is not None:
+            # Chunk input_ids and attention_mask
+            input_ids = input_ids.chunk(chunk_size, 0)
+            if attention_mask is not None:
+                attention_mask = attention_mask.chunk(chunk_size, 0)
+            samples = []
+            for chunk_idx in range(chunk_size):
+                with torch.no_grad():
+                    sample =  self.accelerator.unwrap_model(self.model).generate(
+                        input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
+                    )
+                samples.append(sample)
+            # Concat samples
+            return torch.cat(samples, 0)
+        else:
             with torch.no_grad():
-                sample =  self.accelerator.unwrap_model(self.model).generate(
-                    input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
+               return  self.accelerator.unwrap_model(self.model).generate(
+                    input_ids=input_ids, attention_mask=attention_mask, **kwargs
                 )
-            samples.append(sample)
-        # Concat samples
-        samples = torch.cat(samples, 0)
-        return samples
-            
+        
 
-    def generate_eval(self, input_ids, attention_mask=None, **kwargs):
+    def generate_eval(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
@@ -283,10 +286,25 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         kwargs = dict(self.generate_kwargs, **kwargs)
 
-        with torch.no_grad():
-            return self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask, **kwargs
-            )
+        if chunk_size is not None:
+            # Chunk input_ids and attention_mask
+            input_ids = input_ids.chunk(chunk_size, 0)
+            if attention_mask is not None:
+                attention_mask = attention_mask.chunk(chunk_size, 0)
+            samples = []
+            for chunk_idx in range(chunk_size):
+                with torch.no_grad():
+                    sample =  self.accelerator.unwrap_model(self.model).generate(
+                        input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
+                    )
+                samples.append(sample)
+            # Concat samples
+            return torch.cat(samples, 0)
+        else:
+            with torch.no_grad():
+                return self.accelerator.unwrap_model(self.model).generate(
+                    input_ids=input_ids, attention_mask=attention_mask, **kwargs
+                )
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
