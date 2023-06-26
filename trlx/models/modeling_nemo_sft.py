@@ -99,10 +99,12 @@ class SFTGPT(MegatronGPTModel):
 
     def load_from_pretrained(self, checkpoint_dir):
         mp_rank = parallel_state.get_tensor_model_parallel_rank()
+        mp_world = parallel_state.get_tensor_model_parallel_world_size()
+
         checkpoint_path = Path(checkpoint_dir)
 
         # Check if there are rank subfolders
-        rank_subfolder = f"mp_rank_{mp_rank:02d}"
+        rank_subfolder = f"mp_rank_{mp_rank:02d}" if mp_world > 1 else ""
         rank_params = checkpoint_path / rank_subfolder / "model_weights.ckpt"
 
         print(f"Loading from {rank_params}")

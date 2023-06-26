@@ -188,25 +188,25 @@ def hf_get_num_hidden_layers(config: transformers.PretrainedConfig) -> int:
     return findattr(config, num_hidden_layers_attrs)
 
 
-def get_global_statistics(xs: torch.Tensor) -> Tuple[float, float, int]:
+def get_global_statistics(xs: torch.Tensor, group=None) -> Tuple[float, float, int]:
     """
     Computes element-wise mean and variance of the tensor across processes
     """
     sum_and_count = torch.tensor([xs.sum(), xs.numel()], device=xs.device)
-    dist.all_reduce(sum_and_count, dist.ReduceOp.SUM)
+    dist.all_reduce(sum_and_count, dist.ReduceOp.SUM, group=group)
     global_sum, count = sum_and_count
     global_mean = global_sum / count
 
     sum_var = torch.sum((xs - global_mean) ** 2)
-    dist.all_reduce(sum_var, dist.ReduceOp.SUM)
+    dist.all_reduce(sum_var, dist.ReduceOp.SUM, group=group)
     global_var = sum_var / count
     return global_mean, global_var, count
 
 
-def whiten(xs: torch.Tensor, shift_mean=True, distributed=True) -> torch.Tensor:
+def whiten(xs: torch.Tensor, shift_mean=True, distributed=True, group=None) -> torch.Tensor:
     """Whitens values"""
     if distributed and dist.is_initialized():
-        mean, var, _ = get_global_statistics(xs)
+        mean, var, _ = get_global_statistics(xs, group=group)
     else:
         var, mean = torch.var_mean(xs)
 
