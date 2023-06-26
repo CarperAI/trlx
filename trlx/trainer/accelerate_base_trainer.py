@@ -405,7 +405,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
+                    rewards = self.reward_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        model_tok=self.tokenizer,
+                        **metadata,
+                    )
                     if type(rewards[0]) is torch.Tensor:
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
                     elif type(rewards[0]) is list:

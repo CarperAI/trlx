@@ -6,8 +6,8 @@ from typing import Callable, List
 
 import torch
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
 import transformers
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -310,8 +310,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 rollout_score_time = time()
                 # reward_fn should return list of rewards at each token per sample
                 # NOTE: all_scores[0][i] is the reward due to token (action) i in prompt + response (b/c of how kl is computed)
-                all_scores = self.reward_fn(samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, model_tok=self.tokenizer, **metadata)
-                all_scores = [torch.tensor(score, dtype=torch.float, device=device).view(-1,) for score in all_scores]
+                all_scores = self.reward_fn(
+                    samples=all_str_samples,
+                    prompts=all_str_prompts,
+                    outputs=all_str_outputs,
+                    model_tok=self.tokenizer,
+                    **metadata,
+                )
+                all_scores = [
+                    torch.tensor(score, dtype=torch.float, device=device).view(
+                        -1,
+                    )
+                    for score in all_scores
+                ]
                 # Pad 0 reward on the ends
                 all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-1)
                 max_len = torch.tensor(all_scores.shape[1], dtype=torch.long, device=device)
@@ -357,7 +368,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
-                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(dim=1).std()
+                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(
+                    dim=1
+                ).std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores, scores_mask)
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
@@ -481,7 +494,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     score_right_padding = torch.sum(scores_mask[sample_idx])
                     score = score[:score_right_padding].cpu()
                     p_score = torch.zeros_like(rewards)
-                    p_score[:score.shape[0]] += score
+                    p_score[: score.shape[0]] += score
                     rewards += p_score
 
                 ppo_rl_elements.append(
