@@ -979,7 +979,7 @@ class GPTBigCodeModelBranch(ModelBranch):
         self.multi_query = base_model.transformer.multi_query
         self.get_head_mask = base_model.transformer.get_head_mask
 
-    def forward(
+    def forward(  # noqa: C901
         self,
         hidden_states: torch.Tensor,  # Takes as input hidden_states instead of input_ids
         output_shape: torch.Tensor,  # output_size given by main trunk
@@ -1021,7 +1021,7 @@ class GPTBigCodeModelBranch(ModelBranch):
         # Self-attention mask.
         query_length = seq_length
         key_length = past_length + query_length
-        self_attention_mask = self.bias[None, key_length - query_length: key_length, :key_length].to(device)
+        self_attention_mask = self.bias[None, key_length - query_length : key_length, :key_length].to(device)
 
         if attention_mask is not None:
             self_attention_mask = self_attention_mask * attention_mask.view(batch_size, 1, -1).to(
@@ -1034,11 +1034,7 @@ class GPTBigCodeModelBranch(ModelBranch):
 
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
-        if (
-            self.config.add_cross_attention
-            and encoder_hidden_states is not None
-            and encoder_attention_mask is not None
-        ):
+        if self.config.add_cross_attention and encoder_hidden_states is not None and encoder_attention_mask is not None:
             if encoder_attention_mask.dim() == 2:
                 encoder_attention_mask.unsqueeze(1)
             assert encoder_attention_mask.dim() == 3
@@ -1097,7 +1093,7 @@ class GPTBigCodeModelBranch(ModelBranch):
                     presents,
                     all_hidden_states,
                     all_self_attentions,
-                    all_cross_attentions
+                    all_cross_attentions,
                 ]
                 if v is not None
             )
