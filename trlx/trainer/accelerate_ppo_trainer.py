@@ -67,13 +67,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.store.clear_history()  # Clear the rollout store
 
-        # Setup a reference model when hydra heads are not used
-        if not hasattr(self.model, "frozen_head"):
+        # Set up a reference model when hydra heads are not used
+        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
             self.ref_model = self.get_arch(self.config)
             self.ref_model.to(self.accelerator.device)
             self.ref_model.eval()
 
-        # Setup the KL controller
+        # Set up the KL controller
         # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
@@ -83,34 +83,18 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Create the parameters for the Hugging Face language model's generator
         # method (that generates new tokens from a prompt).
         # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
-        if config.model.model_arch_type == "seq2seq":
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+        generate_kwargs = dict(
+            do_sample=True,
+            use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+        self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
+
+        if config.method.gen_experience_kwargs is not None:
+            self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+            self.generate_experience_kwargs = None
 
         # Setup stats tracker
         self.running_moments = RunningMoments()
@@ -131,6 +115,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            peft_config=self.config.model.peft_config,
         )
 
     def loss(self, batch: PPORLBatch):
@@ -175,12 +160,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                mask[:, start:end],
+                mask[:, start + 1 : end + 1],
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
             attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            outputs = self.model(tokens, attention_mask, return_dict=True)
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            outputs = self.model(tokens, attention_mask, return_dict=True, position_ids=position_ids)
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
@@ -191,7 +178,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                attention_mask[:, start:end],
+                attention_mask[:, start + 1 : end + 1],
             )
 
         loss, stats = self.config.method.loss(
@@ -234,9 +221,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
     def prepare_learning(self):
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
+        eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
+
+        self.make_experience(self.config.method.num_rollouts)
+
+        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
 
         self.n_updates_per_batch = self.config.method.ppo_epochs
         self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
@@ -379,7 +369,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     )
                     logits = outputs.logits
                     values = outputs.value
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
@@ -398,22 +388,25 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
                 attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
+                position_ids = attention_mask.long().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
                 with torch.no_grad():
                     logits, *_, values = self.model(
-                        all_tokens,
-                        attention_mask=attention_mask,
+                        all_tokens, attention_mask=attention_mask, position_ids=position_ids
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                     else:
                         ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                         ref_logits = ref_logits.to(device)

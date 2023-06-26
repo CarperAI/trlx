@@ -1,3 +1,4 @@
+import importlib
 import math
 import os
 import random
@@ -13,6 +14,10 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
+
+
+def is_peft_available():
+    return importlib.util.find_spec("peft") is not None
 
 
 def print_rank_0(*message):
@@ -232,9 +237,14 @@ def get_git_tag() -> Tuple[str, str]:
 # Iter utils
 
 
-def infinite_dataloader(dataloader: Iterable) -> Iterable:
+def infinite_dataloader(dataloader: Iterable, sampler=None) -> Iterable:
     """
     Returns a cyclic infinite dataloader from a finite dataloader
     """
+    epoch = 0
     for _ in repeat(dataloader):
+        if sampler is not None:
+            sampler.set_epoch(epoch)
+        epoch += 1
+
         yield from dataloader

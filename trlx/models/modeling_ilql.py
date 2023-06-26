@@ -1,9 +1,10 @@
 import gc
 import os
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import deepspeed  # type: ignore
 import numpy as np
@@ -12,6 +13,7 @@ import torch.nn.functional as F
 import transformers
 from torch import nn
 from torchtyping import TensorType
+from transformers.modeling_outputs import ModelOutput
 
 from trlx.data.ilql_types import ILQLBatch
 from trlx.data.method_configs import MethodConfig, register_method
@@ -193,8 +195,18 @@ class ILQLHeads(nn.Module):
             self._sync_target_q_heads(self.alpha)
 
 
+@dataclass
+class CausalILQLOutput(ModelOutput):
+    logits: Optional[torch.FloatTensor] = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    value: Optional[torch.FloatTensor] = None
+    qs: Optional[Tuple[torch.FloatTensor]] = None
+    target_qs: Optional[Tuple[torch.FloatTensor]] = None
+
+
 class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
-    """An `AutoModel` class wrapper for `transformers` causal models wtih a language
+    """An `AutoModel` class wrapper for `transformers` causal models with a language
     modeling head and ILQL heads.
 
     References:
@@ -204,7 +216,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["ilql_heads"]
-    _supported_args = ["two_qs", "alpha"]
+    _supported_args = ["two_qs", "alpha", "peft_config"]
 
     def __init__(
         self,
@@ -212,8 +224,9 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         *,
         two_qs: bool = True,
         alpha: float = 0.99,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         hidden_size = hf_get_hidden_size(self.base_model.config)
         vocab_size = self.base_model.config.vocab_size
         dtype = next(hf_get_lm_head(self.base_model).parameters()).dtype
@@ -229,6 +242,8 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         past_key_values=None,
         actions_ixs=None,
         states_ixs=None,
+        return_dict=False,
+        bypass_peft_prompt_adapter=False,
     ):
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
@@ -238,8 +253,18 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         )
         forward_kwargs["output_hidden_states"] = True
 
-        outputs = self.base_model(**forward_kwargs)
+        if self.peft_type == "PREFIX_TUNING" and not bypass_peft_prompt_adapter:
+            # Peft redefines past_key_values, remove it to avoid an exception.
+            forward_kwargs.pop("past_key_values", None)
+
+        if bypass_peft_prompt_adapter:
+            outputs = self.base_model.base_model(**forward_kwargs)
+        else:
+            outputs = self.base_model(**forward_kwargs)
         qs, target_qs, vs = self.ilql_heads(outputs.hidden_states[-1], states_ixs=states_ixs, actions_ixs=actions_ixs)
+
+        if return_dict:
+            return CausalILQLOutput(outputs.logits, outputs.past_key_values, outputs.hidden_states, vs, qs, target_qs)
 
         return outputs.logits, qs, target_qs, vs, outputs.past_key_values
 
@@ -259,7 +284,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         eos_token_id=None,
     ):
         """
-        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        Generates samples akin to hf's `.generate` but with custom logp preprocessing:
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
@@ -277,19 +302,21 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
 
         finished = torch.zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
-        for _ in range(max_new_tokens):
+        bypass_peft = False
+        for token in range(max_new_tokens):
             out = self.forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=past_key_values,
+                bypass_peft_prompt_adapter=bypass_peft,
             )
 
             logits, _, target_qs, vs, past_key_values = out
             if self.two_qs:
                 qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
-                qs = target_qs[:, -1, :]
+                qs = target_qs[0][:, -1, :]
 
             logits = logits[:, -1, :]
             vs = vs[:, -1, :]
@@ -301,15 +328,29 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)
             pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
-            pi = F.softmax(pi_top_k / temperature, -1)
 
-            input_ids = torch.multinomial(pi, num_samples=1)
+            if temperature == 0.0:
+                input_ids = pi_top_k.argmax(dim=-1, keepdim=True)
+            else:
+                pi = F.softmax(pi_top_k / temperature, -1)
+                input_ids = torch.multinomial(pi, num_samples=1)
+
             input_ids = (1 - finished) * input_ids + finished * eos_token_id
             finished = (input_ids == eos_token_id).long()
 
             samples = torch.hstack((samples, input_ids))
             attention_mask = torch.hstack((attention_mask, (input_ids != eos_token_id).long()))
             position_ids = (position_ids[:, -1] + 1).view(-1, 1)
+
+            # Some peft models add a prefix to the prompt at each forward pass.
+            # We need to bypass it so that it doesn't add multiple times the prefix.
+            if self.peft_type and token == 0 and "LORA" not in self.peft_type:
+                bypass_peft = True
+
+                prefix_attention_mask = torch.ones(input_ids.shape[0], self.peft_config.num_virtual_tokens).to(
+                    input_ids.device
+                )
+                attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
             if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
@@ -319,23 +360,29 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
 
-    def state_dict(self, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
+        if heads_only:
+            model_state_dict = OrderedDict()
+        else:
+            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         for k, v in ilql_heads_state_dict.items():
-            base_model_state_dict[f"ilql_heads.{k}"] = v
-        return base_model_state_dict
+            model_state_dict[f"ilql_heads.{k}"] = v
+        return model_state_dict
 
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by preprending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
+        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
         keys of the value head state dictionary.
         """
+        super().post_init()
+
         for k in list(state_dict.keys()):
             if "ilql_heads." in k:
                 state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
@@ -344,12 +391,23 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         gc.collect()
 
 
+@dataclass
+class Seq2SeqILQLOutput(ModelOutput):
+    logits: Optional[torch.FloatTensor] = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    value: Optional[torch.FloatTensor] = None
+    qs: Optional[Tuple[torch.FloatTensor]] = None
+    target_qs: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_outputs: Optional[Tuple[Any]] = None
+
+
 class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
     """This is a wrapper around huggingface AutoModelForSeq2Seq with two additional scalar heads"""
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["ilql_heads"]
-    _supported_args = ["two_qs", "alpha"]
+    _supported_args = ["two_qs", "alpha", "peft_config"]
 
     def __init__(
         self,
@@ -357,8 +415,9 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         *,
         two_qs: bool = True,
         alpha: float = 0.99,
+        peft_config=None,
     ):
-        super().__init__(base_model)
+        super().__init__(base_model, peft_config=peft_config)
         hidden_size = hf_get_hidden_size(self.base_model.config)
         vocab_size = self.base_model.config.vocab_size
         dtype = next(hf_get_lm_head(self.base_model).parameters()).dtype
@@ -369,23 +428,29 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
     def sync_target_q_heads(self):
         self.ilql_heads.sync_target_q_heads()
 
-    def state_dict(self, *args, **kwargs):
+    def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        base_model_state_dict = self.base_model.state_dict(*args, **kwargs)
         ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
+        if heads_only:
+            model_state_dict = OrderedDict()
+        else:
+            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+
         for k, v in ilql_heads_state_dict.items():
-            base_model_state_dict[f"ilql_heads.{k}"] = v
-        return base_model_state_dict
+            model_state_dict[f"ilql_heads.{k}"] = v
+        return model_state_dict
 
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by preprending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
+        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
         keys of the value head state dictionary.
         """
+        super().post_init()
+
         for k in list(state_dict.keys()):
             if "ilql_heads." in k:
                 state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
@@ -397,36 +462,56 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         self,
         input_ids,
         attention_mask=None,
+        decoder_attention_mask=None,
         decoder_input_ids=None,
         past_key_values=None,
+        decoder_inputs_embeds=None,
         encoder_outputs=None,
         actions_ixs=None,
         states_ixs=None,
         output_attentions=True,
         output_hidden_states=True,
+        return_dict=False,
+        bypass_peft_prompt_adapter=False,
     ):
         forward_kwargs = self.get_compatible_forward_kwargs(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            decoder_attention_mask=decoder_attention_mask,
             decoder_input_ids=decoder_input_ids,
             past_key_values=past_key_values,
+            decoder_inputs_embeds=decoder_inputs_embeds,
             encoder_outputs=encoder_outputs,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )
-        out = self.base_model(**forward_kwargs)
+        if self.peft_type == "PREFIX_TUNING" and not bypass_peft_prompt_adapter:
+            # Peft redefines past_key_values, remove it to avoid an exception.
+            forward_kwargs.pop("past_key_values", None)
+
+        if bypass_peft_prompt_adapter:
+            out = self.base_model.base_model(**forward_kwargs)
+        else:
+            out = self.base_model(**forward_kwargs)
 
         hs = out.decoder_hidden_states[-1]
 
         logits = self.base_model.lm_head(hs)
         qs, target_qs, vs = self.ilql_heads(hs, states_ixs=states_ixs, actions_ixs=actions_ixs)
         encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
+
+        if return_dict:
+            return Seq2SeqILQLOutput(
+                logits, out.past_key_values, out.decoder_hidden_states, vs, qs, target_qs, encoder_outputs
+            )
+
         return logits, qs, target_qs, vs, out.past_key_values, encoder_outputs
 
     def generate(
         self,
         input_ids,
         attention_mask=None,
+        decoder_attention_mask=None,
         decoder_input_ids=None,
         past_key_values=None,
         encoder_outputs=None,
@@ -440,7 +525,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         eos_token_id=None,
     ):
         """
-        Generates samples akin to hf's `.generate` but with custom logp prepossessing:
+        Generates samples akin to hf's `.generate` but with custom logp preprocessing:
         changing token probabilities as to how advantageous they would be
         according to value functions estimations.
         """
@@ -449,7 +534,10 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             raise ValueError("eos_token_id and pad_token_id must be provided")
 
         if attention_mask is None:
-            attention_mask = input_ids.not_equal(pad_token_id)
+            if decoder_attention_mask is not None:
+                attention_mask = decoder_attention_mask
+            else:
+                attention_mask = input_ids.not_equal(pad_token_id)
 
         samples = input_ids.clone()
         max_new_tokens = min(max_new_tokens, max_length - input_ids.shape[1])
@@ -457,31 +545,48 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
             decoder_input_ids = input_ids.new_zeros(input_ids.shape[0], 1)
 
         finished = torch.zeros(input_ids.shape[0], 1, dtype=torch.long, device=input_ids.device)
-        for _ in range(max_new_tokens):
+        bypass_peft = False
+        for token in range(max_new_tokens):
             out = self.forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 decoder_input_ids=decoder_input_ids[:, -1].unsqueeze(-1),
                 past_key_values=past_key_values,
                 encoder_outputs=encoder_outputs,
+                bypass_peft_prompt_adapter=bypass_peft,
             )
             logits, _, target_qs, vs, past_key_values, encoder_outputs = out
             if self.two_qs:
                 qs = torch.minimum(target_qs[0][:, -1, :], target_qs[1][:, -1, :])
             else:
-                qs = target_qs[:, -1, :]
+                qs = target_qs[0][:, -1, :]
 
             logits = logits[:, -1, :]
             vs = vs[:, -1, :]
             adv = qs - vs
             pi_beta = F.log_softmax(logits, -1)
             pi_top_k = topk_mask(pi_beta + beta * adv, top_k)
-            pi = F.softmax(pi_top_k / temperature, -1)
-            next_tokens = torch.multinomial(pi, num_samples=1)
+
+            if temperature == 0.0:
+                next_tokens = pi_top_k.argmax(dim=-1, keepdim=True)
+            else:
+                pi = F.softmax(pi_top_k / temperature, -1)
+                next_tokens = torch.multinomial(pi, num_samples=1)
             next_tokens = (1 - finished) * next_tokens + finished * eos_token_id
             finished = (next_tokens == eos_token_id).long() | (next_tokens == pad_token_id).long()
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=-1)
             samples = decoder_input_ids
+
+            # Some peft models add a prefix to the prompt at each forward pass.
+            # We need to bypass it so that it doesn't add multiple times the prefix.
+            if self.peft_type and token == 0 and "LORA" not in self.peft_type:
+                bypass_peft = True
+
+                prefix_attention_mask = torch.ones(input_ids.shape[0], self.peft_config.num_virtual_tokens).to(
+                    input_ids.device
+                )
+                attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
             if os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE", "0") != "3" and torch.all(finished):
                 break
 
