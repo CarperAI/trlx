@@ -88,6 +88,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             use_cache=True,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
+            synced_gpus=self.accelerator.deepspeed_config["zero_optimization"]["stage"] == 3,
         )
         self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
 
