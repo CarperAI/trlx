@@ -132,6 +132,7 @@ class PPOConfig(MethodConfig):
     gen_kwargs: dict
     num_return_sequences: int
     num_train_sequences: int
+    gen_chunk_size: int
     gen_experience_kwargs: Optional[dict] = None
 
     def get_advantages_and_returns(
