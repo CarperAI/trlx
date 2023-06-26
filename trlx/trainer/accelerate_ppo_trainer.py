@@ -72,7 +72,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Set up a reference model when hydra heads are not used
         if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
             self.ref_model = self.get_arch(self.config)
-            self.ref_model.resize_token_embeddings(len(self.tokenizer))
+            self.ref_model.base_model.resize_token_embeddings(len(self.tokenizer))
             self.ref_model.to(self.accelerator.device)
             self.ref_model.eval()
         else:
