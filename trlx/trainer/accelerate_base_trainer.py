@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from copy import copy
 from time import time
 from typing import Dict, List, Optional, Tuple
+from copy import copy
 
 import ray
 import torch
