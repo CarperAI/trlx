@@ -112,6 +112,12 @@ class PPOConfig(MethodConfig):
 
     :param gen_experience_kwargs: if this is not None, then the experience is generated using this
     :type gen_experience_kwargs: Dict[str, Any]
+
+    :param num_train_sequences: top_k of n sampled sequences from prompt
+    :type num_train_sequences: int
+
+    :param mix_sft: if this is True, then SFT gradients will be mixed into PPO traininig
+    :type mix_sft: bool
     """
 
     ppo_epochs: int
@@ -130,10 +136,8 @@ class PPOConfig(MethodConfig):
     ref_std: Optional[float]
     cliprange_reward: float
     gen_kwargs: dict
-    num_return_sequences: int
-    num_train_sequences: int
-    gen_chunk_size: int
     gen_experience_kwargs: Optional[dict] = None
+    num_train_sequences: int = 1
 
     def get_advantages_and_returns(
         self,

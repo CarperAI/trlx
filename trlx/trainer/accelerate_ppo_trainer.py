@@ -3,6 +3,7 @@ import os
 import uuid
 from time import time
 from typing import Callable, List
+from copy import copy
 
 import torch
 import torch.nn.functional as F
@@ -268,6 +269,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         ppo_rl_elements = []
         accumulated_stats = []
 
+        # Require chunk_size * num_train_sequences divides num_rollouts
+        assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_train_sequences) == 0
+
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
             # Get next batch in prompt dataset
@@ -276,10 +280,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
-            samples = self.generate(batch["input_ids"], batch["attention_mask"], chunk_size=self.config.method.gen_chunk_size, num_return_sequences=self.config.method.num_return_sequences)
+            samples = self.generate(batch["input_ids"], batch["attention_mask"], chunk_size=self.config.method.chunk_size, **self.generate_experience_kwargs)
             stats["time/rollout_generate"] = time() - rollout_generate_time
 
-            prompt_tensors = batch.input_ids.repeat_interleave(self.config.method.num_return_sequences, dim=0) # TODO: It is hard-coded to 10 here. Change it to a variable
+            num_return_sequences = self.generate_experience_kwargs["num_return_sequences"] if self.generate_experience_kwargs.get("num_return_sequences") is not None else 1
+            prompt_tensors = batch.input_ids.repeat_interleave(num_return_sequences, dim=0)
             device = samples.device
 
             prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
@@ -323,12 +328,11 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = all_scores[0].clone().detach()
             # Best-of-N Sampling.
             scores_mask = scores != -1
-            train_indices = self.get_topk_indices(input_tensor=scores, window_size=self.config.method.num_return_sequences,k=self.config.method.num_train_sequences, device=device)
-            scores = scores.index_select(0, train_indices)
-            samples = samples.index_select(0, train_indices)
-            prompt_tensors = prompt_tensors.index_select(0, train_indices)
+            train_indices = self.get_topk_indices(input_tensor=scores_mask*scores, window_size=num_return_sequences, k=self.config.method.num_train_sequences, device=device)
+            scores = scores[train_indices]
             scores_mask = scores_mask[train_indices]
-            
+            samples = samples[train_indices]
+            prompt_tensors = prompt_tensors[train_indices]
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -417,21 +421,21 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         logits, *_, values = self.model(
                             all_tokens_chunk,
                             attention_mask=attention_mask_chunk,
-                            position_ids=position_ids,
+                            position_ids=position_ids_chunk,
                         )
                         # TODO(dahoas): When hydra model works need to also support generation on hydra head
                         if hasattr(self.model, "frozen_head"):
                             ref_logits = self.model.forward_hydra(
                                 all_tokens_chunk,
                                 attention_mask=attention_mask_chunk,
-                                position_ids=position_ids,
+                                position_ids=position_ids_chunk,
                                 return_dict=True,
                             ).logits
                         elif hasattr(self, "ref_model"):
                             ref_logits = self.ref_model(
                                 all_tokens_chunk,
                                 attention_mask=attention_mask_chunk,
-                                position_ids=position_ids,
+                                position_ids=position_ids_chunk,
                                 return_dict=True,
                             ).logits
                             ref_logits = ref_logits.to(device)
@@ -466,6 +470,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 # NOTE: -1 because kl[prompt_tensors.shape[1]] is kl of the second token in the response
                 start = prompt_tensors.shape[1] - 1
+
             attention_mask = attention_mask.cpu()
             log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
             kl = log_ratio.exp() - 1 - log_ratio

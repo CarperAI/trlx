@@ -6,6 +6,7 @@ from abc import abstractmethod
 from contextlib import contextmanager
 from time import time
 from typing import Dict, List, Optional, Tuple
+from copy import copy
 
 import ray
 import torch
@@ -247,75 +248,49 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         return str_samples, str_prompts, str_outputs
 
-    def generate(self, input_ids, attention_mask=None, chunk_size=4, **kwargs):
+    def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
         # Decide into chunk sizes and generate saples
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
+
+        generate_kwargs = copy(self.generate_kwargs)
+        generate_kwargs.update(kwargs)
+        
         # Update max_new_tokens to respect max_seq_length
         prompt_length = input_ids.shape[1]
-        if self.generate_experience_kwargs is not None:
-            kwargs = dict(self.generate_experience_kwargs, **kwargs)
+        if generate_kwargs.get("max_new_tokens") is not None:
+            generate_kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), generate_kwargs["max_new_tokens"])
         else:
-            kwargs = dict(self.generate_kwargs, **kwargs)
-        if kwargs.get("max_new_tokens") is not None:
-            kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), kwargs["max_new_tokens"])
-        else:
-            kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
-        if chunk_size is not None:
-            # Chunk input_ids and attention_mask
-            input_ids = input_ids.chunk(chunk_size, 0)
-            if attention_mask is not None:
-                attention_mask = attention_mask.chunk(chunk_size, 0)
-            samples = []
-            for chunk_idx in range(chunk_size):
-                with torch.no_grad():
-                    sample =  self.accelerator.unwrap_model(self.model).generate(
-                        input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
-                    )
-                samples.append(sample)
-            # Concat samples
-            return torch.cat(samples, 0)
-        else:
-            with torch.no_grad():
-               return  self.accelerator.unwrap_model(self.model).generate(
-                    input_ids=input_ids, attention_mask=attention_mask, **kwargs
-                )
-        
+            generate_kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
-    def generate_eval(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
-        """Wraps hf's `generate` adding some specific method's defaults"""
-        input_ids = input_ids.to(self.accelerator.device)
+        # Repeat prompts, attention_masks for chunking if returning multiple sequences
+        if generate_kwargs.get("num_return_sequences") is None:
+            generate_kwargs["num_return_sequences"] = 1
+
+        num_return_sequences = generate_kwargs.pop("num_return_sequences")  # Pop to hide from model.generate call
+        input_ids = input_ids.repeat_interleave(num_return_sequences, dim=0)
         if attention_mask is not None:
-            attention_mask = attention_mask.to(self.accelerator.device)
+            attention_mask = attention_mask.repeat_interleave(num_return_sequences, dim=0)
 
-        kwargs = dict(self.generate_kwargs, **kwargs)
+        if chunk_size is None:
+            chunk_size = input_ids.shape[0]
 
-        if kwargs.get("max_new_tokens") is not None:
-            kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), kwargs["max_new_tokens"])
-        else:
-            kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
-
-        if chunk_size is not None:
-            # Chunk input_ids and attention_mask
-            input_ids = input_ids.chunk(chunk_size, 0)
-            if attention_mask is not None:
-                attention_mask = attention_mask.chunk(chunk_size, 0)
-            samples = []
-            for chunk_idx in range(chunk_size):
-                with torch.no_grad():
-                    sample =  self.accelerator.unwrap_model(self.model).generate(
-                        input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **kwargs
-                    )
-                samples.append(sample)
-            # Concat samples
-            return torch.cat(samples, 0)
-        else:
+        # Chunk input_ids and attention_mask
+        input_ids = input_ids.split(chunk_size, dim=0)
+        if attention_mask is not None:
+            attention_mask = attention_mask.split(chunk_size, dim=0)
+        samples = []
+        for chunk_idx in range(len(input_ids)):
             with torch.no_grad():
-                return self.accelerator.unwrap_model(self.model).generate(
-                    input_ids=input_ids, attention_mask=attention_mask, **kwargs
+                sample = self.accelerator.unwrap_model(self.model).generate(
+                    input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **generate_kwargs
                 )
+            samples.append(sample)
+        # Concat samples
+        samples = torch.cat(samples, 0)
+        return samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
@@ -417,11 +392,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
                 if self.generate_sweep_kwarg:
-                    samples = self.generate_eval(
+                    samples = self.generate(
                         prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}
                     )
                 else:
-                    samples = self.generate_eval(prompts["input_ids"], prompts["attention_mask"])
+                    samples = self.generate(prompts["input_ids"], prompts["attention_mask"])
 
                 # TODO(reciprocated): this should be moved into `decode`
                 # but that needs to be synced with indexing in `make_experience`
