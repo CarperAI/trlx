@@ -136,9 +136,11 @@ class PromptPipeline(BasePipeline):
         else:
             metadata = [{}] * len(prompts)
 
+        print("tokenizing")
         model_inputs = tokenizer(
             prompts, truncation=True, padding=False, max_length=max_prompt_length, add_special_tokens=add_special_tokens
         )
+        print(f"done tokenizing {len(prompts)=}")
 
         prompts_tokens = model_inputs["input_ids"]
         attention_mask = model_inputs["attention_mask"]

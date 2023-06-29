@@ -23,6 +23,9 @@ from nemo.collections.nlp.data.language_modeling.megatron.megatron_batch_sampler
 from nemo.collections.nlp.models.language_modeling.megatron.gpt_model import (
     post_language_model_processing,
 )
+from nemo.collections.nlp.models.language_modeling.megatron_base_model import (
+    MegatronBaseModel,
+)
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
@@ -193,7 +196,7 @@ class RefLMHeads(MegatronModule):
         self.language_model = language_model.language_model
 
         if build_reference_model:
-            self.reference_model = OffloadedModel(deepcopy(language_model), device=torch.cuda.current_device())
+            self.reference_model = OffloadedModel(deepcopy(language_model.cpu()), device=torch.cuda.current_device())
         else:
             self.reference_model = None
 
@@ -494,7 +497,12 @@ class PPOGPT(MegatronGPTModel):
                         m.eval()
                         for p in m.parameters():
                             p.requires_grad_(False)
+                    else:
+                        for p in m.parameters():
+                            p.requires_grad_(True)
 
+            for p in gpt.parameters():
+                p.requires_grad_(False)
             gpt.language_model.apply(freeze_layers)
 
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
@@ -504,6 +512,123 @@ class PPOGPT(MegatronGPTModel):
             return RefLMHeads(gpt, value_head, build_reference_model=self.build_reference_model)
         else:
             return gpt
+
+    def configure_optimizers(self):
+        if self.with_distributed_adam:
+            # Disable overlapped grad sync for embedding grad when
+            # pipeline parallelism is enabled
+            if parallel_state.get_pipeline_model_parallel_world_size() > 1:
+                if parallel_state.is_pipeline_first_stage(ignore_virtual=True):
+                    if isinstance(self.model, list):
+                        module = self.model[0]  # only the first virtual rank has the embeddings
+                    else:
+                        module = self.model
+                    if module.share_token_embeddings:
+                        param = module.word_embeddings_weight()
+                        param._disable_greedy_grad_copy = not self.megatron_amp_o2
+                        param._disable_overlap_grad_sync = True
+                if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
+                    if isinstance(self.model, list):
+                        module = self.model[-1]  # only the last virtual rank has the embeddings
+                    else:
+                        module = self.model
+                    if module.share_token_embeddings:
+                        param = module.word_embeddings_weight()
+                        param._disable_greedy_grad_copy = not self.megatron_amp_o2
+                        param._disable_overlap_grad_sync = True
+
+            # Disable overlapped grad sync for layer norm grads when
+            # sequence parallelism is enabled
+            for param in self.parameters():
+                if getattr(param, "sequence_parallel_enabled", False):
+                    param._disable_greedy_grad_copy = not self.megatron_amp_o2
+                    param._disable_overlap_grad_sync = True
+
+            # Initialize parameter buckets for overlapped grad and param syncs
+            # Note: Params with disabled overlapping are put in the
+            # last param bucket
+            buckets = []
+            if self.cfg.get("virtual_pipeline_model_parallel_size", None) is not None:
+                # Initialize a bucket for each virtual pipeline stage
+                for module in self.model:
+                    if isinstance(module, Float16Module):
+                        module = module.module
+                    stage_bucket = []
+                    for layer in module.language_model.encoder.layers:
+                        stage_bucket.extend(
+                            p
+                            for p in layer.parameters()
+                            if not getattr(p, "_disable_overlap_grad_sync", False) and p.requires_grad
+                        )
+                    buckets.append(stage_bucket)
+            else:
+                # Initialize a bucket for each Transformer layer
+                modules = self.model if isinstance(self.model, list) else [self.model]
+                for module in modules:
+                    if isinstance(module, Float16Module):
+                        module = module.module
+                    for layer in module.language_model.encoder.layers:
+                        buckets.append(
+                            [
+                                p
+                                for p in layer.parameters()
+                                if not getattr(p, "_disable_overlap_grad_sync", False) and p.requires_grad
+                            ]
+                        )
+                        print("bucket", layer.layer_number, len(buckets[-1]), flush=True)
+            buckets.reverse()
+            used_params = set()
+            for bucket in buckets:
+                used_params.update(bucket)
+            buckets[-1].extend(p for p in self.parameters() if p not in used_params)
+            total = sum(len(bucket) for bucket in buckets)
+            total_numel = sum(sum(p.numel() for p in bucket) for bucket in buckets)
+            print("total", total, total_numel, flush=True)
+            self.distributed_adam_buckets = buckets
+        print("buckets", self.distributed_adam_buckets, flush=True)
+        return MegatronBaseModel.configure_optimizers(self)
+
+    def _append_sequence_parallel_module_grads(self, module, grads):
+        """Helper method for allreduce_sequence_parallel_gradients"""
+
+        for param in module.parameters():
+            if not param.requires_grad:
+                continue
+            sequence_parallel_param = getattr(param, "sequence_parallel", False)
+            # (@adithyare) adapter training now extends MegatronGPTModel
+            # so we have to add this check here to ensure we do not
+            # perform all_reduce when grad is None.
+            # grad can be None when performing PeFT training.
+            if sequence_parallel_param and param.requires_grad:
+                if self.megatron_amp_o2:
+                    grad = param.main_grad
+                else:
+                    grad = param.grad
+                grads.append(grad.data)
+
+    def allreduce_sequence_parallel_gradients(self):
+        """All-reduce layernorm parameters across model parallel nodes when sequence parallelism is used.
+        Modified from megatron-lm:
+        https://gitlab-master.nvidia.com/ADLR/megatron-lm/-/blob/3f91f09bb2ab32f9904b47f46f19d2fc3f518ed8/megatron/training.py#L425
+        """
+
+        grads = []
+        if isinstance(self.model, list):
+            for module in self.model:
+                self._append_sequence_parallel_module_grads(module, grads)
+        else:
+            self._append_sequence_parallel_module_grads(self.model, grads)
+
+        if len(grads) == 0:
+            return
+        coalesced = torch._utils._flatten_dense_tensors(grads)
+        torch.distributed.all_reduce(coalesced, group=parallel_state.get_tensor_model_parallel_group())
+        for buf, synced in zip(grads, torch._utils._unflatten_dense_tensors(coalesced, grads)):
+            buf.copy_(synced)
+
+    def setup_optimizer_param_groups(self):
+        unfrozen_params = [p for p in self.model.parameters() if p.requires_grad]
+        self._optimizer_param_groups = ({"params": unfrozen_params},)
 
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259

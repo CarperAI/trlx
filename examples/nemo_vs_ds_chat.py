@@ -8,6 +8,7 @@ from typing import List
 
 import torch
 from datasets import load_dataset
+from omegaconf import OmegaConf
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -81,13 +82,15 @@ def main(hparams={}):
         nemo_config.model.ffn_hidden_size = 28672
         nemo_config.model.num_attention_heads = 56
 
-        nemo_config.model.tensor_model_parallel_size = 4
+        nemo_config.trainer.num_nodes = 4
+        nemo_config.trainer.devices = 8
+        nemo_config.model.tensor_model_parallel_size = 8
         batch_size = 16
         mini_batch_size = 2
-        chunk_size = 16
+        chunk_size = 8
     elif cfg_name == "66B":
         nemo_config = default_nemo_1_3b_config()
-        nemo_config.trainer.num_nodes = 8
+        nemo_config.trainer.num_nodes = 4
         nemo_config.trainer.devices = 8
         nemo_config.name = "megatron_gpt_66b"
         nemo_config.model.num_layers = 64
@@ -136,7 +139,7 @@ def main(hparams={}):
         ),
         model=dict(num_layers_unfrozen=-1),
         method=dict(
-            num_rollouts=16,
+            num_rollouts=128,
             init_kl_coef=0.05,
             scale_reward="ref",
             vf_coef=1,
@@ -157,7 +160,7 @@ def main(hparams={}):
 
     def reward_fn(samples: List[str], **kwargs) -> List[float]:
         reward_model.to(local_rank)
-        mbs = config.method.chunk_size
+        mbs = max(1, config.method.chunk_size // 2)
         for i in range(0, len(samples) // mbs):
             inputs = reward_tokenizer(samples[i * mbs : (i + 1) * mbs], return_tensors="pt", padding=True)
             inputs = inputs.to(local_rank)

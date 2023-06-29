@@ -370,6 +370,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.model.setup()
         self.trainer.strategy._lightning_module = self.model
         _, schedulers = self.model.configure_optimizers()
+        self.model._optimizer.zero_grad()
+
         scheduler = schedulers[0]["scheduler"]
 
         prompt_iter = iter(prompt_dataloader)
