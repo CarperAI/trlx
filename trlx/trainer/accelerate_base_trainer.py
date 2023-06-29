@@ -398,6 +398,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 else:
                     samples = self.generate(prompts["input_ids"], prompts["attention_mask"])
 
+                # Repeat prompts, metadata num_return_sequence times
+                num_return_sequences = 1
+                if self.generate_kwargs.get("num_return_sequences") is not None:
+                    num_return_sequences = self.generate_kwargs["num_return_sequences"]
+                prompts["input_ids"] = prompts["input_ids"].repeat_interleave(num_return_sequences, dim=0)
+                prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(num_return_sequences, dim=0)
+                metadata = {k: self.repeat_interleave(v, num_return_sequences) for k, v in metadata.items()}
+
                 # TODO(reciprocated): this should be moved into `decode`
                 # but that needs to be synced with indexing in `make_experience`
                 if self.config.model.model_arch_type == "seq2seq":
@@ -460,7 +468,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
-                    metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata)
+                    metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
@@ -650,6 +658,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.post_epoch_callback()
         tbar.close()
+
+    @staticmethod
+    def repeat_interleave(l, n):
+        if type(l) is torch.Tensor:
+            l = l.repeat_interleave(n, dim=0)
+        elif type(l) is list:
+            l = [[s]*n for s in l]
+            l = [item for sublist in l for item in sublist]
+        return l
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):

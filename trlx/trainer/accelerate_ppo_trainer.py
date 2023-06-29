@@ -297,7 +297,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_samples = self.accelerator.gather(padded_samples)
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
-            metadata = gather_dict({k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
+            metadata = gather_dict({k: self.repeat_interleave(v, num_return_sequences) for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
