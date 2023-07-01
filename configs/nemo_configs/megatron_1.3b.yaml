@@ -86,6 +86,7 @@ model:
   use_cpu_initialization: false
   onnx_safe: false
   activations_checkpoint_method: null
+  activations_checkpoint_granularity: null
   activations_checkpoint_num_layers: null
 
   gradient_as_bucket_view: True

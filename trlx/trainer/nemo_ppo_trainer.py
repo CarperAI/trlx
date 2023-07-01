@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 from logging import getLogger
@@ -9,6 +10,7 @@ import torch
 import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
+from torch.nn.utils.rnn import pad_packed_sequence
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 from transformers import LlamaTokenizer
@@ -23,7 +25,7 @@ from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.pipeline.ppo_pipeline import ppo_collate_fn
 from trlx.trainer import BaseRLTrainer, register_trainer
 from trlx.trainer.nemo_ilql_trainer import megatron_trainer
-from trlx.utils import get_git_tag, infinite_dataloader
+from trlx.utils import get_git_tag, infinite_dataloader, tree_map
 from trlx.utils.modeling import get_global_statistics, whiten
 
 logging = getLogger(__name__)
@@ -148,15 +150,11 @@ class NeMoPPOTrainer(BaseRLTrainer):
     def make_experience(self, prompt_iterator: Iterator, num_rollouts: int = 1024, dp_world: int = 1):  # noqa: C901
         ppo_rl_elements = []
 
-        import gc
-
         gc.collect()
 
         device = torch.device("cuda")
 
         tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Generating experience")
-
-        self.model.offload_reference_model()
 
         inputs_samples = []
 
@@ -190,6 +188,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             num_rollouts = num_rollouts - len(input_ids)
 
         self.model.free_kv_cache()
+        gc.collect()
 
         all_sents = [sentence for _, _, samples in inputs_samples for sentence in samples["sentences"]]
         all_prompts = [prompt for _, _, samples in inputs_samples for prompt in samples["prompts"]]
@@ -210,78 +209,65 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         scores = torch.clip(scores, -self.ppo_config.cliprange_reward, self.ppo_config.cliprange_reward)
 
-        chunk_size = self.ppo_config.chunk_size
-        scores = [scores[i : i + chunk_size] for i in range(0, len(scores), chunk_size)]
-
         tbar.close()
         lps_tbar = rank_0_tqdm(total=num_rollouts * dp_world, desc="Computing logprobs")
 
         stats = {"train/unnorm_scores": unnorm_scores, "train/scores": scores, "train/kl": [], "train/kl_penalty": []}
 
-        for (_, lengths, samples), scores in zip(inputs_samples, scores):
-            output_tokens = samples["token_ids"]
+        chunk_tokens = [samples["token_ids"] for _, _, samples in inputs_samples]
+        flattened_tokens = [x for chunk in chunk_tokens for x in chunk]
+        flattened_tokens = [torch.tensor(x) for x in flattened_tokens]
+        input_lengths = [length for _, lengths, _ in inputs_samples for length in lengths]
+        max_length = max(len(x) for x in flattened_tokens)
+        padded_tokens = [
+            torch.nn.functional.pad(x, (0, ceil(max_length / 8) * 8 - len(x)), value=self.tokenizer.pad_token_id)
+            for x in flattened_tokens
+        ]
+        all_tokens = torch.stack(padded_tokens, dim=0).to(device)
+        attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
+        logprobs_and_values = self.model.infer_logprobs_and_values(all_tokens, attention_mask)
+        logprobs_and_values = tree_map(lambda x: x.cpu(), logprobs_and_values)
 
-            max_length = max(len(x) for x in output_tokens)
+        query_responses = [(t[:l], t[l:]) for t, l in zip(flattened_tokens, input_lengths)]
+        query_tensors, response_tensors = zip(*query_responses)
 
-            output_tokens = [
-                x + [self.tokenizer.pad_token_id] * ((ceil(max_length / 8) * 8) - len(x)) for x in output_tokens
-            ]
+        logprobs, ref_logprobs, values = (
+            logprobs_and_values["logprobs"],
+            logprobs_and_values["ref_logprobs"],
+            logprobs_and_values["values"],
+        )
 
-            all_tokens = torch.tensor(output_tokens, device=device)
-            attention_mask = all_tokens.ne(self.tokenizer.pad_token_id).long().to(device)
+        attention_mask = attention_mask.cpu()
+        log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
+        for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
+            query_tensors, response_tensors, logprobs, values, log_ratio, scores, input_lengths, attention_mask
+        ):
+            response_end = mask[start:].sum()
+            end = start + response_end
+            rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
+            rewards[-1] += score.cpu()
 
-            model_output = self.model.infer_logprobs_and_values(all_tokens, attention_mask)
+            assert (
+                vs[:-1][start:end].shape[0] == rewards.shape[0]
+            ), f"{vs[start:end].shape} != {rewards.shape} {kl_penalty[start:end].shape=} {values.shape=} {start=} {end=}"
 
-            # Model output is None on intermediate pipeline stages
-            if model_output is None:
-                continue
-
-            logprobs, ref_logprobs, values = (
-                model_output["logprobs"],
-                model_output["ref_logprobs"],
-                model_output["values"],
+            ppo_rl_elements.append(
+                PPORLElement(
+                    query_tensor=query_tensor,
+                    response_tensor=response_tensor[: response_end + 1],
+                    logprobs=logps[start:end],
+                    values=vs[:-1][start:end],
+                    rewards=rewards,
+                )
             )
 
-            query_responses = [(t[:l], t[l:]) for t, l in zip(output_tokens, lengths)]
-            query_tokens, response_tokens = zip(*query_responses)
+            ratio = kl_penalty[start:end]
+            kl = ratio.exp() - 1 - ratio
+            stats["train/kl_penalty"].append(self.kl_ctl.value * -ratio.mean(dim=0, keepdim=True))
+            stats["train/kl"].append(kl.mean(dim=0, keepdim=True))
 
-            query_tensors = [torch.tensor(t, device="cpu") for t in query_tokens]
-            response_tensors = [torch.tensor(t, device="cpu") for t in response_tokens]
-            logprobs = logprobs.cpu()
-            ref_logprobs = ref_logprobs.cpu()
-
-            masks = attention_mask.cpu()
-            log_ratio = (logprobs - ref_logprobs) * masks[:, :-1]
-
-            for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
-                query_tensors, response_tensors, logprobs, values, log_ratio, scores, lengths, masks
-            ):
-                response_end = mask[start:].sum()
-                end = start + response_end
-                rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
-                rewards[-1] += score.cpu()
-
-                assert (
-                    vs[:-1][start:end].shape[0] == rewards.shape[0]
-                ), f"{vs[start:end].shape} != {rewards.shape} {kl_penalty[start:end].shape=} {values.shape=} {start=} {end=}"
-
-                ppo_rl_elements.append(
-                    PPORLElement(
-                        query_tensor=query_tensor,
-                        response_tensor=response_tensor[: response_end + 1],
-                        logprobs=logps[start:end],
-                        values=vs[:-1][start:end],
-                        rewards=rewards,
-                    )
-                )
-
-                ratio = kl_penalty[start:end]
-                kl = ratio.exp() - 1 - ratio
-                stats["train/kl_penalty"].append(self.kl_ctl.value * -ratio.mean(dim=0, keepdim=True))
-                stats["train/kl"].append(kl.mean(dim=0, keepdim=True))
-
-            if torch.distributed.get_rank() == 0:
-                lps_tbar.update(len(query_tensors) * dp_world)
+        if torch.distributed.get_rank() == 0:
+            lps_tbar.update(len(query_tensors) * dp_world)
 
         for k, v in stats.items():
             v = torch.cat(v).cuda() if isinstance(v, list) else v.cuda()
@@ -379,8 +365,8 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         rank_batch_size = self.batch_size // dp_world
         total_batches = self.config.train.epochs * (self.train_samples // self.batch_size)
-        total_batches = min(total_batches, self.config.train.total_steps)
 
+        total_batches = min(total_batches, self.config.train.total_steps)
         train_tbar = rank_0_tqdm(desc="Training", total=total_batches)
 
         metrics = None

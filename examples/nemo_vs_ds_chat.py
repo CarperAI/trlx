@@ -85,9 +85,9 @@ def main(hparams={}):
         nemo_config.trainer.num_nodes = 4
         nemo_config.trainer.devices = 8
         nemo_config.model.tensor_model_parallel_size = 8
-        batch_size = 16
-        mini_batch_size = 2
-        chunk_size = 8
+        batch_size = 64
+        mini_batch_size = 4
+        chunk_size = 64
     elif cfg_name == "66B":
         nemo_config = default_nemo_1_3b_config()
         nemo_config.trainer.num_nodes = 4
@@ -99,9 +99,9 @@ def main(hparams={}):
         nemo_config.model.num_attention_heads = 72
 
         nemo_config.model.tensor_model_parallel_size = 8
-        batch_size = 16
-        mini_batch_size = 1
-        chunk_size = 4
+        batch_size = 64
+        mini_batch_size = 2
+        chunk_size = 64
     else:
         raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
 
@@ -137,9 +137,9 @@ def main(hparams={}):
         scheduler=dict(
             name="CosineAnnealing",
         ),
-        model=dict(num_layers_unfrozen=-1),
+        model=dict(num_layers_unfrozen=32),
         method=dict(
-            num_rollouts=128,
+            num_rollouts=chunk_size,
             init_kl_coef=0.05,
             scale_reward="ref",
             vf_coef=1,
@@ -184,6 +184,7 @@ def main(hparams={}):
     global_batch_size = config.train.batch_size * dp_world_size
     config.train.total_steps = len(dataset) // global_batch_size
 
+    print(f"Total steps: {config.train.total_steps=} {len(dataset)=} {global_batch_size=}")
     trlx.train(
         reward_fn=reward_fn,
         prompts=dataset["prompt"],
