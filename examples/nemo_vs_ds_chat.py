@@ -82,15 +82,15 @@ def main(hparams={}):
         nemo_config.model.ffn_hidden_size = 28672
         nemo_config.model.num_attention_heads = 56
 
-        nemo_config.trainer.num_nodes = 4
+        nemo_config.trainer.num_nodes = 8
         nemo_config.trainer.devices = 8
         nemo_config.model.tensor_model_parallel_size = 8
-        batch_size = 64
+        batch_size = 32
         mini_batch_size = 4
-        chunk_size = 64
+        chunk_size = 32
     elif cfg_name == "66B":
         nemo_config = default_nemo_1_3b_config()
-        nemo_config.trainer.num_nodes = 4
+        nemo_config.trainer.num_nodes = 8
         nemo_config.trainer.devices = 8
         nemo_config.name = "megatron_gpt_66b"
         nemo_config.model.num_layers = 64
@@ -99,9 +99,9 @@ def main(hparams={}):
         nemo_config.model.num_attention_heads = 72
 
         nemo_config.model.tensor_model_parallel_size = 8
-        batch_size = 64
+        batch_size = 32
         mini_batch_size = 2
-        chunk_size = 64
+        chunk_size = 32
     else:
         raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
 
@@ -137,7 +137,7 @@ def main(hparams={}):
         scheduler=dict(
             name="CosineAnnealing",
         ),
-        model=dict(num_layers_unfrozen=32),
+        model=dict(num_layers_unfrozen=-1),
         method=dict(
             num_rollouts=chunk_size,
             init_kl_coef=0.05,
