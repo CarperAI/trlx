@@ -4,13 +4,13 @@ import uuid
 from time import time
 from typing import Callable, List
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-import numpy as np
 
 import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
