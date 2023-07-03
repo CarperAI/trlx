@@ -10,6 +10,7 @@ import transformers
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
+import numpy as np
 
 import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
@@ -327,7 +328,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     for score in all_scores
                 ]
                 # Pad 0 reward on the ends
-                all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-1)
+                all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-np.inf)
                 max_len = torch.tensor(all_scores.shape[1], dtype=torch.long, device=device)
 
                 stats["time/rollout_score"] = time() - rollout_score_time
@@ -343,7 +344,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
-            scores_mask = scores != -1
+            scores_mask = scores != -np.inf
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -374,7 +375,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(
                     dim=1
                 ).std()
-            all_scores_mean, all_scores_std = self.running_moments.update(scores, scores_mask)
+            all_scores_mean, all_scores_std = self.running_moments.update(torch.sum(scores * scores_mask, dim=1))
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
             stats["rollout_scores/running_mean"] = self.running_moments.mean.item()
