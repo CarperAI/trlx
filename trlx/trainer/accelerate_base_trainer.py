@@ -396,7 +396,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}
                     )
                 else:
-                    samples = self.generate(prompts["input_ids"], prompts["attention_mask"])
+                    chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
+                    samples = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)
 
                 # Repeat prompts, metadata num_return_sequence times
                 num_return_sequences = 1
