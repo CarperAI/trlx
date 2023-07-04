@@ -33,6 +33,7 @@ from nemo.collections.nlp.modules.common.megatron.module import (
     Float16Module,
     MegatronModule,
 )
+from nemo.collections.nlp.modules.common.megatron.attention import ParallelAttention
 from nemo.collections.nlp.modules.common.megatron.transformer import (
     ParallelTransformerLayer,
 )
@@ -57,6 +58,11 @@ from trlx.utils.modeling import logprobs_of_labels, whiten
 # Track a per dp rank RNG to sample different rollouts
 # per dp rank
 _PER_DP_RANK_RNG = "per-data-parallel-rank-rng"
+
+
+def patch_attention_for_llama(m):
+    if isinstance(m, ParallelAttention):
+        m.megatron_legacy = True
 
 
 class ParallelLinear(nn.Module):
@@ -206,9 +212,13 @@ class RefLMHeads(MegatronModule):
             self.reference_model_offloaded = True
 
         self.other_heads = other_heads
-
-        if hasattr(language_model, "word_embeddings"):
-            self.word_embeddings = language_model.word_embeddings
+        if hasattr(language_model, "output_layer"):
+            self.output_layer = language_model.output_layer
+            self.word_embeddings = self.output_layer.weight
+        else:
+            if hasattr(language_model, "word_embeddings"):
+                self.word_embeddings = language_model.word_embeddings
+            self.output_layer = None
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
@@ -220,6 +230,16 @@ class RefLMHeads(MegatronModule):
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
         self.language_model.load_state_dict(lm_state_dict, strict=strict)
+
+        if "output_layer.weight" in lm_state_dict:
+            dtype = lm_state_dict["output_layer.weight"].dtype
+            device = self.language_model.output_layer.weight.device
+            params = torch.nn.Parameter(
+                lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True
+            )
+            self.language_model.output_layer.weight = params
+            print("Loaded output_layer.weight from lm_state_dict")
+
         if self.build_reference_model:
             for p in self.language_model.parameters():
                 if p.requires_grad:
@@ -258,6 +278,11 @@ class RefLMHeads(MegatronModule):
         run_value_head=False,
         **kwargs,
     ):
+        if self.output_layer is not None:
+            logit_weights = self.language_model.output_layer.weight
+        else:
+            logit_weights = self._lm.word_embeddings_weight()
+
         if run_policy_model:
             self.offload_reference_model()
 
@@ -265,7 +290,7 @@ class RefLMHeads(MegatronModule):
             logits = post_language_model_processing(
                 lm_output,
                 labels=None,
-                logit_weights=self._lm.word_embeddings_weight(),
+                logit_weights=logit_weights,
                 get_key_value=get_key_value,
                 parallel_output=False,  # self.language_model.parallel_output,
                 forward_method_parallel_output=forward_method_parallel_output,
@@ -293,7 +318,7 @@ class RefLMHeads(MegatronModule):
             ref_logits = post_language_model_processing(
                 ref_lm_output,
                 labels=None,
-                logit_weights=self._lm.word_embeddings_weight(),
+                logit_weights=logit_weights,
                 get_key_value=get_key_value,
                 parallel_output=False,  # self.reference_model.model.parallel_output,
                 forward_method_parallel_output=forward_method_parallel_output,
@@ -491,7 +516,7 @@ class PPOGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
@@ -525,6 +550,9 @@ class PPOGPT(MegatronGPTModel):
                 p.requires_grad_(False)
             gpt.language_model.apply(freeze_layers)
 
+        if self.cfg.get("megatron_legacy", False):
+            print("LEGACY QKV")
+            gpt.apply(patch_attention_for_llama)
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
@@ -681,17 +709,18 @@ class PPOGPT(MegatronGPTModel):
         ]
 
         # handle asynchronous grad reduction
+        custom_sync_context_handler = None
+        custom_grad_sync_func = None
+        custom_param_sync_func = None
         if self.with_distributed_adam:
             if self.megatron_amp_o2:
                 # copy grads to main grad
-                def custom_sync_context_handler():
-                    return self._optimizer.no_sync(greedy_grad_copy=True)
-
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=True)
             else:
                 # keep grad tensors around
-                def custom_sync_context_handler():
-                    return self._optimizer.no_sync(greedy_grad_copy=False)
-
+                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=False)
+            custom_grad_sync_func = self.reduce_overlap_gradients
+            custom_param_sync_func = self.sync_overlap_parameters
         else:
             if self.megatron_amp_o2 and not self.cfg.get("sequence_parallel", False):
                 custom_sync_context_handler = self._optimizer.no_sync
@@ -714,6 +743,8 @@ class PPOGPT(MegatronGPTModel):
             dtype=self.autocast_dtype,
             grad_scaler=self.trainer.precision_plugin.scaler if self.cfg.precision == 16 else None,
             custom_sync_context_handler=custom_sync_context_handler,
+            custom_grad_sync_func=custom_grad_sync_func,
+            custom_param_sync_func=custom_param_sync_func,
             sequence_parallel_enabled=self.cfg.get("sequence_parallel", False),
             sync_batch_comm=self.cfg.get("sync_batch_comm", False),
             num_micro_batches_with_partial_activation_checkpoints=self.cfg.get(
@@ -742,6 +773,7 @@ class PPOGPT(MegatronGPTModel):
             # reduced
             if not parallel_state.is_pipeline_first_stage():
                 self.reduce_overlap_gradients()
+            self._optimizer._finish_bucket_grad_sync()
         elif self.megatron_amp_o2:
             # when using pipeline parallelism grads must be all-reduced after the pipeline (not asynchronously)
             if self.cfg.get("pipeline_model_parallel_size", 1) > 1 or self.cfg.get("sequence_parallel", False):
@@ -752,7 +784,7 @@ class PPOGPT(MegatronGPTModel):
             # so we all-reduce gradients after the pipeline
             self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
 
-        if self.cfg.get("pipeline_model_parallel_size", 1) > 1:
+        if self.cfg.get("pipeline_model_parallel_size", 1) > 1 and self.cfg.get("share_embeddings_and_output_weights", True):
             # when using pipeline parallelism the first and last stage must keep embeddings in sync
             self.allreduce_first_last_embeddings()
 
@@ -990,7 +1022,7 @@ class PPOGPT(MegatronGPTModel):
 
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
-                values_pred = vs[:, :-1][:, start:end]
+                values_pred = vs[:, start:end]
 
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,
