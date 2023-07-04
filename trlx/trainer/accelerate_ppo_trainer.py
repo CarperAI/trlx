@@ -238,7 +238,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
-        prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=True)
+        prompt_dataloader = pipeline.create_loader(self.config.method.chunk_size, shuffle=False)
         prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
         self.prompt_iterator = infinite_dataloader(prompt_dataloader)
 
