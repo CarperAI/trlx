@@ -110,6 +110,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             elif config.train.tracker == "tensorboard":
                 # flatten config for tensorboard, split list in hparams into flatten config
+                if config_dict["model"].get("peft_config", None):  # tensorboard does not support peft config type
+                    config_dict["model"]["peft_config"] = str(config_dict["model"]["peft_config"])
                 config_dict_flat = flatten_dict(config_dict)
                 config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
                 config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
