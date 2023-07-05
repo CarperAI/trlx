@@ -361,7 +361,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         print(self.model.generate(["heyy"], dict(max_length=20, min_length=0), dict(use_greedy=True)))
 
-        return
         _, schedulers = self.model.configure_optimizers()
         self.model._optimizer.zero_grad()
 
