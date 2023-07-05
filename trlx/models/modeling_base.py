@@ -336,6 +336,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
         if self.peft_type:
             # Save the heads, which are not part of the peft adapter
+            os.makedirs(args[0], exist_ok=True)
             save_path = os.path.join(args[0], "pytorch_model.bin")
             head_state_dict = self.state_dict(heads_only=True)
 
