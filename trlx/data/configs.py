@@ -205,6 +205,7 @@ class TrainConfig:
     seq_length: int
     epochs: int
     batch_size: int
+    gradient_accumulation_steps: int
 
     checkpoint_interval: int
     eval_interval: int

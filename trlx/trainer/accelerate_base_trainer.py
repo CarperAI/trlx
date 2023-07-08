@@ -57,6 +57,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.mb_count = 0
         self.accelerator = Accelerator(log_with=config.train.tracker, project_dir=config.train.logging_dir)
 
+        self.gradient_accumulation_steps = config.train.gradient_accumulation_steps
         if self.accelerator.state.deepspeed_plugin is not None:
             # by accelerate's default, arguments in `model.forward` would be casted to half
             if "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config:
@@ -88,8 +89,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
-
-        run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
+        if branch != 'unknown':
+            run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
+        else:
+            run_name = "/".join([script_name, model_name, num_gpus])
 
         if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
@@ -539,7 +542,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             loss, stats = self.loss(mb)
                             forward_time += time()
                             backward_time -= time()
-                            self.accelerator.backward(loss)
+                            self.accelerator.backward(loss / self.gradient_accumulation_steps)
                             backward_time += time()
                             stats_accum.append(stats)
 
@@ -547,12 +550,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     backward_time /= self.num_mb
                     # TODO(Dahoas): Best way to combine stats between mbs?
                     # How does accelerate do it?
-                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
 
-                    self.opt.step()
-                    self.opt.zero_grad()
-                    self.scheduler.step()
+                    stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
                     self.iter_count += 1
+
+                    if (
+                        self.iter_count % self.gradient_accumulation_steps == 0
+                        or self.iter_count >= self.total_steps
+                    ):
+                        self.opt.step()
+                        self.opt.zero_grad()
+                        self.scheduler.step()
 
                     if (
                         self.iter_count % self.config.train.checkpoint_interval == 0

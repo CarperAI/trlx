@@ -21,6 +21,7 @@ def default_ppo_config():
             epochs=100,
             total_steps=10000,
             batch_size=32,
+            gradient_accumulation_steps = 1,
             checkpoint_interval=10000,
             eval_interval=100,
             pipeline="PromptPipeline",
