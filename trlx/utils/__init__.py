@@ -1,3 +1,4 @@
+import importlib
 import math
 import os
 import random
@@ -13,6 +14,10 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
+
+
+def is_peft_available():
+    return importlib.util.find_spec("peft") is not None
 
 
 def print_rank_0(*message):

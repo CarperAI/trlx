@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, PretrainedConfig
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
@@ -38,7 +38,27 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return AutoModelForCausalLM.from_pretrained(config.model.model_path)
+        from_fn = AutoModelForCausalLM.from_pretrained
+        if issubclass(type(config.model.model_path), PretrainedConfig):
+            from_fn = AutoModelForCausalLM.from_config
+
+        model = from_fn(config.model.model_path)
+
+        if config.model.peft_config is not None:
+            # Initialize the peft adapter
+            import peft
+
+            peft_config = config.model.peft_config
+            if not isinstance(peft_config, peft.PeftConfig):
+                if isinstance(peft_config, dict):
+                    peft_config = peft.get_peft_config(peft_config)
+                else:
+                    raise ValueError("`peft_config` should be an instance of `peft.PeftConfig` or a dict.")
+            model = peft.get_peft_model(model, peft_config)
+            if self.accelerator.is_main_process:
+                model.print_trainable_parameters()
+
+        return model
 
     def loss(self, batch):
         if "labels" in batch:
