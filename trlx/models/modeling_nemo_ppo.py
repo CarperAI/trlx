@@ -29,11 +29,11 @@ from nemo.collections.nlp.models.language_modeling.megatron_base_model import (
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
+from nemo.collections.nlp.modules.common.megatron.attention import ParallelAttention
 from nemo.collections.nlp.modules.common.megatron.module import (
     Float16Module,
     MegatronModule,
 )
-from nemo.collections.nlp.modules.common.megatron.attention import ParallelAttention
 from nemo.collections.nlp.modules.common.megatron.transformer import (
     ParallelTransformerLayer,
 )
@@ -784,7 +784,9 @@ class PPOGPT(MegatronGPTModel):
             # so we all-reduce gradients after the pipeline
             self.allreduce_gradients()  # @sangkug we think this is causing memory to blow up (hurts perf)
 
-        if self.cfg.get("pipeline_model_parallel_size", 1) > 1 and self.cfg.get("share_embeddings_and_output_weights", True):
+        if self.cfg.get("pipeline_model_parallel_size", 1) > 1 and self.cfg.get(
+            "share_embeddings_and_output_weights", True
+        ):
             # when using pipeline parallelism the first and last stage must keep embeddings in sync
             self.allreduce_first_last_embeddings()
 
@@ -1023,7 +1025,7 @@ class PPOGPT(MegatronGPTModel):
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, start:end]
-
+                print(f"{start=}, {end=}")
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,
                     values=values_pred,

@@ -220,7 +220,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
         input_lengths = [length for _, lengths, _ in inputs_samples for length in lengths]
         max_length = max(len(x) for x in flattened_tokens)
         padded_tokens = [
-            torch.nn.functional.pad(x, (0, ceil(max_length / 8) * 8 - len(x)), value=self.tokenizer.pad_token_id)
+            torch.nn.functional.pad(x, (0, (ceil(max_length / 8) * 8) - len(x)), value=self.tokenizer.pad_token_id)
             for x in flattened_tokens
         ]
         all_tokens = torch.stack(padded_tokens, dim=0).to(device)
@@ -247,6 +247,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
             rewards = self.kl_ctl.value * -kl_penalty[start:end].cpu()
             rewards[-1] += score.cpu()
 
+            response_tensor = torch.nn.functional.pad(response_tensor, (0, 1), value=self.tokenizer.pad_token_id)
             assert (
                 vs[:-1][start:end].shape[0] == rewards.shape[0]
             ), f"{vs[start:end].shape} != {rewards.shape} {kl_penalty[start:end].shape=} {values.shape=} {start=} {end=}"
@@ -357,7 +358,6 @@ class NeMoPPOTrainer(BaseRLTrainer):
         self.trainer.strategy._lightning_module = self.model
         # self.model.save_pretrained(self.config.train.checkpoint_dir)
         # return
-
 
         print(self.model.generate(["heyy"], dict(max_length=20, min_length=0), dict(use_greedy=True)))
 
