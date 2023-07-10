@@ -435,9 +435,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     if type(rewards[0]) is torch.Tensor:
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
                     elif type(rewards[0]) is list:
-                        rewards = torch.tensor([sum(reward) for reward in rewards])
+                        rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
                     else:
-                        rewards = torch.tensor(rewards)
+                        rewards = torch.tensor(rewards, dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):
