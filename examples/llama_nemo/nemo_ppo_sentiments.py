@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from transformers import DistilBertForSequenceClassification, pipeline
 
 import trlx
+from trlx.data.configs import OptimizerConfig
 from trlx.data.default_configs import (
     TRLConfig,
     default_nemo_1_3b_config,
@@ -38,7 +39,7 @@ def main(hparams={}):
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
     cfg_name = "llama_30b"
     nemo_config = load_nemo_config()
-    nemo_config = OmegaConf.load("/fsx/home-uwu/llama-nemo-7b/megatron_llama_7b.yaml")
+    nemo_config = OmegaConf.load("/fsx/home-uwu/llama-nemo-30b/megatron_llama_30b.yaml")
     nemo_config.trainer.devices = 8
     nemo_config.trainer.num_nodes = 4
     config = default_config.evolve(
@@ -51,32 +52,35 @@ def main(hparams={}):
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                pretrained_model="/fsx/home-uwu/llama-nemo-7b",
+                pretrained_model="/fsx/home-uwu/llama-nemo-30b",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
-            seed=2024,
+            seed=2023,
             project_name="trlxnemo",
             tags=["llama", "ppo", "sentiments", cfg_name],
         ),
         optimizer=dict(
             name="distributed_fused_adam",
-            kwargs=dict(lr=1.001e-5, weight_decay=1.0e-6, eps=1.0e-8, betas=(0.9, 0.95)),
+            kwargs=dict(lr=1.001e-5, weight_decay=0.1, eps=1.0e-8, betas=(0.9, 0.95)),
         ),
         scheduler=dict(name="CosineAnnealing"),
-        model=dict(num_layers_unfrozen=2),
+        model=dict(num_layers_unfrozen=8),
         method=dict(
-            num_rollouts=128,
+            num_rollouts=256,
             init_kl_coef=0.05,
             vf_coef=1,
             scale_reward="whiten",
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
-            chunk_size=32,
-            ppo_epochs=4,
+            chunk_size=64,
+            ppo_epochs=1,
         ),
     )
     config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=1.0e-5)
-
+    """config.optimizer = OptimizerConfig(
+            name="sgd",
+            kwargs=dict(lr=1.001e-5),
+    )"""
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8
 

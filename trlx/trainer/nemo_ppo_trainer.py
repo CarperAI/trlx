@@ -239,8 +239,16 @@ class NeMoPPOTrainer(BaseRLTrainer):
 
         attention_mask = attention_mask.cpu()
         log_ratio = (logprobs - ref_logprobs) * attention_mask[:, :-1]
-        for query_tensor, response_tensor, logps, vs, kl_penalty, score, start, mask in zip(
-            query_tensors, response_tensors, logprobs, values, log_ratio, scores, input_lengths, attention_mask
+        for query_tensor, response_tensor, logps, ref_logps, vs, kl_penalty, score, start, mask in zip(
+            query_tensors,
+            response_tensors,
+            logprobs,
+            ref_logprobs,
+            values,
+            log_ratio,
+            scores,
+            input_lengths,
+            attention_mask,
         ):
             response_end = mask[start:].sum()
             end = start + response_end
@@ -256,7 +264,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 PPORLElement(
                     query_tensor=query_tensor,
                     response_tensor=response_tensor[: response_end + 1],
-                    logprobs=logps[start:end],
+                    logprobs=ref_logps[start:end],
                     values=vs[:-1][start:end],
                     rewards=rewards,
                 )

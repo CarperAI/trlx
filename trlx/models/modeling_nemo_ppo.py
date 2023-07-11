@@ -213,7 +213,7 @@ class RefLMHeads(MegatronModule):
 
         self.other_heads = other_heads
         if hasattr(language_model, "output_layer"):
-            self.output_layer = language_model.output_layer
+            self.output_layer = self._lm.language_model.output_layer
             self.word_embeddings = self.output_layer.weight
         else:
             if hasattr(language_model, "word_embeddings"):
@@ -516,7 +516,7 @@ class PPOGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, pre_process: bool, post_process: bool):
@@ -551,7 +551,6 @@ class PPOGPT(MegatronGPTModel):
             gpt.language_model.apply(freeze_layers)
 
         if self.cfg.get("megatron_legacy", False):
-            print("LEGACY QKV")
             gpt.apply(patch_attention_for_llama)
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
         if post_process:
