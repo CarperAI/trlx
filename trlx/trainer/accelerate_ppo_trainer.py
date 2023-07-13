@@ -228,8 +228,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
 
-        self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
+        self.n_inner_epochs = self.config.method.ppo_epochs
+        self.total_steps = self.config.train.epochs * self.n_inner_epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):

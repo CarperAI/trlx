@@ -542,21 +542,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # For each epoch
         for _ in range(self.config.train.epochs):
-            # For each batch
-            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
-                # For each update per batch
-                for _ in range(self.n_updates_per_batch):
-                    # Note that whereas standard policy gradient methods perform one
-                    # gradient update per batch, PPO for example commonly performs
-                    # multiple gradient updates on the same batch of data.
-                    # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = 0
-                    backward_time = 0
+            # For each ppo epoch
+            for _ in range(self.n_inner_epochs):
+                # Note that whereas standard policy gradient methods perform one
+                # gradient update per batch, PPO for example commonly performs
+                # multiple epochs of gradient updates on the same batch of data.
+                # https://arxiv.org/pdf/1707.06347.pdf
+                # For each batch
+                for minibatch in MiniBatchIterator(list(self.train_dataloader), self.mb_size, self.num_mb):
+                    forward_time = 0.0
+                    backward_time = 0.0
                     stats_accum = []
-                    for mb in mbs:
+                    for microbatch in minibatch:
                         with self._accumulate():
                             forward_time -= time()
-                            loss, stats = self.loss(mb)
+                            loss, stats = self.loss(microbatch)
                             forward_time += time()
                             backward_time -= time()
                             self.accelerator.backward(loss)
