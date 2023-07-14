@@ -115,9 +115,6 @@ class PPOConfig(MethodConfig):
 
     :param num_train_sequences: top_k of n sampled sequences from prompt
     :type num_train_sequences: int
-
-    :param mix_sft: if this is True, then SFT gradients will be mixed into PPO traininig
-    :type mix_sft: bool
     """
 
     ppo_epochs: int
@@ -138,6 +135,7 @@ class PPOConfig(MethodConfig):
     gen_kwargs: dict
     gen_experience_kwargs: Optional[dict] = None
     num_train_sequences: int = 1
+    dist_ref_model: bool = False
 
     def get_advantages_and_returns(
         self,

@@ -203,23 +203,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
         prompts: List[torch.LongTensor],
         samples: List[torch.LongTensor],
         prompt_sizes: torch.LongTensor = None,
-        append_eos_token: bool = False,
-    ) -> Tuple[List[str], List[str], List[str]]:
+        append_eos_token: bool = True,
+    ) -> Tuple[List[str], List[str], List[str], List[torch.LongTensor], List[torch.LongTensor], List[torch.LongTensor]]:
         """
-        Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
+        Decode tensor generations with stopping criteria into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and 
+        Note prompts maybe sompetimes be right padded, as well as samples
         """
         if prompt_sizes is None:
             # Assuming prompts were left-padded
             prompt_sizes = [prompts.shape[1]] * len(prompts)
 
         str_samples, str_prompts, str_outputs = [], [], []
+        tok_samples, tok_prompts, tok_outputs = [], [], []
         for prompt, sample, prompt_size in zip(prompts, samples, prompt_sizes):
             if self.config.model.model_arch_type == "seq2seq":
                 output_start_ix = 0
             else:
                 output_start_ix = prompt_size
 
+            # We must decode by skipping padding in the middle with skip_special_tokens
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
+            # Return the prompt tensor (with the exact padding) used to generate the sample
+            tok_prompt = prompt[:prompt_size].cpu()
+
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
             # Trim outputs up to `self.stop_sequences` if any are present
             if self.stop_sequences:
@@ -227,25 +233,63 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
+            
+            # Recover sequence of tokens corresponding to string
+            # NOTE: Cast to torch.long in the case the input is empty
+            tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0].long()
+            # Remove bos from tokenized output (if present)
+            if hasattr(self.tokenizer, "bos_token") and len(tok_output) > 0 and tok_output[0].item() == self.tokenizer.bos_token_id:
+                tok_output = tok_output[1:]
 
             # Recover the last <eos> if it was present in the original sample
             # or add one if it was trimmed with `self.stop_sequences`.
             # When a generation ended due to `max_new_tokens` exhaustion,
             # only then <pad> or <eos> token would not be present in the original sample at the end
+            # Note we append to both separately because encoding </s> does not result in tokenizer.eos_token_id
             if append_eos_token:
                 str_output += self.tokenizer.eos_token
+                tok_output = torch.cat([tok_output, torch.tensor(self.tokenizer.eos_token_id, dtype=torch.long).view((1,))])
+
+            '''if len(tok_output) > 91:
+                print("#####")
+                print("Sample: ", sample.shape)
+                print(sample)
+                print("output: ", tok_output.shape)
+                print(tok_output)
+                print(str_output)
+                print("prompt size: ", output_start_ix)
+                print("tok_prompt: ", tok_prompt)
+                print("tok prompt shape: ", tok_prompt.shape)
+                print("prompt: ", prompt)
+                print("str prompt: ", str_prompt)
+                print("prompt: ", prompt.shape)
+                exit()'''
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)
+            tok_prompts.append(tok_prompt)
+            tok_outputs.append(tok_output)
 
             if self.config.model.model_arch_type == "seq2seq":
                 sample = str_prompt + self.tokenizer.sep_token + str_output
+                tok_sample = torch.cat([tok_prompt, torch.tensor(self.tokenizer.sep_token_id, dtype=torch.long).view((1,)), tok_output])
             else:
                 sample = str_prompt + str_output
+                tok_sample = torch.cat([tok_prompt, tok_output])
 
             str_samples.append(sample)
+            tok_samples.append(tok_sample)
 
-        return str_samples, str_prompts, str_outputs
+            if tok_sample.dtype == torch.float32:
+                print("tok_sample ", tok_sample.dtype)
+                print(tok_sample)
+                print("tok prompt: ", tok_prompt.dtype)
+                print(tok_prompt)
+                print("tok output: ", tok_output.dtype)
+                print(tok_output)
+                exit()
+
+        return str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs
 
     def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
@@ -421,9 +465,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         pad_index=self.tokenizer.pad_token_id,
                     )
                 )
-                all_samples.extend(samples.tolist())
-                all_prompts.extend(prompts.tolist())
-                all_prompt_sizes.extend(prompt_sizes.tolist())
+                all_samples.extend(samples)
+                all_prompts.extend(prompts)
+                all_prompt_sizes.extend(prompt_sizes)
 
                 metadata = gather_dict(metadata, self.accelerator.gradient_state)
                 all_metadata.append(metadata)
@@ -439,7 +483,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             stats["time/generate"] = time() - generate_time
 
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
+                str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
 
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
@@ -453,12 +497,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.reward_fn:
                     logger.info("Computing rewards")
                     rewards = self.reward_fn(
-                        samples=str_samples,
-                        prompts=str_prompts,
-                        outputs=str_outputs,
-                        model_tok=self.tokenizer,
-                        **metadata,
-                    )
+                                samples=str_samples, 
+                                prompts=str_prompts, 
+                                outputs=str_outputs, 
+                                tok_samples=tok_samples,
+                                tok_prompts=tok_prompts,
+                                tok_outputs=tok_outputs,
+                                model_tok=self.tokenizer, **metadata)
+                    # Remove kl terms from reward
+                    if hasattr(self, "dist_ref_model") and self.dist_ref_model:
+                        rewards = [[r[0] for r in reward] for reward in rewards]
                     if type(rewards[0]) is torch.Tensor:
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
                     elif type(rewards[0]) is list:
@@ -477,12 +525,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(
-                        samples=str_samples,
-                        prompts=str_prompts,
-                        outputs=str_outputs,
-                        model_tok=self.tokenizer,
-                        **metadata,
-                    )
+                        samples=str_samples, 
+                        prompts=str_prompts, 
+                        outputs=str_outputs, 
+                        tok_samples=tok_samples,
+                        tok_prompts=tok_prompts,
+                        tok_outputs=tok_outputs,
+                        model_tok=self.tokenizer, **metadata)
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
