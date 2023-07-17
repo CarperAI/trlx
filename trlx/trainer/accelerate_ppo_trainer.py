@@ -360,9 +360,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 all_ref_logprobs = None
                 scores = scores.squeeze(-1)
+            scores_mask = scores != -np.inf
+
+            # Remove infs so mask can be used
+            if self.config.method.cliprange_reward:
+                scores = torch.clip(scores, -self.config.method.cliprange_reward, self.config.method.cliprange_reward)
 
             # Best-of-N Sampling. 
-            scores_mask = scores != -np.inf
             train_indices = self.get_topk_indices(input_tensor=scores_mask*scores, window_size=num_return_sequences, k=self.config.method.num_train_sequences, device=device)
             scores = scores[train_indices]
             scores_mask = scores_mask[train_indices]
@@ -370,9 +374,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             prompt_tensors = prompt_tensors[train_indices]
             if all_ref_logprobs is not None:
                 all_ref_logprobs = all_ref_logprobs[train_indices]
-
-            if self.config.method.cliprange_reward:
-                scores = torch.clip(scores, -self.config.method.cliprange_reward, self.config.method.cliprange_reward)
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
