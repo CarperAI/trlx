@@ -305,7 +305,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     samples=all_str_samples,
                     prompts=all_str_prompts,
                     outputs=all_str_outputs,
-                    model_tok=self.tokenizer,
+                    tokenizer=self.tokenizer,
                     **metadata,
                 )
                 all_scores = [

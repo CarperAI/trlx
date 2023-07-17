@@ -434,9 +434,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         model_tok=self.tokenizer,
                         **metadata,
                     )
-                    if type(rewards[0]) is torch.Tensor:
+                    if isinstance(rewards[0], torch.Tensor):
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
-                    elif type(rewards[0]) is list:
+                    elif isinstance(rewards[0], list):
                         rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
                     else:
                         rewards = torch.tensor(rewards, dtype=float)

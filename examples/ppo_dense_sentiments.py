@@ -25,12 +25,6 @@ def get_negative_score(scores):
 def main(hparams={}):
     # Merge sweep config with default config if given
     config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-    config.method.cliprange_reward = False
-    config.method.gen_kwargs["max_new_tokens"] = 70
-    config.method.gen_kwargs["temperature"] = 0.3
-    config.train.total_steps = 20000
-    config.train.checkpoint_interval = 10000000
-    # config.method.init_kl_coef = 0
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
@@ -46,13 +40,10 @@ def main(hparams={}):
         device=device,
     )
 
-    def dense_reward_fn(samples: List[str], prompts: List[str], outputs: List[str], model_tok, **kwargs) -> List[float]:
+    def dense_reward_fn(samples: List[str], prompts: List[str], outputs: List[str], tokenizer, **kwargs) -> List[float]:
         # Reward positively for initially negative then positive review
-        # Reward functions should never receive padded text except for a singel EOS at the end
+        # Reward functions should never receive padded text except for a single EOS at the end
         # Reward function should return token rewards for just the response
-        # Note: To get trajectory length, the reward fn should not tokenize
-        # the samples but should instead separately tokenizer prompts and outputs and then combine them
-        # Also note outputs has a single EOS at end of each
         first_halves = [".".join(sample.split(".")[: len(sample.split(".")) // 2]) for sample in samples]
         negative_first_halves = list(map(get_negative_score, sentiment_fn(first_halves)))
         second_halves = [".".join(sample.split(".")[len(sample.split(".")) // 2 :]) for sample in samples]
@@ -60,9 +51,8 @@ def main(hparams={}):
         text_scores = [[f, s] for f, s in zip(negative_first_halves, positive_second_halves)]
         tok_scores = []
         for sample, prompt, response, text_score in zip(samples, prompts, outputs, text_scores):
-            toks = model_tok(response).input_ids
+            toks = tokenizer(response).input_ids
             tok_score = [0] * len(toks)
-            # Hacky way of assigning intermediate score
             tok_score[len(tok_score) // 2] = text_score[0]
             tok_score[-1] = text_score[1]
             tok_scores.append(tok_score)
