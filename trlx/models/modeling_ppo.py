@@ -334,9 +334,13 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
             forward_kwargs.pop("input_ids", None)
             forward_kwargs.pop("inputs_embeds", None)
             forward_kwargs["return_dict"] = False
-            value = self.v_head(outputs.hidden_states[-(self.num_value_layers_unfrozen+1)], output_shape=output_shape, **forward_kwargs)[0].squeeze(-1)
+            value = self.v_head(
+                outputs.hidden_states[-(self.num_value_layers_unfrozen + 1)],
+                output_shape=output_shape,
+                **forward_kwargs,
+            )[0].squeeze(-1)
         else:
-            value = self.v_head(outputs.hidden_states[-(self.num_value_layers_unfrozen+1)]).squeeze(-1)
+            value = self.v_head(outputs.hidden_states[-(self.num_value_layers_unfrozen + 1)]).squeeze(-1)
 
         if not return_dict:
             outputs = (outputs.logits,) + outputs[1:] + (value,)
