@@ -417,6 +417,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask_chunks = torch.chunk(attention_mask, chunks=self.config.method.gen_chunk_size, dim=0)
                 position_ids_chunks = torch.chunk(position_ids, chunks=self.config.method.gen_chunk_size, dim=0)
                 for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(all_tokens_chunks, attention_mask_chunks, position_ids_chunks):
+                    all_tokens_chunk = all_tokens_chunk.to(device)
+                    attention_mask_chunk = attention_mask_chunk.to(device)
+                    position_ids_chunk = position_ids_chunk.to(device)
                     with torch.no_grad():
                         logits, *_, values = self.model(
                             all_tokens_chunk,
