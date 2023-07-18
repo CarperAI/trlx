@@ -3,12 +3,11 @@ import os
 import uuid
 from time import time
 from typing import Callable, List
-from copy import copy
 
 import torch
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
 import transformers
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -280,10 +279,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             rollout_generate_time = time()
 
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
-            samples = self.generate(batch["input_ids"], batch["attention_mask"], chunk_size=self.config.method.chunk_size, **self.generate_experience_kwargs)
+            samples = self.generate(
+                batch["input_ids"],
+                batch["attention_mask"],
+                chunk_size=self.config.method.chunk_size,
+                **self.generate_experience_kwargs,
+            )
             stats["time/rollout_generate"] = time() - rollout_generate_time
 
-            num_return_sequences = self.generate_experience_kwargs["num_return_sequences"] if self.generate_experience_kwargs.get("num_return_sequences") is not None else 1
+            num_return_sequences = (
+                self.generate_experience_kwargs["num_return_sequences"]
+                if self.generate_experience_kwargs.get("num_return_sequences") is not None
+                else 1
+            )
             prompt_tensors = batch.input_ids.repeat_interleave(num_return_sequences, dim=0)
             device = samples.device
 
@@ -297,7 +305,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             gathered_samples = self.accelerator.gather(padded_samples)
             gathered_prompts = self.accelerator.gather(padded_prompts)
             gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
-            metadata = gather_dict({k: self.repeat_interleave(v, num_return_sequences) for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
+            metadata = gather_dict(
+                {
+                    k: self.repeat_interleave(v, num_return_sequences)
+                    for k, v in batch.items()
+                    if k != "input_ids" and k != "attention_mask"
+                }
+            )
 
             if self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
@@ -307,8 +321,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 rollout_score_time = time()
                 # reward_fn should return list of rewards at each token per sample
                 # NOTE: all_scores[0][i] is the reward due to token (action) i in prompt + response (b/c of how kl is computed)
-                all_scores = self.reward_fn(samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, model_tok=self.tokenizer, **metadata)
-                all_scores = [torch.tensor(score, dtype=torch.float, device=device).view(-1,) for score in all_scores]
+                all_scores = self.reward_fn(
+                    samples=all_str_samples,
+                    prompts=all_str_prompts,
+                    outputs=all_str_outputs,
+                    model_tok=self.tokenizer,
+                    **metadata,
+                )
+                all_scores = [
+                    torch.tensor(score, dtype=torch.float, device=device).view(
+                        -1,
+                    )
+                    for score in all_scores
+                ]
                 # Pad 0 reward on the ends
                 all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-1)
                 max_len = torch.tensor(all_scores.shape[1], dtype=torch.long, device=device)
@@ -326,9 +351,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
-            # Best-of-N Sampling.
+            # Best-of-N Sampling.
             scores_mask = scores != -1
-            train_indices = self.get_topk_indices(input_tensor=scores_mask*scores, window_size=num_return_sequences, k=self.config.method.num_train_sequences, device=device)
+            train_indices = self.get_topk_indices(
+                input_tensor=scores_mask * scores,
+                window_size=num_return_sequences,
+                k=self.config.method.num_train_sequences,
+                device=device,
+            )
             scores = scores[train_indices]
             scores_mask = scores_mask[train_indices]
             samples = samples[train_indices]
@@ -360,7 +390,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
-                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(dim=1).std()
+                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(
+                    dim=1
+                ).std()
             all_scores_mean, all_scores_std = self.running_moments.update(scores, scores_mask)
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
@@ -416,7 +448,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 all_tokens_chunks = torch.chunk(all_tokens, chunks=self.config.method.gen_chunk_size, dim=0)
                 attention_mask_chunks = torch.chunk(attention_mask, chunks=self.config.method.gen_chunk_size, dim=0)
                 position_ids_chunks = torch.chunk(position_ids, chunks=self.config.method.gen_chunk_size, dim=0)
-                for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(all_tokens_chunks, attention_mask_chunks, position_ids_chunks):
+                for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(
+                    all_tokens_chunks, attention_mask_chunks, position_ids_chunks
+                ):
                     all_tokens_chunk = all_tokens_chunk.to(device)
                     attention_mask_chunk = attention_mask_chunk.to(device)
                     position_ids_chunk = position_ids_chunk.to(device)
@@ -451,19 +485,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         # NOTE: logprob[i] is (log)prob at which all_token[i+1] was sampled
                         logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens_chunk[:, 1:])
                         ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens_chunk[:, 1:])
-                    
+
                     values_chunks.append(values.cpu())
                     logits_chunks.append(logits.cpu())
                     ref_logits_chunks.append(ref_logits.cpu())
                     log_probs_chunks.append(logprobs.cpu())
                     ref_logprobs_chunks.append(ref_logprobs.cpu())
-                
+
             values = torch.cat(values_chunks, dim=0)
             logits = torch.cat(logits_chunks, dim=0)
             ref_logits = torch.cat(ref_logits_chunks, dim=0)
             logprobs = torch.cat(log_probs_chunks, dim=0)
             ref_logprobs = torch.cat(ref_logprobs_chunks, dim=0)
-            
+
             n_samples: int = samples.shape[0]
 
             # Estimate the KL divergence between the model and reference model
@@ -515,7 +549,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     score_right_padding = torch.sum(scores_mask[sample_idx])
                     score = score[:score_right_padding].cpu()
                     p_score = torch.zeros_like(rewards)
-                    p_score[:score.shape[0]] += score
+                    p_score[: score.shape[0]] += score
                     rewards += p_score
 
                 ppo_rl_elements.append(
@@ -549,7 +583,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
-    
+
     @staticmethod
     def get_topk_indices(input_tensor, window_size: int, k: int, device):
         # Sum the scores along dim 1
@@ -559,5 +593,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Find the topk values and indices along the unfolded dimension
         _, indices = torch.topk(unfolded, k, dim=2)
         # Adjust indices to be relative to original tensor
-        indices = indices.squeeze(1) +  torch.arange(0, input_tensor.size(0) - window_size + 1, window_size).to(device).unsqueeze(1)
+        indices = indices.squeeze(1) + torch.arange(0, input_tensor.size(0) - window_size + 1, window_size).to(
+            device
+        ).unsqueeze(1)
         return indices.reshape(-1)

@@ -7,7 +7,7 @@ from typing import List
 
 import torch
 from datasets import load_dataset
-from transformers import pipeline, AutoTokenizer
+from transformers import pipeline
 
 import trlx
 from trlx.data.default_configs import TRLConfig, default_ppo_config
@@ -16,6 +16,7 @@ from trlx.data.default_configs import TRLConfig, default_ppo_config
 def get_positive_score(scores):
     "Extract value associated with a positive sentiment from pipeline's output"
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
+
 
 def get_negative_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["NEGATIVE"]
@@ -29,7 +30,7 @@ def main(hparams={}):
     config.method.gen_kwargs["temperature"] = 0.3
     config.train.total_steps = 20000
     config.train.checkpoint_interval = 10000000
-    #config.method.init_kl_coef = 0
+    # config.method.init_kl_coef = 0
 
     if torch.cuda.is_available():
         device = int(os.environ.get("LOCAL_RANK", 0))
@@ -49,11 +50,9 @@ def main(hparams={}):
         # Reward positively for initially negative then positive review
         # Reward functions should never receive padded text except for a singel EOS at the end
         # Reward function should return token rewards for just the response
-        # Note: To get trajectory length, the reward fn should not tokenize the samples but should instead separately tokenizer prompts and outputs and then combine them
-        # Also note outputs has a single EOS at end of each
-        first_halves = [".".join(sample.split(".")[:len(sample.split(".")) // 2]) for sample in samples]
+        first_halves = [".".join(sample.split(".")[: len(sample.split(".")) // 2]) for sample in samples]
         negative_first_halves = list(map(get_negative_score, sentiment_fn(first_halves)))
-        second_halves = [".".join(sample.split(".")[len(sample.split(".")) // 2:]) for sample in samples]
+        second_halves = [".".join(sample.split(".")[len(sample.split(".")) // 2 :]) for sample in samples]
         positive_second_halves = list(map(get_positive_score, sentiment_fn(second_halves)))
         text_scores = [[f, s] for f, s in zip(negative_first_halves, positive_second_halves)]
         tok_scores = []

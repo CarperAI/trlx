@@ -4,9 +4,9 @@ import os
 import sys
 from abc import abstractmethod
 from contextlib import contextmanager
+from copy import copy
 from time import time
 from typing import Dict, List, Optional, Tuple
-from copy import copy
 
 import ray
 import torch
@@ -221,13 +221,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
             # Trim outputs up to `self.stop_sequences` if any are present
-            trimmed = False
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
-                        trimmed = True
 
             # Recover the last <eos> if it was present in the original sample
             # or add one if it was trimmed with `self.stop_sequences`.
@@ -250,18 +248,20 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
-        # Decide into chunk sizes and generate saples
+        # Decide into chunk sizes and generate saples
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
 
         generate_kwargs = copy(self.generate_kwargs)
         generate_kwargs.update(kwargs)
-        
+
         # Update max_new_tokens to respect max_seq_length
         prompt_length = input_ids.shape[1]
         if generate_kwargs.get("max_new_tokens") is not None:
-            generate_kwargs["max_new_tokens"] = min(max(self.max_length - prompt_length, 0), generate_kwargs["max_new_tokens"])
+            generate_kwargs["max_new_tokens"] = min(
+                max(self.max_length - prompt_length, 0), generate_kwargs["max_new_tokens"]
+            )
         else:
             generate_kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
@@ -451,7 +451,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
+                    rewards = self.reward_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        model_tok=self.tokenizer,
+                        **metadata,
+                    )
                     if type(rewards[0]) is torch.Tensor:
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
                     elif type(rewards[0]) is list:
@@ -469,7 +475,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
-                    metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, model_tok=self.tokenizer, **metadata)
+                    metrics = self.metric_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        model_tok=self.tokenizer,
+                        **metadata,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
@@ -665,7 +677,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if type(l) is torch.Tensor:
             l = l.repeat_interleave(n, dim=0)
         elif type(l) is list:
-            l = [[s]*n for s in l]
+            l = [[s] * n for s in l]
             l = [item for sublist in l for item in sublist]
         return l
 
