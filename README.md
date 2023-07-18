@@ -11,7 +11,7 @@ The following RL algorithms are currently implemented:
 
 | Algorithm                                                                     | Accelerate Trainer | NeMo Trainer  |
 |-------------------------------------------------------------------------------|:------------------:|:-------------:|
-| [Proximal Policy Optimization (PPO)](https://arxiv.org/pdf/1909.08593.pdf)    | ✅                 | ⏳            |
+| [Proximal Policy Optimization (PPO)](https://arxiv.org/pdf/1909.08593.pdf)    | ✅                 | ✅            |
 | [Implicit Language Q-Learning (ILQL)](https://sea-snell.github.io/ILQL_site/) | ✅                 | ✅            |
 
 📖 **[Documentation](https://trlX.readthedocs.io)**
