@@ -205,10 +205,9 @@ class TrainConfig:
 
     checkpoint_interval: int
     eval_interval: int
-
     pipeline: str  # One of the pipelines in framework.pipeline
     trainer: str  # One of the trainers
-    
+
     gradient_accumulation_steps: Optional[int] = 1
     trainer_kwargs: Dict[str, Any] = field(default_factory=dict)  # Extra keyword arguments for the trainer
 

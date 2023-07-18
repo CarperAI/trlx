@@ -86,7 +86,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
-        if branch != 'unknown':
+        if branch != "unknown":
             run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
         else:
             run_name = "/".join([script_name, model_name, num_gpus])
@@ -574,10 +574,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stats = {key: sum([stats[key] for stats in stats_accum]) / self.num_mb for key in stats_accum[0]}
                     self.iter_count += 1
 
-                    if (
-                        self.iter_count % self.gradient_accumulation_steps == 0
-                        or self.iter_count >= self.total_steps
-                    ):
+                    if self.iter_count % self.gradient_accumulation_steps == 0 or self.iter_count >= self.total_steps:
                         self.opt.step()
                         self.opt.zero_grad()
                         self.scheduler.step()
