@@ -3,15 +3,13 @@ import os
 import uuid
 from time import time
 from typing import Callable, List
-from copy import copy
 
+import numpy as np
 import torch
-import torch.nn.functional as F
 import transformers
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-import numpy as np
 
 import trlx.utils.logging as logging
 from trlx.data.accelerate_base_datatypes import PromptBatch
@@ -317,30 +315,47 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
 
             if self.accelerator.is_main_process:
-                all_str_samples, all_str_prompts, all_str_outputs, all_tok_samples, all_tok_prompts, all_tok_outputs = self.decode(
-                    gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True
-                )
+                (
+                    all_str_samples,
+                    all_str_prompts,
+                    all_str_outputs,
+                    all_tok_samples,
+                    all_tok_prompts,
+                    all_tok_outputs,
+                ) = self.decode(gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True)
 
                 rollout_score_time = time()
                 # reward_fn should return list of rewards at each token per sample
                 # NOTE: all_scores[0][i] is the reward due to token (action) i in prompt + response (b/c of how kl is computed)
-                # NOTE: reward_fn can optionally also compute the ref_logits. In this case size will be [batch_size, response_length, 2]
-                all_scores = self.reward_fn(samples=all_str_samples, 
-                                            prompts=all_str_prompts, 
-                                            outputs=all_str_outputs,
-                                            tok_samples=all_tok_samples,
-                                            tok_prompts=all_tok_prompts,
-                                            tok_outputs=all_tok_outputs,
-                                            model_tok=self.tokenizer, 
-                                            **metadata)
-                all_scores = [torch.tensor(score, dtype=torch.float, device=device).view(-1,) for score in all_scores]
+                # NOTE: reward_fn can optionally also compute the ref_logits.
+                # In this case size will be [batch_size, response_length, 2]
+                all_scores = self.reward_fn(
+                    samples=all_str_samples,
+                    prompts=all_str_prompts,
+                    outputs=all_str_outputs,
+                    tok_samples=all_tok_samples,
+                    tok_prompts=all_tok_prompts,
+                    tok_outputs=all_tok_outputs,
+                    model_tok=self.tokenizer,
+                    **metadata,
+                )
+                all_scores = [
+                    torch.tensor(score, dtype=torch.float, device=device).view(
+                        -1,
+                    )
+                    for score in all_scores
+                ]
                 # Pad -np.inf reward on the ends
                 all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-np.inf)
-                max_len = torch.tensor(len(all_scores[0])/(1+int(self.dist_ref_model)), dtype=torch.long, device=device)
+                max_len = torch.tensor(
+                    len(all_scores[0]) / (1 + int(self.dist_ref_model)), dtype=torch.long, device=device
+                )
 
                 stats["time/rollout_score"] = time() - rollout_score_time
 
-                all_scores = list(all_scores.reshape(self.accelerator.num_processes, len(samples), max_len, -1).unbind())
+                all_scores = list(
+                    all_scores.reshape(self.accelerator.num_processes, len(samples), max_len, -1).unbind()
+                )
             else:
                 all_scores = None
                 max_len = torch.tensor(0, dtype=torch.long, device=device)
@@ -348,13 +363,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             if torch.distributed.is_initialized():
                 torch.distributed.broadcast(max_len, 0)
                 # Allocate extra space if scores include ref_logits
-                scores = torch.empty((len(samples), max_len, 1+int(self.dist_ref_model)), device=device)
+                scores = torch.empty((len(samples), max_len, 1 + int(self.dist_ref_model)), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
 
-            # Remove ref_logits from scores if present
-            if  self.dist_ref_model:
+            # Remove ref_logits from scores if present
+            if self.dist_ref_model:
                 all_ref_logprobs = scores[:, :, 1]
                 scores = scores[:, :, 0]
             else:
@@ -362,12 +377,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = scores.squeeze(-1)
             scores_mask = scores != -np.inf
 
-            # Remove infs so mask can be used
+            # Remove infs so mask can be used
             if self.config.method.cliprange_reward:
                 scores = torch.clip(scores, -self.config.method.cliprange_reward, self.config.method.cliprange_reward)
 
-            # Best-of-N Sampling. 
-            train_indices = self.get_topk_indices(input_tensor=scores_mask*scores, window_size=num_return_sequences, k=self.config.method.num_train_sequences, device=device)
+            # Best-of-N Sampling.
+            train_indices = self.get_topk_indices(
+                input_tensor=scores_mask * scores,
+                window_size=num_return_sequences,
+                k=self.config.method.num_train_sequences,
+                device=device,
+            )
             scores = scores[train_indices]
             scores_mask = scores_mask[train_indices]
             samples = samples[train_indices]
@@ -391,18 +411,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             elif self.config.method.scale_reward == "ref":
                 scores /= self.ref_std
 
-            # Only use these samples, prompts, outputs to compute ppo stats
+            # Only use these samples, prompts, outputs to compute ppo stats
             _, _, _, tok_samples, tok_prompts, tok_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
             # Pad the sample outputs
-            #outputs = self.tokenizer(str_outputs).input_ids
+            # outputs = self.tokenizer(str_outputs).input_ids
             # TODO: Why is this here? Should this be a sep token?
             if self.config.model.model_arch_type == "seq2seq":
                 # add <pad> to the start of the output
                 for i in range(len(tok_outputs)):
                     tok_outputs[i] = [self.tokenizer.pad_token_id] + outputs[i].tolist()
 
-            padded_tok_outputs = pad_sequence(tok_outputs, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             tok_prompts = torch.stack(tok_prompts, dim=0)
             padded_tok_samples = pad_sequence(tok_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             attention_mask = padded_tok_samples.not_equal(self.tokenizer.pad_token_id).long()
@@ -457,7 +476,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 all_tokens_chunks = torch.chunk(all_tokens, chunks=self.config.method.gen_chunk_size, dim=0)
                 attention_mask_chunks = torch.chunk(attention_mask, chunks=self.config.method.gen_chunk_size, dim=0)
                 position_ids_chunks = torch.chunk(position_ids, chunks=self.config.method.gen_chunk_size, dim=0)
-                for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(all_tokens_chunks, attention_mask_chunks, position_ids_chunks):
+                for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(
+                    all_tokens_chunks, attention_mask_chunks, position_ids_chunks
+                ):
                     all_tokens_chunk = all_tokens_chunk.to(device)
                     attention_mask_chunk = attention_mask_chunk.to(device)
                     position_ids_chunk = position_ids_chunk.to(device)
@@ -467,7 +488,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                             attention_mask=attention_mask_chunk,
                             position_ids=position_ids_chunk,
                         )
-                        # If all_ref_logits is not None they have already been generated during call to reward_fn
+                        # If all_ref_logits is not None they have already been generated during call to reward_fn
                         if all_ref_logprobs is None:
                             if hasattr(self.model, "frozen_head"):
                                 ref_logits = self.model.forward_hydra(
@@ -489,23 +510,26 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                                 ref_logits = logits.clone()
 
                     if self.config.model.model_arch_type == "seq2seq":
-                        logprobs = logprobs_of_labels(logits[:, start:-1, :], all_tokens_chunk[:, start+1:])
-                        ref_logprobs = logprobs_of_labels(ref_logits[:, start:-1, :], all_tokens_chunk[:, start+1:])
+                        logprobs = logprobs_of_labels(logits[:, start:-1, :], all_tokens_chunk[:, start + 1 :])
+                        ref_logprobs = logprobs_of_labels(ref_logits[:, start:-1, :], all_tokens_chunk[:, start + 1 :])
                     else:
                         # NOTE: logprob[i] is (log)prob at which all_token[i+1] was sampled
-                        # So need to index at start = prompt_tensors.shape[1] - 1 which is the logprob corresponding to the first sampled token
+                        # So need to index at start = prompt_tensors.shape[1] - 1 which is
+                        # the logprob corresponding to the first sampled token
                         # Indexing ends at -1 because the last logprob corresponds to an unsampled token
-                        logprobs = logprobs_of_labels(logits[:, start:-1, :], all_tokens_chunk[:, start+1:])
+                        logprobs = logprobs_of_labels(logits[:, start:-1, :], all_tokens_chunk[:, start + 1 :])
                         if all_ref_logprobs is None:
-                            ref_logprobs = logprobs_of_labels(ref_logits[:, start:-1, :], all_tokens_chunk[:, start+1:])
-                    
+                            ref_logprobs = logprobs_of_labels(
+                                ref_logits[:, start:-1, :], all_tokens_chunk[:, start + 1 :]
+                            )
+
                     values_chunks.append(values.cpu())
                     log_probs_chunks.append(logprobs.cpu())
                     if all_ref_logprobs is None:
                         ref_logprobs_chunks.append(ref_logprobs.cpu())
-                
+
             # Remove values before v[start] (this is the value of the state before any tokens are sampled)
-            # and remove the last value v[-1] (this is a terminal state after all tokens have been generated with value 0) 
+            # and remove the last value v[-1] (this is a terminal state after all tokens have been generated with value 0)
             values = torch.cat(values_chunks, dim=0)[:, start:-1]
             logprobs = torch.cat(log_probs_chunks, dim=0)
             attention_mask = attention_mask[:, start:].cpu()
@@ -515,8 +539,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # all_ref_logprobs returned from reward already has prompt prefix removed
             else:
                 # Remove (some) padding from distributed communication
-                # So arithmetic with logprobs can be done
-                ref_logprobs = all_ref_logprobs[:, :logprobs.shape[1]].cpu()
+                # So arithmetic with logprobs can be done
+                ref_logprobs = all_ref_logprobs[:, : logprobs.shape[1]].cpu()
 
             # Estimate the KL divergence between the model and reference model
             # NOTE: nan is interfering with kl estimates since 0 * nan = 0
@@ -537,18 +561,25 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # In our case it's ok because we then subtract -1 from resulting end index
             ends = attention_mask.sum(1) + 1
             for sample_idx in range(n_samples):
-                value = values[sample_idx, :ends[sample_idx]-1]
-                logprob = logprobs[sample_idx, :ends[sample_idx]-1]
-                kl_penalty = kl_penalties[sample_idx, :ends[sample_idx]-1]
+                value = values[sample_idx, : ends[sample_idx] - 1]
+                logprob = logprobs[sample_idx, : ends[sample_idx] - 1]
+                kl_penalty = kl_penalties[sample_idx, : ends[sample_idx] - 1]
                 query_tensor = tok_prompts[sample_idx]
                 response_tensor = tok_outputs[sample_idx]
-                if len(value) != len(logprob) or len(logprob) != len(kl_penalty) or len(kl_penalty) != len(response_tensor):
-                    raise ValueError(f"Length mismatch between value, logprob, kl, and response_tensor:\n\
+                if (
+                    len(value) != len(logprob)
+                    or len(logprob) != len(kl_penalty)
+                    or len(kl_penalty) != len(response_tensor)
+                ):
+                    raise ValueError(
+                        f"Length mismatch between value, logprob, kl, and response_tensor:\n\
                                         Value: {value.shape}, {value}\n\
                                         Logprob: {logprob.shape}, {logprob}\n\
                                         KL: {kl_penalty.shape}, {kl_penalty}\n\
-                                        Response: {response_tensor.shape}, {response_tensor}, {self.tokenizer.decode(response_tensor)}\n")
-                
+                                        Response: {response_tensor.shape}, {response_tensor}, \
+                                        {self.tokenizer.decode(response_tensor)}\n"
+                    )
+
                 # Then add in rewards
                 if scores.shape[1] == 1:
                     # NOTE: Final reward given at EOS token following HHH practice
@@ -560,20 +591,24 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     score_right_padding = torch.sum(scores_mask[sample_idx])
                     score = score[:score_right_padding].cpu()
                     if len(score) != len(kl_penalty):
-                        raise ValueError(f"Length mismatch between score and kl penalty:\n\
+                        raise ValueError(
+                            f"Length mismatch between score and kl penalty:\n\
                                             Logprob: {logprob.shape}, {logprob}\n\
                                             kl_penalty: {kl_penalty.shape}, {kl_penalty}\n\
-                                            Score: {score.shape}, {score}")
+                                            Score: {score.shape}, {score}"
+                        )
                     rewards = kl_penalty + score
 
                 if kl_penalty.isnan().any() or score.isnan().any():
-                    raise ValueError(f"nan in tensor:\n\
+                    raise ValueError(
+                        f"nan in tensor:\n\
                                         KL: {kl_penalty}\n\
                                         Score: {score}\n\
                                         logprob: {logprob}\n\
                                         ref logprob: {ref_logprobs[sample_idx][:ends[sample_idx]-1]}\n\
                                         mask: {attention_mask[sample_idx]}\n\
-                                        kl ctl: {self.kl_ctl.value}")
+                                        kl ctl: {self.kl_ctl.value}"
+                    )
 
                 ppo_rl_elements.append(
                     PPORLElement(

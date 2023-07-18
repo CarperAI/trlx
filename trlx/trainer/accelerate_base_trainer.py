@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from copy import copy
 from time import time
 from typing import Dict, List, Optional, Tuple
-from copy import copy
 
 import ray
 import torch
@@ -206,7 +205,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         append_eos_token: bool = True,
     ) -> Tuple[List[str], List[str], List[str], List[torch.LongTensor], List[torch.LongTensor], List[torch.LongTensor]]:
         """
-        Decode tensor generations with stopping criteria into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and 
+        Decode tensor generations with stopping criteria into lists
+        of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and
         Note prompts maybe sompetimes be right padded, as well as samples
         """
         if prompt_sizes is None:
@@ -233,12 +233,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
-            
+
             # Recover sequence of tokens corresponding to string
             # NOTE: Cast to torch.long in the case the input is empty
             tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0].long()
             # Remove bos from tokenized output (if present)
-            if hasattr(self.tokenizer, "bos_token") and len(tok_output) > 0 and tok_output[0].item() == self.tokenizer.bos_token_id:
+            if (
+                hasattr(self.tokenizer, "bos_token")
+                and len(tok_output) > 0
+                and tok_output[0].item() == self.tokenizer.bos_token_id
+            ):
                 tok_output = tok_output[1:]
 
             # Recover the last <eos> if it was present in the original sample
@@ -248,22 +252,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             # Note we append to both separately because encoding </s> does not result in tokenizer.eos_token_id
             if append_eos_token:
                 str_output += self.tokenizer.eos_token
-                tok_output = torch.cat([tok_output, torch.tensor(self.tokenizer.eos_token_id, dtype=torch.long).view((1,))])
-
-            '''if len(tok_output) > 91:
-                print("#####")
-                print("Sample: ", sample.shape)
-                print(sample)
-                print("output: ", tok_output.shape)
-                print(tok_output)
-                print(str_output)
-                print("prompt size: ", output_start_ix)
-                print("tok_prompt: ", tok_prompt)
-                print("tok prompt shape: ", tok_prompt.shape)
-                print("prompt: ", prompt)
-                print("str prompt: ", str_prompt)
-                print("prompt: ", prompt.shape)
-                exit()'''
+                tok_output = torch.cat(
+                    [tok_output, torch.tensor(self.tokenizer.eos_token_id, dtype=torch.long).view((1,))]
+                )
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)
@@ -272,22 +263,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             if self.config.model.model_arch_type == "seq2seq":
                 sample = str_prompt + self.tokenizer.sep_token + str_output
-                tok_sample = torch.cat([tok_prompt, torch.tensor(self.tokenizer.sep_token_id, dtype=torch.long).view((1,)), tok_output])
+                tok_sample = torch.cat(
+                    [tok_prompt, torch.tensor(self.tokenizer.sep_token_id, dtype=torch.long).view((1,)), tok_output]
+                )
             else:
                 sample = str_prompt + str_output
                 tok_sample = torch.cat([tok_prompt, tok_output])
 
             str_samples.append(sample)
             tok_samples.append(tok_sample)
-
-            if tok_sample.dtype == torch.float32:
-                print("tok_sample ", tok_sample.dtype)
-                print(tok_sample)
-                print("tok prompt: ", tok_prompt.dtype)
-                print(tok_prompt)
-                print("tok output: ", tok_output.dtype)
-                print(tok_output)
-                exit()
 
         return str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs
 
@@ -483,7 +467,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             stats["time/generate"] = time() - generate_time
 
             if self.accelerator.is_main_process:
-                str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
+                str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs = self.decode(
+                    all_prompts, all_samples, all_prompt_sizes
+                )
 
                 columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
@@ -497,13 +483,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.reward_fn:
                     logger.info("Computing rewards")
                     rewards = self.reward_fn(
-                                samples=str_samples, 
-                                prompts=str_prompts, 
-                                outputs=str_outputs, 
-                                tok_samples=tok_samples,
-                                tok_prompts=tok_prompts,
-                                tok_outputs=tok_outputs,
-                                model_tok=self.tokenizer, **metadata)
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        tok_samples=tok_samples,
+                        tok_prompts=tok_prompts,
+                        tok_outputs=tok_outputs,
+                        model_tok=self.tokenizer,
+                        **metadata,
+                    )
                     # Remove kl terms from reward
                     if hasattr(self, "dist_ref_model") and self.dist_ref_model:
                         rewards = [[r[0] for r in reward] for reward in rewards]
@@ -525,13 +513,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(
-                        samples=str_samples, 
-                        prompts=str_prompts, 
-                        outputs=str_outputs, 
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
                         tok_samples=tok_samples,
                         tok_prompts=tok_prompts,
                         tok_outputs=tok_outputs,
-                        model_tok=self.tokenizer, **metadata)
+                        model_tok=self.tokenizer,
+                        **metadata,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
