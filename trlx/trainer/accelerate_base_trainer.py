@@ -548,8 +548,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # gradient update per batch, PPO for example commonly performs
                 # multiple epochs of gradient updates on the same batch of data.
                 # https://arxiv.org/pdf/1707.06347.pdf
+
+                # We create a new dataloader (so new data ordering and shuffle) each inner epoch
+                train_dataloader = self.create_train_dataloader()
                 # For each batch
-                for minibatch in MiniBatchIterator(list(self.train_dataloader), self.mb_size, self.num_mb):
+                for minibatch in MiniBatchIterator(train_dataloader, self.mb_size, self.num_mb):
                     forward_time = 0.0
                     backward_time = 0.0
                     stats_accum = []
@@ -632,6 +635,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.post_epoch_callback()
         tbar.close()
+
+    def create_train_dataloader(self, shuffle=True, accelerate_prepare=True):
+        dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=shuffle)
+        if accelerate_prepare:
+            dataloader = self.accelerator.prepare_dataloader(dataloader)
+        return dataloader
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):
