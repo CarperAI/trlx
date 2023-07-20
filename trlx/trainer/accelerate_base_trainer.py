@@ -431,7 +431,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         samples=str_samples,
                         prompts=str_prompts,
                         outputs=str_outputs,
-                        model_tok=self.tokenizer,
+                        tokenizer=self.tokenizer,
                         **metadata,
                     )
                     if isinstance(rewards[0], torch.Tensor):
