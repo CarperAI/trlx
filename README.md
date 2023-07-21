@@ -47,6 +47,8 @@ You can train a model using a reward function or a reward-labeled dataset.
 trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('cats') for sample in samples])
 ```
 
+For **reward model** training refer to our [autocrit](https://github.com/CarperAI/autocrit) library.
+
 #### Using a reward-labeled dataset
 
 ```python
