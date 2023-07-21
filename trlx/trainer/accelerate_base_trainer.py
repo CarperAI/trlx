@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from rich.console import Console
@@ -288,8 +289,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **generate_kwargs
                 )
             samples.append(sample)
-        # Concat samples
-        samples = torch.cat(samples, 0)
+        # Concat padded samples
+        samples = pad_sequence(samples, batch_first=True, self.tokenizer.pad_token_id)
         return samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
