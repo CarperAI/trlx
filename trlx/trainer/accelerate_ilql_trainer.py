@@ -159,7 +159,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
         return self.ilql.loss((logits, (qs, target_qs, vs)), batch)
 
     def create_train_dataloader(self):
-        return self.accelerator.prepare(self.store.create_loader(self.config.train.batch_size))
+        return self.accelerator.prepare(self.store.create_loader(self.config.train.batch_size, shuffle=True))
 
     def prepare_learning(self):
         self.train_dataloader = self.create_train_dataloader()
