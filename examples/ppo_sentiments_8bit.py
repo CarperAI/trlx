@@ -39,6 +39,7 @@ def main(hparams={}):
     # Set the model loading in 8 bits
     config.model.from_pretrained_kwargs = {
         "load_in_8bit": True,
+        "torch_dtype": torch.bfloat16,
         "device_map": "auto",
     }
 
