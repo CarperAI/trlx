@@ -290,7 +290,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             samples.append(sample)
         # Concat padded samples
-        samples = pad_sequence(samples, batch_first=True, self.tokenizer.pad_token_id)
+        samples = pad_sequence(samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
         return samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
