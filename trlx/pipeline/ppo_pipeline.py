@@ -84,7 +84,7 @@ class PPORolloutStorage(BaseRolloutStore):
                         d.pop(key)
             return d
 
-        data = [filter_text(exp_to_dict(exp), only_text) for exp in self.history]      
+        data = [filter_text(exp_to_dict(exp), only_text) for exp in self.history]
         with open(fpath, "w") as f:
             f.write(json.dumps(data, indent=2))
 
