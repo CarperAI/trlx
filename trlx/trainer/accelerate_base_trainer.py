@@ -32,8 +32,6 @@ from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     gather_dict,
-    get_delta_model_class,
-    parse_delta_kwargs,
 )
 
 logger = logging.get_logger(__name__)
@@ -112,6 +110,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             elif config.train.tracker == "tensorboard":
                 # flatten config for tensorboard, split list in hparams into flatten config
+                if config_dict["model"].get("peft_config", None):  # tensorboard does not support peft config type
+                    config_dict["model"]["peft_config"] = str(config_dict["model"]["peft_config"])
                 config_dict_flat = flatten_dict(config_dict)
                 config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
                 config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
@@ -149,22 +149,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
-        if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
+
+        if self.config.model.peft_config is None:
+            if self.config.model.model_arch_type == "seq2seq":
+                freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
+            else:
+                freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
         else:
-            freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
-        # Set the delta tuning strategies
-        if self.config.model.delta_kwargs is not None:
-            delta_type, delta_kwargs = parse_delta_kwargs(
-                model.base_model.config,
-                self.config.model.delta_kwargs,
-                self.config.model.num_layers_unfrozen,
-            )
-            delta_model_class = get_delta_model_class(delta_type)
-            delta_model = delta_model_class(model.base_model, **delta_kwargs)
-            delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
-            if self.accelerator.is_main_process:
-                delta_model.log()
+            if self.accelerator.is_main_process and hasattr(model.base_model, "print_trainable_parameters"):
+                model.base_model.print_trainable_parameters()
+            if self.config.model.num_layers_unfrozen >= 0:
+                logger.warning(
+                    "The argument num_layers_unfrozen is ignored when using peft, to prevent unexpected behaviour."
+                    "For Lora, use the `LoraConfig` argument `modules_to_save` instead."
+                )
+
         return model
 
     def setup_optimizer(self):
@@ -306,11 +305,33 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def save(self, directory: Optional[str] = None, **kwargs):
         """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+        dst_dir = directory or self.config.train.checkpoint_dir
+        self.accelerator.save_state(dst_dir, **kwargs)
+
+        if self.config.model.peft_config is not None and self.accelerator.is_main_process:
+            # Remove "pytorch_model.bin" because it contains more than necessary,
+            # let save_pretrained recreate it with just the value heads.
+            model_file = os.path.join(dst_dir, "pytorch_model.bin")
+            if os.path.exists(model_file):
+                os.remove(model_file)
+            self.accelerator.unwrap_model(self.model).save_pretrained(dst_dir)
 
     def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
-        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
+        if self.config.model.peft_config is not None:
+
+            def load_state_hook(models: List[torch.nn.Module], input_dir: str):
+                with self.accelerator.main_process_first():
+                    for model in models:
+                        model.from_pretrained(input_dir)
+
+            self.accelerator.register_load_state_pre_hook(load_state_hook)
+
+            strict = False
+        else:
+            strict = True
+
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, strict=strict, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
@@ -406,10 +427,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = torch.tensor(
-                        self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata),
-                        dtype=float,
+                    rewards = self.reward_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        tokenizer=self.tokenizer,
+                        **metadata,
                     )
+                    if isinstance(rewards[0], torch.Tensor):
+                        rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
+                    elif isinstance(rewards[0], list):
+                        rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
+                    else:
+                        rewards = torch.tensor(rewards, dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):
@@ -538,7 +568,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             loss, stats = self.loss(mb)
                             forward_time += time()
                             backward_time -= time()
+                            self.model.train()
                             self.accelerator.backward(loss)
+                            self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
 

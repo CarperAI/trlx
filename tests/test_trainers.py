@@ -134,6 +134,30 @@ class TestAccelerateBaseTrainer(unittest.TestCase):
                 self.assertTrue(os.path.isdir(os.path.join(tmpdir, f"checkpoint_{total_steps}")))
             self.assertTrue(os.path.isdir(os.path.join(tmpdir, "best_checkpoint")))
 
+    def test_save_lora_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = self.get_default_config()
+            config.train.checkpoint_dir = tmp_dir
+            config.model.peft_config = {
+                "peft_type": "LORA",
+                "task_type": "CAUSAL_LM",
+                "r": 8,
+                "lora_alpha": 32,
+                "lora_dropout": 0.0,
+            }
+
+            trainer = self.get_trainer(config)
+            trainer.learn()
+
+            total_steps = config.train.total_steps
+            interval = config.train.checkpoint_interval
+            for i in range(interval, total_steps + 1, interval):
+                checkpoint_dir = os.path.join(tmp_dir, f"checkpoint_{i}")
+                self.assertTrue(os.path.isdir(checkpoint_dir))
+            if total_steps % interval != 0:
+                self.assertTrue(os.path.isdir(os.path.join(tmp_dir, f"checkpoint_{total_steps}")))
+            self.assertTrue(os.path.isdir(os.path.join(tmp_dir, "best_checkpoint")))
+
     def test_accumulate_context(self):
         config = self.get_default_config()
         trainer = self.get_trainer(config)

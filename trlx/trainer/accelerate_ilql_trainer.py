@@ -131,6 +131,7 @@ class AccelerateILQLTrainer(AccelerateRLTrainer):
             config.model.model_path,
             two_qs=config.method.two_qs,
             alpha=config.method.alpha,
+            peft_config=self.config.model.peft_config,
         )
 
     def post_backward_callback(self):
