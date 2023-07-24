@@ -5,9 +5,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
+import deepspeed
 import numpy as np
 import torch
-import torch.nn as nn
 import transformers
 from torchtyping import TensorType
 from transformers.modeling_outputs import ModelOutput
@@ -443,10 +443,18 @@ class ModelBranch(transformers.PreTrainedModel):
         super().__init__(base_model.config)
 
         # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
-        decoder_blocks = deepcopy(hf_get_decoder_blocks(base_model))
-        self.decoder_blocks = nn.ModuleList(list(decoder_blocks)[-num_layers_unfrozen:])
-        self.final_norm = deepcopy(hf_get_decoder_final_norm(base_model))
-        self.lm_head = deepcopy(hf_get_lm_head(base_model))
+
+        decoder_blocks = hf_get_decoder_blocks(base_model)[-num_layers_unfrozen:]
+        final_norm = hf_get_decoder_final_norm(base_model)
+        lm_head = hf_get_lm_head(base_model)
+
+        with deepspeed.zero.GatheredParameters(
+            list(decoder_blocks.parameters()) + list(final_norm.parameters()) + list(lm_head.parameters()),
+            modifier_rank=None,
+        ):
+            self.decoder_blocks = deepcopy(decoder_blocks)
+            self.final_norm = deepcopy(final_norm)
+            self.lm_head = deepcopy(lm_head)
 
         self.hidden_size = hf_get_hidden_size(self.config)
         self.model_parallel = False

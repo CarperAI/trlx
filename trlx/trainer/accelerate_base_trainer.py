@@ -568,7 +568,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
                             loss, stats = self.loss(mb)
                             forward_time += time()
                             backward_time -= time()
+                            self.model.train()
                             self.accelerator.backward(loss)
+                            self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
 
