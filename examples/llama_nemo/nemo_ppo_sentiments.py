@@ -26,19 +26,11 @@ def get_positive_score(scores):
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
 
 
-def load_nemo_config():
-    """Load nemo-megatron-1.3b model and trainer config"""
-
-    path = Path(__file__).parent / "megatron_7b_llama.yaml"
-    return OmegaConf.load(str(path))
-    # return OmegaConf.load('/mnt/hdd/duyphung/nemo_converter/pvd_trlx/examples/llama_nemo/megatron_7b_llama.yaml')
-
 
 def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
     cfg_name = "llama_30b"
-    nemo_config = load_nemo_config()
     nemo_config = OmegaConf.load("/fsx/home-uwu/llama-nemo-30b/megatron_llama_30b.yaml")
     nemo_config.trainer.devices = 8
     nemo_config.trainer.num_nodes = 4
@@ -65,7 +57,7 @@ def main(hparams={}):
             kwargs=dict(lr=1.001e-5, weight_decay=0.1, eps=1.0e-8, betas=(0.9, 0.95)),
         ),
         scheduler=dict(name="CosineAnnealing"),
-        model=dict(num_layers_unfrozen=8),
+        model=dict(num_layers_unfrozen=4),
         method=dict(
             num_rollouts=256,
             init_kl_coef=0.05,
@@ -77,10 +69,7 @@ def main(hparams={}):
         ),
     )
     config.scheduler.kwargs = dict(warmup_steps=0, constant_steps=1e12, min_lr=1.0e-5)
-    """config.optimizer = OptimizerConfig(
-            name="sgd",
-            kwargs=dict(lr=1.001e-5),
-    )"""
+
     rank = int(os.environ["SLURM_PROCID"])
     local_rank = rank % 8
 

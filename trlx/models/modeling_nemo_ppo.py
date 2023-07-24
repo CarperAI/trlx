@@ -1024,7 +1024,7 @@ class PPOGPT(MegatronGPTModel):
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
                 values_pred = vs[:, start:end]
-                print(f"{start=}, {end=}")
+
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,
                     values=values_pred,
