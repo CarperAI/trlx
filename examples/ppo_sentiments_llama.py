@@ -39,8 +39,8 @@ def llama_config():
             trainer="AcceleratePPOTrainer",
             save_best=False,
         ),
-        model=ModelConfig(model_path="decapoda-research/llama-7b-hf", num_layers_unfrozen=2),
-        tokenizer=TokenizerConfig(tokenizer_path="decapoda-research/llama-7b-hf", truncation_side="right"),
+        model=ModelConfig(model_path="/path/to/your/llama-7b/model/", num_layers_unfrozen=2),
+        tokenizer=TokenizerConfig(tokenizer_path="/path/to/your/llama-7b/model", truncation_side="right"),
         optimizer=OptimizerConfig(
             name="adamw", kwargs=dict(lr=1.0e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
