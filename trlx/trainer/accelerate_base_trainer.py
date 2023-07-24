@@ -427,10 +427,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = torch.tensor(
-                        self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata),
-                        dtype=float,
+                    rewards = self.reward_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        tokenizer=self.tokenizer,
+                        **metadata,
                     )
+                    if isinstance(rewards[0], torch.Tensor):
+                        rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
+                    elif isinstance(rewards[0], list):
+                        rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
+                    else:
+                        rewards = torch.tensor(rewards, dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):

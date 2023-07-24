@@ -47,6 +47,8 @@ You can train a model using a reward function or a reward-labeled dataset.
 trainer = trlx.train('gpt2', reward_fn=lambda samples, **kwargs: [sample.count('cats') for sample in samples])
 ```
 
+For **reward model** training refer to our [autocrit](https://github.com/CarperAI/autocrit) library.
+
 #### Using a reward-labeled dataset
 
 ```python
@@ -68,14 +70,28 @@ trainer.generate(**tokenizer('Q: Who rules the world? A:', return_tensors='pt'),
 #### Configure Hyperparameters
 
 ```python
-from trlx.data.default_configs import default_ppo_config, TrainConfig
+from trlx.data.default_configs import default_ppo_config
 
 config = default_ppo_config()
 config.model.model_path = 'EleutherAI/gpt-neox-20b'
-config.train.seq_length = 32
-config.train.batch_size = 16
+config.tokenizer.tokenizer_path = 'EleutherAI/gpt-neox-20b'
+config.train.seq_length = 2048
 
-trainer = trlx.train(config=config, reward_fn=lambda samples, **kwargs: [float(int(sample)) for sample in samples])
+trainer = trlx.train(config=config, reward_fn=lambda samples, **kwargs: [len(sample) for sample in samples])
+```
+To reduce memory usage (if you're experiencing CUDA Out of Memory errors), first try the lowest setting for the following hyperparameters and eventually increase them:
+```python
+# micro batch size per gpu
+config.train.batch_size = 1
+# freeze all transformer layers
+config.model.num_layers_unfrozen = 0
+# maximum sample length, prompts or samples longer than that will be truncated
+config.train.seq_length = 128
+
+# micro batch size for sampling (specific for PPO)
+config.method.chunk_size = 1
+# use an additional Q-head (specific for ILQL)
+config.method.two_qs = False
 ```
 
 #### Save the resulting model to a Hugging Face pretrained language model. (Ready to upload to the Hub!)
