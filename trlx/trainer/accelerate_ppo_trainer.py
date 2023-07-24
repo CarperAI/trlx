@@ -413,6 +413,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # Only use these samples, prompts, outputs to compute ppo stats
             _, _, _, tok_samples, tok_prompts, tok_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
+            tok_prompts = torch.stack(tok_prompts, dim=0)
 
             # Pad the sample outputs
             # outputs = self.tokenizer(str_outputs).input_ids
@@ -422,16 +423,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 for i in range(len(tok_outputs)):
                     tok_outputs[i] = [self.tokenizer.pad_token_id] + outputs[i].tolist()
 
-            tok_prompts = torch.stack(tok_prompts, dim=0)
-            padded_tok_samples = pad_sequence(tok_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
-            attention_mask = padded_tok_samples.not_equal(self.tokenizer.pad_token_id).long()
-
             if self.config.model.model_arch_type == "seq2seq":
                 attention_mask = sample_outputs != self.tokenizer.pad_token_id
                 start = 0
             else:
                 # NOTE: -1 because kl[prompt_tensors.shape[1]] is kl of the second token in the response
                 start = tok_prompts.shape[1] - 1
+
+            padded_tok_samples = pad_sequence(tok_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            attention_mask = padded_tok_samples.not_equal(self.tokenizer.pad_token_id).long()
 
             # Precompute logprobs, values
             # TODO: Come back to seq2seq
@@ -559,11 +559,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # (these are taken from the student model and not the reference model)
             # NOTE: Why are we summing including a token from the prompt?
             # In our case it's ok because we then subtract -1 from resulting end index
-            ends = attention_mask.sum(1) + 1
+            ends = attention_mask[:, 1:].sum(1) + 1
             for sample_idx in range(n_samples):
+<<<<<<< HEAD
                 value = values[sample_idx, : ends[sample_idx] - 1]
                 logprob = logprobs[sample_idx, : ends[sample_idx] - 1]
                 kl_penalty = kl_penalties[sample_idx, : ends[sample_idx] - 1]
+=======
+                value = values[sample_idx, :ends[sample_idx]]
+                logprob = logprobs[sample_idx, :ends[sample_idx]]
+                kl_penalty = kl_penalties[sample_idx, :ends[sample_idx]]
+>>>>>>> c0d95a8... Fix: attention_mask indexing error
                 query_tensor = tok_prompts[sample_idx]
                 response_tensor = tok_outputs[sample_idx]
                 if (
@@ -576,10 +582,16 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                                         Value: {value.shape}, {value}\n\
                                         Logprob: {logprob.shape}, {logprob}\n\
                                         KL: {kl_penalty.shape}, {kl_penalty}\n\
+<<<<<<< HEAD
                                         Response: {response_tensor.shape}, {response_tensor}, \
                                         {self.tokenizer.decode(response_tensor)}\n"
                     )
 
+=======
+                                        end: {ends[sample_idx]}\n\
+                                        Response: {response_tensor.shape}, {response_tensor}, {self.tokenizer.decode(response_tensor)}\n")
+                
+>>>>>>> c0d95a8... Fix: attention_mask indexing error
                 # Then add in rewards
                 if scores.shape[1] == 1:
                     # NOTE: Final reward given at EOS token following HHH practice
