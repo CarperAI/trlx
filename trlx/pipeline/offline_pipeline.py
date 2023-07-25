@@ -158,11 +158,9 @@ class PromptPipeline(BasePipeline):
     def create_loader(self, batch_size: int, shuffle=False, sampler=None, drop_last=False) -> DataLoader:
         def collate_fn(xs):
             out = self.tokenizer.pad([{"input_ids": x["input_ids"]} for x in xs], return_tensors="pt")
-
             for key in xs[0]:
                 if key != "input_ids" and key != "attention_mask":
                     out[key] = [x[key] for x in xs]
-
             return out
 
         # Since all data is already pre-processed, no need to have

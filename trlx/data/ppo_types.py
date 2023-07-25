@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+from typing import Optional
 from torchtyping import TensorType
 
 
@@ -34,7 +34,6 @@ class PPORLElement:
     values: TensorType["response_size"]
     rewards: TensorType["response_size"]
 
-
 @dataclass
 class PPORLBatch:
     """
@@ -46,14 +45,14 @@ class PPORLBatch:
     :param response_tensors: A batch of response tensors. Should be a long tensor.
     :type response_tensors: torch.Tensor
 
+    :param gt_response_tensors: A batch of tensors corresponding to the ground truth responses. Should be a long tensor.
+    :type gt_response_tensors: torch.Tensor
+
     :param logprobs: A batch of log probabilities from policy
     :type logprobs: torch.Tensor
 
     :param values: A batch of values from value network
     :type values: torch.Tensor
-
-    :param rewards: A batch of rewards
-    :type rewards: torch.Tensor
     """
 
     query_tensors: TensorType["batch_size", "query_size"]
