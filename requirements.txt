@@ -71,7 +71,7 @@ tokenizers==0.13.3
 torch==2.0.0+cu117
 torchtyping==0.1.4
 tqdm==4.65.0
-transformers==4.28.1
+transformers==4.31.0
 triton==2.0.0
 tritonclient==2.33.0
 typeguard==3.0.2
