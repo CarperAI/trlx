@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from rich.console import Console
@@ -141,6 +142,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     self.generate_kwargs[k] = v[0]
                 else:
                     self.generate_sweep_kwarg = (k, v)
+
+        # Setup inference pipeline for model inference during training
+        if kwargs.get("inference_pipeline", None):
+            self.inference_pipeline = kwargs.get("inference_pipeline")(self.model, self.accelerator.device, self.tokenizer)
 
     def setup_model(self):
         """
@@ -277,11 +282,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
-        # Decide into chunk sizes and generate saples
-        input_ids = input_ids.to(self.accelerator.device)
-        if attention_mask is not None:
-            attention_mask = attention_mask.to(self.accelerator.device)
-
+        # Repeat prompts, attention_masks for chunking if returning multiple sequences
         generate_kwargs = copy(self.generate_kwargs)
         generate_kwargs.update(kwargs)
 
@@ -294,7 +295,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             generate_kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
-        # Repeat prompts, attention_masks for chunking if returning multiple sequences
         if generate_kwargs.get("num_return_sequences") is None:
             generate_kwargs["num_return_sequences"] = 1
 
@@ -310,16 +310,46 @@ class AccelerateRLTrainer(BaseRLTrainer):
         input_ids = input_ids.split(chunk_size, dim=0)
         if attention_mask is not None:
             attention_mask = attention_mask.split(chunk_size, dim=0)
+
+        # Check for inference pipeline
+        use_inference_pipeline = generate_kwargs.get("use_inference_pipeline")
+        if use_inference_pipeline is not None:
+            generate_kwargs.pop("use_inference_pipeline")  # Pop to remove from Generator args
+
         samples = []
         for chunk_idx in range(len(input_ids)):
-            with torch.no_grad():
-                sample = self.accelerator.unwrap_model(self.model).generate(
-                    input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **generate_kwargs
-                )
-            samples.append(sample)
+            input_ids_chunk = input_ids[chunk_idx]
+            attention_mask_chunk = None
+            if attention_mask is not None:
+                attention_mask_chunk = attention_mask[chunk_idx]
+
+            if use_inference_pipeline:
+                assert hasattr(self, "inference_pipeline")
+                # Remove all but temperature and sampling parameters from gen_kwargs
+                generate_kwargs = {k: v for k, v in generate_kwargs.items() if k == "do_sample" or k == "temperature"}
+                # Include "extended_response" field to accumulate responses
+                data = {"prompt": self.tokenizer.batch_decode(input_ids_chunk, skip_special_tokens=True), "gen_kwargs": len(input_ids_chunk)*[generate_kwargs]}
+                data = self.inference_pipeline(data)
+                # Ensure samples_toks[:, :len(prompt_toks[0])] == prompt_toks
+                self.tokenizer.padding_side = "right"
+                response_toks = self.tokenizer(data["response"], padding="longest", return_tensors="pt").input_ids.to(self.accelerator.device)
+                self.tokenizer.padding_size = self.config.tokenizer.padding_side
+                sample_toks = torch.cat((input_ids_chunk, response_toks), dim=1).cpu()
+            else:
+                input_ids_chunk = input_ids_chunk.to(self.accelerator.device)
+                if attention_mask_chunk is not None:
+                    attention_mask_chunk = attention_mask_chunk.to(self.accelerator.device)
+    
+                with torch.no_grad():
+                    sample_toks = self.accelerator.unwrap_model(self.model).generate(
+                        input_ids=input_ids_chunk, attention_mask=attention_mask_chunk, **generate_kwargs
+                    ).cpu()
+            # Convert to list of 1-d tensors to be padded
+            sample_toks = [sample_tok for sample_tok in sample_toks]
+            samples += sample_toks
         # Concat samples
-        samples = torch.cat(samples, 0)
-        return samples
+        sample_toks = pad_sequence(samples, batch_first=True, padding_value=self.tokenizer.eos_token_id).squeeze().to(self.accelerator.device)
+        return sample_toks
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
@@ -420,12 +450,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
             generate_time = time()
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
+                chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
                 if self.generate_sweep_kwarg:
                     samples = self.generate(
-                        prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}
+                        prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size, **{gen_sweep_arg: gen_sweep_value}
                     )
                 else:
-                    chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
                     samples = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)
 
                 # Repeat prompts, metadata num_return_sequence times
