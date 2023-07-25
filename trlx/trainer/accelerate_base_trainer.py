@@ -645,11 +645,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.post_epoch_callback()
         tbar.close()
 
-    def create_train_dataloader(self, shuffle=True, accelerate_prepare=True):
-        dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=shuffle)
-        if accelerate_prepare:
-            dataloader = self.accelerator.prepare_dataloader(dataloader)
-        return dataloader
+    @abstractmethod
+    def create_train_dataloader(self):
+        """Returns a new dataloader for training."""
+        pass
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):
