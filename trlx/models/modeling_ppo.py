@@ -424,11 +424,19 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
             return hydra_outputs.logits
         return hydra_outputs
 
-    def state_dict(self, *args, **kwargs):
-        # append the state dictionary of the frozen head to the state dictionary of the wrapped model
-        state_dict = super().state_dict(*args, **kwargs)
-        if self.frozen_head:
-            state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+
+    def state_dict(self, *args, heads_only=False, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+
+            if self.frozen_head:
+                state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+
         return state_dict
 
     def post_init(self, state_dict):
@@ -1385,11 +1393,18 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
             return hydra_outputs.logits
         return hydra_outputs
 
-    def state_dict(self, *args, **kwargs):
-        # append the state dictionary of the frozen head to the state dictionary of the wrapped model
-        state_dict = super().state_dict(*args, **kwargs)
-        if self.frozen_head:
-            state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+    def state_dict(self, *args, heads_only=False, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+
+            if self.frozen_head:
+                state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+
         return state_dict
 
     def post_init(self, state_dict):
