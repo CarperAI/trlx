@@ -1191,14 +1191,18 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["v_head"]
-    _supported_args = ["peft_config"]
+    _supported_args = ["peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
         peft_config=None,
+        num_value_layers_unfrozen=0,
     ):
         super().__init__(base_model, peft_config=peft_config)
+        #TODO: Support Seq2Seq value branching
+        if num_value_layers_unfrozen > 0:
+            raise NotImplementedError("Value branches unsupported for Seq2Seq architecture")
         self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
@@ -1299,7 +1303,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
 class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen", "peft_config"]
+    _supported_args = ["num_layers_unfrozen", "peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
@@ -1307,8 +1311,9 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         *,
         num_layers_unfrozen: int = -1,
         peft_config=None,
+        num_value_layers_unfrozen: int = 0,
     ):
-        super().__init__(base_model, peft_config=peft_config)
+        super().__init__(base_model, peft_config=peft_config, num_value_layers_unfrozen=num_value_layers_unfrozen)
         self.num_layers_unfrozen = num_layers_unfrozen
 
         if self.num_layers_unfrozen > 0 and not self.peft_type:
