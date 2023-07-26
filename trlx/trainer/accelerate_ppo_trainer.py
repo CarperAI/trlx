@@ -115,6 +115,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            num_value_layers_unfrozen=config.method.num_value_layers_unfrozen,
             peft_config=self.config.model.peft_config,
         )
 
