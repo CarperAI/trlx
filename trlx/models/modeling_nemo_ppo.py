@@ -1,7 +1,6 @@
 # Extensible version of the GPT model
 import sys
 from contextlib import contextmanager
-from copy import deepcopy
 from functools import partial
 from math import ceil, sqrt
 from pathlib import Path
@@ -163,30 +162,6 @@ class ValueHead(nn.Module):
         if self.sequence_parallel:
             vs = gather_from_sequence_parallel_region(vs, to_model_parallel=False)
         return rearrange(vs, "T N 1 -> N T")
-
-
-class OffloadedModel(object):
-    def __init__(self, model, device):
-        self.model = model
-        self.device = device
-        self.model.eval()
-        self.model.cpu()
-        self.offloaded = True
-
-        for p in self.model.parameters():
-            p.requires_grad_(False)
-            p.data.pin_memory()
-
-    def offload(self):
-        self.model.to("cpu", non_blocking=False)
-        self.offloaded = True
-
-    def onload(self):
-        self.model.to(self.device, non_blocking=True)
-        self.offloaded = False
-
-    def set_input_tensor(self, input_tensor):
-        self.model.set_input_tensor(input_tensor)
 
 
 class RefLMHeads(MegatronModule):
@@ -560,7 +535,7 @@ class PPOGPT(MegatronGPTModel):
         else:
             return gpt
 
-    def configure_optimizers(self):
+    def configure_optimizers(self):  # noqa: C901
         if self.with_distributed_adam:
             # Disable overlapped grad sync for embedding grad when
             # pipeline parallelism is enabled
@@ -714,10 +689,14 @@ class PPOGPT(MegatronGPTModel):
         if self.with_distributed_adam:
             if self.megatron_amp_o2:
                 # copy grads to main grad
-                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=True)
+                def custom_sync_context_handler():
+                    return self._optimizer.no_sync(greedy_grad_copy=True)
+
             else:
                 # keep grad tensors around
-                custom_sync_context_handler = lambda: self._optimizer.no_sync(greedy_grad_copy=False)
+                def custom_sync_context_handler():
+                    return self._optimizer.no_sync(greedy_grad_copy=False)
+
             custom_grad_sync_func = self.reduce_overlap_gradients
             custom_param_sync_func = self.sync_overlap_parameters
         else:
@@ -1023,7 +1002,7 @@ class PPOGPT(MegatronGPTModel):
 
                 advantages = whiten(advantages, group=parallel_state.get_data_parallel_group())
 
-                values_pred = vs[:, start:end]
+                values_pred = vs[:, :-1][:, start:end]
 
                 loss_for_mb, stats = self.ppo_config.loss(
                     logprobs=label_logprobs,

@@ -1,29 +1,21 @@
+# flake8: noqa
+
 import os
 from pathlib import Path
 
 import torch
 from omegaconf.omegaconf import OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# from trlx.data.default_configs import default_ppo_config
-# from trlx.trainer.nemo_ppo_trainer import PPOGPT, megatron_trainer
+from transformers import AutoModelForCausalLM
 
 
 def main(args):  # noqa: C901
-    print("loading model...")
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
-    
-    toks = tokenizer("heyy", return_tensors="pt")
-    print(toks)
+    print("Loading model...")
     model = AutoModelForCausalLM.from_pretrained(args.model_path, torch_dtype=torch.bfloat16)
-    print("loaded model")
-    res = model.generate(input_ids=toks.input_ids, attention_mask=toks.attention_mask, do_sample=False, max_length=32)
-
-    print(tokenizer.decode(res[0]))
+    print("Loaded model")
 
     model_state_dict = model.state_dict()
-    print("model loaded")
+    print("Model loaded")
+
     # Constants
     TOTAL_LAYERS = model.config.num_hidden_layers
     TOTAL_TP = args.total_tp
@@ -33,7 +25,6 @@ def main(args):  # noqa: C901
     PART_MLP_DIM = FFN_HIDDEN_DIM // TOTAL_TP
     VOCAB_SIZE = model.config.vocab_size
     EMBEDDING_DIM = VOCAB_SIZE // TOTAL_TP
-    # INPUT_FOLDER = "llama-nemo-65b-tp4-in"  # NeMo initial checkpoint folder
     OUTPUT_FOLDER = args.output_folder  # NeMo converted checkpoint folder with llama weights
 
     # Model Loading
@@ -53,13 +44,6 @@ def main(args):  # noqa: C901
             f"model.language_model.encoder.layers.{layer}.mlp.dense_4h_to_h.weight": f"model.layers.{layer}.mlp.down_proj.weight",
         }
 
-    """
-    def load_nemo_state_dict(tp_idx):
-        if TOTAL_TP == 1:
-            return torch.load(f"{INPUT_FOLDER}/model_weights.ckpt")
-        return torch.load(f"{INPUT_FOLDER}/mp_rank_0{tp_idx}/model_weights.ckpt")
-    """
-
     def save_nemo_state_dict(nemo_state_dict, tp_idx):
         if TOTAL_TP == 1:
             os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -70,32 +54,19 @@ def main(args):  # noqa: C901
 
     def map_weights(tp_idx):
         nemo_state_dict = {}
-        # nemo_state_dict = load_nemo_state_dict(tp_idx)
+
         # Word embeddings mapping
-        # original_size = nemo_state_dict["model.language_model.embedding.word_embeddings.weight"].shape
+
         nemo_state_dict["model.language_model.embedding.word_embeddings.weight"] = model_state_dict[
             "model.embed_tokens.weight"
         ][tp_idx * EMBEDDING_DIM : (tp_idx + 1) * EMBEDDING_DIM, :]
-        # print(
-        #    f"Embedding - model.language_model.embedding.word_embeddings.weight - {original_size} -> {nemo_state_dict['model.language_model.embedding.word_embeddings.weight'].shape}"
-        # )
-        # assert nemo_state_dict["model.language_model.embedding.word_embeddings.weight"].shape == original_size
-        # Final layer norm mapping
-        # original_size = nemo_state_dict["model.language_model.encoder.final_layernorm.weight"].shape
+
         nemo_state_dict["model.language_model.encoder.final_layernorm.weight"] = model_state_dict["model.norm.weight"]
-        # print(
-        #    f"Final Layer Norm - model.language_model.encoder.final_layernorm.weight - {original_size} -> {nemo_state_dict['model.language_model.encoder.final_layernorm.weight'].shape}"
-        # )
-        # assert nemo_state_dict["model.language_model.encoder.final_layernorm.weight"].shape == original_size
-        # Output layer weight mapping
-        # original_size = nemo_state_dict["model.language_model.output_layer.weight"].shape
+
         nemo_state_dict["model.language_model.output_layer.weight"] = model_state_dict["lm_head.weight"][
             tp_idx * EMBEDDING_DIM : (tp_idx + 1) * EMBEDDING_DIM, :
         ]
-        # print(
-        #    f"Output Layer - model.language_model.output_layer.weight - {original_size} -> {nemo_state_dict['model.language_model.output_layer.weight'].shape}"
-        # )
-        # assert nemo_state_dict["model.language_model.output_layer.weight"].shape == original_size
+
         # Other layer mappings
         for layer in range(TOTAL_LAYERS):
             layer_mapping = build_layer_mapping(layer)
@@ -117,8 +88,7 @@ def main(args):  # noqa: C901
                     nemo_state_dict[k] = layer_mapping[k]
                 else:
                     nemo_state_dict[k] = model_state_dict[layer_mapping[k]]
-                # print(f"Layer {layer} - {k} - {original_size} -> {nemo_state_dict[k].shape}")
-                # assert nemo_state_dict[k].shape == original_size
+
         # break view relationships otherwise pytorch will save original weights
         # to back the slices
         nemo_state_dict = {k: v.clone() for k, v in nemo_state_dict.items()}
@@ -142,57 +112,26 @@ def main(args):  # noqa: C901
     megatron_cfg.name = f"megatron_{args.name}"
     megatron_cfg.trainer.num_nodes = 1
     megatron_cfg.trainer.devices = TOTAL_TP
+    megatron_cfg.model.tensor_model_parallel_size = TOTAL_TP
     megatron_cfg.model.padded_vocab_size = model.config.vocab_size
     megatron_cfg.model.hidden_size = model.config.hidden_size
     megatron_cfg.model.ffn_hidden_size = model.config.intermediate_size
     megatron_cfg.model.num_layers = model.config.num_hidden_layers
     megatron_cfg.model.num_attention_heads = model.config.num_attention_heads
     megatron_cfg.model.max_position_embeddings = model.config.max_position_embeddings
-    megatron_cfg.model.seq_length = model.config.max_sequence_length
+    megatron_cfg.model.seq_length = model.config.max_position_embeddings
 
     megatron_cfg.exp_manager.create_wandb_logger = False
     megatron_cfg.exp_manager.create_checkpoint_callback = False
-    """
 
-        default_config = default_ppo_config()
-
-        trl_config = default_config.evolve(
-            train=dict(
-                default_config.train.__dict__,
-                trainer="NeMoPPOTrainer",
-                trainer_kwargs=dict(
-                    pretrained_model=None,
-                    megatron_cfg=megatron_cfg,
-                ),
-            ),
-        )
-
-        trainer = megatron_trainer(megatron_cfg)
-
-        # Initialize PyTorch Lightning DDP
-
-        def dummy():
-            return
-
-        if trainer.strategy.launcher is not None:
-            trainer.strategy.launcher.launch(dummy, trainer=trainer)
-        trainer.strategy.setup_environment()
-        torch.distributed, barrer()
-        nemo_model = PPOGPT(ppo_config=ppo_config, cfg=megatron_cfg.model, trainer=trainer, build_reference_model=False)
-        # nemo_model.setup()
-        # nemo_model.save_pretrained(INPUT_FOLDER)
-        #torch.distributed.barrier()
-
-        del nemo_model
-        map_weights(torch.distributed.get_rank())
-    """
-    print("map weights")
+    print("Mapping weights")
     for tp in range(TOTAL_TP):
         map_weights(tp)
 
     OmegaConf.save(megatron_cfg, str(Path(OUTPUT_FOLDER) / f"megatron_{args.name}.yaml"))
 
     print("Done")
+
 
 if __name__ == "__main__":
     from argparse import ArgumentParser
