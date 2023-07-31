@@ -31,7 +31,7 @@ def llama_config():
         train=TrainConfig(
             seq_length=1024,
             epochs=100,
-            total_steps=1000,
+            total_steps=400,
             batch_size=32,
             checkpoint_interval=10000,
             eval_interval=100,
