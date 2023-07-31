@@ -21,8 +21,9 @@ def get_positive_score(scores):
 def main(hparams={}):
     # Merge sweep config with default config if given
     default_config = TRLConfig.update(default_ppo_config().to_dict(), hparams)
-    cfg_name = "llama_65b"
-    nemo_config = OmegaConf.load("/admin/home-uwu/llama-nemo-65b/megatron_llama_65b.yaml")
+    llama_size = os.environ.get("LLAMA_SIZE", "65b")
+    cfg_name = f"llama_{llama_size}"
+    nemo_config = OmegaConf.load(f"/admin/home-uwu/llama-nemo-{llama_size}/megatron_llama_{llama_size}.yaml")
     nemo_config.trainer.devices = 8
     nemo_config.trainer.num_nodes = 4
     config = default_config.evolve(
@@ -35,8 +36,7 @@ def main(hparams={}):
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 megatron_cfg=nemo_config,
-                # pretrained_model="/fsx/home-uwu/llama-nemo-30b",
-                pretrained_model="/admin/home-uwu/llama-nemo-65b",
+                pretrained_model=f"/admin/home-uwu/llama-nemo-{llama_size}",
             ),
             checkpoint_interval=256,
             checkpoint_dir=f"nemo_{cfg_name}_ppo_sentiments",
@@ -69,7 +69,7 @@ def main(hparams={}):
     reward_model.to("cpu")
     sentiment_fn = pipeline(
         "sentiment-analysis",
-        model=reward_model,  # "lvwerra/distilbert-imdb",
+        model=reward_model,
         tokenizer="lvwerra/distilbert-imdb",
         top_k=2,
         truncation=True,
