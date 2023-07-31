@@ -28,7 +28,6 @@ from nemo.collections.nlp.models.language_modeling.megatron_base_model import (
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import (
     MegatronGPTModel,
 )
-from nemo.collections.nlp.modules.common.megatron.attention import ParallelAttention
 from nemo.collections.nlp.modules.common.megatron.module import (
     Float16Module,
     MegatronModule,
@@ -57,11 +56,6 @@ from trlx.utils.modeling import logprobs_of_labels, whiten
 # Track a per dp rank RNG to sample different rollouts
 # per dp rank
 _PER_DP_RANK_RNG = "per-data-parallel-rank-rng"
-
-
-def patch_attention_for_llama(m):
-    if isinstance(m, ParallelAttention):
-        m.megatron_legacy = True
 
 
 class ParallelLinear(nn.Module):
@@ -187,13 +181,7 @@ class RefLMHeads(MegatronModule):
             self.reference_model_offloaded = True
 
         self.other_heads = other_heads
-        if hasattr(language_model, "output_layer"):
-            self.output_layer = self._lm.language_model.output_layer
-            self.word_embeddings = self.output_layer.weight
-        else:
-            if hasattr(language_model, "word_embeddings"):
-                self.word_embeddings = language_model.word_embeddings
-            self.output_layer = None
+        self.word_embeddings = language_model.word_embeddings
 
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
@@ -205,15 +193,6 @@ class RefLMHeads(MegatronModule):
     def load_state_dict(self, lm_state_dict, strict=True):
         """Load GPTModel state dict."""
         self.language_model.load_state_dict(lm_state_dict, strict=strict)
-
-        if "output_layer.weight" in lm_state_dict:
-            dtype = lm_state_dict["output_layer.weight"].dtype
-            device = self.language_model.output_layer.weight.device
-            params = torch.nn.Parameter(
-                lm_state_dict["output_layer.weight"].to(device, dtype=dtype), requires_grad=True
-            )
-            self.language_model.output_layer.weight = params
-            print("Loaded output_layer.weight from lm_state_dict")
 
         if self.build_reference_model:
             for p in self.language_model.parameters():
@@ -253,10 +232,7 @@ class RefLMHeads(MegatronModule):
         run_value_head=False,
         **kwargs,
     ):
-        if hasattr(self._lm.language_model, "output_layer"):
-            logit_weights = self._lm.language_model.output_layer.weight
-        else:
-            logit_weights = self._lm.word_embeddings_weight()
+        logit_weights = self._lm.word_embeddings_weight()
 
         if run_policy_model:
             self.offload_reference_model()
@@ -525,8 +501,6 @@ class PPOGPT(MegatronGPTModel):
                 p.requires_grad_(False)
             gpt.language_model.apply(freeze_layers)
 
-        if self.cfg.get("megatron_legacy", False):
-            gpt.apply(patch_attention_for_llama)
         # If running on the last pipeline stage, add the PPO value head and hydra reference model
         if post_process:
             value_head = ValueHead(self.cfg.hidden_size, self.cfg.sequence_parallel)
