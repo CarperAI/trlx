@@ -10,7 +10,6 @@ import torch
 import wandb
 from apex.transformer import parallel_state
 from omegaconf.omegaconf import OmegaConf
-from torch.nn.utils.rnn import pad_packed_sequence
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 from transformers import LlamaTokenizer
@@ -264,7 +263,7 @@ class NeMoPPOTrainer(BaseRLTrainer):
                 PPORLElement(
                     query_tensor=query_tensor,
                     response_tensor=response_tensor[: response_end + 1],
-                    logprobs=ref_logps[start:end],
+                    logprobs=logps[start:end],
                     values=vs[:-1][start:end],
                     rewards=rewards,
                 )

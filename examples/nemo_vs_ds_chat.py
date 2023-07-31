@@ -8,20 +8,12 @@ from typing import List
 
 import torch
 from datasets import load_dataset
-from omegaconf import OmegaConf
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    DistilBertForSequenceClassification,
-    pipeline,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import trlx
 from trlx.data.default_configs import (
     TRLConfig,
     default_nemo_1_3b_config,
-    default_nemo_2b_config,
-    default_nemo_20b_config,
     default_ppo_config,
 )
 
@@ -40,6 +32,9 @@ def main(hparams={}):
         nemo_config = default_nemo_1_3b_config()
         batch_size = 16
         chunk_size = 128
+        mini_batch_size = 16
+        unfrozen_layers = -1
+
     elif cfg_name == "6.7B":
         nemo_config = default_nemo_1_3b_config()
         nemo_config.name = "megatron_gpt_6.7b"
@@ -50,6 +45,7 @@ def main(hparams={}):
         batch_size = 4
         mini_batch_size = 4
         chunk_size = 16
+        unfrozen_layers = -1
 
     elif cfg_name == "13B":
         nemo_config = default_nemo_1_3b_config()
@@ -62,6 +58,8 @@ def main(hparams={}):
         batch_size = 16
         mini_batch_size = 4
         chunk_size = 16
+        unfrozen_layers = -1
+
     elif cfg_name == "20B":
         nemo_config = default_nemo_1_3b_config()
         nemo_config.name = "megatron_gpt_20b"
@@ -74,6 +72,8 @@ def main(hparams={}):
         batch_size = 16
         mini_batch_size = 2
         chunk_size = 16
+        unfrozen_layers = -1
+
     elif cfg_name == "33B":
         nemo_config = default_nemo_1_3b_config()
         nemo_config.name = "megatron_gpt_33b"
@@ -82,15 +82,17 @@ def main(hparams={}):
         nemo_config.model.ffn_hidden_size = 28672
         nemo_config.model.num_attention_heads = 56
 
-        nemo_config.trainer.num_nodes = 8
+        nemo_config.trainer.num_nodes = 4
         nemo_config.trainer.devices = 8
         nemo_config.model.tensor_model_parallel_size = 8
         batch_size = 32
         mini_batch_size = 4
         chunk_size = 32
+        unfrozen_layers = -1
+
     elif cfg_name == "66B":
         nemo_config = default_nemo_1_3b_config()
-        nemo_config.trainer.num_nodes = 8
+        nemo_config.trainer.num_nodes = 4
         nemo_config.trainer.devices = 8
         nemo_config.name = "megatron_gpt_66b"
         nemo_config.model.num_layers = 64
@@ -102,6 +104,8 @@ def main(hparams={}):
         batch_size = 32
         mini_batch_size = 2
         chunk_size = 32
+        unfrozen_layers = 32
+
     else:
         raise ValueError(f"Unknown NEMO_CONFIG: {cfg_name}")
 
@@ -137,7 +141,7 @@ def main(hparams={}):
         scheduler=dict(
             name="CosineAnnealing",
         ),
-        model=dict(num_layers_unfrozen=-1),
+        model=dict(num_layers_unfrozen=unfrozen_layers),
         method=dict(
             num_rollouts=chunk_size,
             init_kl_coef=0.05,
@@ -166,7 +170,7 @@ def main(hparams={}):
             inputs = inputs.to(local_rank)
             with torch.no_grad():
                 outputs = reward_model(**inputs)
-            logits = outputs.logits.cpu()
+            outputs.logits.cpu()
         reward_model.to("cpu")
         return [0.5 for _ in samples]
 

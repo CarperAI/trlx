@@ -49,7 +49,7 @@ def main(hparams={}):
             kwargs=dict(lr=1.001e-5, weight_decay=0.1, eps=1.0e-8, betas=(0.9, 0.95)),
         ),
         scheduler=dict(name="CosineAnnealing"),
-        model=dict(num_layers_unfrozen=4),
+        model=dict(num_layers_unfrozen=32),
         method=dict(
             num_rollouts=256,
             init_kl_coef=0.05,

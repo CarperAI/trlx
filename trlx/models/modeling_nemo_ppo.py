@@ -253,7 +253,7 @@ class RefLMHeads(MegatronModule):
         run_value_head=False,
         **kwargs,
     ):
-        if self._lm.language_model.output_layer is not None:
+        if hasattr(self._lm.language_model, "output_layer"):
             logit_weights = self._lm.language_model.output_layer.weight
         else:
             logit_weights = self._lm.word_embeddings_weight()
