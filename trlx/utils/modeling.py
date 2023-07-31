@@ -19,15 +19,20 @@ def make_head(n_embd: int, out: int, dtype: type = torch.float32) -> nn.Sequenti
     )
 
 
-def freeze_bottom_causal_layers(model: nn.Module, num_layers_unfrozen: int = 0):
+def freeze_bottom_causal_layers(model: transformers.PreTrainedModel, num_layers_unfrozen: int = 0):
     """Freezes the bottom transformer block layers of the specified model."""
     hidden_layers = hf_get_decoder_blocks(model)
+
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
     elif num_layers_unfrozen > 0:
         hidden_layers_to_freeze = list(hidden_layers)[:-num_layers_unfrozen]
     else:
         hidden_layers_to_freeze = []
+
+    if model.config.tie_word_embeddings:
+        hidden_layers_to_freeze += [model.get_output_embeddings()]
+
     for layer in hidden_layers_to_freeze:
         layer.requires_grad_(False)
 
