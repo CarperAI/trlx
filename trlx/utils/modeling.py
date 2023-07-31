@@ -25,13 +25,14 @@ def freeze_bottom_causal_layers(model: transformers.PreTrainedModel, num_layers_
 
     if num_layers_unfrozen == 0:
         hidden_layers_to_freeze = list(hidden_layers)
+        hidden_layers_to_freeze += [model.get_input_embeddings(), model.get_output_embeddings()]
     elif num_layers_unfrozen > 0:
         hidden_layers_to_freeze = list(hidden_layers)[:-num_layers_unfrozen]
+        hidden_layers_to_freeze += [model.get_input_embeddings()]
+        if model.config.tie_word_embeddings:
+            hidden_layers_to_freeze += [model.get_output_embeddings()]
     else:
         hidden_layers_to_freeze = []
-
-    if model.config.tie_word_embeddings:
-        hidden_layers_to_freeze += [model.get_output_embeddings()]
 
     for layer in hidden_layers_to_freeze:
         layer.requires_grad_(False)
