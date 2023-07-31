@@ -122,7 +122,7 @@ class SFTGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
         print(f"Loaded from pretrained {rank_params}")
 
     # Adapted from NeMo
