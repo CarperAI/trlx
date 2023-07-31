@@ -223,16 +223,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def post_backward_callback(self):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
+    def create_train_dataloader(self):
+        return self.store.create_loader(self.config.train.batch_size, shuffle=True)
+
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
         self.make_experience(self.config.method.num_rollouts)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
+        self.train_dataloader = self.create_train_dataloader()
 
-        self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
+        self.n_inner_epochs = self.config.method.ppo_epochs
+        self.total_steps = self.config.train.epochs * self.n_inner_epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):

@@ -551,21 +551,24 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # For each epoch
         for _ in range(self.config.train.epochs):
-            # For each batch
-            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
-                # For each update per batch
-                for _ in range(self.n_updates_per_batch):
-                    # Note that whereas standard policy gradient methods perform one
-                    # gradient update per batch, PPO for example commonly performs
-                    # multiple gradient updates on the same batch of data.
-                    # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = 0
-                    backward_time = 0
+            # For each ppo epoch
+            for _ in range(self.n_inner_epochs):
+                # Note that whereas standard policy gradient methods perform one
+                # gradient update per batch, PPO for example commonly performs
+                # multiple epochs of gradient updates on the same batch of data.
+                # https://arxiv.org/pdf/1707.06347.pdf
+
+                # We create a new dataloader (so new data ordering and shuffle) each inner epoch
+                train_dataloader = self.create_train_dataloader()
+                # For each batch
+                for minibatch in MiniBatchIterator(train_dataloader, self.mb_size, self.num_mb):
+                    forward_time = 0.0
+                    backward_time = 0.0
                     stats_accum = []
-                    for mb in mbs:
+                    for microbatch in minibatch:
                         with self._accumulate():
                             forward_time -= time()
-                            loss, stats = self.loss(mb)
+                            loss, stats = self.loss(microbatch)
                             forward_time += time()
                             backward_time -= time()
                             self.model.train()
@@ -643,6 +646,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.post_epoch_callback()
         tbar.close()
+
+    @abstractmethod
+    def create_train_dataloader(self):
+        """Returns a new dataloader for training."""
+        pass
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):
