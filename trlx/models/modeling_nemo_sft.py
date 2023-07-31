@@ -122,15 +122,17 @@ class SFTGPT(MegatronGPTModel):
 
         lm_state_dict = {**lm_state_dict, "encoder": encoder_state_dict}
 
-        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=False)
+        unwrap_float16_module(self.model).load_state_dict(lm_state_dict, strict=True)
         print(f"Loaded from pretrained {rank_params}")
 
     def model_provider_func(self, *args, **kwargs):
         gpt = super().model_provider_func(*args, **kwargs)
 
         from trlx.models.modeling_nemo_ppo import patch_attention_for_llama
+
         gpt.apply(patch_attention_for_llama)
         return gpt
+
     # Adapted from NeMo
     # https://github.com/NVIDIA/NeMo/blob/r1.13.0/nemo/collections/nlp/models/language_modeling/megatron_gpt_model.py#L259
     def training_step(self, batch: List[torch.Tensor], batch_idx: int):  # noqa: C901
