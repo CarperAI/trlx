@@ -1200,7 +1200,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         num_value_layers_unfrozen=0,
     ):
         super().__init__(base_model, peft_config=peft_config)
-        #TODO: Support Seq2Seq value branching
+        # TODO: Support Seq2Seq value branching
         if num_value_layers_unfrozen > 0:
             raise NotImplementedError("Value branches unsupported for Seq2Seq architecture")
         self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
