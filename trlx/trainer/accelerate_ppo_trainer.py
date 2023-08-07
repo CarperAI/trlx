@@ -282,8 +282,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             rollout_generate_time = time()
 
-            print("ONE")
-
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
             samples = self.generate(
                 batch["input_ids"],
@@ -292,8 +290,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 **self.generate_experience_kwargs,
             )
             stats["time/rollout_generate"] = time() - rollout_generate_time
-
-            print("TWO")
 
             num_return_sequences = (
                 self.generate_experience_kwargs["num_return_sequences"]
@@ -353,8 +349,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 all_scores = None
                 max_len = torch.tensor(0, dtype=torch.long, device=device)
 
-            print("THREE")
-
             if torch.distributed.is_initialized():
                 torch.distributed.broadcast(max_len, 0)
                 scores = torch.empty((len(samples), max_len), device=device)
@@ -362,7 +356,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 scores = all_scores[0].clone().detach()
 
-            print("FOUR")
             # Best-of-N Sampling.
             scores_mask = scores != -np.inf
             train_indices = self.get_topk_indices(
