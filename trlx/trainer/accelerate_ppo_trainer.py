@@ -97,7 +97,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         if config.method.gen_experience_kwargs is not None:
             self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
-            self.generate_experience_kwargs = None
+            self.generate_experience_kwargs = {**self.generate_kwargs}
 
         # Setup stats tracker
         self.running_moments = RunningMoments()
