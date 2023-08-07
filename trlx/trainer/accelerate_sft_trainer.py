@@ -72,18 +72,20 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
 
         return loss, stats
 
+    def create_train_dataloader(self):
+        return self.accelerator.prepare(self.store.create_loader(self.config.train.batch_size))
+
     def prepare_learning(self):
-        train_dataloader = self.store.create_loader(self.config.train.batch_size)
+        self.train_dataloader = self.create_train_dataloader()
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         (
             self.model,
             self.opt,
-            self.train_dataloader,
             self.eval_dataloader,
-        ) = self.accelerator.prepare(self.model, self.opt, train_dataloader, eval_dataloader)
+        ) = self.accelerator.prepare(self.model, self.opt, eval_dataloader)
 
-        self.n_updates_per_batch = 1
+        self.n_inner_epochs = 1
         self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 

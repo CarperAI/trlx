@@ -10,11 +10,11 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
-from torch.nn.utils.rnn import pad_sequence
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from rich.console import Console
 from rich.table import Table
+from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
@@ -290,7 +290,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             samples.append(sample)
         # Concat padded samples
-        samples = pad_sequence(samples, batch_first=True, self.tokenizer.pad_token_id)
+        samples = pad_sequence(samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
         return samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
@@ -456,15 +456,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         samples=str_samples,
                         prompts=str_prompts,
                         outputs=str_outputs,
-                        model_tok=self.tokenizer,
+                        tokenizer=self.tokenizer,
                         **metadata,
                     )
-                    if type(rewards[0]) is torch.Tensor:
+                    if isinstance(rewards[0], torch.Tensor):
                         rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
-                    elif type(rewards[0]) is list:
-                        rewards = torch.tensor([sum(reward) for reward in rewards])
+                    elif isinstance(rewards[0], list):
+                        rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
                     else:
-                        rewards = torch.tensor(rewards)
+                        rewards = torch.tensor(rewards, dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):
@@ -582,24 +582,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # For each epoch
         for _ in range(self.config.train.epochs):
-            # For each batch
-            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
-                # For each update per batch
-                for _ in range(self.n_updates_per_batch):
-                    # Note that whereas standard policy gradient methods perform one
-                    # gradient update per batch, PPO for example commonly performs
-                    # multiple gradient updates on the same batch of data.
-                    # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = 0
-                    backward_time = 0
+            # For each ppo epoch
+            for _ in range(self.n_inner_epochs):
+                # Note that whereas standard policy gradient methods perform one
+                # gradient update per batch, PPO for example commonly performs
+                # multiple epochs of gradient updates on the same batch of data.
+                # https://arxiv.org/pdf/1707.06347.pdf
+
+                # We create a new dataloader (so new data ordering and shuffle) each inner epoch
+                train_dataloader = self.create_train_dataloader()
+                # For each batch
+                for minibatch in MiniBatchIterator(train_dataloader, self.mb_size, self.num_mb):
+                    forward_time = 0.0
+                    backward_time = 0.0
                     stats_accum = []
-                    for mb in mbs:
+                    for microbatch in minibatch:
                         with self._accumulate():
                             forward_time -= time()
-                            loss, stats = self.loss(mb)
+                            loss, stats = self.loss(microbatch)
                             forward_time += time()
                             backward_time -= time()
+                            self.model.train()
                             self.accelerator.backward(loss)
+                            self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
 
@@ -681,6 +686,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
             l = [[s] * n for s in l]
             l = [item for sublist in l for item in sublist]
         return l
+
+    @abstractmethod
+    def create_train_dataloader(self):
+        """Returns a new dataloader for training."""
+        pass
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):

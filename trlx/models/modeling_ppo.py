@@ -5,9 +5,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
+import deepspeed
 import numpy as np
 import torch
-import torch.nn as nn
 import transformers
 from torchtyping import TensorType
 from transformers.modeling_outputs import ModelOutput
@@ -138,6 +138,7 @@ class PPOConfig(MethodConfig):
     gen_kwargs: dict
     gen_experience_kwargs: Optional[dict] = None
     num_train_sequences: int = 1
+    num_value_layers_unfrozen: int = 0
 
     def get_advantages_and_returns(
         self,
@@ -258,6 +259,17 @@ class CausalLMOutputWithValue(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
+def make_value_branch(base_model, num_value_layers_unfrozen):
+    value_head = make_head(hf_get_hidden_size(base_model.config), 1)
+    if num_value_layers_unfrozen == 0:
+        return value_head
+    config = base_model.config
+    branch_class = hf_get_branch_class(config)
+    value_branch = branch_class(base_model, num_layers_unfrozen=num_value_layers_unfrozen, frozen=False)
+    value_branch.lm_head = value_head
+    return value_branch
+
+
 class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     """An `AutoModel` class wrapper for `transformers` causal models that have a
     language modeling head and a value head
@@ -265,15 +277,17 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForCausalLM
     _supported_modules = ["v_head"]
-    _supported_args = ["peft_config"]
+    _supported_args = ["peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
         peft_config=None,
+        num_value_layers_unfrozen=0,
     ):
         super().__init__(base_model, peft_config=peft_config)
-        self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
+        self.num_value_layers_unfrozen = num_value_layers_unfrozen
+        self.v_head = make_value_branch(base_model, num_value_layers_unfrozen)
 
     def forward(
         self,
@@ -320,7 +334,20 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
                 outputs = self.base_model.base_model(**forward_kwargs)
         else:
             outputs = self.base_model(**forward_kwargs)
-        value = self.v_head(outputs.hidden_states[-1]).squeeze(-1)
+
+        # TODO: Apply PEFT to value branch
+        if self.num_value_layers_unfrozen > 0:
+            output_shape = outputs.hidden_states[-1].size()
+            forward_kwargs.pop("input_ids", None)
+            forward_kwargs.pop("inputs_embeds", None)
+            forward_kwargs["return_dict"] = False
+            value = self.v_head(
+                outputs.hidden_states[-(self.num_value_layers_unfrozen + 1)],
+                output_shape=output_shape,
+                **forward_kwargs,
+            )[0].squeeze(-1)
+        else:
+            value = self.v_head(outputs.hidden_states[-(self.num_value_layers_unfrozen + 1)]).squeeze(-1)
 
         if not return_dict:
             outputs = (outputs.logits,) + outputs[1:] + (value,)
@@ -365,7 +392,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
 
 class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen", "peft_config"]
+    _supported_args = ["num_layers_unfrozen", "peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
@@ -373,8 +400,9 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         *,
         num_layers_unfrozen: int = -1,
         peft_config=None,
+        num_value_layers_unfrozen: int = 0,
     ):
-        super().__init__(base_model, peft_config=peft_config)
+        super().__init__(base_model, peft_config=peft_config, num_value_layers_unfrozen=num_value_layers_unfrozen)
         self.num_layers_unfrozen = num_layers_unfrozen
 
         if self.num_layers_unfrozen > 0 and not self.peft_type:
@@ -432,7 +460,7 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
 
 
 class ModelBranch(transformers.PreTrainedModel):
-    """Implements the frozen upper trunk of the pretrained reference model used
+    """Implements the upper trunk of the pretrained reference model used
     when computing the PPO KL-divergence penalty.
     """
 
@@ -441,6 +469,7 @@ class ModelBranch(transformers.PreTrainedModel):
         base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int,
+        frozen=True,
     ):
         """
         Args:
@@ -450,10 +479,18 @@ class ModelBranch(transformers.PreTrainedModel):
         super().__init__(base_model.config)
 
         # The branch is defined by the last `num_layers_unfrozen` layers of the pretrained model
-        decoder_blocks = deepcopy(hf_get_decoder_blocks(base_model))
-        self.decoder_blocks = nn.ModuleList(list(decoder_blocks)[-num_layers_unfrozen:])
-        self.final_norm = deepcopy(hf_get_decoder_final_norm(base_model))
-        self.lm_head = deepcopy(hf_get_lm_head(base_model))
+
+        decoder_blocks = hf_get_decoder_blocks(base_model)[-num_layers_unfrozen:]
+        final_norm = hf_get_decoder_final_norm(base_model)
+        lm_head = hf_get_lm_head(base_model)
+
+        with deepspeed.zero.GatheredParameters(
+            list(decoder_blocks.parameters()) + list(final_norm.parameters()) + list(lm_head.parameters()),
+            modifier_rank=None,
+        ):
+            self.decoder_blocks = deepcopy(decoder_blocks)
+            self.final_norm = deepcopy(final_norm)
+            self.lm_head = deepcopy(lm_head)
 
         self.hidden_size = hf_get_hidden_size(self.config)
         self.model_parallel = False
@@ -462,8 +499,9 @@ class ModelBranch(transformers.PreTrainedModel):
         self.gradient_checkpointing = False
 
         # Freeze the entire branch
-        for parameter in self.parameters():
-            parameter.requires_grad_(False)
+        if frozen:
+            for parameter in self.parameters():
+                parameter.requires_grad_(False)
 
 
 class GPTModelBranch(ModelBranch):
@@ -1168,14 +1206,18 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
     _auto_model_parent_class = transformers.AutoModelForSeq2SeqLM
     _supported_modules = ["v_head"]
-    _supported_args = ["peft_config"]
+    _supported_args = ["peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
         base_model: transformers.PreTrainedModel,
         peft_config=None,
+        num_value_layers_unfrozen=0,
     ):
         super().__init__(base_model, peft_config=peft_config)
+        # TODO: Support Seq2Seq value branching
+        if num_value_layers_unfrozen > 0:
+            raise NotImplementedError("Value branches unsupported for Seq2Seq architecture")
         self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
 
     def forward(
@@ -1276,7 +1318,7 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
 
 class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead):
     _supported_modules = ["v_head", "frozen_head"]
-    _supported_args = ["num_layers_unfrozen", "peft_config"]
+    _supported_args = ["num_layers_unfrozen", "peft_config", "num_value_layers_unfrozen"]
 
     def __init__(
         self,
@@ -1284,8 +1326,9 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         *,
         num_layers_unfrozen: int = -1,
         peft_config=None,
+        num_value_layers_unfrozen: int = 0,
     ):
-        super().__init__(base_model, peft_config=peft_config)
+        super().__init__(base_model, peft_config=peft_config, num_value_layers_unfrozen=num_value_layers_unfrozen)
         self.num_layers_unfrozen = num_layers_unfrozen
 
         if self.num_layers_unfrozen > 0 and not self.peft_type:

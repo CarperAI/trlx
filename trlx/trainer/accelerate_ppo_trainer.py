@@ -4,6 +4,7 @@ import uuid
 from time import time
 from typing import Callable, List
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
@@ -89,6 +90,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             use_cache=True,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
+            synced_gpus=os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
         )
         self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
 
@@ -116,6 +118,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            num_value_layers_unfrozen=config.method.num_value_layers_unfrozen,
             peft_config=self.config.model.peft_config,
         )
 
@@ -221,18 +224,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def post_backward_callback(self):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
+    def create_train_dataloader(self):
+        return self.store.create_loader(self.config.train.batch_size, shuffle=True)
+
     def prepare_learning(self):
         eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
         self.make_experience(self.config.method.num_rollouts)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=False)
+        self.train_dataloader = self.create_train_dataloader()
 
-        self.make_experience(self.config.method.num_rollouts)
-
-        self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
+        self.n_inner_epochs = self.config.method.ppo_epochs
+        self.total_steps = self.config.train.epochs * self.n_inner_epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
@@ -325,7 +329,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     samples=all_str_samples,
                     prompts=all_str_prompts,
                     outputs=all_str_outputs,
-                    model_tok=self.tokenizer,
+                    tokenizer=self.tokenizer,
                     **metadata,
                 )
                 all_scores = [
@@ -335,7 +339,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     for score in all_scores
                 ]
                 # Pad 0 reward on the ends
-                all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-1)
+                all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-np.inf)
                 max_len = torch.tensor(all_scores.shape[1], dtype=torch.long, device=device)
 
                 stats["time/rollout_score"] = time() - rollout_score_time
@@ -352,7 +356,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 scores = all_scores[0].clone().detach()
             # Best-of-N Sampling.
-            scores_mask = scores != -1
+            scores_mask = scores != -np.inf
             train_indices = self.get_topk_indices(
                 input_tensor=scores_mask * scores,
                 window_size=num_return_sequences,
@@ -393,7 +397,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(
                     dim=1
                 ).std()
-            all_scores_mean, all_scores_std = self.running_moments.update(scores, scores_mask)
+            all_scores_mean, all_scores_std = self.running_moments.update(torch.sum(scores * scores_mask, dim=1))
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
             stats["rollout_scores/running_mean"] = self.running_moments.mean.item()
@@ -518,8 +522,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             ref_logprobs = ref_logprobs.cpu()
             prompt_tensors = prompt_tensors.cpu()
             sample_outputs = sample_outputs.cpu()
-            # TODO(dahoas): Why [:, :-1]? Redudant with clipping via start : ends[ix]?
-            # Actually I think it's just wrong?
             values = values.cpu()[:, :-1]
 
             # Get the logprobs and values, for tokens that are not padding,
@@ -527,7 +529,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # (these are taken from the student model and not the reference model)
             ends = start + attention_mask[:, start:].sum(1) + 1
             # NOTE: values[i] is the value of the state after response token i
-            # TODO(dahoas): Does it actually make sense to get the rewards one step early?
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
             all_logprobs = [logprobs[ix, start : ends[ix]] for ix in range(n_samples)]
 

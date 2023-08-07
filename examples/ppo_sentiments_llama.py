@@ -31,7 +31,7 @@ def llama_config():
         train=TrainConfig(
             seq_length=1024,
             epochs=100,
-            total_steps=10000,
+            total_steps=400,
             batch_size=32,
             checkpoint_interval=10000,
             eval_interval=100,
@@ -39,10 +39,10 @@ def llama_config():
             trainer="AcceleratePPOTrainer",
             save_best=False,
         ),
-        model=ModelConfig(model_path="decapoda-research/llama-7b-hf", num_layers_unfrozen=2),
-        tokenizer=TokenizerConfig(tokenizer_path="decapoda-research/llama-7b-hf", truncation_side="right"),
+        model=ModelConfig(model_path="NousResearch/Llama-2-7b-hf", num_layers_unfrozen=2),
+        tokenizer=TokenizerConfig(tokenizer_path="NousResearch/Llama-2-7b-hf", truncation_side="right"),
         optimizer=OptimizerConfig(
-            name="adamw", kwargs=dict(lr=1.0e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
+            name="adamw", kwargs=dict(lr=1e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
         ),
         scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=10000, eta_min=1.0e-5)),
         method=PPOConfig(
@@ -50,7 +50,7 @@ def llama_config():
             num_rollouts=128,
             chunk_size=128,
             ppo_epochs=4,
-            init_kl_coef=0.05,
+            init_kl_coef=0.001,
             target=6,
             horizon=10000,
             gamma=1,
