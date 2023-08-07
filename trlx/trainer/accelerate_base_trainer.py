@@ -327,10 +327,6 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.accelerator.register_load_state_pre_hook(load_state_hook)
 
-            strict = False
-        else:
-            strict = True
-
         self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):

@@ -424,7 +424,6 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
             return hydra_outputs.logits
         return hydra_outputs
 
-
     def state_dict(self, *args, heads_only=False, **kwargs):
         """
         Returns the state dictionary of the model. We add the state dictionary of the value head
@@ -432,10 +431,16 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         """
         state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
 
             if self.frozen_head:
-                state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+                state_dict = {
+                    **state_dict,
+                    **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs)),
+                }
 
         return state_dict
 
@@ -1395,10 +1400,16 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         """
         state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
 
             if self.frozen_head:
-                state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
+                state_dict = {
+                    **state_dict,
+                    **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs)),
+                }
 
         return state_dict
 
@@ -1409,7 +1420,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
             for k in state_dict:
                 match = re.search(r"^frozen_head\.decoder_blocks\.(\d+)", k)
                 if match:
-                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1))+1)
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
 
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
