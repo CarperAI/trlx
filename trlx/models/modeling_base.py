@@ -70,7 +70,10 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         super().__init__()
         self.base_model = base_model
         # cache `forward` args for general use (avoids incompatible args across architectures)
-        self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
+        if peft_config:
+            base_model = base_model.base_model
+        self.forward_kwargs = inspect.getfullargspec(base_model.forward).args
+
         self.is_loaded_in_8bit = getattr(base_model, "is_loaded_in_8bit", False)
         if self.is_loaded_in_8bit:
             # TODO(glerzing): Fully test and support loading in 8-bit

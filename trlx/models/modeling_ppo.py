@@ -432,7 +432,7 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         """
         state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
 
             if self.frozen_head:
                 state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
@@ -440,9 +440,9 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         return state_dict
 
     def post_init(self, state_dict):
-        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
 
-        if self.frozen_head is None:
+        if not self.peft_type and self.frozen_head is None:
             for k in state_dict:
                 match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
                 if match:
@@ -455,7 +455,7 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
-        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()  # noqa: E702
 
@@ -1288,11 +1288,6 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         if not heads_only:
             state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
 
-        return {
-            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
-            **self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs)),
-        }
-
         return state_dict
 
     def post_init(self, state_dict):
@@ -1400,7 +1395,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         """
         state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
 
             if self.frozen_head:
                 state_dict = {**state_dict, **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs))}
@@ -1408,13 +1403,13 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         return state_dict
 
     def post_init(self, state_dict):
-        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
 
-        if self.frozen_head is None:
+        if not self.peft_type and self.frozen_head is None:
             for k in state_dict:
-                match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
+                match = re.search(r"^frozen_head\.decoder_blocks\.(\d+)", k)
                 if match:
-                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)))
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1))+1)
 
             branch_class = T5Branch  # TODO: Add support for other model branches
             self.frozen_head = branch_class(
@@ -1422,7 +1417,7 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
 
-        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()  # noqa: E702
 

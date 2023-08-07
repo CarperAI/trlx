@@ -366,7 +366,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         """
         state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
 
         return state_dict
 
@@ -377,8 +377,8 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         keys of the value head state dictionary.
         """
         super().post_init()
-        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict)
-        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()
 
@@ -427,7 +427,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         """
         state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
         if not heads_only:
-            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs))}
 
         return state_dict
 
@@ -438,8 +438,8 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         keys of the value head state dictionary.
         """
         super().post_init()
-        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict)
-        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()
 
