@@ -445,6 +445,12 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         return state_dict
 
     def post_init(self, state_dict):
+        """
+        Load `state_dict` into the model. If peft was used to train the model,
+        only the value head would be present in the loaded `state_dict`, so the
+        loading has to be not strict. Also `frozen_head` will be recreated and
+        loaded from the checkpoint, to comply with deepspeed checkpoint loading.
+        """
         strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
 
         if not self.peft_type and self.frozen_head is None:
@@ -1414,6 +1420,12 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         return state_dict
 
     def post_init(self, state_dict):
+        """
+        Load `state_dict` into the model. If peft was used to train the model,
+        only the value head would be present in the loaded `state_dict`, so the
+        loading has to be not strict. Also `frozen_head` will be recreated and
+        loaded from the checkpoint, to comply with deepspeed checkpoint loading.
+        """
         strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
 
         if not self.peft_type and self.frozen_head is None:

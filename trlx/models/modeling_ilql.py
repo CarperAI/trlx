@@ -376,8 +376,7 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
-        keys of the value head state dictionary.
+        by prepending the key with `ilql_heads.`.
         """
         super().post_init()
         strict = not self.peft_type and any(
@@ -442,8 +441,7 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
-        keys of the value head state dictionary.
+        by prepending the key with `ilql_heads.`.
         """
         super().post_init()
         strict = not self.peft_type and any(
