@@ -69,12 +69,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.opt = self.setup_optimizer()
         self.scheduler = self.setup_scheduler()
 
-        self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer.tokenizer_path, use_fast=True)
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         self.tokenizer.sep_token = "<sep>"
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = "<|padding|>"
+        if config.model.model_arch_type != "seq2seq":
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        # Add eos token to self.stop_sequences
+        self.stop_sequences.append(self.tokenizer.eos_token)
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -210,9 +213,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         append_eos_token: bool = True,
     ) -> Tuple[List[str], List[str], List[str], List[torch.LongTensor], List[torch.LongTensor], List[torch.LongTensor]]:
         """
-        Decode tensor generations with stopping criteria into lists
-        of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and
-        Note prompts maybe sompetimes be right padded, as well as samples
+        Decode tensor generations with stopping criteria into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and 
+        remove padding from samples, responses. Note prompts maybe sometimes be right padded, as well as samples
         """
         if prompt_sizes is None:
             # Assuming prompts were left-padded
@@ -227,39 +229,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 output_start_ix = prompt_size
 
             # We must decode by skipping padding in the middle with skip_special_tokens
-            str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
-            # Return the prompt tensor (with the exact padding) used to generate the sample
             tok_prompt = prompt[:prompt_size].cpu()
-
-            str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
-            # Trim outputs up to `self.stop_sequences` if any are present
-            if self.stop_sequences:
-                for stop in self.stop_sequences:
-                    stop_ix = str_output.find(stop)
-                    if stop_ix >= 0:
-                        str_output = str_output[:stop_ix].rstrip()
-
-            # Recover sequence of tokens corresponding to string
-            # NOTE: Cast to torch.long in the case the input is empty
-            tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0].long()
-            # Remove bos from tokenized output (if present)
-            if (
-                hasattr(self.tokenizer, "bos_token")
-                and len(tok_output) > 0
-                and tok_output[0].item() == self.tokenizer.bos_token_id
-            ):
-                tok_output = tok_output[1:]
-
-            # Recover the last <eos> if it was present in the original sample
-            # or add one if it was trimmed with `self.stop_sequences`.
-            # When a generation ended due to `max_new_tokens` exhaustion,
-            # only then <pad> or <eos> token would not be present in the original sample at the end
-            # Note we append to both separately because encoding </s> does not result in tokenizer.eos_token_id
-            if append_eos_token:
-                str_output += self.tokenizer.eos_token
-                tok_output = torch.cat(
-                    [tok_output, torch.tensor(self.tokenizer.eos_token_id, dtype=torch.long).view((1,))]
-                )
+            str_prompt = self.tokenizer.decode(tok_prompt, skip_special_tokens=True)
+            
+            tok_output = sample[output_start_ix:]
+            # Get prefix corresponding to text + EOS token tag
+            end = tok_output.not_equal(self.tokenizer.eos_token_id).sum() + 1
+            tok_output = tok_output[:end].cpu()
+            str_output = self.tokenizer.decode(tok_output, skip_special_tokens=True)
+            # Add first EOS token back
+            str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
             str_outputs.append(str_output)
@@ -273,7 +252,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             else:
                 sample = str_prompt + str_output
-                tok_sample = torch.cat([tok_prompt, tok_output])
+                tok_sample = torch.cat([tok_prompt, tok_output], dim=0)
 
             str_samples.append(sample)
             tok_samples.append(tok_sample)
@@ -316,7 +295,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         if use_inference_pipeline is not None:
             generate_kwargs.pop("use_inference_pipeline")  # Pop to remove from Generator args
 
-        samples = []
+        all_tok_samples = []
+        all_loss_masks = []
         for chunk_idx in range(len(input_ids)):
             input_ids_chunk = input_ids[chunk_idx]
             attention_mask_chunk = None
@@ -328,28 +308,57 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # Remove all but temperature and sampling parameters from gen_kwargs
                 generate_kwargs = {k: v for k, v in generate_kwargs.items() if k == "do_sample" or k == "temperature"}
                 # Include "extended_response" field to accumulate responses
-                data = {"prompt": self.tokenizer.batch_decode(input_ids_chunk, skip_special_tokens=True), "gen_kwargs": len(input_ids_chunk)*[generate_kwargs]}
+                data = {
+                        "input_ids": input_ids_chunk,
+                        "attention_mask": attention_mask_chunk,
+                        "prompt": self.tokenizer.batch_decode(input_ids_chunk, skip_special_tokens=True), 
+                        "gen_kwargs": len(input_ids_chunk)*[generate_kwargs]
+                       }
                 data = self.inference_pipeline(data)
-                # Ensure samples_toks[:, :len(prompt_toks[0])] == prompt_toks
-                self.tokenizer.padding_side = "right"
-                response_toks = self.tokenizer(data["response"], padding="longest", return_tensors="pt").input_ids.to(self.accelerator.device)
-                self.tokenizer.padding_size = self.config.tokenizer.padding_side
-                sample_toks = torch.cat((input_ids_chunk, response_toks), dim=1).cpu()
+                # Inference pipeline should ensure tok_samples have same shapes as loss_masks
+                tok_samples = data["tok_samples"]
+                loss_masks = data["loss_mask"]
             else:
                 input_ids_chunk = input_ids_chunk.to(self.accelerator.device)
                 if attention_mask_chunk is not None:
                     attention_mask_chunk = attention_mask_chunk.to(self.accelerator.device)
     
+                # Sample trajectory from model
                 with torch.no_grad():
-                    sample_toks = self.accelerator.unwrap_model(self.model).generate(
+                    tok_samples = self.accelerator.unwrap_model(self.model).generate(
                         input_ids=input_ids_chunk, attention_mask=attention_mask_chunk, **generate_kwargs
                     ).cpu()
+                # Decode and apply stopping criteria
+                stopped_tok_samples = []
+                loss_masks = []
+                for tok_prompt, tok_sample in zip(input_ids_chunk, tok_samples):
+                    tok_output = tok_sample[tok_prompt.shape[0]:]
+                    str_output = self.tokenizer.decode(tok_output)
+                    if self.stop_sequences:
+                        for stop in self.stop_sequences:
+                            stop_ix = str_output.find(stop)
+                            if stop_ix >= 0:
+                                str_output = str_output[:stop_ix].rstrip()
+                    stopped_tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0]
+                    # Remove BOS toke if present
+                    if hasattr(self.tokenizer, "bos_token") and len(stopped_tok_output) > 0 and stopped_tok_output[0].item() == self.tokenizer.bos_token_id:
+                        stopped_tok_output = stopped_tok_output[1:]
+                    stopped_tok_sample = torch.cat([tok_prompt.cpu(), stopped_tok_output], dim=0)
+                    stopped_tok_samples.append(stopped_tok_sample)
+                    # Loss mask will be applied to entire sequence
+                    mask = torch.ones_like(stopped_tok_output)
+                    loss_masks.append(mask)
+                tok_samples = stopped_tok_samples
             # Convert to list of 1-d tensors to be padded
-            sample_toks = [sample_tok for sample_tok in sample_toks]
-            samples += sample_toks
+            # Also add extra EOS token w/ loss_mask == 0 to prevent empty responses
+            tok_samples = [torch.cat([tok_sample, torch.tensor(self.tokenizer.eos_token_id).view((1,)).long()], dim=0) for tok_sample in tok_samples]
+            loss_masks = [torch.cat([m, torch.tensor(0).view((1,))], dim=0) for m in loss_masks]
+            all_tok_samples += tok_samples
+            all_loss_masks += loss_masks
         # Concat samples
-        sample_toks = pad_sequence(samples, batch_first=True, padding_value=self.tokenizer.eos_token_id).squeeze().to(self.accelerator.device)
-        return sample_toks
+        all_tok_samples = pad_sequence(all_tok_samples, batch_first=True, padding_value=self.tokenizer.eos_token_id).squeeze()
+        all_loss_masks = pad_sequence(all_loss_masks, batch_first=True, padding_value=0.0)
+        return all_tok_samples, all_loss_masks
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
@@ -452,11 +461,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
                 chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
                 if self.generate_sweep_kwarg:
-                    samples = self.generate(
+                    samples, _ = self.generate(
                         prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size, **{gen_sweep_arg: gen_sweep_value}
                     )
                 else:
-                    samples = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)
+                    samples, _ = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)
+                samples = samples.to(self.accelerator.device)
 
                 # Repeat prompts, metadata num_return_sequence times
                 num_return_sequences = 1

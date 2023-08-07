@@ -33,6 +33,7 @@ class PPORLElement:
     logprobs: TensorType["response_size"]
     values: TensorType["response_size"]
     rewards: TensorType["response_size"]
+    loss_mask: TensorType["response_size"]
 
 
 @dataclass
@@ -54,6 +55,9 @@ class PPORLBatch:
 
     :param rewards: A batch of rewards
     :type rewards: torch.Tensor
+
+    :param loss_masks: A mask for tokens during the loss computation
+    :type loss_masks: torch.Tensor
     """
 
     query_tensors: TensorType["batch_size", "query_size"]
@@ -61,3 +65,4 @@ class PPORLBatch:
     logprobs: TensorType["batch_size", "response_size"]
     values: TensorType["batch_size", "response_size"]
     rewards: TensorType["batch_size", "response_size"]
+    loss_masks: TensorType["batch_size", "response_size"]

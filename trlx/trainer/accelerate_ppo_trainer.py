@@ -132,9 +132,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         old_logprobs = batch.logprobs.to(self.accelerator.device)
         old_values = batch.values.to(self.accelerator.device)
         old_rewards = batch.rewards.to(self.accelerator.device)
+        loss_masks = batch.loss_masks.to(self.accelerator.device)
         response_length = old_rewards.shape[1]
 
-        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length)
+        # TODO: loss_mask should affect advantages if discount < 1, GAE cannot be used (lam=1)
+        # NOTE: Rewards from KL on masked tokens should already be zeroed out
+        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length, loss_masks)
 
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
@@ -162,14 +165,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                mask[:, start + 1 : end + 1],
+                mask[:, start:end],
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
             attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            outputs = self.model(tokens, attention_mask, return_dict=True, position_ids=position_ids)
+            outputs = self.model(tokens, attention_mask, return_dict=True)
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
@@ -180,7 +181,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                attention_mask[:, start + 1 : end + 1],
+                loss_masks,
             )
 
         loss, stats = self.config.method.loss(
@@ -294,8 +295,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 else 1
             )
             prompt_tensors = batch.input_ids.repeat_interleave(num_return_sequences, dim=0)
-            device = samples.device
 
+            # Prepare samples for reward_fn via broadcast to rank 0
+            device = self.accelerator.device
+            samples = samples.to(device)
             prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
             padded_samples = self.accelerator.pad_across_processes(
                 samples, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
@@ -392,6 +395,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             scores_mask = scores_mask[train_indices]
             samples = samples[train_indices]
             prompt_tensors = prompt_tensors[train_indices]
+            loss_masks = loss_masks[train_indices.cpu()]
             if all_ref_logprobs is not None:
                 all_ref_logprobs = all_ref_logprobs[train_indices]
 
@@ -431,6 +435,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 start = tok_prompts.shape[1] - 1
 
             padded_tok_samples = pad_sequence(tok_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            padded_tok_outputs = pad_sequence(tok_outputs, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+            # Remove extra padding from loss masks (may occur if using BoN sampling)
+            loss_masks = loss_masks[:, :padded_tok_outputs.shape[1]]
             attention_mask = padded_tok_samples.not_equal(self.tokenizer.pad_token_id).long()
 
             # Precompute logprobs, values
@@ -545,7 +552,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Estimate the KL divergence between the model and reference model
             # NOTE: nan is interfering with kl estimates since 0 * nan = 0
             # Convert inf padding terms in ref_logprobs to number removable with attention mask mult
-            log_ratio = (logprobs - torch.nan_to_num(ref_logprobs)) * attention_mask[:, :-1]
+            if logprobs.shape[1] != loss_masks.shape[1]:
+                raise ValueError(f"Shape mismatch between logprobs and loss_masks:\n\
+                                    logprobs: {logprobs.shape}\n\
+                                    ref_logprobs: {ref_logprobs.shape}\n\
+                                    loss_masks: {loss_masks.shape}\n\
+                                    padded_tok_outputs: {padded_tok_outputs.shape}")
+            log_ratio = (logprobs - torch.nan_to_num(ref_logprobs)) * loss_masks
             kl = log_ratio.exp() - 1 - log_ratio
             mean_kl_per_token = kl.mean()
             mean_kl = kl.sum(1).mean()
@@ -557,41 +570,26 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # Get the logprobs and values, for tokens that are not padding,
             # from the end of the prompt up to the <eos> token, while also including the latter
             # (these are taken from the student model and not the reference model)
-            # NOTE: Why are we summing including a token from the prompt?
-            # In our case it's ok because we then subtract -1 from resulting end index
             ends = attention_mask[:, 1:].sum(1) + 1
             for sample_idx in range(n_samples):
-<<<<<<< HEAD
-                value = values[sample_idx, : ends[sample_idx] - 1]
-                logprob = logprobs[sample_idx, : ends[sample_idx] - 1]
-                kl_penalty = kl_penalties[sample_idx, : ends[sample_idx] - 1]
-=======
                 value = values[sample_idx, :ends[sample_idx]]
                 logprob = logprobs[sample_idx, :ends[sample_idx]]
                 kl_penalty = kl_penalties[sample_idx, :ends[sample_idx]]
->>>>>>> c0d95a8... Fix: attention_mask indexing error
+                loss_mask = loss_masks[sample_idx, :ends[sample_idx]]
                 query_tensor = tok_prompts[sample_idx]
                 response_tensor = tok_outputs[sample_idx]
-                if (
-                    len(value) != len(logprob)
-                    or len(logprob) != len(kl_penalty)
-                    or len(kl_penalty) != len(response_tensor)
-                ):
-                    raise ValueError(
-                        f"Length mismatch between value, logprob, kl, and response_tensor:\n\
+                if len(value) != len(logprob) or len(logprob) != len(kl_penalty) or len(kl_penalty) != len(response_tensor) or len(response_tensor) != len(loss_mask):
+                    raise ValueError(f"Length mismatch between value, logprob, kl, and response_tensor:\n\
                                         Value: {value.shape}, {value}\n\
                                         Logprob: {logprob.shape}, {logprob}\n\
                                         KL: {kl_penalty.shape}, {kl_penalty}\n\
-<<<<<<< HEAD
-                                        Response: {response_tensor.shape}, {response_tensor}, \
-                                        {self.tokenizer.decode(response_tensor)}\n"
-                    )
-
-=======
                                         end: {ends[sample_idx]}\n\
-                                        Response: {response_tensor.shape}, {response_tensor}, {self.tokenizer.decode(response_tensor)}\n")
+                                        Response: {response_tensor.shape}, {response_tensor}, {self.tokenizer.decode(response_tensor)}\n\
+                                        Loss mask: {loss_mask.shape}, {loss_mask}")
+
+                # Zero out terms on masked tokens
+                kl_penalty = loss_mask * kl_penalty
                 
->>>>>>> c0d95a8... Fix: attention_mask indexing error
                 # Then add in rewards
                 if scores.shape[1] == 1:
                     # NOTE: Final reward given at EOS token following HHH practice
@@ -611,6 +609,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         )
                     rewards = kl_penalty + score
 
+
                 if kl_penalty.isnan().any() or score.isnan().any():
                     raise ValueError(
                         f"nan in tensor:\n\
@@ -629,6 +628,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         logprobs=logprob,
                         values=value,
                         rewards=rewards,
+                        loss_mask=loss_mask,
                     )
                 )
 
@@ -655,7 +655,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.push_to_store(ppo_rl_elements)
 
     @staticmethod
-    def get_topk_indices(input_tensor, window_size: int, k: int, device):
+    def get_topk_indices(input_tensor, window_size: int, k: int, device="cpu"):
         # Sum the scores along dim 1
         input_tensor = input_tensor.sum(1).unsqueeze(1)
         # Use unfold to create the sliding windows
