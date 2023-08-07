@@ -282,16 +282,16 @@ class AccelerateRLTrainer(BaseRLTrainer):
         input_ids = input_ids.split(chunk_size, dim=0)
         if attention_mask is not None:
             attention_mask = attention_mask.split(chunk_size, dim=0)
-        samples = []
+        all_samples = []
         for chunk_idx in range(len(input_ids)):
             with torch.no_grad():
-                sample = self.accelerator.unwrap_model(self.model).generate(
+                samples = self.accelerator.unwrap_model(self.model).generate(
                     input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **generate_kwargs
                 )
-            samples.append(sample)
-        # Concat padded samples
-        samples = pad_sequence(samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
-        return samples
+            all_samples += [sample for sample in samples]
+        # Pad all_samples into one tensor
+        all_samples = pad_sequence(all_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+        return all_samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
