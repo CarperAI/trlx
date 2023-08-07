@@ -142,6 +142,7 @@ class PPOConfig(MethodConfig):
         values: TensorType["batch_size", "response_size"],
         rewards: TensorType["batch_size", "response_size"],
         response_length: int,
+        mask: TensorType["batch_size", "response_size"],
         use_whitening: Optional[bool] = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Function that computes advantages and returns from rewards and values.
@@ -173,7 +174,7 @@ class PPOConfig(MethodConfig):
         advantages = torch.stack(advantages_reversed[::-1], dim=1)
         returns = advantages + values
         if use_whitening:
-            advantages = whiten(advantages)
+            advantages = whiten(advantages, mask)
         return advantages.detach(), returns
 
     def loss(

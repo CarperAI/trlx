@@ -175,11 +175,13 @@ def hf_get_num_hidden_layers(config: transformers.PretrainedConfig) -> int:
     return findattr(config, num_hidden_layers_attrs)
 
 
-def get_global_statistics(xs: torch.Tensor, group=None) -> Tuple[float, float, int]:
+def get_global_statistics(xs: torch.Tensor, mask=None, group=None) -> Tuple[float, float, int]:
     """
     Computes element-wise mean and variance of the tensor across processes
     """
-    sum_and_count = torch.tensor([xs.sum(), xs.numel()], device=xs.device)
+    if mask is None:
+        mask = torch.ones_like(xs)
+    sum_and_count = torch.tensor([xs.sum(), mask.sum()], device=xs.device)
     dist.all_reduce(sum_and_count, dist.ReduceOp.SUM, group=group)
     global_sum, count = sum_and_count
     global_mean = global_sum / count
@@ -190,15 +192,16 @@ def get_global_statistics(xs: torch.Tensor, group=None) -> Tuple[float, float, i
     return global_mean, global_var, count
 
 
-def whiten(xs: torch.Tensor, shift_mean=True, distributed=True, group=None) -> torch.Tensor:
+def whiten(xs: torch.Tensor, mask: torch.Tensor, shift_mean=True, distributed=True, group=None) -> torch.Tensor:
     """Whitens values"""
     if distributed and dist.is_initialized():
-        mean, var, _ = get_global_statistics(xs, group=group)
+        mean, var, _ = get_global_statistics(xs, mask=mask, group=group)
     else:
         var, mean = torch.var_mean(xs)
 
     whitened = (xs - mean) * torch.rsqrt(var + 1e-8)
     if not shift_mean:
+        # TODO: Why not whitened += mean*torch.rsqrt(var+1e-8)?
         whitened += mean
     return whitened
 
