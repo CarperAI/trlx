@@ -282,6 +282,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             rollout_generate_time = time()
 
+            print("ONE")
+
             # Generate samples from the language model (similar to using HuggingFace `generate` method)
             samples = self.generate(
                 batch["input_ids"],
@@ -290,6 +292,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 **self.generate_experience_kwargs,
             )
             stats["time/rollout_generate"] = time() - rollout_generate_time
+
+            print("TWO")
 
             num_return_sequences = (
                 self.generate_experience_kwargs["num_return_sequences"]
@@ -349,12 +353,16 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 all_scores = None
                 max_len = torch.tensor(0, dtype=torch.long, device=device)
 
+            print("THREE")
+
             if torch.distributed.is_initialized():
                 torch.distributed.broadcast(max_len, 0)
                 scores = torch.empty((len(samples), max_len), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
+
+            print("FOUR")
             # Best-of-N Sampling.
             scores_mask = scores != -np.inf
             train_indices = self.get_topk_indices(
@@ -449,9 +457,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
                 position_ids = attention_mask.long().cumsum(-1) - 1
                 position_ids.masked_fill_(attention_mask == 0, 1)
-                all_tokens_chunks = torch.chunk(all_tokens, chunks=self.config.method.gen_chunk_size, dim=0)
-                attention_mask_chunks = torch.chunk(attention_mask, chunks=self.config.method.gen_chunk_size, dim=0)
-                position_ids_chunks = torch.chunk(position_ids, chunks=self.config.method.gen_chunk_size, dim=0)
+                all_tokens_chunks = torch.chunk(all_tokens, chunks=self.config.method.chunk_size, dim=0)
+                attention_mask_chunks = torch.chunk(attention_mask, chunks=self.config.method.chunk_size, dim=0)
+                position_ids_chunks = torch.chunk(position_ids, chunks=self.config.method.chunk_size, dim=0)
                 for all_tokens_chunk, attention_mask_chunk, position_ids_chunk in zip(
                     all_tokens_chunks, attention_mask_chunks, position_ids_chunks
                 ):
