@@ -115,9 +115,6 @@ class PPOConfig(MethodConfig):
 
     :param num_train_sequences: top_k of n sampled sequences from prompt
     :type num_train_sequences: int
-
-    :param mix_sft: if this is True, then SFT gradients will be mixed into PPO traininig
-    :type mix_sft: bool
     """
 
     ppo_epochs: int
