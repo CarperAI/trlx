@@ -1,5 +1,6 @@
 import copy
 import gc
+import importlib
 import os
 import sys
 import tempfile
@@ -400,7 +401,7 @@ class TestPeft(unittest.TestCase):
 
             peft_config = {
                 "peft_type": PeftType.LORA,
-                "task_type": CAUSAL,
+                "task_type": TaskType.CAUSAL_LM,
                 "r": 8,
                 "lora_alpha": 32,
                 "lora_dropout": 0.0,
@@ -436,11 +437,10 @@ class TestPeft(unittest.TestCase):
                 loaded_model_logits = loaded_model(**self.inputs, return_dict=True).logits
                 self.assertTrue(torch.equal(trained_model_logits, loaded_model_logits))
 
-    # @unittest.skipUnless(
-    #     importlib.util.find_spec("bitsandbytes") and torch.cuda.is_available(),
-    #     "bitsandbytes and GPU needed to execute test_8bits",
-    # )
-    @unittest.skip("`8-bit` model loading support is not yet fully implemented")
+    @unittest.skipUnless(
+        importlib.util.find_spec("bitsandbytes") and torch.cuda.is_available(),
+        "bitsandbytes and GPU needed to execute test_8bits",
+    )
     def test_8bits(self):
         """Test the behaviour of from_pretrained with 8 bits models"""
         from bitsandbytes.nn import Linear8bitLt
@@ -487,3 +487,8 @@ class TestPeft(unittest.TestCase):
         self.assertEqual(new_nb_trainable_params, initial_nb_trainable_params)
 
         self.assertIsInstance(model_8bit.base_model.model.gpt_neox.layers[0].mlp.dense_h_to_4h, Linear8bitLt)
+
+        # Check that forward and generation work
+        self._create_inputs(model_id, CAUSAL)
+        model_8bit(**self.inputs)
+        model_8bit.generate(**self.inputs)

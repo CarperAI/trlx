@@ -59,12 +59,17 @@ class ModelConfig:
 
         (parameter-efficient fine-tuning was previously done in trlx with OpenDelta, but it is no longer supported)
     :type peft_config: Union[peft.PeftConfig, Dict[str, Any]]
+
+    :param from_pretrained_kwargs: Any additional argument for PreTrainedModelWrapper.from_pretrained.
+        Can be used for example to load a model in 8 or 16 bits.
+    :type peft_config: Union[peft.PeftConfig, Dict[str, Any]]
     """
 
     model_path: str
     model_arch_type: str = "causal"
     num_layers_unfrozen: int = -1
     peft_config: Any = None
+    from_pretrained_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):

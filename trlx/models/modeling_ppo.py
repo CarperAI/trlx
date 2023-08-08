@@ -252,8 +252,8 @@ class CausalLMOutputWithValue(ModelOutput):
     value: Optional[torch.FloatTensor] = None
 
 
-def make_value_branch(base_model, num_value_layers_unfrozen):
-    value_head = make_head(hf_get_hidden_size(base_model.config), 1)
+def make_value_branch(base_model, num_value_layers_unfrozen, dtype=torch.float32):
+    value_head = make_head(hf_get_hidden_size(base_model.config), 1, dtype)
     if num_value_layers_unfrozen == 0:
         return value_head
     config = base_model.config
@@ -280,7 +280,10 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
     ):
         super().__init__(base_model, peft_config=peft_config)
         self.num_value_layers_unfrozen = num_value_layers_unfrozen
-        self.v_head = make_value_branch(base_model, num_value_layers_unfrozen)
+        parameter = next(hf_get_lm_head(self.base_model).parameters())
+        dtype = parameter.dtype
+        device = parameter.device
+        self.v_head = make_value_branch(base_model, num_value_layers_unfrozen, dtype).to(device)
 
     def forward(
         self,
@@ -1209,9 +1212,12 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
     ):
         super().__init__(base_model, peft_config=peft_config)
         # TODO: Support Seq2Seq value branching
+        parameter = next(hf_get_lm_head(self.base_model).parameters())
+        dtype = parameter.dtype
+        device = parameter.device
         if num_value_layers_unfrozen > 0:
             raise NotImplementedError("Value branches unsupported for Seq2Seq architecture")
-        self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1)
+        self.v_head = make_head(hf_get_hidden_size(self.base_model.config), 1, dtype).to(device)
 
     def forward(
         self,

@@ -70,13 +70,8 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         super().__init__()
         self.base_model = base_model
         # cache `forward` args for general use (avoids incompatible args across architectures)
-        self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
+        self.forward_kwargs = inspect.getfullargspec(self.base_model.__class__.forward).args
         self.is_loaded_in_8bit = getattr(base_model, "is_loaded_in_8bit", False)
-        if self.is_loaded_in_8bit:
-            # TODO(glerzing): Fully test and support loading in 8-bit
-            raise NotImplementedError(
-                "`is_loaded_in_8bit` is an experimental feature not yet fully supported. Please do not use it."
-            )
         self.peft_config = peft_config
         self.peft_type = peft_config.peft_type if peft_config else None
 
@@ -175,12 +170,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             )
         else:
             is_loaded_in_8bit = getattr(pretrained_model_name_or_path, "is_loaded_in_8bit", False)
-
-        if is_loaded_in_8bit:
-            # TODO(glerzing): Fully test and support loading in 8-bit
-            raise NotImplementedError(
-                "`is_loaded_in_8bit` is an experimental feature not yet fully supported. Please do not use it."
-            )
 
         if peft_config is not None:
             if not is_peft_available():
@@ -357,7 +346,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             # Don't use the interface of the peft model,
             # use the interface of the underlying transformer model instead.
             # (peft adds 2 "base_model" layers)
-            self.forward_kwargs = inspect.getfullargspec(self.base_model.base_model.base_model.forward).args
+            self.forward_kwargs = inspect.getfullargspec(self.base_model.base_model.base_model.__class__.forward).args
 
     def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of
