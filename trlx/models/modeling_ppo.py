@@ -279,6 +279,7 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         num_value_layers_unfrozen=0,
     ):
         super().__init__(base_model, peft_config=peft_config)
+        self.num_value_layers_unfrozen = num_value_layers_unfrozen
         parameter = next(hf_get_lm_head(self.base_model).parameters())
         dtype = parameter.dtype
         device = parameter.device
