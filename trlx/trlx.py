@@ -123,5 +123,8 @@ def train(  # noqa: C901
     )
     trainer.add_eval_pipeline(eval_pipeline)
 
+    if config.train.resume_from_checkpoint and os.path.exists(config.train.resume_from_checkpoint):
+        trainer.load(config.train.resume_from_checkpoint)
+
     trainer.learn()
     return trainer

@@ -218,6 +218,7 @@ class TrainConfig:
     rollout_logging_dir: Optional[str] = None
     save_best: bool = True
     save_optimizer: bool = True
+    resume_from_checkpoint: Optional[str] = None
 
     tracker: Optional[str] = "wandb"
     logging_dir: Optional[str] = None
