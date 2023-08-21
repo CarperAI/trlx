@@ -279,7 +279,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Require chunk_size * num_topk_samples divides num_rollouts
         assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_topk_samples) == 0
-        assert self.config.method.num_topk_samples <= num_return_sequence
+        assert self.config.method.num_topk_samples <= num_return_sequences
 
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
