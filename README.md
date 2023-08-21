@@ -23,7 +23,7 @@ The following RL algorithms are currently implemented:
 ```bash
 git clone https://github.com/CarperAI/trlx.git
 cd trlx
-pip install torch==2.0.0 --extra-index-url https://download.pytorch.org/whl/cu116 # for cuda
+pip install torch --extra-index-url https://download.pytorch.org/whl/cu118
 pip install -e .
 ```
 
