@@ -113,8 +113,8 @@ class PPOConfig(MethodConfig):
     :param gen_experience_kwargs: if this is not None, then the experience is generated using this
     :type gen_experience_kwargs: Dict[str, Any]
 
-    :param num_train_sequences: top_k of n sampled sequences from prompt
-    :type num_train_sequences: int
+    :param num_topk_samples: top_k of n sampled sequences from prompt
+    :type num_topk_samples: int
     """
 
     ppo_epochs: int
@@ -134,7 +134,7 @@ class PPOConfig(MethodConfig):
     cliprange_reward: float
     gen_kwargs: dict
     gen_experience_kwargs: Optional[dict] = None
-    num_train_sequences: int = 1
+    num_topk_samples: int = 1
     num_value_layers_unfrozen: int = 0
 
     def get_advantages_and_returns(

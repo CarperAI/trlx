@@ -272,8 +272,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         ppo_rl_elements = []
         accumulated_stats = []
 
-        # Require chunk_size * num_train_sequences divides num_rollouts
-        assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_train_sequences) == 0
+        # Require chunk_size * num_topk_samples divides num_rollouts
+        assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_topk_samples) == 0
 
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
@@ -361,7 +361,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             train_indices = self.get_topk_indices(
                 input_tensor=scores_mask * scores,
                 window_size=num_return_sequences,
-                k=self.config.method.num_train_sequences,
+                k=self.config.method.num_topk_samples,
                 device=device,
             )
             scores = scores[train_indices]

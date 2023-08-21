@@ -49,7 +49,7 @@ def default_ppo_config():
             ref_mean=None,
             ref_std=None,
             cliprange_reward=10,
-            num_train_sequences=1,
+            num_topk_samples=1,
             gen_kwargs=dict(
                 max_new_tokens=40,
                 top_k=0,
