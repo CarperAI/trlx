@@ -94,6 +94,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         )
         self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
 
+        if self.generate_kwargs.get("num_return_sequences") is None:
+            self.generate_kwargs["num_return_sequences"] = 1
+
         if config.method.gen_experience_kwargs is not None:
             self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
@@ -272,11 +275,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         ppo_rl_elements = []
         accumulated_stats = []
 
-        num_return_sequences = (
-            self.generate_experience_kwargs["num_return_sequences"]
-            if self.generate_experience_kwargs.get("num_return_sequences") is not None
-            else 1
-        )
+        num_return_sequences = self.generate_experience_kwargs["num_return_sequences"]
 
         # Require chunk_size * num_topk_samples divides num_rollouts
         assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_topk_samples) == 0
