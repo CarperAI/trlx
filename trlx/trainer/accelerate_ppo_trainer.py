@@ -272,8 +272,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         ppo_rl_elements = []
         accumulated_stats = []
 
+        num_return_sequences = (
+            self.generate_experience_kwargs["num_return_sequences"]
+            if self.generate_experience_kwargs.get("num_return_sequences") is not None
+            else 1
+        )
+
         # Require chunk_size * num_topk_samples divides num_rollouts
         assert num_rollouts % (self.config.method.chunk_size * self.config.method.num_topk_samples) == 0
+        assert self.config.method.num_topk_samples <= num_return_sequence
 
         while len(ppo_rl_elements) < num_rollouts:
             stats = {}
@@ -291,11 +298,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             )
             stats["time/rollout_generate"] = time() - rollout_generate_time
 
-            num_return_sequences = (
-                self.generate_experience_kwargs["num_return_sequences"]
-                if self.generate_experience_kwargs.get("num_return_sequences") is not None
-                else 1
-            )
             prompt_tensors = batch.input_ids.repeat_interleave(num_return_sequences, dim=0)
             device = samples.device
 
@@ -588,6 +590,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
     @staticmethod
     def get_topk_indices(input_tensor, window_size: int, k: int, device):
+        """Computes the indices of the top_k values among `input_tensor` on chunks of size `window_size`
+        """
         # Sum the scores along dim 1
         input_tensor = input_tensor.sum(1).unsqueeze(1)
         # Use unfold to create the sliding windows
