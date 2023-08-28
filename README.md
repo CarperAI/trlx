@@ -170,6 +170,20 @@ Messages can be formatted with greater detail by setting `trlx.logging.enable_ex
 For development check out these [guidelines](./CONTRIBUTING.md)
 and also read our [docs](https://trlX.readthedocs.io)
 
+## Citing trlX
+
+```
+@software{trlx-library,
+  author       = {Castricato, Louis and Havrilla, Alex and Matiana, Shahbuland and Phung, Duy V. and Tiwari, Aman and Tow, Jonathan and Zhuravinsky, Maksym},
+  title        = {{trlX: A scalable framework for RLHF}},
+  month        = jun,
+  year         = 2023,
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.8076391},
+  url          = {https://github.com/CarperAI/trlx}
+}
+```
+
 ## Acknowledgements
 
 Many thanks to Leandro von Werra for contributing with [trl](https://github.com/lvwerra/trl/), a library that initially inspired this repo.
