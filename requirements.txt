@@ -42,6 +42,7 @@ numpy==1.25.2
 packaging==23.1
 pandas==2.0.3
 pathtools==0.1.2
+peft==0.5.0
 protobuf==4.24.2
 psutil==5.9.5
 py-cpuinfo==9.0.0
