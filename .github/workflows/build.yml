@@ -24,7 +24,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         # Install extras
-        pip install bitsandbytes
+        # [bnb] (TODO: Remove `scipy` once `bnb` adds it as hard dep)
+        pip install bitsandbytes scipy
         # [dev]
         pip install black hypothesis isort flake8 pre-commit pytest pytest-cov
 
