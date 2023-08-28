@@ -96,6 +96,8 @@ class TestPeft(unittest.TestCase):
                 )
 
         self._create_inputs(model_path, task_type)
+        print(f'{task_type=}')
+        print(f'{self.inputs=}')
 
     def _create_inputs(self, tokenizer_path, task_type):
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_path)
