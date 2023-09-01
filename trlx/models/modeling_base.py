@@ -70,7 +70,12 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         super().__init__()
         self.base_model = base_model
         # cache `forward` args for general use (avoids incompatible args across architectures)
-        self.forward_kwargs = inspect.getfullargspec(self.base_model.forward).args
+        if peft_config:
+            # keep all kwargs for peft
+            self.forward_kwargs = None
+        else:
+            self.forward_kwargs = inspect.getfullargspec(base_model.forward).args
+
         self.is_loaded_in_8bit = getattr(base_model, "is_loaded_in_8bit", False)
         if self.is_loaded_in_8bit:
             # TODO(glerzing): Fully test and support loading in 8-bit
@@ -365,4 +370,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         """
         # FIXME: This is a hack to get around the fact that the `transformers`
         # architectures we use don't have a consistent API for `forward` parameters.
+        if self.forward_kwargs is None:
+            return kwargs
         return {k: v for k, v in kwargs.items() if k in self.forward_kwargs}

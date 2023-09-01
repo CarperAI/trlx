@@ -1,6 +1,6 @@
 import gc
 import inspect
-from collections import OrderedDict
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
@@ -360,16 +360,16 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
-        if heads_only:
-            model_state_dict = OrderedDict()
-        else:
-            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
 
-        for k, v in v_head_state_dict.items():
-            model_state_dict[f"v_head.{k}"] = v
+        return {
+            **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs)),
+            **self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs)),
+        }
 
-        return model_state_dict
+        return state_dict
 
     def post_init(self, state_dict):
         """
@@ -379,10 +379,9 @@ class AutoModelForCausalLMWithValueHead(PreTrainedModelWrapper):
         """
         super().post_init()
 
-        for k in list(state_dict.keys()):
-            if "v_head." in k:
-                state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
-        self.v_head.load_state_dict(state_dict, strict=False)
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+
         del state_dict
         gc.collect()  # noqa: E702
 
@@ -409,6 +408,8 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
                 self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
+        else:
+            self.frozen_head = None
 
     def forward_hydra(
         self,
@@ -454,6 +455,52 @@ class AutoModelForCausalLMWithHydraValueHead(AutoModelForCausalLMWithValueHead):
         if not return_dict:
             return hydra_outputs.logits
         return hydra_outputs
+
+    def state_dict(self, *args, heads_only=False, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
+
+            if self.frozen_head:
+                state_dict = {
+                    **state_dict,
+                    **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs)),
+                }
+
+        return state_dict
+
+    def post_init(self, state_dict):
+        """
+        Load `state_dict` into the model. If peft was used to train the model,
+        only the value head would be present in the loaded `state_dict`, so the
+        loading has to be not strict. Also `frozen_head` will be recreated and
+        loaded from the checkpoint, to comply with deepspeed checkpoint loading.
+        """
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+
+        if not self.peft_type and self.frozen_head is None:
+            for k in state_dict:
+                match = re.search(r"^frozen_head\..+\.(\d+)\.", k)
+                if match:
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
+
+            config = self.base_model.config
+            branch_class = hf_get_branch_class(config)
+            self.frozen_head = branch_class(
+                self.base_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
+            ).eval()
+
+        self.load_state_dict(state_dict, strict=strict)
+        del state_dict
+        gc.collect()  # noqa: E702
 
 
 class ModelBranch(transformers.PreTrainedModel):
@@ -1286,29 +1333,23 @@ class AutoModelForSeq2SeqLMWithValueHead(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the value head
         to the state dictionary of the wrapped model by prepending the key with `v_head.`.
         """
-        v_head_state_dict = self.v_head.state_dict(*args, **kwargs)
-        if heads_only:
-            model_state_dict = OrderedDict()
-        else:
-            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {**state_dict, **self.base_model.state_dict(*args, **dict(prefix="base_model.", **kwargs))}
 
-        for k, v in v_head_state_dict.items():
-            model_state_dict[f"v_head.{k}"] = v
-
-        return model_state_dict
+        return state_dict
 
     def post_init(self, state_dict):
         """
-        We add the state dictionary of the value head to the state dictionary of the wrapped model
+        Adds the state dictionary of the value head to the state dictionary of the wrapped model
         by prepending the key with `v_head.`. This function removes the `v_head.` prefix from the
         keys of the value head state dictionary.
         """
         super().post_init()
 
-        for k in list(state_dict.keys()):
-            if "v_head." in k:
-                state_dict[k.replace("v_head.", "")] = state_dict.pop(k)
-        self.v_head.load_state_dict(state_dict, strict=False)
+        trlx_checkpoint = any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+        self.load_state_dict(state_dict, strict=trlx_checkpoint)
+
         del state_dict
         gc.collect()  # noqa: E702
 
@@ -1334,6 +1375,8 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
                 self.base_model,
                 num_layers_unfrozen=self.num_layers_unfrozen,
             ).eval()
+        else:
+            self.frozen_head = None
 
     def forward_hydra(
         self,
@@ -1394,6 +1437,51 @@ class AutoModelForSeq2SeqLMWithHydraValueHead(AutoModelForSeq2SeqLMWithValueHead
         if not return_dict:
             return hydra_outputs.logits
         return hydra_outputs
+
+    def state_dict(self, *args, heads_only=False, **kwargs):
+        """
+        Returns the state dictionary of the model. We add the state dictionary of the value head
+        to the state dictionary of the wrapped model by prepending the key with `v_head.`.
+        """
+        state_dict = self.v_head.state_dict(*args, **dict(prefix="v_head.", **kwargs))
+        if not heads_only:
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
+
+            if self.frozen_head:
+                state_dict = {
+                    **state_dict,
+                    **self.frozen_head.state_dict(*args, **dict(prefix="frozen_head.", **kwargs)),
+                }
+
+        return state_dict
+
+    def post_init(self, state_dict):
+        """
+        Load `state_dict` into the model. If peft was used to train the model,
+        only the value head would be present in the loaded `state_dict`, so the
+        loading has to be not strict. Also `frozen_head` will be recreated and
+        loaded from the checkpoint, to comply with deepspeed checkpoint loading.
+        """
+        strict = not self.peft_type and any(k.startswith("base_model.") or k.startswith("v_head.") for k in state_dict)
+
+        if not self.peft_type and self.frozen_head is None:
+            for k in state_dict:
+                match = re.search(r"^frozen_head\.decoder_blocks\.(\d+)", k)
+                if match:
+                    self.num_layers_unfrozen = max(self.num_layers_unfrozen, int(match.group(1)) + 1)
+
+            branch_class = T5Branch  # TODO: Add support for other model branches
+            self.frozen_head = branch_class(
+                self.base_model,
+                num_layers_unfrozen=self.num_layers_unfrozen,
+            ).eval()
+
+        self.load_state_dict(state_dict, strict=strict)
+        del state_dict
+        gc.collect()  # noqa: E702
 
 
 class T5Branch(ModelBranch):

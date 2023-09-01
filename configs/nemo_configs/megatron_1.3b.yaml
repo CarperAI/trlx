@@ -59,7 +59,9 @@ model:
   ffn_hidden_size: 3072
   num_attention_heads: 16
   init_method_std: 0.015
-  hidden_dropout: 0.1
+  hidden_dropout: 0.0
+  attention_dropout: 0.0
+  ffn_dropout: 0.0
   kv_channels: null
   apply_query_key_layer_scaling: true
   layernorm_epsilon: 1.0e-05
@@ -84,7 +86,8 @@ model:
   use_cpu_initialization: false
   onnx_safe: false
   activations_checkpoint_method: null
-  activations_checkpoint_num_layers: 1
+  activations_checkpoint_granularity: null
+  activations_checkpoint_num_layers: null
 
   gradient_as_bucket_view: True
   resume_from_checkpoint: null

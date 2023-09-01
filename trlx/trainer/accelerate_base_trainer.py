@@ -343,11 +343,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.accelerator.register_load_state_pre_hook(load_state_hook)
 
-            strict = False
-        else:
-            strict = True
-
-        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, strict=strict, **kwargs)
+        self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
         """Adds pipeline from with validation prompts"""
@@ -625,11 +621,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     ):
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        logger.info(f"Saving intermediate checkpoint into {directory}")
                         if self.config.train.save_optimizer:
+                            logger.info(f"Saving intermediate optimizer & model checkpoint into {directory}")
                             self.save(directory)
-                        else:
-                            self.save_pretrained(directory)
+
+                        pretrained_directory = os.path.join(directory, "hf_model")
+                        logger.info(f"Saving pretrained model into {pretrained_directory}")
+                        self.save_pretrained(pretrained_directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -658,11 +656,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
                                 directory = os.path.join(self.config.train.checkpoint_dir, "best_checkpoint")
-                                logger.info(f"Saving the best state so far into {directory}")
+
                                 if self.config.train.save_optimizer:
+                                    logger.info(f"Saving intermediate optimizer & model checkpoint into {directory}")
                                     self.save(directory)
-                                else:
-                                    self.save_pretrained(directory)
+
+                                pretrained_directory = os.path.join(directory, "hf_model")
+                                logger.info(f"Saving pretrained model into {pretrained_directory}")
+                                self.save_pretrained(pretrained_directory)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")

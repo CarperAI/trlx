@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import numpy as np
 import torch
@@ -586,6 +586,35 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
+
+    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
+        """
+        Args:
+            directory (str, *optional*): The directory to save the trainer files to.
+                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
+                checkpoint directory as specified by the Trainer's config.
+            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
+                `save_pretrained` method.
+        """
+        if directory is None:
+            directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
+
+        self.accelerator.wait_for_everyone()
+
+        # Save only the base model, so that is could be loaded directly
+        # with Hugging Face's `from_pretrained` method
+        state_dict = self.accelerator.get_state_dict(self.model.base_model)
+
+        self.accelerator.unwrap_model(self.model).save_pretrained(
+            directory,
+            save_function=self.accelerator.save,
+            is_main_process=self.accelerator.is_main_process,
+            state_dict=state_dict,
+            **kwargs,
+        )
+
+        if self.accelerator.is_main_process:
+            self.tokenizer.save_pretrained(directory)
 
     @staticmethod
     def get_topk_indices(input_tensor, window_size: int, k: int, device):

@@ -1,6 +1,5 @@
 import gc
 import os
-from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import reduce
@@ -365,28 +364,25 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
-        if heads_only:
-            model_state_dict = OrderedDict()
-        else:
-            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
+        if not heads_only:
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
 
-        for k, v in ilql_heads_state_dict.items():
-            model_state_dict[f"ilql_heads.{k}"] = v
-        return model_state_dict
+        return state_dict
 
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
-        keys of the value head state dictionary.
+        by prepending the key with `ilql_heads.`.
         """
         super().post_init()
-
-        for k in list(state_dict.keys()):
-            if "ilql_heads." in k:
-                state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
-        self.ilql_heads.load_state_dict(state_dict, strict=False)
+        strict = not self.peft_type and any(
+            k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict
+        )
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()
 
@@ -433,28 +429,25 @@ class AutoModelForSeq2SeqLMWithILQLHeads(PreTrainedModelWrapper):
         Returns the state dictionary of the model. We add the state dictionary of the ilql heads
         to the state dictionary of the wrapped model by prepending the key with `ilql_heads.`.
         """
-        ilql_heads_state_dict = self.ilql_heads.state_dict(*args, **kwargs)
-        if heads_only:
-            model_state_dict = OrderedDict()
-        else:
-            model_state_dict = self.base_model.state_dict(*args, **kwargs)
+        state_dict = self.ilql_heads.state_dict(*args, **dict(prefix="ilql_heads.", **kwargs))
+        if not heads_only:
+            state_dict = {
+                **state_dict,
+                **self.base_model.state_dict(*args, **dict(prefix="" if self.peft_type else "base_model.", **kwargs)),
+            }
 
-        for k, v in ilql_heads_state_dict.items():
-            model_state_dict[f"ilql_heads.{k}"] = v
-        return model_state_dict
+        return state_dict
 
     def post_init(self, state_dict):
         """
         We add the state dictionary of the ilql heads to the state dictionary of the wrapped model
-        by prepending the key with `ilql_heads.`. This function removes the `ilql_heads.` prefix from the
-        keys of the value head state dictionary.
+        by prepending the key with `ilql_heads.`.
         """
         super().post_init()
-
-        for k in list(state_dict.keys()):
-            if "ilql_heads." in k:
-                state_dict[k.replace("ilql_heads.", "")] = state_dict.pop(k)
-        self.ilql_heads.load_state_dict(state_dict, strict=False)
+        strict = not self.peft_type and any(
+            k.startswith("base_model.") or k.startswith("ilql_heads.") for k in state_dict
+        )
+        self.load_state_dict(state_dict, strict=strict)
         del state_dict
         gc.collect()
 
