@@ -162,7 +162,7 @@ def create_reward_fn():  # noqa:  C901
                 checkpoint = os.path.join(directory, fpath)
                 break
 
-        reward_model.load_state_dict(torch.load(checkpoint))
+        reward_model.load_state_dict(torch.load(checkpoint), strict=False)
         reward_model.eval()
         reward_model.requires_grad_(False)
         reward_device = torch.cuda.device_count() - 1
