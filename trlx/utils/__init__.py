@@ -248,3 +248,12 @@ def infinite_dataloader(dataloader: Iterable, sampler=None) -> Iterable:
         epoch += 1
 
         yield from dataloader
+
+
+# Text processing utils
+
+
+def remove_bos(toks, tokenizer):
+    if hasattr(tokenizer, "bos_token") and len(toks) > 0 and toks[0].item() == self.tokenizer.bos_token_id:
+        toks = toks[1:]
+    return toks

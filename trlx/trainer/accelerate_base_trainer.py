@@ -10,11 +10,11 @@ from typing import Dict, List, Optional, Tuple
 
 import ray
 import torch
-from torch.nn.utils.rnn import pad_sequence
 from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from rich.console import Console
 from rich.table import Table
+from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
@@ -27,6 +27,7 @@ from trlx.utils import (
     get_git_tag,
     get_optimizer_class,
     get_scheduler_class,
+    remove_bos,
     significant,
 )
 from trlx.utils.modeling import (
@@ -148,7 +149,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # Setup inference pipeline for model inference during training
         if kwargs.get("inference_pipeline", None):
-            self.inference_pipeline = kwargs.get("inference_pipeline")(self.model, self.accelerator.device, self.tokenizer)
+            self.inference_pipeline = kwargs.get("inference_pipeline")(
+                self.model, self.accelerator.device, self.tokenizer
+            )
 
     def setup_model(self):
         """
@@ -213,8 +216,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
         append_eos_token: bool = True,
     ) -> Tuple[List[str], List[str], List[str], List[torch.LongTensor], List[torch.LongTensor], List[torch.LongTensor]]:
         """
-        Decode tensor generations with stopping criteria into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]) and 
-        remove padding from samples, responses. Note prompts maybe sometimes be right padded, as well as samples
+        Decode tensor generations with stopping criteria into lists of strings:
+        (`samples`: List[str], `prompts`: List[str], `outputs`: List[str]),
+        and remove padding from samples, responses. Note prompts maybe sometimes be right padded, as well as samples
         """
         if prompt_sizes is None:
             # Assuming prompts were left-padded
@@ -231,9 +235,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             # We must decode by skipping padding in the middle with skip_special_tokens
             tok_prompt = prompt[:prompt_size].cpu()
             str_prompt = self.tokenizer.decode(tok_prompt, skip_special_tokens=True)
-            
+
             tok_output = sample[output_start_ix:]
-            # Get prefix corresponding to text + EOS token tag
+            # Get prefix corresponding to text + EOS token tag
             end = tok_output.not_equal(self.tokenizer.eos_token_id).sum() + 1
             tok_output = tok_output[:end].cpu()
             str_output = self.tokenizer.decode(tok_output, skip_special_tokens=True)
@@ -259,9 +263,56 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         return str_samples, str_prompts, str_outputs, tok_samples, tok_prompts, tok_outputs
 
+    def batched_generate(self, input_ids, attention_mask, chunk_size, generate_kwargs):
+        # Chunk input_ids and attention_mask
+        input_ids = input_ids.split(chunk_size, dim=0)
+        attention_mask = attention_mask.split(chunk_size, dim=0) if attention_mask is not None else None
+
+        all_tok_samples = []
+        all_loss_masks = []
+        for chunk_idx in range(len(input_ids)):
+            input_ids_chunk = input_ids[chunk_idx].to(self.accelerator.device)
+            attention_mask_chunk = (
+                attention_mask[chunk_idx].to(self.accelerator.device) if attention_mask is not None else None
+            )
+
+            # Sample trajectory from model
+            with torch.no_grad():
+                tok_samples = (
+                    self.accelerator.unwrap_model(self.model)
+                    .generate(input_ids=input_ids_chunk, attention_mask=attention_mask_chunk, **generate_kwargs)
+                    .cpu()
+                )
+
+            # Decode and apply stopping criteria
+            stopped_tok_samples = []
+            loss_masks = []
+            for tok_prompt, tok_sample in zip(input_ids_chunk, tok_samples):
+                tok_output = tok_sample[tok_prompt.shape[0] :]
+                str_output = self.tokenizer.decode(tok_output)
+                if self.stop_sequences:
+                    for stop in self.stop_sequences:
+                        stop_ix = str_output.find(stop)
+                        if stop_ix >= 0:
+                            str_output = str_output[:stop_ix].rstrip()
+                stopped_tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0]
+                # Remove BOS tok from output if present
+                stopped_tok_output = remove_bos(stopped_tok_output, self.tokenizer)
+                # Concat prompt, output to get sample
+                stopped_tok_sample = torch.cat([tok_prompt.cpu(), stopped_tok_output], dim=0)
+                stopped_tok_samples.append(stopped_tok_sample)
+                # Loss mask will be applied to entire output sequence
+                mask = torch.ones_like(stopped_tok_output)
+                loss_masks.append(mask)
+
+            all_tok_samples += stopped_tok_samples
+            all_loss_masks += loss_masks
+
+        return all_tok_samples, all_loss_masks
+
     def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
-        # Repeat prompts, attention_masks for chunking if returning multiple sequences
+        # Update generate kwargs with default generate_kwargs
         generate_kwargs = copy(self.generate_kwargs)
         generate_kwargs.update(kwargs)
 
@@ -274,89 +325,58 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             generate_kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
+        # Set default num_return_sequences value
         if generate_kwargs.get("num_return_sequences") is None:
             generate_kwargs["num_return_sequences"] = 1
 
-        num_return_sequences = generate_kwargs.pop("num_return_sequences")  # Pop to hide from model.generate call
+        # Repeat input_ids, attention_mask by 'num_return_sequences' times
+        num_return_sequences = generate_kwargs.pop(
+            "num_return_sequences"
+        )  # Pop to hide from unwrapped_model.generate call
         input_ids = input_ids.repeat_interleave(num_return_sequences, dim=0)
-        if attention_mask is not None:
-            attention_mask = attention_mask.repeat_interleave(num_return_sequences, dim=0)
+        attention_mask = (
+            attention_mask.repeat_interleave(num_return_sequences, dim=0) if attention_mask is not None else None
+        )
 
-        if chunk_size is None:
-            chunk_size = input_ids.shape[0]
+        chunk_size = input_ids.shape[0] if chunk_size is None else chunk_size
 
-        # Chunk input_ids and attention_mask
-        input_ids = input_ids.split(chunk_size, dim=0)
-        if attention_mask is not None:
-            attention_mask = attention_mask.split(chunk_size, dim=0)
-
-        # Check for inference pipeline
+        # Check for inference pipeline
         use_inference_pipeline = generate_kwargs.get("use_inference_pipeline")
         if use_inference_pipeline is not None:
-            generate_kwargs.pop("use_inference_pipeline")  # Pop to remove from Generator args
+            generate_kwargs.pop("use_inference_pipeline")  # Pop to hide from generator kwargs
 
-        all_tok_samples = []
-        all_loss_masks = []
-        for chunk_idx in range(len(input_ids)):
-            input_ids_chunk = input_ids[chunk_idx]
-            attention_mask_chunk = None
-            if attention_mask is not None:
-                attention_mask_chunk = attention_mask[chunk_idx]
+        if use_inference_pipeline:
+            assert hasattr(self, "inference_pipeline")
+            # Remove all but temperature and sampling parameters from gen_kwargs
+            generate_kwargs = {k: v for k, v in generate_kwargs.items() if k == "do_sample" or k == "temperature"}
+            data = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "prompt": self.tokenizer.batch_decode(input_ids, skip_special_tokens=True),
+                "gen_kwargs": len(input_ids) * [generate_kwargs],
+            }
+            data = self.inference_pipeline(data)
+            # NOTE: Inference pipeline should ensure tok_samples have same shapes as loss_masks
+            all_tok_samples = data["tok_samples"]
+            all_loss_masks = data["loss_mask"]
+        else:
+            # If no inference pipeline then do batched generation locally
+            all_tok_samples, all_loss_masks = self.batched_generate(
+                input_ids, attention_mask, chunk_size, generate_kwargs
+            )
 
-            if use_inference_pipeline:
-                assert hasattr(self, "inference_pipeline")
-                # Remove all but temperature and sampling parameters from gen_kwargs
-                generate_kwargs = {k: v for k, v in generate_kwargs.items() if k == "do_sample" or k == "temperature"}
-                # Include "extended_response" field to accumulate responses
-                data = {
-                        "input_ids": input_ids_chunk,
-                        "attention_mask": attention_mask_chunk,
-                        "prompt": self.tokenizer.batch_decode(input_ids_chunk, skip_special_tokens=True), 
-                        "gen_kwargs": len(input_ids_chunk)*[generate_kwargs]
-                       }
-                data = self.inference_pipeline(data)
-                # Inference pipeline should ensure tok_samples have same shapes as loss_masks
-                tok_samples = data["tok_samples"]
-                loss_masks = data["loss_mask"]
-            else:
-                input_ids_chunk = input_ids_chunk.to(self.accelerator.device)
-                if attention_mask_chunk is not None:
-                    attention_mask_chunk = attention_mask_chunk.to(self.accelerator.device)
-    
-                # Sample trajectory from model
-                with torch.no_grad():
-                    tok_samples = self.accelerator.unwrap_model(self.model).generate(
-                        input_ids=input_ids_chunk, attention_mask=attention_mask_chunk, **generate_kwargs
-                    ).cpu()
-                # Decode and apply stopping criteria
-                stopped_tok_samples = []
-                loss_masks = []
-                for tok_prompt, tok_sample in zip(input_ids_chunk, tok_samples):
-                    tok_output = tok_sample[tok_prompt.shape[0]:]
-                    str_output = self.tokenizer.decode(tok_output)
-                    if self.stop_sequences:
-                        for stop in self.stop_sequences:
-                            stop_ix = str_output.find(stop)
-                            if stop_ix >= 0:
-                                str_output = str_output[:stop_ix].rstrip()
-                    stopped_tok_output = self.tokenizer(str_output, return_tensors="pt").input_ids[0]
-                    # Remove BOS toke if present
-                    if hasattr(self.tokenizer, "bos_token") and len(stopped_tok_output) > 0 and stopped_tok_output[0].item() == self.tokenizer.bos_token_id:
-                        stopped_tok_output = stopped_tok_output[1:]
-                    stopped_tok_sample = torch.cat([tok_prompt.cpu(), stopped_tok_output], dim=0)
-                    stopped_tok_samples.append(stopped_tok_sample)
-                    # Loss mask will be applied to entire sequence
-                    mask = torch.ones_like(stopped_tok_output)
-                    loss_masks.append(mask)
-                tok_samples = stopped_tok_samples
-            # Convert to list of 1-d tensors to be padded
-            # Also add extra EOS token w/ loss_mask == 0 to prevent empty responses
-            tok_samples = [torch.cat([tok_sample, torch.tensor(self.tokenizer.eos_token_id).view((1,)).long()], dim=0) for tok_sample in tok_samples]
-            loss_masks = [torch.cat([m, torch.tensor(0).view((1,))], dim=0) for m in loss_masks]
-            all_tok_samples += tok_samples
-            all_loss_masks += loss_masks
-        # Concat samples
-        all_tok_samples = pad_sequence(all_tok_samples, batch_first=True, padding_value=self.tokenizer.eos_token_id).squeeze()
+        # Convert to list of 1-d tensors to be padded
+        # Add extra EOS token w/ loss_mask[-1] == 0 to prevent empty responses
+        all_tok_samples = [
+            torch.cat([tok_sample, torch.tensor(self.tokenizer.eos_token_id).view((1,)).long()], dim=0)
+            for tok_sample in all_tok_samples
+        ]
+        all_loss_masks = [torch.cat([m, torch.tensor(0).view((1,))], dim=0) for m in all_loss_masks]
+
+        # Concat/pad samples
+        all_tok_samples = pad_sequence(
+            all_tok_samples, batch_first=True, padding_value=self.tokenizer.eos_token_id
+        ).squeeze()
         all_loss_masks = pad_sequence(all_loss_masks, batch_first=True, padding_value=0.0)
         return all_tok_samples, all_loss_masks
 
@@ -462,7 +482,10 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
                 if self.generate_sweep_kwarg:
                     samples, _ = self.generate(
-                        prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size, **{gen_sweep_arg: gen_sweep_value}
+                        prompts["input_ids"],
+                        prompts["attention_mask"],
+                        chunk_size=chunk_size,
+                        **{gen_sweep_arg: gen_sweep_value},
                     )
                 else:
                     samples, _ = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)

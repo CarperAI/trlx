@@ -137,7 +137,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # TODO: loss_mask should affect advantages if discount < 1, GAE cannot be used (lam=1)
         # NOTE: Rewards from KL on masked tokens should already be zeroed out
-        advantages, returns = self.config.method.get_advantages_and_returns(old_values, old_rewards, response_length, loss_masks)
+        advantages, returns = self.config.method.get_advantages_and_returns(
+            old_values, old_rewards, response_length, loss_masks
+        )
 
         if self.config.model.model_arch_type == "seq2seq":
             input_ids = query_tensors
@@ -437,7 +439,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             padded_tok_samples = pad_sequence(tok_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             padded_tok_outputs = pad_sequence(tok_outputs, batch_first=True, padding_value=self.tokenizer.pad_token_id)
             # Remove extra padding from loss masks (may occur if using BoN sampling)
-            loss_masks = loss_masks[:, :padded_tok_outputs.shape[1]]
+            loss_masks = loss_masks[:, : padded_tok_outputs.shape[1]]
             attention_mask = padded_tok_samples.not_equal(self.tokenizer.pad_token_id).long()
 
             # Precompute logprobs, values
@@ -553,11 +555,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # NOTE: nan is interfering with kl estimates since 0 * nan = 0
             # Convert inf padding terms in ref_logprobs to number removable with attention mask mult
             if logprobs.shape[1] != loss_masks.shape[1]:
-                raise ValueError(f"Shape mismatch between logprobs and loss_masks:\n\
+                raise ValueError(
+                    f"Shape mismatch between logprobs and loss_masks:\n\
                                     logprobs: {logprobs.shape}\n\
                                     ref_logprobs: {ref_logprobs.shape}\n\
                                     loss_masks: {loss_masks.shape}\n\
-                                    padded_tok_outputs: {padded_tok_outputs.shape}")
+                                    padded_tok_outputs: {padded_tok_outputs.shape}"
+                )
             log_ratio = (logprobs - torch.nan_to_num(ref_logprobs)) * loss_masks
             kl = log_ratio.exp() - 1 - log_ratio
             mean_kl_per_token = kl.mean()
@@ -572,24 +576,32 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             # (these are taken from the student model and not the reference model)
             ends = attention_mask[:, 1:].sum(1) + 1
             for sample_idx in range(n_samples):
-                value = values[sample_idx, :ends[sample_idx]]
-                logprob = logprobs[sample_idx, :ends[sample_idx]]
-                kl_penalty = kl_penalties[sample_idx, :ends[sample_idx]]
-                loss_mask = loss_masks[sample_idx, :ends[sample_idx]]
+                value = values[sample_idx, : ends[sample_idx]]
+                logprob = logprobs[sample_idx, : ends[sample_idx]]
+                kl_penalty = kl_penalties[sample_idx, : ends[sample_idx]]
+                loss_mask = loss_masks[sample_idx, : ends[sample_idx]]
                 query_tensor = tok_prompts[sample_idx]
                 response_tensor = tok_outputs[sample_idx]
-                if len(value) != len(logprob) or len(logprob) != len(kl_penalty) or len(kl_penalty) != len(response_tensor) or len(response_tensor) != len(loss_mask):
-                    raise ValueError(f"Length mismatch between value, logprob, kl, and response_tensor:\n\
+                if (
+                    len(value) != len(logprob)
+                    or len(logprob) != len(kl_penalty)
+                    or len(kl_penalty) != len(response_tensor)
+                    or len(response_tensor) != len(loss_mask)
+                ):
+                    raise ValueError(
+                        f"Length mismatch between value, logprob, kl, and response_tensor:\n\
                                         Value: {value.shape}, {value}\n\
                                         Logprob: {logprob.shape}, {logprob}\n\
                                         KL: {kl_penalty.shape}, {kl_penalty}\n\
                                         end: {ends[sample_idx]}\n\
-                                        Response: {response_tensor.shape}, {response_tensor}, {self.tokenizer.decode(response_tensor)}\n\
-                                        Loss mask: {loss_mask.shape}, {loss_mask}")
+                                        Response: {response_tensor.shape}, {response_tensor}, \
+                                        {self.tokenizer.decode(response_tensor)}\n\
+                                        Loss mask: {loss_mask.shape}, {loss_mask}"
+                    )
 
                 # Zero out terms on masked tokens
                 kl_penalty = loss_mask * kl_penalty
-                
+
                 # Then add in rewards
                 if scores.shape[1] == 1:
                     # NOTE: Final reward given at EOS token following HHH practice
@@ -608,7 +620,6 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                                             Score: {score.shape}, {score}"
                         )
                     rewards = kl_penalty + score
-
 
                 if kl_penalty.isnan().any() or score.isnan().any():
                     raise ValueError(

@@ -21,7 +21,7 @@ def train(  # noqa: C901
     prompts: Optional[List[str]] = None,
     eval_prompts: Optional[List[str]] = None,
     metric_fn: Optional[Callable[[List[str], List[str], List[str]], Dict[str, List[float]]]] = None,
-    inference_pipeline = None,
+    inference_pipeline=None,
     config: Optional[TRLConfig] = None,
     stop_sequences: Optional[List[str]] = [],
 ):
