@@ -1,22 +1,17 @@
-from dataclasses import dataclass
-from collections import defaultdict
-import torch
 import itertools
+from collections import defaultdict
+from dataclasses import dataclass
 
 import numpy as np
+import torch
 import wandb
 from transformers import AutoModelForCausalLM, PretrainedConfig
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
-from trlx.pipeline.offline_pipeline import (
-    DialogStore,
-    PromptPipeline,
-    tokenize_dialogue,
-)
+from trlx.pipeline.offline_pipeline import PromptPipeline
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
-from trlx.utils import infinite_dataloader
 
 
 @dataclass
@@ -116,7 +111,7 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
         self.make_experience()
         self.epoch_count += 1
 
-    def make_experience(self):
+    def make_experience(self):  # noqa:
         if self.epoch_count % self.config.method.n_improve_steps == 0:
             # generate n samples for each prompt in the prompt_dataloader
             generations = []
@@ -153,8 +148,12 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
                 self.generations_per_prompt[g["prompt"]].append({"output": g["output"], "score": s.item()})
 
         scores = [[x["score"] for x in self.generations_per_prompt[p]] for p in self.generations_per_prompt]
-        percentile_delta = (self.config.method.end_percentile - self.config.method.start_percentile) / self.config.method.n_improve_steps
-        percentile = self.config.method.start_percentile + percentile_delta * (self.epoch_count % self.config.method.n_improve_steps)
+        percentile_delta = (
+            self.config.method.end_percentile - self.config.method.start_percentile
+        ) / self.config.method.n_improve_steps
+        percentile = self.config.method.start_percentile + percentile_delta * (
+            self.epoch_count % self.config.method.n_improve_steps
+        )
         thresholds = np.quantile(np.array(scores), percentile, axis=1) + 1e-6
 
         # filter out the generations with a score below the percentile per prompt
@@ -164,17 +163,27 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
                 if x["score"] >= threshold:
                     samples_selected.append([prompt, x["output"]])
 
-        self.accelerator.log({
-            "scores_per_single_prompt": wandb.Histogram(scores[0]),
-            "thresholds": wandb.Histogram(thresholds),
-            "scores_mean": np.mean(scores),
-            "scores_dist": wandb.Histogram(scores),
-            "len_samples_selected": len(samples_selected),
-            "samples_per_single_prompt": wandb.Table(data=list(zip(
-                [x[0] for x in samples_selected],
-                [x[1] for x in samples_selected],
-            )), columns=["prompt", "output"]),
-        }, step=self.iter_count)
+        self.accelerator.log(
+            {
+                "scores_per_single_prompt": wandb.Histogram(scores[0]),
+                "thresholds": wandb.Histogram(thresholds),
+                "scores_mean": np.mean(scores),
+                "scores_dist": wandb.Histogram(scores),
+                "len_samples_selected": len(samples_selected),
+                "samples_per_single_prompt": wandb.Table(
+                    data=list(
+                        zip(
+                            [x[0] for x in samples_selected],
+                            [x[1] for x in samples_selected],
+                        )
+                    ),
+                    columns=["prompt", "output"],
+                ),
+            },
+            step=self.iter_count,
+        )
 
         if len(samples_selected):
-            self.store = PromptPipeline(samples_selected, max_prompt_length=2048, tokenizer=self.tokenizer, add_special_tokens=True)
+            self.store = PromptPipeline(
+                samples_selected, max_prompt_length=2048, tokenizer=self.tokenizer, add_special_tokens=True
+            )

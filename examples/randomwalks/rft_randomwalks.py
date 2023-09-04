@@ -1,15 +1,14 @@
 import trlx
 from examples.randomwalks import generate_random_walks
-
 from trlx.data.default_configs import (
     ModelConfig,
     OptimizerConfig,
-    RFTConfig,
     SchedulerConfig,
     TokenizerConfig,
     TrainConfig,
     TRLConfig,
 )
+from trlx.trainer.accelerate_rft_trainer import RFTConfig
 
 default_config = TRLConfig(
     train=TrainConfig(
@@ -21,7 +20,7 @@ default_config = TRLConfig(
         eval_interval=20,
         pipeline="PromptPipeline",
         trainer="AccelerateRFTTrainer",
-        checkpoint_dir="/tmp/ckpts"
+        checkpoint_dir="/tmp/ckpts",
     ),
     model=ModelConfig(model_path="CarperAI/randomwalks", num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="CarperAI/randomwalks", truncation_side="right"),
