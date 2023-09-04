@@ -9,6 +9,7 @@ from trlx.trainer import _TRAINERS, register_trainer
 from trlx.trainer.accelerate_ilql_trainer import AccelerateILQLTrainer
 from trlx.trainer.accelerate_ppo_trainer import AcceleratePPOTrainer
 from trlx.trainer.accelerate_sft_trainer import AccelerateSFTTrainer
+from trlx.trainer.accelerate_rft_trainer import AccelerateRFTTrainer
 
 try:
     from trlx.trainer.nemo_ilql_trainer import NeMoILQLTrainer
