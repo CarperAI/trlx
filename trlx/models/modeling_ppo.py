@@ -1082,13 +1082,14 @@ class GPTBigCodeModelBranch(ModelBranch):
         base_model: transformers.PreTrainedModel,
         *,
         num_layers_unfrozen: int,
+        frozen: bool = True,
     ):
         """
         Args:
             base_model (transformers.PreTrainedModel): The pretrained model to extract upper trunk from
             num_layers_unfrozen (int): The number of trainable layers
         """
-        super().__init__(base_model, num_layers_unfrozen=num_layers_unfrozen)
+        super().__init__(base_model, num_layers_unfrozen=num_layers_unfrozen, frozen=frozen)
         self.config = base_model.transformer.config
         self.bias = base_model.transformer.bias
         self.multi_query = base_model.transformer.multi_query
