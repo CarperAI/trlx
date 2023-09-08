@@ -2,6 +2,7 @@ from pathlib import Path
 
 from trlx.models.modeling_ilql import ILQLConfig
 from trlx.models.modeling_ppo import PPOConfig
+from trlx.trainer.accelerate_dpo_trainer import DPOConfig
 from trlx.trainer.accelerate_sft_trainer import SFTConfig
 
 from .configs import (
@@ -146,3 +147,29 @@ def default_nemo_1_3b_config():
 
     here = Path(__file__).parent
     return OmegaConf.load(here.parent.parent / "configs" / "nemo_configs" / "megatron_1.3b.yaml")
+
+
+def default_dpo_config():
+    return TRLConfig(
+        train=TrainConfig(
+            seq_length=1024,
+            epochs=100,
+            total_steps=1000,
+            batch_size=8,
+            checkpoint_interval=10000,
+            eval_interval=100,
+            pipeline="PromptPipeline",
+            trainer="DPOTrainer",
+        ),
+        model=ModelConfig(model_path="gpt2", num_layers_unfrozen=-1),
+        tokenizer=TokenizerConfig(tokenizer_path="gpt2", truncation_side="right"),
+        optimizer=OptimizerConfig(
+            name="adamw", kwargs=dict(lr=1.0e-4, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
+        ),
+        scheduler=SchedulerConfig(
+            name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)  # train.total_steps
+        ),
+        method=DPOConfig(
+            name="DPOConfig", gen_kwargs=dict(max_new_tokens=40, top_k=0, top_p=1.0, do_sample=True), beta=0.1
+        ),
+    )

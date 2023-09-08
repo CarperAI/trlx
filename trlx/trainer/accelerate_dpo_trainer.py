@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Union
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, PretrainedConfig
 
@@ -10,6 +11,7 @@ from trlx.data.method_configs import MethodConfig, register_method
 from trlx.pipeline.offline_pipeline import DPOStore
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
+from trlx.utils.modeling import pad_to_length
 
 
 @dataclass
@@ -23,6 +25,7 @@ class DPOConfig(MethodConfig):
     """
 
     gen_kwargs: dict
+    beta: float = 0.1
 
 
 @register_trainer
@@ -30,11 +33,20 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
     def __init__(self, config: TRLConfig, **kwargs):
         super().__init__(config, **kwargs)
 
+        # Set up a reference model when hydra heads are not used
+        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
+            self.ref_model = self.get_arch(self.config)
+            self.ref_model.to(self.accelerator.device)
+            self.ref_model.eval()
+
         self.generate_kwargs = dict(
             config.method.gen_kwargs,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
         )
+
+        # `beta` corresponding to the DPO hyperparameter
+        self.beta = config.method.beta
 
     def get_arch(self, config):
         from_fn = AutoModelForCausalLM.from_pretrained
