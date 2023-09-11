@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List, Optional, Any, Dict, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch

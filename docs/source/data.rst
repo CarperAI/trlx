@@ -30,4 +30,3 @@ Data Classes
 
 .. autoclass:: trlx.data.ilql_types.ILQLSeq2SeqBatch
     :members:
-

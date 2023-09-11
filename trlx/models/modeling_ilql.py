@@ -51,7 +51,9 @@ class ILQLConfig(MethodConfig):
     """
     Configuration for ILQL method.
 
-    :param tau: Parameter for expectile regression for the value function to q estimates, \in (0, 1), where tau=0.5 is equivalent to the mean square error and tau=1 is equivalent to taking maximum over q estimates
+    :param tau: Parameter for expectile regression for the value function to q
+    estimates, \in (0, 1), where tau=0.5 is equivalent to the mean square error
+    and tau=1 is equivalent to taking a maximum over q estimates
     :type tau: float
 
     :param gamma: Discount factor

@@ -9,7 +9,6 @@ from typing import List, Mapping, Optional, Sequence, Tuple, Union
 import torch
 import torch.distributed
 import torch.nn as nn
-import wandb
 from apex.transformer import parallel_state, tensor_parallel
 from apex.transformer.pipeline_parallel.utils import _reconfigure_microbatch_calculator
 from apex.transformer.tensor_parallel.mappings import (
@@ -47,6 +46,7 @@ from nemo.collections.nlp.modules.common.transformer.text_generation import (
 from nemo.collections.nlp.parts.utils_funcs import get_last_rank
 from nemo.utils import AppState
 
+import wandb
 from trlx.data.ilql_types import unflatten_dataclass
 from trlx.data.ppo_types import PPORLBatch
 from trlx.models.modeling_ppo import PPOConfig

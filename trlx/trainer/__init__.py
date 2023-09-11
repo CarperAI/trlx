@@ -60,4 +60,3 @@ class BaseRLTrainer:
         Use data in the the rollout store to update the model
         """
         pass
-

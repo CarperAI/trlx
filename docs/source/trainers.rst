@@ -40,4 +40,3 @@ Trainers
 
 .. autoclass:: trlx.trainer.nemo_sft_trainer.NeMoSFTTrainer
     :members:
-
