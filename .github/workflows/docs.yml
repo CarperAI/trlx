@@ -42,7 +42,7 @@ jobs:
           make -C docs html
       - uses: readthedocs/actions/preview@v1
         with:
-          project-slug: "trlx"
+          project-slug: "trlx-stage"
           project-language: "en"
           # see: https://github.com/readthedocs/actions/tree/main/preview
           # message-template (optional): Text message to be injected by the action in the Pull Request description. It supports the following placeholders to be replaced:
