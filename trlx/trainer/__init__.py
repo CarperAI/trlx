@@ -38,6 +38,7 @@ class BaseRLTrainer:
         config: TRLConfig,
         reward_fn=None,
         metric_fn=None,
+        logit_mask=None,
         stop_sequences=None,
         train_mode=False,
     ):
@@ -45,6 +46,7 @@ class BaseRLTrainer:
         self.config = config
         self.reward_fn = reward_fn
         self.metric_fn = metric_fn
+        self.logit_mask = logit_mask
         self.train_mode = train_mode
         self.stop_sequences = stop_sequences
 
