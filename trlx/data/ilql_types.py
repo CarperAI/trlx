@@ -1,33 +1,28 @@
-from dataclasses import dataclass, fields
-
+from dataclasses import dataclass
 from torchtyping import TensorType  # type: ignore
-
-
-def flatten_dataclass(cls: type):
-    """Return a function that flattens a dataclass into a list"""
-    cls_fields = [f.name for f in fields(cls)]
-    return lambda x: [getattr(x, f) for f in cls_fields]
-
-
-def unflatten_dataclass(cls: type):
-    """Return a function that unflattens a list into a dataclass"""
-    cls_fields = [f.name for f in fields(cls)]
-    return lambda x: cls(**dict(zip(cls_fields, x)))
-
 
 @dataclass
 class ILQLElement:
     """
-    Data element for ILQL
+    A single data item for ILQL training
 
-    :param input_ids: Input tokens. Should be a long tensor.
+    :param input_ids: Long tensor of input tokens.
     :type input_ids: torch.Tensor
 
-    :param attention_mask: Attention mask. Should be a long tensor.
+    :param attention_mask: Attention mask for input tokens. Should be a long tensor.
     :type attention_mask: torch.Tensor
 
-    :param rewards: Rewards for each token. Should be a float tensor of same size as tokens.
+    :param rewards: Rewards for each input token.
     :type rewards: torch.Tensor
+
+    :param states_ixs: Indices of states (user input or environment input for example) in the `input_ids`.
+    :type states_ixs: torch.Tensor
+
+    :param actions_ixs: Indices of actions (model output) in the `input_ids` tensor.
+    :type actions_ixs: torch.Tensor
+
+    :param dones: Indicator of for the terminal state (end of episode) in the `input_ids` tensor.
+    :type dones: torch.Tensor
     """
 
     input_ids: TensorType["query_size"]
@@ -41,16 +36,28 @@ class ILQLElement:
 @dataclass
 class ILQLSeq2SeqElement:
     """
-    Data element for ILQL
+    A single data item for ILQL training
 
-    :param input_ids: Input tokens. Should be a long tensor.
+    :param input_ids: Long tensor of input tokens.
     :type input_ids: torch.Tensor
 
-    :param attention_mask: Attention mask. Should be a long tensor.
+    :param attention_mask: Attention mask for input tokens. Should be a long tensor.
     :type attention_mask: torch.Tensor
 
-    :param rewards: Rewards for each token. Should be a float tensor of same size as tokens.
+    :param decoder_input_ids: Long tensor of target input tokens.
+    :type decoder_input_ids: torch.Tensor
+
+    :param rewards: Rewards for each input token.
     :type rewards: torch.Tensor
+
+    :param states_ixs: Indices of states (user input or environment input for example) in the `input_ids`.
+    :type states_ixs: torch.Tensor
+
+    :param actions_ixs: Indices of actions (model output) in the `input_ids` tensor.
+    :type actions_ixs: torch.Tensor
+
+    :param dones: Indicator of for the terminal state (end of episode) in the `input_ids` tensor.
+    :type dones: torch.Tensor
     """
 
     input_ids: TensorType["query_size"]
@@ -75,6 +82,15 @@ class ILQLBatch:
 
     :param rewards: Batch of rewards for each token in each token batch.
     :type rewards: torch.Tensor
+
+    :param states_ixs: Batch of indices of states (user input or environment input for example) in the `input_ids`.
+    :type states_ixs: torch.Tensor
+
+    :param actions_ixs: Batch of indices of actions (model output) in the `input_ids` tensor.
+    :type actions_ixs: torch.Tensor
+
+    :param dones: Batch of indicators of for the terminal state (end of episode) in the `input_ids` tensor.
+    :type dones: torch.Tensor
     """
 
     input_ids: TensorType["batch_size", "query_size"]
@@ -96,8 +112,20 @@ class ILQLSeq2SeqBatch:
     :param attention_mask: Batch of attention masks.
     :type attention_mask: torch.Tensor
 
+    :param decoder_input_ids: Batch of target input tokens.
+    :type decoder_input_ids: torch.Tensor
+
     :param rewards: Batch of rewards for each token in each token batch.
     :type rewards: torch.Tensor
+
+    :param states_ixs: Batch of indices of states (user input or environment input for example) in the `input_ids`.
+    :type states_ixs: torch.Tensor
+
+    :param actions_ixs: Batch of indices of actions (model output) in the `input_ids` tensor.
+    :type actions_ixs: torch.Tensor
+
+    :param dones: Batch of indicators of for the terminal state (end of episode) in the `input_ids` tensor.
+    :type dones: torch.Tensor
     """
 
     input_ids: TensorType["batch_size", "query_size"]

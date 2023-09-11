@@ -21,6 +21,16 @@ from trlx.pipeline import BasePipeline, BaseRolloutStore, register_datapipeline
 
 @dataclass
 class DialogMessage:
+    """
+    Single message in a dialogue
+
+    :param is_output: Whether the message is a model output or a prompt
+    :type is_output: bool
+
+    :param tokens: Tokenized message
+    :type tokens: Tuple[int]
+    """
+
     is_output: bool
     tokens: Tuple[int]
 
@@ -241,7 +251,7 @@ def ilql_seq2seq_collate_fn(elems: Iterable[ILQLElement]):
 
 class ILQLSeq2SeqRolloutStorage(BaseRolloutStore):
     """
-    Rollout storage for training ILQL
+    Rollout storage for training ILQL with Seq2Seq models
     """
 
     def __init__(self, input_ids, attention_mask, decoder_input_ids, rewards, states_ixs, actions_ixs, dones):

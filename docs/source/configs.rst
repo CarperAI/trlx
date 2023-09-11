@@ -3,21 +3,26 @@
 Configs
 ************************
 
-Training a model in TRL will require you to set several configs:
-ModelConfig, which contains general info on the model being trained. TrainConfig, which contains things like
-training hyperparameters. And finally, MethodConfig, which contains hyperparameters or settings for
-the specific method being used (i.e. ILQL or PPO)
-
+Training requires configuration to be passed through a set of configs: `TrainConfig` with training configuration, `ModelConfig`, `TokenizerConfig`, `OptimizerConfig`, `SchedulerConfig` and `MethodConfig` for a specific configuration of the algorithm (PPO, ILQL or SFT)
 
 **General**
 
 .. autoclass:: trlx.data.configs.TRLConfig
     :members:
 
+.. autoclass:: trlx.data.configs.TrainConfig
+    :members:
+
 .. autoclass:: trlx.data.configs.ModelConfig
     :members:
 
-.. autoclass:: trlx.data.configs.TrainConfig
+.. autoclass:: trlx.data.configs.TokenizerConfig
+    :members:
+
+.. autoclass:: trlx.data.configs.OptimizerConfig
+    :members:
+
+.. autoclass:: trlx.data.configs.SchedulerConfig
     :members:
 
 .. autoclass:: trlx.data.method_configs.MethodConfig
@@ -25,10 +30,10 @@ the specific method being used (i.e. ILQL or PPO)
 
 **PPO**
 
-.. autoclass:: trlx.data.method_configs.PPOConfig
+.. autoclass:: trlx.models.modeling_ppo.PPOConfig
     :members:
 
 **ILQL**
 
-.. autoclass:: trlx.data.method_configs.ILQLConfig
+.. autoclass:: trlx.models.modeling_ilql.ILQLConfig
     :members:

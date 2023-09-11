@@ -1,28 +1,7 @@
 .. _data:
 
-Data Elements
+Data Classes
 ************************
-
-All of the major Carper projects: trlX, CHEESE, and magiCARP use
-dataclasses corresponding to batches of data to communicate data between models and different
-components. trlX is no different, though it has many different dataclasses for
-different components like training or inference. Currently, we support PPO and ILQL, which
-each demand different kinds of data during training.
-
-
-**Basic Data Elements for Accelerate**
-
-.. autoclass:: trlx.data.accelerate_base_datatypes.PromptElement
-    :members:
-
-.. autoclass:: trlx.data.accelerate_base_datatypes.PromptBatch
-    :members:
-
-.. autoclass:: trlx.data.accelerate_base_datatypes.AccelerateRLElement
-    :members:
-
-.. autoclass:: trlx.data.accelerate_base_datatypes.AccelerateRLBatchElement
-    :members:
 
 **Data Elements for PPO**
 
@@ -37,5 +16,18 @@ each demand different kinds of data during training.
 .. autoclass:: trlx.data.ilql_types.ILQLElement
     :members:
 
+.. autoclass:: trlx.models.modeling_ilql.CausalILQLOutput
+    :members:
+
+.. autoclass:: trlx.data.ilql_types.ILQLSeq2SeqElement
+    :members:
+
+.. autoclass:: trlx.models.modeling_ilql.Seq2SeqILQLOutput
+    :members:
+
 .. autoclass:: trlx.data.ilql_types.ILQLBatch
     :members:
+
+.. autoclass:: trlx.data.ilql_types.ILQLSeq2SeqBatch
+    :members:
+
