@@ -195,6 +195,7 @@ class RefLMHeads(MegatronModule):
                 self.word_embeddings = language_model.word_embeddings
             self.output_layer = None
 
+
     # The tensor from the previous pipeline rank arrives via this method
     def set_input_tensor(self, input_tensor):
         self._lm.set_input_tensor(input_tensor)

@@ -32,8 +32,6 @@ from trlx.utils.modeling import (
     freeze_bottom_causal_layers,
     freeze_bottom_seq2seq_layers,
     gather_dict,
-    get_delta_model_class,
-    parse_delta_kwargs,
 )
 
 logger = logging.get_logger(__name__)
@@ -73,9 +71,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.tokenizer.padding_side = config.tokenizer.padding_side
         self.tokenizer.truncation_side = config.tokenizer.truncation_side
         self.tokenizer.sep_token = "<sep>"
-        if config.model.model_arch_type != "seq2seq":
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = "<|padding|>"
 
         script_name = os.path.basename(sys.argv[0]).rsplit(".", 1)[0]
         if not isinstance(config.model.model_path, str):
@@ -113,6 +110,8 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 )
             elif config.train.tracker == "tensorboard":
                 # flatten config for tensorboard, split list in hparams into flatten config
+                if config_dict["model"].get("peft_config", None):  # tensorboard does not support peft config type
+                    config_dict["model"]["peft_config"] = str(config_dict["model"]["peft_config"])
                 config_dict_flat = flatten_dict(config_dict)
                 config_dict_flat["optimizer/kwargs/beta_1"] = config_dict_flat["optimizer/kwargs/betas"][0]
                 config_dict_flat["optimizer/kwargs/beta_2"] = config_dict_flat["optimizer/kwargs/betas"][1]
@@ -150,22 +149,21 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # Retrieves model equipped for ppo, ilql, etc
         model = self.get_arch(self.config)
-        if self.config.model.model_arch_type == "seq2seq":
-            freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
+
+        if self.config.model.peft_config is None:
+            if self.config.model.model_arch_type == "seq2seq":
+                freeze_bottom_seq2seq_layers(model.base_model, self.config.model.num_layers_unfrozen)
+            else:
+                freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
         else:
-            freeze_bottom_causal_layers(model.base_model, self.config.model.num_layers_unfrozen)
-        # Set the delta tuning strategies
-        if self.config.model.delta_kwargs is not None:
-            delta_type, delta_kwargs = parse_delta_kwargs(
-                model.base_model.config,
-                self.config.model.delta_kwargs,
-                self.config.model.num_layers_unfrozen,
-            )
-            delta_model_class = get_delta_model_class(delta_type)
-            delta_model = delta_model_class(model.base_model, **delta_kwargs)
-            delta_model.freeze_module(exclude=["deltas"], set_state_dict=True)
-            if self.accelerator.is_main_process:
-                delta_model.log()
+            if self.accelerator.is_main_process and hasattr(model.base_model, "print_trainable_parameters"):
+                model.base_model.print_trainable_parameters()
+            if self.config.model.num_layers_unfrozen >= 0:
+                logger.warning(
+                    "The argument num_layers_unfrozen is ignored when using peft, to prevent unexpected behaviour."
+                    "For Lora, use the `LoraConfig` argument `modules_to_save` instead."
+                )
+
         return model
 
     def setup_optimizer(self):
@@ -307,10 +305,28 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     def save(self, directory: Optional[str] = None, **kwargs):
         """Creates a checkpoint of the optimizer, scheduler and model"""
-        self.accelerator.save_state(directory or self.config.train.checkpoint_dir, **kwargs)
+        dst_dir = directory or self.config.train.checkpoint_dir
+        self.accelerator.save_state(dst_dir, **kwargs)
+
+        if self.config.model.peft_config is not None and self.accelerator.is_main_process:
+            # Remove "pytorch_model.bin" because it contains more than necessary,
+            # let save_pretrained recreate it with just the value heads.
+            model_file = os.path.join(dst_dir, "pytorch_model.bin")
+            if os.path.exists(model_file):
+                os.remove(model_file)
+            self.accelerator.unwrap_model(self.model).save_pretrained(dst_dir)
 
     def load(self, directory: Optional[str] = None, **kwargs):
         """Load checkpoint of optimizer, scheduler and a model"""
+        if self.config.model.peft_config is not None:
+
+            def load_state_hook(models: List[torch.nn.Module], input_dir: str):
+                with self.accelerator.main_process_first():
+                    for model in models:
+                        model.from_pretrained(input_dir)
+
+            self.accelerator.register_load_state_pre_hook(load_state_hook)
+
         self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
@@ -407,10 +423,19 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 # in online setting, compute the reward for validation
                 if self.reward_fn:
                     logger.info("Computing rewards")
-                    rewards = torch.tensor(
-                        self.reward_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata),
-                        dtype=float,
+                    rewards = self.reward_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        tokenizer=self.tokenizer,
+                        **metadata,
                     )
+                    if isinstance(rewards[0], torch.Tensor):
+                        rewards = torch.tensor([reward.sum().item() for reward in rewards], dtype=float)
+                    elif isinstance(rewards[0], list):
+                        rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
+                    else:
+                        rewards = torch.tensor(rewards, dtype=float)
                     mean_reward = rewards.mean().item()
                     columns.append("reward")
                     if not isinstance(rewards, list):
@@ -522,24 +547,29 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         # For each epoch
         for _ in range(self.config.train.epochs):
-            # For each batch
-            for mbs in MiniBatchIterator(self.train_dataloader, self.mb_size, self.num_mb):
-                # For each update per batch
-                for _ in range(self.n_updates_per_batch):
-                    # Note that whereas standard policy gradient methods perform one
-                    # gradient update per batch, PPO for example commonly performs
-                    # multiple gradient updates on the same batch of data.
-                    # https://arxiv.org/pdf/1707.06347.pdf
-                    forward_time = 0
-                    backward_time = 0
+            # For each ppo epoch
+            for _ in range(self.n_inner_epochs):
+                # Note that whereas standard policy gradient methods perform one
+                # gradient update per batch, PPO for example commonly performs
+                # multiple epochs of gradient updates on the same batch of data.
+                # https://arxiv.org/pdf/1707.06347.pdf
+
+                # We create a new dataloader (so new data ordering and shuffle) each inner epoch
+                train_dataloader = self.create_train_dataloader()
+                # For each batch
+                for minibatch in MiniBatchIterator(train_dataloader, self.mb_size, self.num_mb):
+                    forward_time = 0.0
+                    backward_time = 0.0
                     stats_accum = []
-                    for mb in mbs:
+                    for microbatch in minibatch:
                         with self._accumulate():
                             forward_time -= time()
-                            loss, stats = self.loss(mb)
+                            loss, stats = self.loss(microbatch)
                             forward_time += time()
                             backward_time -= time()
+                            self.model.train()
                             self.accelerator.backward(loss)
+                            self.model.eval()
                             backward_time += time()
                             stats_accum.append(stats)
 
@@ -560,11 +590,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     ):
                         subfolder = f"checkpoint_{self.iter_count:0{len(str(self.total_steps))}d}"
                         directory = os.path.join(self.config.train.checkpoint_dir, subfolder)
-                        logger.info(f"Saving intermediate checkpoint into {directory}")
                         if self.config.train.save_optimizer:
+                            logger.info(f"Saving intermediate optimizer & model checkpoint into {directory}")
                             self.save(directory)
-                        else:
-                            self.save_pretrained(directory)
+
+                        pretrained_directory = os.path.join(directory, "hf_model")
+                        logger.info(f"Saving pretrained model into {pretrained_directory}")
+                        self.save_pretrained(pretrained_directory)
 
                     stats["time/forward"] = forward_time
                     stats["time/backward"] = backward_time
@@ -593,11 +625,14 @@ class AccelerateRLTrainer(BaseRLTrainer):
                                 torch.distributed.all_reduce(do_save, torch.distributed.ReduceOp.MAX)
                             if do_save:
                                 directory = os.path.join(self.config.train.checkpoint_dir, "best_checkpoint")
-                                logger.info(f"Saving the best state so far into {directory}")
+
                                 if self.config.train.save_optimizer:
+                                    logger.info(f"Saving intermediate optimizer & model checkpoint into {directory}")
                                     self.save(directory)
-                                else:
-                                    self.save_pretrained(directory)
+
+                                pretrained_directory = os.path.join(directory, "hf_model")
+                                logger.info(f"Saving pretrained model into {pretrained_directory}")
+                                self.save_pretrained(pretrained_directory)
 
                     desc = " | ".join(f"{k}: {v:.2f}" for k, v in stats.items() if k.startswith("loss"))
                     tbar.set_description(f"[{desc}]")
@@ -612,6 +647,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.post_epoch_callback()
         tbar.close()
+
+    @abstractmethod
+    def create_train_dataloader(self):
+        """Returns a new dataloader for training."""
+        pass
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):

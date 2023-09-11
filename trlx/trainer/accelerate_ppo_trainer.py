@@ -2,11 +2,13 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List
+from typing import Callable, List, Optional
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
@@ -67,13 +69,13 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         self.store.clear_history()  # Clear the rollout store
 
-        # Setup a reference model when hydra heads are not used
-        if not hasattr(self.model, "frozen_head"):
+        # Set up a reference model when hydra heads are not used
+        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
             self.ref_model = self.get_arch(self.config)
             self.ref_model.to(self.accelerator.device)
             self.ref_model.eval()
 
-        # Setup the KL controller
+        # Set up the KL controller
         # This helps prevent large divergences in the controller (policy)
         if config.method.target is not None:
             self.kl_ctl = AdaptiveKLController(config.method.init_kl_coef, config.method.target, config.method.horizon)
@@ -83,34 +85,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         # Create the parameters for the Hugging Face language model's generator
         # method (that generates new tokens from a prompt).
         # https://huggingface.co/docs/transformers/v4.25.1/en/main_classes/text_generation#transformers.GenerationMixin.generate
-        if config.model.model_arch_type == "seq2seq":
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+        generate_kwargs = dict(
+            do_sample=True,
+            use_cache=True,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+            synced_gpus=os.environ.get("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
+        )
+        self.generate_kwargs = {**generate_kwargs, **config.method.gen_kwargs}
+
+        if config.method.gen_experience_kwargs is not None:
+            self.generate_experience_kwargs = {**generate_kwargs, **config.method.gen_experience_kwargs}
         else:
-            self.generate_kwargs = dict(
-                config.method.gen_kwargs,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
-            if config.method.gen_experience_kwargs is not None:
-                self.generate_experience_kwargs = dict(
-                    config.method.gen_experience_kwargs,
-                    eos_token_id=self.tokenizer.eos_token_id,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                )
-            else:
-                self.generate_experience_kwargs = None
+            self.generate_experience_kwargs = None
 
         # Setup stats tracker
         self.running_moments = RunningMoments()
@@ -131,6 +118,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return from_fn(
             config.model.model_path,
             num_layers_unfrozen=config.model.num_layers_unfrozen,
+            num_value_layers_unfrozen=config.method.num_value_layers_unfrozen,
+            peft_config=self.config.model.peft_config,
         )
 
     def loss(self, batch: PPORLBatch):
@@ -175,12 +164,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                mask[:, start:end],
+                mask[:, start + 1 : end + 1],
             )
         else:
             tokens = torch.cat((query_tensors, response_tensors), dim=1)
             attention_mask = tokens.not_equal(self.tokenizer.pad_token_id).long().to(tokens.device)
-            outputs = self.model(tokens, attention_mask, return_dict=True)
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            outputs = self.model(tokens, attention_mask, return_dict=True, position_ids=position_ids)
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
@@ -191,7 +182,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logprobs, values_pred, mask = (
                 logprobs[:, start:end],
                 values_pred[:, start:end],
-                attention_mask[:, start:end],
+                attention_mask[:, start + 1 : end + 1],
             )
 
         loss, stats = self.config.method.loss(
@@ -233,16 +224,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
     def post_backward_callback(self):
         self.kl_ctl.update(self.mean_kl, n_steps=self.config.train.batch_size)
 
+    def create_train_dataloader(self):
+        return self.store.create_loader(self.config.train.batch_size, shuffle=True)
+
     def prepare_learning(self):
-        eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
+        eval_dataloader = self.eval_pipeline.create_loader(self.config.method.chunk_size)
         self.eval_dataloader = self.accelerator.prepare_data_loader(eval_dataloader)
 
         self.make_experience(self.config.method.num_rollouts)
 
-        self.train_dataloader = self.store.create_loader(self.config.train.batch_size, shuffle=True)
+        self.train_dataloader = self.create_train_dataloader()
 
-        self.n_updates_per_batch = self.config.method.ppo_epochs
-        self.total_steps = self.config.train.epochs * self.n_updates_per_batch * len(self.train_dataloader)
+        self.n_inner_epochs = self.config.method.ppo_epochs
+        self.total_steps = self.config.train.epochs * self.n_inner_epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
@@ -310,24 +304,39 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 )
 
                 rollout_score_time = time()
-                all_scores = torch.tensor(
-                    self.reward_fn(
-                        samples=all_str_samples, prompts=all_str_prompts, outputs=all_str_outputs, **metadata
-                    ),
-                    dtype=torch.float,
-                    device=device,
+                # reward_fn should return list of rewards at each token per sample
+                # NOTE: all_scores[0][i] is the reward due to token (action) i in prompt + response (b/c of how kl is computed)
+                all_scores = self.reward_fn(
+                    samples=all_str_samples,
+                    prompts=all_str_prompts,
+                    outputs=all_str_outputs,
+                    tokenizer=self.tokenizer,
+                    **metadata,
                 )
+                all_scores = [
+                    torch.tensor(score, dtype=torch.float, device=device).view(
+                        -1,
+                    )
+                    for score in all_scores
+                ]
+                # Pad 0 reward on the ends
+                all_scores = pad_sequence(all_scores, batch_first=True, padding_value=-np.inf)
+                max_len = torch.tensor(all_scores.shape[1], dtype=torch.long, device=device)
+
                 stats["time/rollout_score"] = time() - rollout_score_time
 
-                all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1).unbind())
+                all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1, max_len).unbind())
             else:
                 all_scores = None
+                max_len = torch.tensor(0, dtype=torch.long, device=device)
 
             if torch.distributed.is_initialized():
-                scores = torch.empty(len(samples), device=device)
+                torch.distributed.broadcast(max_len, 0)
+                scores = torch.empty((len(samples), max_len), device=device)
                 torch.distributed.scatter(scores, all_scores)
             else:
                 scores = all_scores[0].clone().detach()
+            scores_mask = scores != -np.inf
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
 
@@ -355,8 +364,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             # store statistics of the initial rollout as reference
             if self.ref_mean is None:
-                self.ref_mean, self.ref_std = scores.mean(), scores.std()
-            all_scores_mean, all_scores_std = self.running_moments.update(scores)
+                self.ref_mean, self.ref_std = (scores * scores_mask).sum(dim=1).mean(), (scores * scores_mask).sum(
+                    dim=1
+                ).std()
+            all_scores_mean, all_scores_std = self.running_moments.update(torch.sum(scores * scores_mask, dim=1))
             stats["rollout_scores/mean"] = all_scores_mean.item()
             stats["rollout_scores/std"] = all_scores_std.item()
             stats["rollout_scores/running_mean"] = self.running_moments.mean.item()
@@ -382,7 +393,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     )
                     logits = outputs.logits
                     values = outputs.value
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             input_ids=prompt_tensors,
                             attention_mask=attention_mask,
@@ -401,22 +412,25 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             else:
                 all_tokens = torch.cat((prompt_tensors.to(device), sample_outputs), dim=1)
                 attention_mask = all_tokens.not_equal(self.tokenizer.pad_token_id).long().to(device)
+                position_ids = attention_mask.long().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
                 with torch.no_grad():
                     logits, *_, values = self.model(
-                        all_tokens,
-                        attention_mask=attention_mask,
+                        all_tokens, attention_mask=attention_mask, position_ids=position_ids
                     )
                     # TODO(dahoas): When hydra model works need to also support generation on hydra head
-                    if hasattr(self.model, "frozen_head"):
+                    if hasattr(self.model, "frozen_head") or self.model.peft_type:
                         ref_logits = self.model.forward_hydra(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                     else:
                         ref_logits = self.ref_model(
                             all_tokens,
                             attention_mask=attention_mask,
+                            position_ids=position_ids,
                             return_dict=True,
                         ).logits
                         ref_logits = ref_logits.to(device)
@@ -425,6 +439,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], sample_outputs[:, 1:])
             else:
+                # NOTE: logprob[i] is (log)prob at which all_token[i+1] was sampled
                 logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
                 ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
 
@@ -449,7 +464,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             values = values.cpu()[:, :-1]
 
             # Get the logprobs and values, for tokens that are not padding,
-            # from the start of the prompt up to the <eos> token, while also including the latter
+            # from the end of the prompt up to the <eos> token, while also including the latter
             # (these are taken from the student model and not the reference model)
             ends = start + attention_mask[:, start:].sum(1) + 1
             all_values = [values[ix, start : ends[ix]] for ix in range(n_samples)]
@@ -462,7 +477,17 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             for sample_idx in range(n_samples):
                 rewards = kl_penalty[sample_idx]
-                rewards[-1] += scores[sample_idx].cpu()
+                # Then add in rewards
+                if scores.shape[1] == 1:
+                    # NOTE: Final reward given at EOS token following HHH practice
+                    rewards[-1] += scores[sample_idx][0].cpu()
+                else:
+                    score = scores[sample_idx]
+                    score_right_padding = torch.sum(scores_mask[sample_idx])
+                    score = score[:score_right_padding].cpu()
+                    p_score = torch.zeros_like(rewards)
+                    p_score[: score.shape[0]] += score
+                    rewards += p_score
 
                 ppo_rl_elements.append(
                     PPORLElement(
@@ -495,3 +520,32 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Push samples and rewards to trainer's rollout storage
         self.push_to_store(ppo_rl_elements)
+
+    def save_pretrained(self, directory: Optional[str] = None, **kwargs):
+        """
+        Args:
+            directory (str, *optional*): The directory to save the trainer files to.
+                NOTE: If not specified, the model will be saved to a directory named `hf_model` in the
+                checkpoint directory as specified by the Trainer's config.
+            **kwargs: Additional keyword arguments passed to the underlying Hugging Face model's
+                `save_pretrained` method.
+        """
+        if directory is None:
+            directory = os.path.join(self.config.train.checkpoint_dir, "hf_model")
+
+        self.accelerator.wait_for_everyone()
+
+        # Save only the base model, so that is could be loaded directly
+        # with Hugging Face's `from_pretrained` method
+        state_dict = self.accelerator.get_state_dict(self.model.base_model)
+
+        self.accelerator.unwrap_model(self.model).save_pretrained(
+            directory,
+            save_function=self.accelerator.save,
+            is_main_process=self.accelerator.is_main_process,
+            state_dict=state_dict,
+            **kwargs,
+        )
+
+        if self.accelerator.is_main_process:
+            self.tokenizer.save_pretrained(directory)

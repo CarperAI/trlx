@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, PretrainedConfig
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
@@ -38,7 +38,27 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         )
 
     def get_arch(self, config):
-        return AutoModelForCausalLM.from_pretrained(config.model.model_path)
+        from_fn = AutoModelForCausalLM.from_pretrained
+        if issubclass(type(config.model.model_path), PretrainedConfig):
+            from_fn = AutoModelForCausalLM.from_config
+
+        model = from_fn(config.model.model_path)
+
+        if config.model.peft_config is not None:
+            # Initialize the peft adapter
+            import peft
+
+            peft_config = config.model.peft_config
+            if not isinstance(peft_config, peft.PeftConfig):
+                if isinstance(peft_config, dict):
+                    peft_config = peft.get_peft_config(peft_config)
+                else:
+                    raise ValueError("`peft_config` should be an instance of `peft.PeftConfig` or a dict.")
+            model = peft.get_peft_model(model, peft_config)
+            if self.accelerator.is_main_process:
+                model.print_trainable_parameters()
+
+        return model
 
     def loss(self, batch):
         if "labels" in batch:
@@ -52,18 +72,20 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
 
         return loss, stats
 
+    def create_train_dataloader(self):
+        return self.accelerator.prepare(self.store.create_loader(self.config.train.batch_size))
+
     def prepare_learning(self):
-        train_dataloader = self.store.create_loader(self.config.train.batch_size)
+        self.train_dataloader = self.create_train_dataloader()
         eval_dataloader = self.eval_pipeline.create_loader(self.config.train.batch_size)
 
         (
             self.model,
             self.opt,
-            self.train_dataloader,
             self.eval_dataloader,
-        ) = self.accelerator.prepare(self.model, self.opt, train_dataloader, eval_dataloader)
+        ) = self.accelerator.prepare(self.model, self.opt, eval_dataloader)
 
-        self.n_updates_per_batch = 1
+        self.n_inner_epochs = 1
         self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 

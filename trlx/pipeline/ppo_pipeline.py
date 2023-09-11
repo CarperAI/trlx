@@ -68,15 +68,23 @@ class PPORolloutStorage(BaseRolloutStore):
     def clear_history(self):
         self.history = []
 
-    def export_history(self, location: str):
+    def export_history(self, location: str, only_text=True):
         assert os.path.exists(location)
 
         fpath = os.path.join(location, f"epoch-{str(time.time())}.json")
 
         def exp_to_dict(exp):
-            {k: v.cpu().tolist() for k, v in exp.__dict__.items()}
+            return {k: v.cpu().tolist() for k, v in exp.__dict__.items()}
 
-        data = [exp_to_dict(exp) for exp in self.history]
+        def filter_text(d, only_text):
+            if only_text:
+                keys = list(d.keys())
+                for key in keys:
+                    if key != "query_tensor" and key != "response_tensor":
+                        d.pop(key)
+            return d
+
+        data = [filter_text(exp_to_dict(exp), only_text) for exp in self.history]
         with open(fpath, "w") as f:
             f.write(json.dumps(data, indent=2))
 
