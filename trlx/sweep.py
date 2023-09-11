@@ -5,14 +5,13 @@ import json
 from datetime import datetime
 
 import ray
+import wandb
 import wandb.apis.reports as wb
 import yaml
 from ray import tune
 from ray.air import ScalingConfig
 from ray.train.huggingface.accelerate import AccelerateTrainer
 from ray.tune.logger import CSVLoggerCallback
-
-import wandb
 
 
 def get_param_space(config: dict):  # noqa: C901
