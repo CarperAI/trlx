@@ -44,6 +44,7 @@ jobs:
         with:
           project-slug: "trlx-stage"
           project-language: "en"
+          message-template: "{docs-pr-index-url}"
           # see: https://github.com/readthedocs/actions/tree/main/preview
           # message-template (optional): Text message to be injected by the action in the Pull Request description. It supports the following placeholders to be replaced:
           # {docs-pr-index-url}: URL to the root of the documentation for the Pull Request preview.
