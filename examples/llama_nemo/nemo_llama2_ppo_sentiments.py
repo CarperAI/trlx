@@ -9,7 +9,7 @@ from datasets import load_dataset
 from transformers import DistilBertForSequenceClassification, pipeline
 
 import trlx
-from trlx.data.default_configs import TRLConfig
+from trlx.data.default_configs import TRLConfig, default_ppo_config
 
 
 def get_positive_score(scores):
@@ -33,11 +33,11 @@ def main(hparams={}):
     cfg_name = "llama2-7b"
     config = default_config.evolve(
         train=dict(
-            total_steps=512,
-            seq_length=512,
+            total_steps=1024,
+            seq_length=256,
             batch_size=32,
             epochs=100,
-            eval_interval=10,
+            eval_interval=100,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
                 pretrained_model="/admin/home-duyphung/temp/bug-trlx/trlx/examples/llama_nemo/nemo_llama2_7b/",
@@ -52,7 +52,7 @@ def main(hparams={}):
         optimizer=dict(
             name="adamw",
             kwargs=dict(
-                lr=5e-6,
+                lr=1e-5,
                 weight_decay=1e-06,
                 eps=1.0e-8,
                 betas=(0.9, 0.95),
@@ -61,12 +61,16 @@ def main(hparams={}):
         scheduler=dict(
             name="CosineAnnealing",
         ),
-        model=dict(num_layers_unfrozen=2),
+        model=dict(num_layers_unfrozen=24),
         method=dict(
             num_rollouts=128,
             init_kl_coef=0.05,
-            scale_reward=None,
             vf_coef=1,
+            scale_reward="ignored",
+            gamma=1,
+            lam=0.95,
+            cliprange=0.2,
+            cliprange_value=0.2,
             gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
             chunk_size=128,
             ppo_epochs=4,
