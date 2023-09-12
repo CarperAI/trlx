@@ -288,9 +288,17 @@ class DPOPreferences:
 
 class DPOStore(BaseRolloutStore):
     # Adapted from TRL
-    def __init__(self, preferences: List[DPOPreferences], tokenizer: PreTrainedTokenizer):
+    def __init__(
+        self,
+        preferences: List[DPOPreferences],
+        tokenizer: PreTrainedTokenizer,
+        label_pad_token_id: int,
+        padding_value: int,
+    ):
         super().__init__()
         self.tokenizer = tokenizer
+        self.label_pad_token_id = label_pad_token_id
+        self.padding_value = padding_value
 
         self.history = [
             self._build_batch_from_preference_tokens(preference_element) for preference_element in preferences
@@ -298,9 +306,9 @@ class DPOStore(BaseRolloutStore):
 
     @staticmethod
     def tokenize_preferences(samples, tokenizer, max_length=2048):
-        chosen_tokens = tokenizer(samples[0], add_special_tokens=False)
-        rejected_tokens = tokenizer(samples[1], add_special_tokens=False)
-        prompt_tokens = tokenizer(samples[2], add_special_tokens=False)
+        chosen_tokens = tokenizer(samples["chosen"], add_special_tokens=False)
+        rejected_tokens = tokenizer(samples["rejected"], add_special_tokens=False)
+        prompt_tokens = tokenizer(samples["prompt"], add_special_tokens=False)
 
         chosen_tokens["input_ids"].append(tokenizer.eos_token_id)
         chosen_tokens["attention_mask"].append(1)
@@ -313,14 +321,14 @@ class DPOStore(BaseRolloutStore):
         # if combined sequence is too long, truncate the prompt only
         if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
             if tokenizer.truncation_side == "right":
-                prompt_tokens = {k: v[: self.max_prompt_length] for k, v in prompt_tokens.items()}
+                prompt_tokens = {k: v[:max_length] for k, v in prompt_tokens.items()}
             elif tokenizer.truncation_side == "left":
-                prompt_tokens = {k: v[-self.max_prompt_length :] for k, v in prompt_tokens.items()}
+                prompt_tokens = {k: v[-max_length:] for k, v in prompt_tokens.items()}
 
         # if that's still too long, truncate the response
         if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
-            chosen_tokens = {k: v[: max_length - max_prompt_length] for k, v in chosen_tokens.items()}
-            rejected_tokens = {k: v[: max_length - max_prompt_length] for k, v in rejected_tokens.items()}
+            chosen_tokens = {k: v[: max_length - max_length] for k, v in chosen_tokens.items()}
+            rejected_tokens = {k: v[: max_length - max_length] for k, v in rejected_tokens.items()}
 
         return DPOPreferences(prompt_tokens=prompt_tokens, chosen_tokens=chosen_tokens, rejected_tokens=rejected_tokens)
 

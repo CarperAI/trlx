@@ -25,7 +25,9 @@ class DPOConfig(MethodConfig):
     """
 
     gen_kwargs: dict
-    beta: float = 0.1
+    beta: float = 0.1  # Beta value for DPO loss calculation
+    label_pad_token_id: int = -100  # -100 is ignore token for CELoss
+    padding_value: int = 0
 
 
 @register_trainer
@@ -33,11 +35,10 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
     def __init__(self, config: TRLConfig, **kwargs):
         super().__init__(config, **kwargs)
 
-        # Set up a reference model when hydra heads are not used
-        if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
-            self.ref_model = self.get_arch(self.config)
-            self.ref_model.to(self.accelerator.device)
-            self.ref_model.eval()
+        # TODO: Avoid setting up a reference model when hydra heads are used
+        self.ref_model = self.get_arch(self.config)
+        self.ref_model.to(self.accelerator.device)
+        self.ref_model.eval()
 
         self.generate_kwargs = dict(
             config.method.gen_kwargs,
@@ -47,6 +48,8 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
 
         # `beta` corresponding to the DPO hyperparameter
         self.beta = config.method.beta
+        self.label_pad_token_id = config.method.label_pad_token_id
+        self.padding_value = config.method.padding_value
 
     def get_arch(self, config):
         from_fn = AutoModelForCausalLM.from_pretrained
@@ -250,4 +253,4 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
 
     def make_experience(self, samples, seq_length):
         preferences = [DPOStore.tokenize_preferences(sample, self.tokenizer, seq_length) for sample in samples]
-        self.store = DPOStore(preferences, self.tokenizer)
+        self.store = DPOStore(preferences, self.tokenizer, self.label_pad_token_id, self.padding_value)

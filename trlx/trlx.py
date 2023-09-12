@@ -64,7 +64,7 @@ def train(  # noqa: C901
             config = default_ppo_config()
         elif rewards:
             config = default_ilql_config()
-        else:
+        else:  # Alternatively, could be DPO. But, ignoring since passing `config` implicitly is deprecated
             config = default_sft_config()
 
     set_seed(config.train.seed)
@@ -102,7 +102,7 @@ def train(  # noqa: C901
         if eval_prompts is None:
             eval_prompts = prompts[:batch_size]
 
-    # Offline training from the collected samples (e.g. SFT, ILQL)
+    # Offline training from the collected samples (e.g. SFT, ILQL, DPO)
     elif samples:
         if rewards is not None:
             if len(samples) != len(rewards):
