@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Iterable, List, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -32,6 +32,8 @@ class DPOConfig(MethodConfig):
 
 @register_trainer
 class AccelerateDPOTrainer(AccelerateRLTrainer):
+    """DPO Accelerate Trainer"""
+
     def __init__(self, config: TRLConfig, **kwargs):
         super().__init__(config, **kwargs)
 
@@ -47,9 +49,9 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         )
 
         # `beta` corresponding to the DPO hyperparameter
-        self.beta = config.method.beta
-        self.label_pad_token_id = config.method.label_pad_token_id
-        self.padding_value = config.method.padding_value
+        self.beta: float = config.method.beta
+        self.label_pad_token_id: int = config.method.label_pad_token_id
+        self.padding_value: int = config.method.padding_value
 
     def get_arch(self, config):
         from_fn = AutoModelForCausalLM.from_pretrained
@@ -177,8 +179,9 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
     def concatenated_forward(
         self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
-        """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
-        We do this to avoid doing two forward passes, because it's faster for FSDP.
+        """
+        Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
+        This is faster and avoids two forward passes.
         """
         concatenated_batch = self.concatenated_inputs(batch)
         all_logits = model(
@@ -197,7 +200,7 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         rejected_logits = all_logits[batch["chosen_input_ids"].shape[0] :]
         return (chosen_logps, rejected_logps, chosen_logits, rejected_logits)
 
-    def loss(self, batch):
+    def loss(self, batch: Dict[str, Union[List, torch.LongTensor]]):
         stats = {}
 
         (
@@ -251,6 +254,6 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
-    def make_experience(self, samples, seq_length):
+    def make_experience(self, samples: Iterable[Iterable], seq_length: int):
         preferences = [DPOStore.tokenize_preferences(sample, self.tokenizer, seq_length) for sample in samples]
         self.store = DPOStore(preferences, self.tokenizer, self.label_pad_token_id, self.padding_value)

@@ -41,7 +41,8 @@ default_config = TRLConfig(
 
 
 def preprocess(sample):
-    pass
+    sample["dpo"] = [sample["prompt"], sample["chosen"], sample["rejected"]]
+    return sample
 
 
 def main(hparams={}):
@@ -51,7 +52,7 @@ def main(hparams={}):
 
     trlx.train(
         config=config,
-        samples=dataset["train"],
+        samples=dataset["train"]["dpo"],
         eval_prompts=dataset["test"]["prompt"][:280],
         # metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["Human:", "human:", "Assistant:", "assistant:"],

@@ -10,6 +10,7 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+from trlx.data.dpo_types import DPOElement
 from trlx.data.ilql_types import (
     ILQLBatch,
     ILQLElement,
@@ -279,19 +280,12 @@ class ILQLSeq2SeqRolloutStorage(BaseRolloutStore):
         )
 
 
-@dataclass
-class DPOPreferences:
-    prompt_tokens: Tuple
-    chosen_tokens: Tuple
-    rejected_tokens: Tuple
-
-
 class DPOStore(BaseRolloutStore):
     # Adapted from TRL
     def __init__(
         self,
-        preferences: List[DPOPreferences],
-        tokenizer: PreTrainedTokenizer,
+        preferences: List[DPOElement],
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
         label_pad_token_id: int,
         padding_value: int,
     ):
@@ -305,10 +299,19 @@ class DPOStore(BaseRolloutStore):
         ]
 
     @staticmethod
-    def tokenize_preferences(samples, tokenizer, max_length=2048):
-        chosen_tokens = tokenizer(samples["chosen"], add_special_tokens=False)
-        rejected_tokens = tokenizer(samples["rejected"], add_special_tokens=False)
-        prompt_tokens = tokenizer(samples["prompt"], add_special_tokens=False)
+    def tokenize_preferences(
+        sample: Iterable[str], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+    ) -> DPOElement:
+        if isinstance(sample, Iterable):
+            if len(sample) != 3:
+                raise ValueError(
+                    f"Expected iterable of length 3 (prompt, chosen response, rejected response). Got {len(sample)}"
+                )
+            prompt_tokens = tokenizer(sample[0], add_special_tokens=False)
+            chosen_tokens = tokenizer(sample[1], add_special_tokens=False)
+            rejected_tokens = tokenizer(sample[2], add_special_tokens=False)
+        else:
+            raise ValueError(f"{sample} is not an iterable")
 
         chosen_tokens["input_ids"].append(tokenizer.eos_token_id)
         chosen_tokens["attention_mask"].append(1)
@@ -330,9 +333,9 @@ class DPOStore(BaseRolloutStore):
             chosen_tokens = {k: v[: max_length - max_length] for k, v in chosen_tokens.items()}
             rejected_tokens = {k: v[: max_length - max_length] for k, v in rejected_tokens.items()}
 
-        return DPOPreferences(prompt_tokens=prompt_tokens, chosen_tokens=chosen_tokens, rejected_tokens=rejected_tokens)
+        return DPOElement(prompt_tokens=prompt_tokens, chosen_tokens=chosen_tokens, rejected_tokens=rejected_tokens)
 
-    def _build_batch_from_preference_tokens(self, preference_tokens: DPOPreferences):
+    def _build_batch_from_preference_tokens(self, preference_tokens: DPOElement) -> Dict:
         # Create labels
         chosen_sequence_tokens = {
             k: preference_tokens.prompt_tokens[k] + preference_tokens.chosen_tokens[k]
@@ -366,7 +369,7 @@ class DPOStore(BaseRolloutStore):
         return batch
 
     def create_loader(self, batch_size: int, shuffle=False) -> DataLoader:
-        def collate_fn(batch):
+        def collate_fn(batch: Iterable[dict]):
             # first, pad everything to the same length
             padded_batch = {}
             for k in batch[0].keys():
