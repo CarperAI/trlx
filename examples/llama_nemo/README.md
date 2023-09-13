@@ -25,7 +25,7 @@ python convert_llama_to_nemo.py --model_path NousResearch/Llama-2-7b-hf --output
 ```
 
 ### Training:
-Example: [wandb](https://wandb.ai/carperai/trlxnemo/runs/6ne5vjxr?workspace=user-pvduy)
+Example: [wandb](https://wandb.ai/carperai/trlxnemo/runs/v7592y73?workspace=user-pvduy)
 
 ```bash
 sbatch dist_train.sh

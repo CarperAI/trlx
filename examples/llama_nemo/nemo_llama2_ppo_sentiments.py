@@ -33,9 +33,9 @@ def main(hparams={}):
     cfg_name = "llama2-7b"
     config = default_config.evolve(
         train=dict(
-            total_steps=2048,
+            total_steps=1600,
             seq_length=256,
-            batch_size=32,
+            batch_size=16,
             epochs=100,
             eval_interval=100,
             trainer="NeMoPPOTrainer",
@@ -71,8 +71,8 @@ def main(hparams={}):
             lam=0.95,
             cliprange=0.2,
             cliprange_value=0.2,
-            gen_kwargs=dict(temperature=1.0, max_new_tokens=40),
-            chunk_size=128,
+            gen_kwargs=dict(temperature=1.0, max_new_tokens=64),
+            chunk_size=64,
             ppo_epochs=4,
         ),
     )
