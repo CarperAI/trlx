@@ -22,7 +22,7 @@ def load_nemo_config():
     # Import here to not require nemo as a dependency
     from omegaconf import OmegaConf
 
-    return OmegaConf.load("/admin/home-duyphung/temp/bug-trlx/trlx/examples/llama_nemo/nemo_llama2_7b/megatron_7b.yaml")
+    return OmegaConf.load("nemo_llama2_7b/megatron_7b.yaml")
 
 
 def main(hparams={}):
@@ -33,14 +33,14 @@ def main(hparams={}):
     cfg_name = "llama2-7b"
     config = default_config.evolve(
         train=dict(
-            total_steps=1024,
+            total_steps=2048,
             seq_length=256,
             batch_size=32,
             epochs=100,
             eval_interval=100,
             trainer="NeMoPPOTrainer",
             trainer_kwargs=dict(
-                pretrained_model="/admin/home-duyphung/temp/bug-trlx/trlx/examples/llama_nemo/nemo_llama2_7b/",
+                pretrained_model="nemo_llama2_7b/",
                 megatron_cfg=nemo_config,
             ),
             checkpoint_interval=256,
