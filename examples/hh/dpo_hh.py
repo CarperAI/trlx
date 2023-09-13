@@ -1,9 +1,7 @@
 import json
 import sys
-from collections import defaultdict
 
-import tqdm
-from datasets import Dataset, load_dataset
+from datasets import load_dataset
 
 import trlx
 from trlx.data.default_configs import (
@@ -33,47 +31,13 @@ default_config = TRLConfig(
     optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=1e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)),  # train.total_steps
     method=DPOConfig(
-        name="DPOConfig", gen_kwargs=dict(max_new_tokens=40, top_k=20, top_p=1.0, do_sample=True), beta=0.1
+        name="DPOConfig",
+        gen_kwargs=dict(max_new_tokens=40, top_k=20, top_p=1.0, do_sample=True),
+        beta=0.1,
+        label_pad_token_id=-100,
+        padding_value=0,
     ),
 )
-
-
-def get_hh(split: str, sanity_check=False, silent=False):
-    dataset = load_dataset("Anthropic/hh-rlhf", split=split)
-    if sanity_check:
-        dataset = dataset.select(range(min(len(dataset), 1000)))
-
-    def extract_anthropic_prompt(prompt_and_response):
-        """Extract the anthropic prompt from a prompt and response pair."""
-        search_term = "\n\nAssistant:"
-        search_term_idx = prompt_and_response.rfind(search_term)
-        assert search_term_idx != -1, f"Prompt and response does not contain '{search_term}'"
-        return prompt_and_response[: search_term_idx + len(search_term)]
-
-    def split_prompt_and_responses(ex):
-        prompt = extract_anthropic_prompt(ex["chosen"])
-        chosen_response = ex["chosen"][len(prompt) :]
-        rejected_response = ex["rejected"][len(prompt) :]
-        return prompt, chosen_response, rejected_response
-
-    data = defaultdict(lambda: defaultdict(list))
-    for row in tqdm.tqdm(dataset, desc="Processing HH", disable=silent):
-        prompt, chosen, rejected = split_prompt_and_responses(row)
-        responses = [chosen, rejected]
-        n_responses = len(data[prompt]["responses"])
-        data[prompt]["pairs"].append((n_responses, n_responses + 1))
-        data[prompt]["responses"].extend(responses)
-        data[prompt]["sft_target"] = chosen
-
-    def gen():
-        for prompt, values in data.items():
-            yield {
-                "prompt": prompt,
-                "responses": values["responses"],
-                "pairs": values["pairs"],
-            }
-
-    return Dataset.from_generator(gen)
 
 
 def preprocess(sample):
