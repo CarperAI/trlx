@@ -20,12 +20,16 @@ class DPOConfig(MethodConfig):
     """
     Config for DPO training
 
-    :param gen_kwargs: kwargs for generation
-    :type gen_kwargs: Dict[str, Any]
+    Args:
+        gen_kwargs (Dict[str, Any]) : kwargs for generation
+        beta (float) : Temperature parameter for the DPO loss, typically something in the range of 0.1 to 0.5.
+        label_pad_token_id (int) : token to pad labels with. -100 token is ignored
+            for CELoss
+        padding_value (int) : token to pad input sequence with
     """
 
     gen_kwargs: dict
-    beta: float = 0.1  # Beta value for DPO loss calculation
+    beta: float = 0.1
     label_pad_token_id: int = -100  # -100 is ignore token for CELoss
     padding_value: int = 0
 
@@ -48,7 +52,6 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
             pad_token_id=self.tokenizer.pad_token_id,
         )
 
-        # `beta` corresponding to the DPO hyperparameter
         self.beta: float = config.method.beta
         self.label_pad_token_id: int = config.method.label_pad_token_id
         self.padding_value: int = config.method.padding_value
@@ -79,8 +82,8 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
     def concatenated_inputs(self, batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
         """Concatenate the chosen and rejected inputs into a single tensor.
         Args:
-            batch: A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids', which are tensors of
-                    shape (batch_size, sequence_length).
+            batch (Dict): A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids',
+                which are tensors of shape (batch_size, sequence_length).
         Returns:
             A dictionary containing the concatenated inputs under the key 'concatenated_input_ids'.
         """
@@ -182,6 +185,19 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         """
         Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
         This is faster and avoids two forward passes.
+        Args:
+            model: Base model being trained
+            batch(Dict): : A batch of data. Must contain the keys 'chosen_input_ids' and 'rejected_input_ids',
+                which are tensors of shape (batch_size, sequence_length).
+
+        Returns:
+            A tuple containing 4 tensors : (chosen_log_probabilities,
+                                            rejected_log_probabilities,
+                                            chosen_logits,
+                                            rejected_logits)
+            The 2 {chosen, rejected}_logp tensors contains the per-token chosen and rejected log probabilities respectively.
+            The 2 {chosen, rejected}_logits tensors contains the raw logits for chosen and rejected responses from the model
+            forward pass.
         """
         concatenated_batch = self.concatenated_inputs(batch)
         all_logits = model(

@@ -64,7 +64,7 @@ def train(  # noqa: C901
             config = default_ppo_config()
         elif rewards:
             config = default_ilql_config()
-        else:  # Alternatively, could be DPO. But, ignoring since passing `config` implicitly is deprecated
+        else:  # Alternatively, could be `default_dpo_config()`. But, ignoring since passing `config` implicitly is deprecated
             config = default_sft_config()
 
     set_seed(config.train.seed)
