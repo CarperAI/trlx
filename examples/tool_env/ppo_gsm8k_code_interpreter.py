@@ -1,13 +1,9 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
-import json
 import os
-import sys
-from typing import List
 
-import torch
 from datasets import load_dataset
-from transformers import pipeline
+from transformers import load_tool
 
 import trlx
 from trlx.data.default_configs import (
@@ -19,10 +15,7 @@ from trlx.data.default_configs import (
     TrainConfig,
     TRLConfig,
 )
-
-from datasets import load_dataset
 from trlx.environment.base_tool import ToolEnvironment
-from transformers import load_tool
 
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -122,7 +115,8 @@ def main(hparams={}):
     df_test = ds_test.to_pandas()
 
     few_shot_prompt = """\
-Instruction: Using a Python API to solve math questions. Write function solution to solve the following questions, then "print(solution())" to output the result.
+Instruction: Using a Python API to solve math questions.\
+Write function solution to solve the following questions, then "print(solution())" to output the result.
 
 Question: Olivia has $23. She bought five bagels for $3 each. How much money does she have left?
 
@@ -140,7 +134,8 @@ print(solution())
 
 Result = 72 <submit>
 
-Question: Michael loves to paint and sells his creations. He charges $100 for a large painting and $80 for a small painting. At his last art show, he sold 5 large paintings and 8 small paintings. How much did he earn in all?
+Question: Michael loves to paint and sells his creations. He charges $100 for a large painting and $80 for a small painting.\
+At his last art show, he sold 5 large paintings and 8 small paintings. How much did he earn in all?
 
 <request><PythonInterpreter>
 def solution():

@@ -1,14 +1,11 @@
 # Generates positive movie reviews by tuning a pretrained model on IMDB dataset
 # with a sentiment reward function
-import json
 import os
-import sys
-from typing import List
 
-import torch
-from datasets import load_dataset
-from transformers import pipeline
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from transformers import load_tool
 
 import trlx
 from trlx.data.default_configs import (
@@ -20,12 +17,7 @@ from trlx.data.default_configs import (
     TrainConfig,
     TRLConfig,
 )
-
-from datasets import load_dataset
-import pandas as pd
 from trlx.environment.base_tool import ToolEnvironment
-from transformers import load_tool
-from sklearn.model_selection import train_test_split
 
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -111,7 +103,7 @@ def exact_match_reward(responses, answers=None):
                 answer = float(answer)
                 if np.abs(response - answer) < 1e-5:
                     reward = 1.0
-            except:
+            except ValueError:
                 reward = 0
         rewards.append(reward)
     return rewards
