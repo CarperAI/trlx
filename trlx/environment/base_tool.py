@@ -1,3 +1,4 @@
+### Adapted from trl: https://github.com/huggingface/trl/blob/main/trl/environment/base_environment.py
 import re
 
 
