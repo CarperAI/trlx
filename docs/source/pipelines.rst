@@ -1,11 +1,9 @@
 .. _pipeline:
 
 Pipelines
-************************
+=========
 
-Pipeline are used to store the data in appropriate format used for training models
-
-**General**
+Pipelines are used for accumulation and convertion of the training data to appropriate format.
 
 .. autoclass:: trlx.pipeline.BasePipeline
     :members:
@@ -21,12 +19,8 @@ Pipeline are used to store the data in appropriate format used for training mode
 
 .. autofunction:: trlx.pipeline.offline_pipeline.tokenize_dialogue
 
-**PPO**
-
 .. autoclass:: trlx.pipeline.ppo_pipeline.PPORolloutStorage
     :members:
-
-**ILQL**
 
 .. autoclass:: trlx.pipeline.offline_pipeline.PromptPipeline
     :members:

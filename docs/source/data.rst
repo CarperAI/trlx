@@ -1,9 +1,12 @@
 .. _data:
 
 Data Classes
-************************
+============
 
-**Data Elements for PPO**
+Data Elements contain the necessary information for each individual training sample.
+
+PPO Data Classes
+----------------
 
 .. autoclass:: trlx.data.ppo_types.PPORLElement
     :members:
@@ -11,7 +14,8 @@ Data Classes
 .. autoclass:: trlx.data.ppo_types.PPORLBatch
     :members:
 
-**Data Elements for ILQL**
+ILQL Data Classes
+-----------------
 
 .. autoclass:: trlx.data.ilql_types.ILQLElement
     :members:
