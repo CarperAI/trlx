@@ -33,11 +33,11 @@ def ppo_init_config():
         train=TrainConfig(
             seq_length=768,
             epochs=100,
-            total_steps=10000,
+            total_steps=1000,
             batch_size=32,
             minibatch_size=1,
             checkpoint_interval=10000,
-            eval_interval=100,
+            eval_interval=20,
             pipeline="PromptPipeline",
             trainer="AcceleratePPOTrainer",
             save_best=True,
@@ -89,21 +89,17 @@ def exact_match_reward(responses, answers=None):
             answer = answer.strip()
             reward += float(response == answer)
         rewards.append(reward)
-#    print("rewards: ", rewards)
-#    print("responses: ", responses)
-#    print("answers: ", answers)
     return rewards
 
 
 def create_reward_function(prompt):
-    tool_env = ToolEnvironment([load_tool("lvwerra/python-interpreter")], prompt, exact_match_reward)
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("codellama/CodeLlama-7b-Instruct-hf")
+    tool_env = ToolEnvironment([load_tool("lvwerra/python-interpreter")], prompt, exact_match_reward, tokenizer)
 
     def reward_fn(samples, prompts, original_output, **kwargs):
-        # for sample in samples:
-        #     print("sample: ", sample)
-        #     print("======================================")
         rewards = tool_env.get_reward(samples, **{"answers": original_output})
-        # print("rewards: ", rewards)
         return rewards
 
     return reward_fn
@@ -112,11 +108,6 @@ def create_reward_function(prompt):
 def main(hparams={}):
     # Merge sweep config with default config if given
     config = TRLConfig.update(ppo_init_config().to_dict(), hparams)
-
-    if torch.cuda.is_available():
-        device = int(os.environ.get("LOCAL_RANK", 0))
-    else:
-        device = -1
 
     ds = load_dataset("gsm8k", "main", split="train")
     ds = ds.rename_columns({"question": "query"})

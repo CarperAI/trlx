@@ -8,7 +8,7 @@ class ToolEnvironment:
     LLM interaction with the tool to get the reward
     """
 
-    def __init__(self, tools=None, prompt=None, reward_fn=None):
+    def __init__(self, tools=None, prompt=None, reward_fn=None, tokenizer=None):
         if isinstance(tools, dict):
             self.tools = tools
         else:
@@ -19,6 +19,7 @@ class ToolEnvironment:
         self.call_token = "<call>"
         self.response_token = "<response>"
         self.submit_token = "<submit>"
+        self.eos_token = tokenizer.eos_token
 
     def parse_tool_call(self, text):
         """
@@ -53,14 +54,6 @@ class ToolEnvironment:
         reward = self.reward_fn(tool_responses, **kwargs)
         return reward
 
-    def _get_generated_text(self, text):
-        text = text.strip()
-        text = text.replace("<|endoftext|>", "")
-        text = text.replace("</s>", "")
-        if not text.endswith(self.call_token):
-            text = f"{text}{self.call_token}"
-        return text[len(self.prompt) :]
-
     def execution(self, text):
         """
         Tool execution and get reward
@@ -77,3 +70,10 @@ class ToolEnvironment:
             except Exception as error:
                 response = f"Tool Error: {str(error)}"
         return response
+
+    def _get_generated_text(self, text):
+        text = text.strip()
+        text = text.replace(self.eos_token, "")
+        if not text.endswith(self.call_token):
+            text = f"{text}{self.call_token}"
+        return text[len(self.prompt) :]

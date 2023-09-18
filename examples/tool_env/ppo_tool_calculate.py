@@ -25,6 +25,7 @@ from datasets import load_dataset
 import pandas as pd
 from trlx.environment.base_tool import ToolEnvironment
 from transformers import load_tool
+from sklearn.model_selection import train_test_split
 
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -35,9 +36,8 @@ def ppo_init_config():
         train=TrainConfig(
             seq_length=256,
             epochs=100,
-            total_steps=10000,
+            total_steps=1000,
             batch_size=8,
-#            minibatch_size=2,
             checkpoint_interval=10000,
             eval_interval=10,
             pipeline="PromptPipeline",
@@ -60,7 +60,6 @@ def ppo_init_config():
             horizon=10000,
             gamma=1,
             lam=0.95,
-#            num_value_layers_unfrozen=8,
             cliprange=0.2,
             cliprange_value=0.2,
             vf_coef=1,
@@ -77,7 +76,6 @@ def ppo_init_config():
         ),
     )
 
-import torch
 
 def generate_data(n):
     """Generate random arithmetic tasks and answers."""
@@ -120,7 +118,12 @@ def exact_match_reward(responses, answers=None):
 
 
 def create_reward_function(prompt):
-    tool_env = ToolEnvironment({"SimpleCalculatorTool": load_tool("ybelkada/simple-calculator")}, prompt, exact_match_reward)
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tool_env = ToolEnvironment(
+        {"SimpleCalculatorTool": load_tool("ybelkada/simple-calculator")}, prompt, exact_match_reward, tokenizer
+    )
 
     def reward_fn(samples, prompts, original_output, **kwargs):
         rewards = tool_env.get_reward(samples, **{"answers": original_output})
@@ -133,15 +136,10 @@ def main(hparams={}):
     # Merge sweep config with default config if given
     config = TRLConfig.update(ppo_init_config().to_dict(), hparams)
 
-    if torch.cuda.is_available():
-        device = int(os.environ.get("LOCAL_RANK", 0))
-    else:
-        device = -1
-
-    tasks, answers = generate_data(256*100)
+    tasks, answers = generate_data(256 * 100)
     tasks = [x.strip("\n") for x in tasks]
     df = pd.DataFrame({"query": tasks, "answer": answers})
-    from sklearn.model_selection import train_test_split
+
     df, df_test = train_test_split(df, test_size=500)
     few_shot_prompt = """\
 Q: What is 13 - 3?
@@ -171,9 +169,7 @@ Q: {query}
 
 <request><SimpleCalculatorTool>"""
 
-    df["query"] = df["query"].apply(
-        lambda x: generate_prompt.format(few_shot_prompt=few_shot_prompt, query=x)
-    )
+    df["query"] = df["query"].apply(lambda x: generate_prompt.format(few_shot_prompt=few_shot_prompt, query=x))
     df_test["query"] = df_test["query"].apply(
         lambda x: generate_prompt.format(few_shot_prompt=few_shot_prompt, query=x)
     )
@@ -195,5 +191,5 @@ Q: {query}
     )
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
