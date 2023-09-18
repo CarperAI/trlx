@@ -9,4 +9,3 @@ Training
 --------
 
 .. autofunction:: trlx.train
-

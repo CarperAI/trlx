@@ -119,4 +119,3 @@ PPO GPT-J: https://wandb.ai/sorry/trlx/runs/v0bir5s9
 ILQL GPT-J: https://wandb.ai/sorry/trlx/runs/1qqxp72a
 
 SFT GPT-J: https://wandb.ai/sorry/trlx/runs/a7ng078v
-
