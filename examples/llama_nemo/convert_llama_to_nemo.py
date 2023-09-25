@@ -106,7 +106,7 @@ def main(args):  # noqa: C901
 
     # dummy config
 
-    megatron_cfg_path = Path(__file__).parent / "megatron_7b_llama.yaml"
+    megatron_cfg_path = Path(__file__).parent / "megatron_llama_cfg.yaml"
 
     megatron_cfg = OmegaConf.load(megatron_cfg_path)
     megatron_cfg.name = f"megatron_{args.name}"
