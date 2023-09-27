@@ -4,7 +4,11 @@ from typing import Dict, Iterable, List, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from accelerate.utils import is_deepspeed_available
 from transformers import AutoModelForCausalLM, PretrainedConfig
+
+if is_deepspeed_available():
+    import deepspeed
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
@@ -43,7 +47,10 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
 
         # TODO: Avoid setting up a reference model when hydra heads are used
         self.ref_model = self.get_arch(self.config)
-        self.ref_model.to(self.accelerator.device)
+        if self.accelerator.state.deepspeed_plugin.zero_stage == 3:
+            self.ref_model = self._prepare_deepspeed_zero3(self.ref_model)
+        else:
+            self.ref_model.to(self.accelerator.device)
         self.ref_model.eval()
 
         self.generate_kwargs = dict(
@@ -254,6 +261,40 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         stats["loss"] = losses.detach().cpu().numpy().mean()
 
         return losses.mean(), stats
+
+    def _prepare_deepspeed_zero3(self, model: nn.Module):
+        # Adapted from accelerate:
+        # https://github.com/huggingface/accelerate/blob/739b135f8367becb67ffaada12fe76e3aa60fefd/src/accelerate/accelerator.py#L1473
+        # TODO: figure out if any other parameters are needed to optimize inference
+        deepspeed_plugin = self.accelerator.state.deepspeed_plugin
+
+        # See DeepSpeed docs for definition of these parameters: https://deepspeed.readthedocs.io/en/latest/zero3.html
+        config_kwargs = {
+            "train_micro_batch_size_per_gpu": self.config.train.batch_size,
+            "train_batch_size": self.config.train.batch_size
+            * self.accelerator.state.num_processes
+            * deepspeed_plugin.deepspeed_config["gradient_accumulation_steps"]
+            * self.accelerator.num_processes,
+            "zero_optimization": {"stage": 3, "offload_param": {"device": deepspeed_plugin.offload_param_device}},
+        }
+        if model is not None:
+            if hasattr(model, "config"):
+                hidden_size = (
+                    max(model.config.hidden_sizes)
+                    if getattr(model.config, "hidden_sizes", None)
+                    else getattr(model.config, "hidden_size", None)
+                )
+                if hidden_size is not None:
+                    config_kwargs.update(
+                        {
+                            "zero_optimization.reduce_bucket_size": hidden_size * hidden_size,
+                            "zero_optimization.stage3_param_persistence_threshold": 10 * hidden_size,
+                            "zero_optimization.stage3_prefetch_bucket_size": 0.9 * hidden_size * hidden_size,
+                        }
+                    )
+        model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
+        model.eval()
+        return model
 
     def prepare_learning(self):
         train_dataloader = self.store.create_loader(self.config.train.batch_size)
