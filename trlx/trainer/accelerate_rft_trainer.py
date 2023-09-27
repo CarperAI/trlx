@@ -104,7 +104,7 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
 
     def add_prompt_pipeline(self, pipeline: PromptPipeline):
         """Add a prompt pipeline dataloader to a trainer instance for the `make_experience` stage"""
-        prompt_dataloader = pipeline.create_loader(1024, shuffle=True)
+        prompt_dataloader = pipeline.create_loader(self.config.train.batch_size)
         self.prompt_dataloader = self.accelerator.prepare_data_loader(prompt_dataloader)
 
     def post_epoch_callback(self):
@@ -136,11 +136,10 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
 
                 all_scores = torch.tensor(all_scores, device=self.accelerator.device)
             else:
-                all_scores = None
-
+                all_scores = torch.zeros(len(generations), device=self.accelerator.device)
             if torch.distributed.is_initialized():
-                scores = torch.zeros(len(generations), device=self.accelerator.device)
-                torch.distributed.scatter(scores, all_scores)
+                torch.distributed.broadcast(all_scores, src=0)
+                scores = all_scores
             else:
                 scores = all_scores
 
