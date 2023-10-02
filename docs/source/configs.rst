@@ -3,7 +3,7 @@
 Configs
 ************************
 
-Training requires configuration to be passed through a set of configs: `TrainConfig` with training configuration, `ModelConfig`, `TokenizerConfig`, `OptimizerConfig`, `SchedulerConfig` and `MethodConfig` for a specific configuration of a particular algorithm (PPO, ILQL or SFT)
+Training requires configuration to be passed through a set of configs: `TrainConfig` with training configuration, `ModelConfig`, `TokenizerConfig`, `OptimizerConfig`, `SchedulerConfig` and a `MethodConfig` for a specific configuration of a particular algorithm (PPO, ILQL or SFT)
 
 **General**
 

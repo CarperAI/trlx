@@ -6,16 +6,15 @@ Examples
 Random Walks
 ------------
 
-This is a simple toy example used for testing described in `Decision Transformer
-(Lili Chen et al. 2021) <https://arxiv.org/abs/2106.01345>`_ simple enough that
-it doesn't require GPU access.
+This is a simple toy example described in `Decision Transformer
+(Lili Chen et al. 2021) <https://arxiv.org/abs/2106.01345>`_. It's simple enough that it can be used for testing with a 1M sized LLM, training of which can complete entirely on CPU.
 
 Description
 ^^^^^^^^^^^
 
 The task is to find the shortest path on a directed graph. The reward is based
 on how optimal the path is compared to the shortest possible. Paths are
-represented as strings of letters, with each letter corresponding to a node in
+represented as strings of letters, where each letter corresponds to a node in
 the graph.
 
 Training
@@ -29,12 +28,17 @@ their shortness using surrogate reward function. For `ILQL Training
 a language model learns directly from a set of 1000 pre-sampled randomwalks in a
 graph paired with their relative lengths' shortness.
 
+W&B runs:
+
+- PPO https://wandb.ai/sorry/trlx-references/runs/sf8ept0l
+- ILQL https://wandb.ai/sorry/trlx-references/runs/g44npaoq
+
 Positive Sentiment
 ------------------
 
 Description
 ^^^^^^^^^^^
-The goal is to optimize a language model to generate positive sentiment responses to a given prompt.
+The task is to optimize a language model to generate positive sentiment responses for a given prompt.
 
 Training
 ^^^^^^^^
@@ -49,6 +53,11 @@ review and `1` for a positive one. For `SFT Training
 <https://github.com/CarperAI/trlx/blob/main/examples/sft_sentiments.py>`_ the
 model is trained only on the positive reviews.
 
+W&B runs:
+
+- PPO: https://wandb.ai/sorry/trlx-references/runs/9ohlfd3s
+- ILQL: https://wandb.ai/sorry/trlx-references/runs/tplhaji6
+- SFT: https://wandb.ai/sorry/trlx-references/runs/vfxfv081
 
 Helpful & Harmless
 -------------------
@@ -56,7 +65,7 @@ Helpful & Harmless
 Description
 ^^^^^^^^^^^
 
-The goal of the training is to improve both helpfulness and harmlessness of the
+The task is to improve both helpfulness and harmlessness of the
 model's outputs following Anthropic's paper `Training a Helpful and Harmless
 Assistant with Reinforcement Learning from Human Feedback
 <https://arxiv.org/abs/2204.05862>`_
@@ -114,8 +123,6 @@ Launch training:
 
 W&B runs:
 
-PPO GPT-J: https://wandb.ai/sorry/trlx/runs/v0bir5s9
-
-ILQL GPT-J: https://wandb.ai/sorry/trlx/runs/1qqxp72a
-
-SFT GPT-J: https://wandb.ai/sorry/trlx/runs/a7ng078v
+- PPO GPT-J: https://wandb.ai/sorry/trlx/runs/v0bir5s9
+- ILQL GPT-J: https://wandb.ai/sorry/trlx/runs/1qqxp72a
+- SFT GPT-J: https://wandb.ai/sorry/trlx/runs/a7ng078v
