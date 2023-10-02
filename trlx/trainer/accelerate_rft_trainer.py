@@ -93,7 +93,9 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
         self.epoch_count = 0
         self.iter_count = 0
         self.n_inner_epochs = 1
-        self.total_steps = 100000
+        # because of variable number of samples per each improvement steps
+        # there is no way to get the estimate, so here it's just copied from the config
+        self.total_steps = self.config.train.total_steps
 
         self.generations_per_prompt = defaultdict(list)
 
@@ -153,7 +155,9 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
         percentile = self.config.method.start_percentile + percentile_delta * (
             self.epoch_count % self.config.method.n_improve_steps
         )
-        thresholds = np.quantile(np.array(scores), percentile, axis=1) + 1e-6
+        thresholds = np.quantile(np.array(scores), percentile, axis=1)
+        # corner case for quantized rewards: don't include the min values, but don't exclude the max values
+        thresholds = np.clip(thresholds, thresholds.min() + 1e-3, thresholds.max() - 1e-3)
 
         # filter out the generations with a score below the percentile per prompt
         samples_selected = []
@@ -161,6 +165,9 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
             for x in self.generations_per_prompt[prompt]:
                 if x["score"] >= threshold:
                     samples_selected.append([prompt, x["output"]])
+
+        # deduplicate the samples
+        samples_selected = list({tuple(x) for x in samples_selected})
 
         self.accelerator.log(
             {
@@ -172,8 +179,8 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
                 "samples_per_single_prompt": wandb.Table(
                     data=list(
                         zip(
-                            [x[0] for x in samples_selected],
-                            [x[1] for x in samples_selected],
+                            [x[0] for x in samples_selected[:128]],
+                            [x[1] for x in samples_selected[:128]],
                         )
                     ),
                     columns=["prompt", "output"],
