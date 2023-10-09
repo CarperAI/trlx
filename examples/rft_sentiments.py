@@ -20,9 +20,11 @@ from trlx.data.default_configs import (
 )
 from trlx.trainer.accelerate_rft_trainer import RFTConfig
 
+
 def get_positive_score(scores):
     "Extract value associated with a positive sentiment from pipeline's output"
     return dict(map(lambda x: tuple(x.values()), scores))["POSITIVE"]
+
 
 default_config = TRLConfig(
     train=TrainConfig(
@@ -37,9 +39,7 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path="lvwerra/gpt2-imdb", num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="gpt2", truncation_side="right"),
-    optimizer=OptimizerConfig(
-        name="adamw", kwargs=dict(lr=3e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)
-    ),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=3e-5, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=3e-5)),
     method=RFTConfig(
         name="RFTConfig",
@@ -56,6 +56,7 @@ default_config = TRLConfig(
         ),
     ),
 )
+
 
 def main(hparams={}):
     config = TRLConfig.update(default_config, hparams)

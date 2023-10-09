@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import wandb
-from transformers import AutoModelForCausalLM, PretrainedConfig
 from tqdm import tqdm
+from transformers import AutoModelForCausalLM, PretrainedConfig
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
