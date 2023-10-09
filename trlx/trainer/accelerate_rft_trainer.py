@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import wandb
 from transformers import AutoModelForCausalLM, PretrainedConfig
+from tqdm import tqdm
 
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
@@ -117,7 +118,7 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
         if self.epoch_count % self.config.method.n_improve_steps == 0:
             # generate n samples for each prompt in the prompt_dataloader
             generations = []
-            for batch in self.prompt_dataloader:
+            for batch in tqdm(self.prompt_dataloader, desc="Generating", disable=not self.accelerator.is_main_process):
                 for _ in range(self.config.method.n_generations_per_prompt):
                     samples = self.generate(**batch)
                     str_samples, str_prompts, str_outputs = self.decode(batch.input_ids, samples, append_eos_token=True)
@@ -149,13 +150,14 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
                 self.generations_per_prompt[g["prompt"]].append({"output": g["output"], "score": s.item()})
 
         scores = [[x["score"] for x in self.generations_per_prompt[p]] for p in self.generations_per_prompt]
+
         percentile_delta = (
             self.config.method.end_percentile - self.config.method.start_percentile
         ) / self.config.method.n_improve_steps
         percentile = self.config.method.start_percentile + percentile_delta * (
             self.epoch_count % self.config.method.n_improve_steps
         )
-        thresholds = np.quantile(np.array(scores), percentile, axis=1)
+        thresholds = np.array([np.quantile(np.array(scores), percentile) for scores in scores])
         # corner case for quantized rewards: don't include the min values, but don't exclude the max values
         thresholds = np.clip(thresholds, thresholds.min() + 1e-3, thresholds.max() - 1e-3)
 
@@ -173,8 +175,8 @@ class AccelerateRFTTrainer(AccelerateRLTrainer):
             {
                 "scores_per_single_prompt": wandb.Histogram(scores[0]),
                 "thresholds": wandb.Histogram(thresholds),
-                "scores_mean": np.mean(scores),
-                "scores_dist": wandb.Histogram(scores),
+                "scores_mean": np.mean(np.hstack(scores)),
+                "scores_dist": wandb.Histogram(np.hstack(scores)),
                 "len_samples_selected": len(samples_selected),
                 "samples_per_single_prompt": wandb.Table(
                     data=list(
