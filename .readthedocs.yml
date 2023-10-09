@@ -14,5 +14,7 @@ build:
 python:
   install:
     - method: pip
+      path: torch
+    - method: pip
       path: .
     - requirements: docs/requirements.txt
