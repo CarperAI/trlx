@@ -69,13 +69,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     def __init__(self, base_model: Optional[transformers.PreTrainedModel] = None, peft_config=None, **kwargs):
         super().__init__()
         self.base_model = base_model
-        # cache `forward` args for general use (avoids incompatible args across architectures)
-        if peft_config:
-            # keep all kwargs for peft
-            self.forward_kwargs = None
-        else:
-            self.forward_kwargs = inspect.getfullargspec(base_model.forward).args
-
         self.is_loaded_in_8bit = getattr(base_model, "is_loaded_in_8bit", False)
         if self.is_loaded_in_8bit:
             # TODO(glerzing): Fully test and support loading in 8-bit
@@ -318,6 +311,16 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
             state_dict = pretrained_model_name_or_path.state_dict()
 
         model.post_init(state_dict=state_dict)
+
+        # cache `forward` args for general use (avoids incompatible args across architectures)
+        if peft_config:
+            # Don't use the interface of the peft model,
+            # use the interface of the underlying transformer model instead.
+            # (peft adds 2 "base_model" layers)
+            model.forward_kwargs = inspect.getfullargspec(model.base_model.base_model.base_model.forward).args
+        else:
+            model.forward_kwargs = inspect.getfullargspec(model.base_model.forward).args
+
         return model
 
     def save_pretrained(self, *args, **kwargs):
@@ -352,17 +355,6 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
     def state_dict(self, *args, **kwargs):
         """Return the state_dict of the pretrained model."""
         raise NotImplementedError
-
-    def post_init(self, *args, **kwargs):
-        """Post initialization method. This method is called after the model is
-        instantiated and loaded from a checkpoint. It can be used to perform
-        additional operations such as loading the state_dict.
-        """
-        if self.peft_type:
-            # Don't use the interface of the peft model,
-            # use the interface of the underlying transformer model instead.
-            # (peft adds 2 "base_model" layers)
-            self.forward_kwargs = inspect.getfullargspec(self.base_model.base_model.base_model.forward).args
 
     def get_compatible_forward_kwargs(self, **kwargs) -> Dict[str, Any]:
         """Filter out arguments not supported by the specific instance of
