@@ -352,6 +352,13 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
         return self.base_model.save_pretrained(*args, **kwargs)
 
+    def post_init(self, *args, **kwargs):
+        """Post initialization method. This method is called after the model is
+        instantiated and loaded from a checkpoint. It can be used to perform
+        additional operations such as loading the state_dict.
+        """
+        pass
+
     def state_dict(self, *args, **kwargs):
         """Return the state_dict of the pretrained model."""
         raise NotImplementedError
@@ -362,6 +369,4 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
         """
         # FIXME: This is a hack to get around the fact that the `transformers`
         # architectures we use don't have a consistent API for `forward` parameters.
-        if self.forward_kwargs is None:
-            return kwargs
         return {k: v for k, v in kwargs.items() if k in self.forward_kwargs}
