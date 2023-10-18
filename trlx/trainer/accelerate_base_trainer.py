@@ -88,7 +88,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             num_gpus = f"{self.accelerator.num_processes}gpus"
         branch = get_git_tag()[0]
 
-        run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
+        run_name = self.config.train.run_name
+        if not run_name:
+            run_name = "/".join([script_name, model_name, num_gpus]) + f":{branch}"
 
         if self.accelerator.is_main_process:
             config_dict = self.config.to_dict()
