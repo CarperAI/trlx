@@ -1,8 +1,6 @@
 from typing import List
 
 from datasets import load_dataset
-from tqdm import tqdm
-from transformers import AutoTokenizer
 
 import trlx
 from trlx.data.configs import (
@@ -114,6 +112,8 @@ if __name__ == "__main__":
     trlx.train(
         reward_fn=reward_fn,
         prompts=[{"prompt": prompt, "original_summaries": summary} for prompt, summary in zip(prompts, summaries)],
-        eval_prompts=[{"prompt": prompt, "original_summaries": summary} for prompt, summary in zip(val_prompts, val_summaries)],
+        eval_prompts=[
+            {"prompt": prompt, "original_summaries": summary} for prompt, summary in zip(val_prompts, val_summaries)
+        ],
         config=config,
     )
