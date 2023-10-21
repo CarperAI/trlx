@@ -4,6 +4,7 @@ import os
 import sys
 from abc import abstractmethod
 from contextlib import contextmanager
+from copy import copy
 from time import time
 from typing import Dict, List, Optional, Tuple
 
@@ -13,6 +14,7 @@ from accelerate import Accelerator  # type: ignore
 from ray.air import session
 from rich.console import Console
 from rich.table import Table
+from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer
 
 import trlx.utils.logging as logging
@@ -220,21 +222,17 @@ class AccelerateRLTrainer(BaseRLTrainer):
             str_prompt = self.tokenizer.decode(prompt[:prompt_size], skip_special_tokens=True)
             str_output = self.tokenizer.decode(sample[output_start_ix:], skip_special_tokens=True)
             # Trim outputs up to `self.stop_sequences` if any are present
-            trimmed = False
             if self.stop_sequences:
                 for stop in self.stop_sequences:
                     stop_ix = str_output.find(stop)
                     if stop_ix >= 0:
                         str_output = str_output[:stop_ix].rstrip()
-                        trimmed = True
 
             # Recover the last <eos> if it was present in the original sample
             # or add one if it was trimmed with `self.stop_sequences`.
             # When a generation ended due to `max_new_tokens` exhaustion,
             # only then <pad> or <eos> token would not be present in the original sample at the end
-            if append_eos_token and (
-                trimmed or sample[-1] == self.tokenizer.eos_token_id or sample[-1] == self.tokenizer.pad_token_id
-            ):
+            if append_eos_token:
                 str_output += self.tokenizer.eos_token
 
             str_prompts.append(str_prompt)
@@ -249,33 +247,51 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
         return str_samples, str_prompts, str_outputs
 
-    def generate(self, input_ids, attention_mask=None, **kwargs):
+    def generate(self, input_ids, attention_mask=None, chunk_size=None, **kwargs):
         """Wraps hf's `generate` adding some specific method's defaults"""
+        # Decide into chunk sizes and generate saples
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
-        if self.generate_experience_kwargs is not None:
-            kwargs = dict(self.generate_experience_kwargs, **kwargs)
+
+        generate_kwargs = copy(self.generate_kwargs)
+        generate_kwargs.update(kwargs)
+
+        # Update max_new_tokens to respect max_seq_length
+        prompt_length = input_ids.shape[1]
+        if generate_kwargs.get("max_new_tokens") is not None:
+            generate_kwargs["max_new_tokens"] = min(
+                max(self.max_length - prompt_length, 0), generate_kwargs["max_new_tokens"]
+            )
         else:
-            kwargs = dict(self.generate_kwargs, **kwargs)
+            generate_kwargs["max_new_tokens"] = max(self.max_length - prompt_length, 0)
 
-        with torch.no_grad():
-            return self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask, **kwargs
-            )
+        # Repeat prompts, attention_masks for chunking if returning multiple sequences
+        if generate_kwargs.get("num_return_sequences") is None:
+            generate_kwargs["num_return_sequences"] = 1
 
-    def generate_eval(self, input_ids, attention_mask=None, **kwargs):
-        """Wraps hf's `generate` adding some specific method's defaults"""
-        input_ids = input_ids.to(self.accelerator.device)
+        num_return_sequences = generate_kwargs.pop("num_return_sequences")  # Pop to hide from model.generate call
+        input_ids = input_ids.repeat_interleave(num_return_sequences, dim=0)
         if attention_mask is not None:
-            attention_mask = attention_mask.to(self.accelerator.device)
+            attention_mask = attention_mask.repeat_interleave(num_return_sequences, dim=0)
 
-        kwargs = dict(self.generate_kwargs, **kwargs)
+        if chunk_size is None:
+            chunk_size = input_ids.shape[0]
 
-        with torch.no_grad():
-            return self.accelerator.unwrap_model(self.model).generate(
-                input_ids=input_ids, attention_mask=attention_mask, **kwargs
-            )
+        # Chunk input_ids and attention_mask
+        input_ids = input_ids.split(chunk_size, dim=0)
+        if attention_mask is not None:
+            attention_mask = attention_mask.split(chunk_size, dim=0)
+        all_samples = []
+        for chunk_idx in range(len(input_ids)):
+            with torch.no_grad():
+                samples = self.accelerator.unwrap_model(self.model).generate(
+                    input_ids=input_ids[chunk_idx], attention_mask=attention_mask[chunk_idx], **generate_kwargs
+                )
+            all_samples += [sample for sample in samples]
+        # Pad all_samples into one tensor
+        all_samples = pad_sequence(all_samples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+        return all_samples
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
         """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
@@ -373,11 +389,20 @@ class AccelerateRLTrainer(BaseRLTrainer):
             for i_prompt, prompts in enumerate(self.eval_dataloader):
                 metadata = {k: v for k, v in prompts.items() if k != "input_ids" and k != "attention_mask"}
                 if self.generate_sweep_kwarg:
-                    samples = self.generate_eval(
+                    samples = self.generate(
                         prompts["input_ids"], prompts["attention_mask"], **{gen_sweep_arg: gen_sweep_value}
                     )
                 else:
-                    samples = self.generate_eval(prompts["input_ids"], prompts["attention_mask"])
+                    chunk_size = self.config.method.chunk_size if hasattr(self.config.method, "chunk_size") else None
+                    samples = self.generate(prompts["input_ids"], prompts["attention_mask"], chunk_size=chunk_size)
+
+                # Repeat prompts, metadata num_return_sequence times
+                num_return_sequences = 1
+                if self.generate_kwargs.get("num_return_sequences") is not None:
+                    num_return_sequences = self.generate_kwargs["num_return_sequences"]
+                prompts["input_ids"] = prompts["input_ids"].repeat_interleave(num_return_sequences, dim=0)
+                prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(num_return_sequences, dim=0)
+                metadata = {k: self.repeat_interleave(v, num_return_sequences) for k, v in metadata.items()}
 
                 # TODO(reciprocated): this should be moved into `decode`
                 # but that needs to be synced with indexing in `make_experience`
@@ -447,7 +472,13 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
-                    metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata)
+                    metrics = self.metric_fn(
+                        samples=str_samples,
+                        prompts=str_prompts,
+                        outputs=str_outputs,
+                        tokenizer=self.tokenizer,
+                        **metadata,
+                    )
                     stats["time/metric"] = time() - metric_time
 
                     mean_metrics = {
@@ -647,6 +678,15 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             self.post_epoch_callback()
         tbar.close()
+
+    @staticmethod
+    def repeat_interleave(l, n):
+        if type(l) is torch.Tensor:
+            l = l.repeat_interleave(n, dim=0)
+        elif type(l) is list:
+            l = [[s] * n for s in l]
+            l = [item for sublist in l for item in sublist]
+        return l
 
     @abstractmethod
     def create_train_dataloader(self):
