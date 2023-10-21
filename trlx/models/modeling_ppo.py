@@ -543,6 +543,18 @@ class ModelBranch(transformers.PreTrainedModel):
             for parameter in self.parameters():
                 parameter.requires_grad_(False)
 
+    def set_input_embeddings(self, value):
+        self.embed_tokens = value
+
+    def get_input_embeddings(self):
+        return self.embed_tokens
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
 
 class GPTModelBranch(ModelBranch):
     def forward(  # noqa: max-complexity

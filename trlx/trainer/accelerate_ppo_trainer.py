@@ -71,9 +71,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Set up a reference model when hydra heads are not used
         if not hasattr(self.model, "frozen_head") and not self.model.peft_type:
+            # Full Reference Copy
             self.ref_model = self.get_arch(self.config)
+            self.ref_model.base_model.resize_token_embeddings(len(self.tokenizer))
             self.ref_model.to(self.accelerator.device)
             self.ref_model.eval()
+        elif hasattr(self.model, "frozen_head") and self.model.frozen_head is not None:
+            # Hydra Reference: Use the frozen base layers and head as the reference model, resize hydra heads
+            self.model.frozen_head.resize_token_embeddings(len(self.tokenizer))
+        # else PEFT Reference
 
         # Set up the KL controller
         # This helps prevent large divergences in the controller (policy)
