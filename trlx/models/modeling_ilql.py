@@ -48,13 +48,46 @@ def batched_index_select(
 @dataclass
 @register_method
 class ILQLConfig(MethodConfig):
+    """
+    Configuration for ILQL method.
+
+    :param tau: Parameter for expectile regression for the value function to q
+    estimates, \in (0, 1), where tau=0.5 is equivalent to the mean square error
+    and tau=1 is equivalent to taking a maximum over q estimates
+    :type tau: float
+
+    :param gamma: Discount factor
+    :type gamma: float
+
+    :param cql_scale: Scale for the CQL loss (conservative q-learning loss)
+    :type cql_scale: float
+
+    :param awac_scale: Scale for the AWAC loss (weighted cross-entropy loss)
+    :type awac_scale: float
+
+    :param alpha: Parameter for Polyak averaging of the target Q-head sync, \in (0, 1)
+    :type alpha: float
+
+    :param beta: Parameter for magnitude of weighting effect in the AWAC loss, \in (0, 1)
+    :type beta: float
+
+    :param steps_for_target_q_sync: Number of steps between target Q-head syncs
+    :type steps_for_target_q_sync: int
+
+    :param two_qs: Whether to use two Q-heads and taking minimum of separate estimates or using only one
+    :type two_qs: bool
+
+    :param gen_kwargs: Keyword arguments for the generation method
+    :type gen_kwargs: dict
+    """
+
     tau: float
     gamma: float
     cql_scale: float
     awac_scale: float
     alpha: float
     beta: float
-    steps_for_target_q_sync: float
+    steps_for_target_q_sync: int
     two_qs: bool
     gen_kwargs: dict
 
@@ -196,6 +229,28 @@ class ILQLHeads(nn.Module):
 
 @dataclass
 class CausalILQLOutput(ModelOutput):
+    """
+    Output of the causal model with ILQL heads.
+
+    :param logits: Logits of the causal model.
+    :type logits: torch.FloatTensor
+
+    :param past_key_values: Tuple of past key values of the causal model.
+    :type past_key_values: Tuple[Tuple[torch.FloatTensor]]
+
+    :param hidden_states: Last hidden state of the causal model.
+    :type hidden_states: Tuple[torch.FloatTensor]
+
+    :param value: Value function estimation for each token in the input sequence.
+    :type value: torch.FloatTensor
+
+    :param qs: Q-function estimations for each token in the input sequence.
+    :type qs: Tuple[torch.FloatTensor]
+
+    :param target_qs: Q-function estimations from the target Q-head for each token in the input sequence.
+    :type target_qs: Tuple[torch.FloatTensor]
+    """
+
     logits: Optional[torch.FloatTensor] = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
@@ -389,6 +444,31 @@ class AutoModelForCausalLMWithILQLHeads(PreTrainedModelWrapper):
 
 @dataclass
 class Seq2SeqILQLOutput(ModelOutput):
+    """
+    Output of the seq2seq model with ILQL heads.
+
+    :param logits: Logits of the seq2seq model.
+    :type logits: torch.FloatTensor
+
+    :param past_key_values: Tuple of past key values of the seq2seq model.
+    :type past_key_values: Tuple[Tuple[torch.FloatTensor]]
+
+    :param hidden_states: Last hidden state of the seq2seq model.
+    :type hidden_states: Tuple[torch.FloatTensor]
+
+    :param value: Value function estimation for each token in the input sequence.
+    :type value: torch.FloatTensor
+
+    :param qs: Q-function estimations for each token in the input sequence.
+    :type qs: Tuple[torch.FloatTensor]
+
+    :param target_qs: Q-function estimations from the target Q-head for each token in the input sequence.
+    :type target_qs: Tuple[torch.FloatTensor]
+
+    :param encoder_outputs: Tuple of encoder outputs of the seq2seq model.
+    :type encoder_outputs: Tuple[Any]
+    """
+
     logits: Optional[torch.FloatTensor] = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None

@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 from time import time
-from typing import Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -43,7 +43,8 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         """PPO Accelerate Trainer initialization
 
         Args:
-            config: Config
+            config: `TRLConfig`
+            kwargs: Additional keyword arguments passed to `AccelerateRLTrainer`
         """
         super().__init__(config, **kwargs)
 
@@ -105,7 +106,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.ref_std = self.config.method.ref_std
 
     def get_arch(self, config: TRLConfig):
-        """Get the model"""
+        """Returns a specific wrapper given a model's architecture"""
         model_class = AutoModelForCausalLMWithHydraValueHead
         if config.model.model_arch_type == "seq2seq":
             model_class = AutoModelForSeq2SeqLMWithHydraValueHead
@@ -122,11 +123,15 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             peft_config=self.config.model.peft_config,
         )
 
-    def loss(self, batch: PPORLBatch):
-        """Forward pass & loss
+    def loss(self, batch: PPORLBatch) -> Tuple[float, Dict[str, Any]]:
+        """Computes loss on a batch of data and returns statistics
 
         Args:
-            batch: Previous batch of episodes
+            batch: `PPORLBatch` Previous batch of episodes
+
+        Returns:
+            loss: `Float` Loss value
+            stats: `Dict[str, Any]` PPO Statistics values
         """
         # Move `batch` data to `accelerator` device
         query_tensors = batch.query_tensors.to(self.accelerator.device)
@@ -198,7 +203,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         return loss, stats
 
     def setup_rollout_logging(self, config):
-        # Make rollout logging dir for this run and store config
+        """Make rollout logging directory to log rollouts to"""
         exists = os.path.exists(config.train.rollout_logging_dir)
         isdir = os.path.isdir(config.train.rollout_logging_dir)
         assert exists and isdir
@@ -211,10 +216,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             f.write(json.dumps(config.to_dict(), indent=2))
 
     def post_epoch_callback(self):
-        """Post epoch callback
-
-        Clears the store and creates `num_rollouts` new episodes.
-        """
+        """Clears the rollout store and creates `num_rollouts` new samples"""
         if self.log_rollouts:
             self.store.export_history(location=self.rollout_logging_dir)
         self.store.clear_history()
@@ -246,15 +248,14 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
         self.prompt_iterator = infinite_dataloader(prompt_dataloader)
 
     def make_experience(self, num_rollouts: int = 1024, iter_count: int = 0):  # noqa:
-        """Make experiences
-
+        """
         Takes `chunk_size` number of prompts from `prompt_iterator`, samples
         from the model and then computes the KL against a reference model. Finally it
         then appends PPOElements to trainer's `store`.
 
         Args:
             num_rollouts: Number of rollouts to generate
-            iter_count: Total number of updates run (i.e. number of updates run for all batches & epochs)
+            iter_count: Total number of updates for all batches & epochs
         """
         logger.info("Collecting rollouts")
         tbar = logging.tqdm(
