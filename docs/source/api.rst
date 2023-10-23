@@ -46,6 +46,3 @@ To start training you have to execute python script per each GPU, or launch the 
     $ sbatch examples/llama_nemo/dist_train.sh
 
 Run example: `wandb <https://wandb.ai/carperai/trlxnemo/runs/v7592y73?workspace=user-pvduy>`_
-
-
-
