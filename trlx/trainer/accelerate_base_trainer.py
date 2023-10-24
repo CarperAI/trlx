@@ -40,7 +40,7 @@ logger = logging.get_logger(__name__)
 @register_trainer
 class AccelerateRLTrainer(BaseRLTrainer):
     """
-    RL model trainer with an `accelerate` based backend
+    Asbtract Trainer that uses `accelerate` backend
     """
 
     def __init__(self, config, **kwargs):  # noqa: C901
@@ -208,7 +208,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         append_eos_token: bool = False,
     ) -> Tuple[List[str], List[str], List[str]]:
         """
-        Decode tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
+        Decodes tensor generations into lists of strings (`samples`: List[str], `prompts`: List[str], `outputs`: List[str])
         """
         if prompt_sizes is None:
             # Assuming prompts were left-padded
@@ -254,7 +254,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         return str_samples, str_prompts, str_outputs
 
     def generate(self, input_ids, attention_mask=None, **kwargs):
-        """Wraps hf's `generate` adding some specific method's defaults"""
+        """Generate samples for the experience buffer using method's specific `self.generate_experience_kwargs`"""
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
@@ -269,7 +269,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             )
 
     def generate_eval(self, input_ids, attention_mask=None, **kwargs):
-        """Wraps hf's `generate` adding some specific method's defaults"""
+        """Generate samples for evaluation using `self.generate_kwargs`"""
         input_ids = input_ids.to(self.accelerator.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.accelerator.device)
@@ -282,8 +282,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             )
 
     def save_pretrained(self, directory: Optional[str] = None, **kwargs):
-        """Save the underlying Hugging Face model, tokenizer, and configuration files to a directory for
-        later use.
+        """Save the underlying model, tokenizer, and configuration files to a directory
 
         Args:
             directory (str, *optional*): The directory to save the trainer files to.
@@ -308,7 +307,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.tokenizer.save_pretrained(directory)
 
     def save(self, directory: Optional[str] = None, **kwargs):
-        """Creates a checkpoint of the optimizer, scheduler and model"""
+        """Creates a checkpoint for the optimizer, scheduler and the model"""
         dst_dir = directory or self.config.train.checkpoint_dir
         self.accelerator.save_state(dst_dir, **kwargs)
 
@@ -321,7 +320,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
             self.accelerator.unwrap_model(self.model).save_pretrained(dst_dir)
 
     def load(self, directory: Optional[str] = None, **kwargs):
-        """Load checkpoint of optimizer, scheduler and a model"""
+        """Loads the checkpoint of the optimizer, scheduler and the model"""
         if self.config.model.peft_config is not None:
 
             def load_state_hook(models: List[torch.nn.Module], input_dir: str):
@@ -334,11 +333,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
         self.accelerator.load_state(directory or self.config.train.checkpoint_dir, **kwargs)
 
     def add_eval_pipeline(self, eval_pipeline):
-        """Adds pipeline from with validation prompts"""
+        """Adds a evalution pipeline with validation prompts"""
         self.eval_pipeline = eval_pipeline
 
     def evaluate(self):  # noqa: C901
-        """Samples model on `eval_prompts`, logs stats with `reward_fn` or `metric_fn` if provided"""
+        """Samples model using `eval_prompts`, computes statistics with `reward_fn` and `metric_fn`"""
         logger.info("Evaluating model")
 
         # Do multiple evaluations over a single list in `gen_kwargs` if present
@@ -659,12 +658,12 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     @abstractmethod
     def get_arch(self, config: TRLConfig):
-        """Returns a specific wrapper of the decoder architecture"""
+        """Returns a specific wrapper given a model's architecture"""
         pass
 
     @abstractmethod
     def loss(self, batch) -> Tuple[float, Dict]:
-        """Compute loss on a batch from `store` and return some statistics"""
+        """Computes loss on a batch of data and returns statistics"""
         pass
 
     @abstractmethod
@@ -679,5 +678,5 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
     @abstractmethod
     def post_epoch_callback(self):
-        """Do something after exhausting/single pass over `self.store`"""
+        """Do something after a single pass over data from `self.store`"""
         pass
