@@ -240,11 +240,15 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                     )
                     logger.info("Trained peft adapter loaded")
 
+            # No peft
             if base_model is None:
-                # No peft
+                # Disable warnings about missing weights when loading the base model
+                verbosity = transformers.logging.get_verbosity()
+                transformers.logging.set_verbosity_error()
                 base_model = cls._auto_model_parent_class.from_pretrained(
                     pretrained_model_name_or_path, *model_args, **from_pretrained_kwargs
                 )
+                transformers.logging.set_verbosity(verbosity)
 
         elif isinstance(pretrained_model_name_or_path, transformers.PreTrainedModel):
             base_model = pretrained_model_name_or_path
@@ -288,11 +292,9 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                         )
                     with open(index_file_name, "r") as f:
                         index = json.load(f)
-                    # Collect files containing weights from supported modules
-                    files_to_download = set()
-                    for k, v in index["weight_map"].items():
-                        if any([module in k for module in cls._supported_modules]):
-                            files_to_download.add(v)
+
+                    # Load all weights from the shards
+                    files_to_download = set(index["weight_map"].values())
                     is_sharded = True
 
             if is_sharded:
