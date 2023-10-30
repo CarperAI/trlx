@@ -539,7 +539,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
         # Save only the base model, so that is could be loaded directly
         # with Hugging Face's `from_pretrained` method
-        state_dict = self.accelerator.get_state_dict(self.model.base_model)
+        state_dict = self.accelerator.get_state_dict(self.model, unwrap=True)
 
         self.accelerator.unwrap_model(self.model).save_pretrained(
             directory,
