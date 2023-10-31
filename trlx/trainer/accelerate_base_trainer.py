@@ -387,19 +387,23 @@ class AccelerateRLTrainer(BaseRLTrainer):
                 if self.config.model.model_arch_type == "seq2seq":
                     samples = samples[:, 1:].contiguous()
 
-                prompt_sizes = torch.tensor(prompts.input_ids.shape[1]).repeat(len(prompts.input_ids))
-                prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
-                    self.accelerator.pad_across_processes(
-                        [prompts.input_ids, samples, prompt_sizes.to(samples.device)],
-                        dim=1,
-                        pad_index=self.tokenizer.pad_token_id,
-                    )
+                prompt_sizes = torch.tensor(prompts.input_ids.shape[1], device=samples.device).repeat(
+                    len(prompts.input_ids)
                 )
+                if self.config.train.reward_only_in_main_process:
+                    prompts, samples, prompt_sizes = self.accelerator.gather_for_metrics(
+                        self.accelerator.pad_across_processes(
+                            [prompts.input_ids, samples, prompt_sizes],
+                            dim=1,
+                            pad_index=self.tokenizer.pad_token_id,
+                        )
+                    )
+                    metadata = gather_dict(metadata, self.accelerator.gradient_state)
+                else:
+                    prompts = prompts.input_ids
                 all_samples.extend(samples.tolist())
                 all_prompts.extend(prompts.tolist())
                 all_prompt_sizes.extend(prompt_sizes.tolist())
-
-                metadata = gather_dict(metadata, self.accelerator.gradient_state)
                 all_metadata.append(metadata)
 
                 desc = [
@@ -412,7 +416,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
             stats["time/generate"] = time() - generate_time
 
-            if self.accelerator.is_main_process:
+            if not self.config.train.reward_only_in_main_process or self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
 
                 columns = ["prompt", "output"]

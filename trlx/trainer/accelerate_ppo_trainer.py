@@ -289,18 +289,25 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             device = samples.device
 
             prompt_sizes = torch.tensor([prompt_tensors.shape[1]] * len(prompt_tensors), device=device)
-            padded_samples = self.accelerator.pad_across_processes(
-                samples, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
-            )
-            padded_prompts = self.accelerator.pad_across_processes(
-                prompt_tensors, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
-            )
-            gathered_samples = self.accelerator.gather(padded_samples)
-            gathered_prompts = self.accelerator.gather(padded_prompts)
-            gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
-            metadata = gather_dict({k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"})
+            metadata = {k: v for k, v in batch.items() if k != "input_ids" and k != "attention_mask"}
 
-            if self.accelerator.is_main_process:
+            if self.config.train.reward_only_in_main_process:
+                padded_samples = self.accelerator.pad_across_processes(
+                    samples, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
+                )
+                padded_prompts = self.accelerator.pad_across_processes(
+                    prompt_tensors, dim=1, pad_index=self.tokenizer.eos_token_id, pad_first=False
+                )
+                gathered_samples = self.accelerator.gather(padded_samples)
+                gathered_prompts = self.accelerator.gather(padded_prompts)
+                gathered_prompt_sizes = self.accelerator.gather(prompt_sizes)
+                metadata = gather_dict(metadata)
+            else:
+                gathered_samples = samples
+                gathered_prompts = prompt_tensors
+                gathered_prompt_sizes = prompt_sizes
+
+            if not self.config.train.reward_only_in_main_process or self.accelerator.is_main_process:
                 all_str_samples, all_str_prompts, all_str_outputs = self.decode(
                     gathered_prompts, gathered_samples, gathered_prompt_sizes, append_eos_token=True
                 )
@@ -316,9 +323,9 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                     **metadata,
                 )
                 all_scores = [
-                    torch.tensor(score, dtype=torch.float, device=device).view(
-                        -1,
-                    )
+                    score.view(-1)
+                    if isinstance(score, torch.Tensor)
+                    else torch.tensor(score, dtype=torch.float, device=device).view(-1)
                     for score in all_scores
                 ]
                 # Pad 0 reward on the ends
@@ -327,17 +334,21 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
                 stats["time/rollout_score"] = time() - rollout_score_time
 
-                all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1, max_len).unbind())
+                if self.config.train.reward_only_in_main_process:
+                    all_scores = list(all_scores.reshape(self.accelerator.num_processes, -1, max_len).unbind())
             else:
                 all_scores = None
                 max_len = torch.tensor(0, dtype=torch.long, device=device)
 
-            if torch.distributed.is_initialized():
-                torch.distributed.broadcast(max_len, 0)
-                scores = torch.empty((len(samples), max_len), device=device)
-                torch.distributed.scatter(scores, all_scores)
+            if self.config.train.reward_only_in_main_process:
+                if torch.distributed.is_initialized():
+                    torch.distributed.broadcast(max_len, 0)
+                    scores = torch.empty((len(samples), max_len), device=device)
+                    torch.distributed.scatter(scores, all_scores)
+                else:
+                    scores = all_scores[0].clone().detach()
             else:
-                scores = all_scores[0].clone().detach()
+                scores = all_scores
             scores_mask = scores != -np.inf
 
             str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
