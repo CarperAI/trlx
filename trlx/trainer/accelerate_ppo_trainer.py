@@ -351,7 +351,10 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 scores = all_scores
             scores_mask = scores != -np.inf
 
-            str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
+            if self.config.train.reward_only_in_main_process:
+                str_samples, str_prompts, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
+            else:
+                str_samples, str_prompts, str_outputs = all_str_samples, all_str_prompts, all_str_outputs
 
             # Pad the sample outputs
             outputs = self.tokenizer(str_outputs).input_ids
