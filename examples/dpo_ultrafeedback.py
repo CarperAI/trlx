@@ -29,11 +29,11 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path="HuggingFaceH4/mistral-7b-sft-beta", num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path="HuggingFaceH4/mistral-7b-sft-beta", truncation_side="right"),
-    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=1e-6, betas=(0.9, 0.95), eps=1.0e-8, weight_decay=1.0e-6)),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=2e-5, betas=(0.9, 0.999), eps=1.0e-8, weight_decay=1.0e-6)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)),  # train.total_steps
     method=DPOConfig(
         name="DPOConfig",
-        gen_kwargs=dict(max_new_tokens=40, top_k=20, top_p=1.0, do_sample=True),
+        gen_kwargs=dict(max_new_tokens=256, temperature=0.7, top_k=50, top_p=0.95, do_sample=True),
         beta=0.1,
         label_pad_token_id=-100,
         padding_value=0,
@@ -59,7 +59,7 @@ def main(hparams={}):
     trlx.train(
         config=config,
         samples=dataset["train_prefs"]["dpo"],
-        eval_prompts=dataset["test_prefs"]["prompt"][:8],
+        eval_prompts=dataset["test_prefs"]["prompt"][:128],
         # metric_fn=lambda **kwargs: {"reward": reward_fn(**kwargs)},
         stop_sequences=["User:", "user:", "Assistant:", "assistant:"]
         + ["{e}x {i}put:".format(e=e, i=i) for e, i in itertools.product(["e", "E"], ["in", "In", "out", "Out"])],
