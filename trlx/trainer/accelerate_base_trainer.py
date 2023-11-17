@@ -419,8 +419,9 @@ class AccelerateRLTrainer(BaseRLTrainer):
             if not self.config.train.reward_only_in_main_process or self.accelerator.is_main_process:
                 str_samples, str_prompts, str_outputs = self.decode(all_prompts, all_samples, all_prompt_sizes)
 
-                columns = ["prompt", "output"]
                 columns_data = [str_prompts, str_outputs]
+                if not self.config.train.reward_only_in_main_process:
+                    columns_data = self.accelerator.gather_for_metrics(columns_data)
 
                 metadata, *xs = all_metadata
                 for k in metadata:
@@ -443,41 +444,52 @@ class AccelerateRLTrainer(BaseRLTrainer):
                         rewards = torch.tensor([sum(reward) for reward in rewards], dtype=float)
                     else:
                         rewards = torch.tensor(rewards, dtype=float)
-                    mean_reward = rewards.mean().item()
-                    columns.append("reward")
-                    if not isinstance(rewards, list):
-                        rewards = rewards.tolist()
-                    columns_data.append(rewards)
-                    stats[f"reward/mean{sweep_suffix}"] = mean_reward
+
+                    if not self.config.train.reward_only_in_main_process:
+                        rewards = self.accelerator.gather(rewards)
+                    if self.accelerator.is_main_process:
+                        mean_reward = rewards.mean().item()
+
+                        columns = ["prompt", "output", "reward"]
+                        if not isinstance(rewards, list):
+                            rewards = rewards.tolist()
+                        columns_data.append(rewards)
+                        stats[f"reward/mean{sweep_suffix}"] = mean_reward
 
                 # additionally log any other metrics
                 if self.metric_fn:
                     logger.info("Computing metrics")
                     metric_time = time()
                     metrics = self.metric_fn(samples=str_samples, prompts=str_prompts, outputs=str_outputs, **metadata)
-                    stats["time/metric"] = time() - metric_time
+                    if not self.config.train.reward_only_in_main_process:
+                        metrics = self.accelerator.gather_for_metrics(metrics)
 
-                    mean_metrics = {
-                        f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1).item() for k, xs in metrics.items()
-                    }
+                    if self.accelerator.is_main_process:
+                        stats["time/metric"] = time() - metric_time
 
-                    stats.update(mean_metrics)
+                        mean_metrics = {
+                            f"metrics/{k}{sweep_suffix}": torch.as_tensor(xs).mean(-1).item()
+                            for k, xs in metrics.items()
+                        }
 
-                    for metric, values in metrics.items():
-                        # Skip metrics that are scalers since they represent aggregated values
-                        if isinstance(values, float):
-                            continue
-                        columns.append(metric)
-                        if not isinstance(values, list):
-                            values = values.tolist()
-                        columns_data.append(values)
+                        stats.update(mean_metrics)
+
+                        for metric, values in metrics.items():
+                            # Skip metrics that are scalers since they represent aggregated values
+                            if isinstance(values, float):
+                                continue
+                            columns.append(metric)
+                            if not isinstance(values, list):
+                                values = values.tolist()
+                            columns_data.append(values)
 
                 # Prepend the sweep argument along with samples
-                if self.generate_sweep_kwarg:
-                    columns.insert(0, gen_sweep_arg)
-                    columns_data.insert(0, [gen_sweep_value] * len(samples))
+                if self.accelerator.is_main_process:
+                    if self.generate_sweep_kwarg:
+                        columns.insert(0, gen_sweep_arg)
+                        columns_data.insert(0, [gen_sweep_value] * len(samples))
 
-                table.append(list(zip(*columns_data)))
+                    table.append(list(zip(*columns_data)))
 
         # Log and display evaluation metrics
         logger.info("Summarizing evaluation")

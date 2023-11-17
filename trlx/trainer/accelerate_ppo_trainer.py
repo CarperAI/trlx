@@ -344,17 +344,19 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                 if torch.distributed.is_initialized():
                     torch.distributed.broadcast(max_len, 0)
                     scores = torch.empty((len(samples), max_len), device=device)
-                    torch.distributed.scatter(scores, all_scores)
+                    torch.distributed.scatter(scores, all_scores)  # scores is one shard of one process after scatter
                 else:
-                    scores = all_scores[0].clone().detach()
+                    scores = all_scores[0].clone().detach()  # shard of one process
             else:
-                scores = all_scores
+                scores = all_scores.clone().detach()  # shard of one process
+                # `all_scores` no longer used, no need to gather it
             scores_mask = scores != -np.inf
 
             if self.config.train.reward_only_in_main_process:
                 _, _, str_outputs = self.decode(prompt_tensors, samples, append_eos_token=True)
             else:
                 str_outputs = all_str_outputs
+                # `all_str_outputs` no longer used, no need to gather it
 
             # Pad the sample outputs
             outputs = self.tokenizer(str_outputs).input_ids
