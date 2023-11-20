@@ -114,7 +114,8 @@ def train(  # noqa: C901
         if rewards is not None:
             trainer.make_experience(samples, rewards, config.train.seq_length)
         else:
-            trainer.make_experience(samples, config.train.seq_length)
+            # this should be abstracted for all trainers with **kwargs
+            trainer.make_experience(samples, config.train.seq_length, max_prompt_length)
     else:
         raise ValueError("Either `samples` or `reward_fn` should be given for training")
 

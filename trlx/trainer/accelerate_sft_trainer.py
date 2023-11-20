@@ -87,7 +87,7 @@ class AccelerateSFTTrainer(AccelerateRLTrainer):
         self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
-    def make_experience(self, samples, seq_length):
+    def make_experience(self, samples, seq_length, **kwargs):
         if isinstance(samples[0], str):
             self.store = PromptPipeline(samples, seq_length, self.tokenizer)
         else:

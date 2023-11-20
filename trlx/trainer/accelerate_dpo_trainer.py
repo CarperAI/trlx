@@ -10,12 +10,16 @@ from transformers import AutoModelForCausalLM, PretrainedConfig
 if is_deepspeed_available():
     import deepspeed
 
+import trlx.utils.logging as logging
 from trlx.data.configs import TRLConfig
 from trlx.data.method_configs import MethodConfig, register_method
 from trlx.pipeline.offline_pipeline import DPOStore
 from trlx.trainer import register_trainer
 from trlx.trainer.accelerate_base_trainer import AccelerateRLTrainer
 from trlx.utils.modeling import pad_to_length
+
+
+logger = logging.get_logger(__name__)
 
 
 @dataclass
@@ -47,9 +51,10 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
 
         # TODO: Avoid setting up a reference model when hydra heads are used
         self.ref_model = self.get_arch(self.config)
-        if self.accelerator.state.deepspeed_plugin.zero_stage == 3:
-            self.ref_model = self._prepare_deepspeed_zero3(self.ref_model)
-        else:
+        try:
+            if self.accelerator.state.deepspeed_plugin.zero_stage == 3:
+                self.ref_model = self._prepare_deepspeed_zero3(self.ref_model)
+        except:
             self.ref_model.to(self.accelerator.device)
         self.ref_model.eval()
 
@@ -311,6 +316,8 @@ class AccelerateDPOTrainer(AccelerateRLTrainer):
         self.total_steps = self.config.train.epochs * len(self.train_dataloader)
         self.total_steps = min(self.total_steps, self.config.train.total_steps)
 
-    def make_experience(self, samples: Iterable[Iterable], seq_length: int):
-        preferences = [DPOStore.tokenize_preferences(sample, self.tokenizer, seq_length) for sample in samples]
+    def make_experience(self, samples: Iterable[Iterable], seq_length: int, max_prompt_length: int):
+        preferences = [
+            DPOStore.tokenize_preferences(sample, self.tokenizer, seq_length, max_prompt_length) for sample in samples
+        ]
         self.store = DPOStore(preferences, self.tokenizer, self.label_pad_token_id, self.padding_value)

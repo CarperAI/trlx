@@ -300,16 +300,19 @@ class DPOStore(BaseRolloutStore):
 
     @staticmethod
     def tokenize_preferences(
-        sample: Iterable[str], tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast], max_length=2048
+        sample: Iterable[str],
+        tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast],
+        max_length=2048,
+        max_prompt_length=256,
     ) -> DPOElement:
         if isinstance(sample, Iterable):
             if len(sample) != 3:
                 raise ValueError(
                     f"Expected iterable of length 3 (prompt, chosen response, rejected response). Got {len(sample)}"
                 )
-            prompt_tokens = tokenizer(sample[0], add_special_tokens=False)
-            chosen_tokens = tokenizer(sample[1], add_special_tokens=False)
-            rejected_tokens = tokenizer(sample[2], add_special_tokens=False)
+            prompt_tokens = tokenizer(sample["prompt"], add_special_tokens=False)
+            chosen_tokens = tokenizer(sample["chosen"], add_special_tokens=False)
+            rejected_tokens = tokenizer(sample["rejected"], add_special_tokens=False)
         else:
             raise ValueError(f"{sample} is not an iterable")
 
@@ -324,14 +327,14 @@ class DPOStore(BaseRolloutStore):
         # if combined sequence is too long, truncate the prompt only
         if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
             if tokenizer.truncation_side == "right":
-                prompt_tokens = {k: v[:max_length] for k, v in prompt_tokens.items()}
+                prompt_tokens = {k: v[:max_prompt_length] for k, v in prompt_tokens.items()}
             elif tokenizer.truncation_side == "left":
-                prompt_tokens = {k: v[-max_length:] for k, v in prompt_tokens.items()}
+                prompt_tokens = {k: v[-max_prompt_length:] for k, v in prompt_tokens.items()}
 
         # if that's still too long, truncate the response
         if len(prompt_tokens["input_ids"]) + longer_response_length > max_length:
-            chosen_tokens = {k: v[: max_length - max_length] for k, v in chosen_tokens.items()}
-            rejected_tokens = {k: v[: max_length - max_length] for k, v in rejected_tokens.items()}
+            chosen_tokens = {k: v[: max_length - max_prompt_length] for k, v in chosen_tokens.items()}
+            rejected_tokens = {k: v[: max_length - max_prompt_length] for k, v in rejected_tokens.items()}
 
         return DPOElement(prompt_tokens=prompt_tokens, chosen_tokens=chosen_tokens, rejected_tokens=rejected_tokens)
 
