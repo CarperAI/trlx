@@ -22,11 +22,11 @@ wandb_project = "trlx"
 default_config = TRLConfig(
     train=TrainConfig(
         seq_length=1024,
-        epochs=2,
-        total_steps=1000000,
+        epochs=1,
+        total_steps=70000,
         batch_size=1,
         checkpoint_interval=100000,
-        eval_interval=1000,
+        eval_interval=5000,
         seed=42,
         project_name=wandb_project,
         pipeline="PromptPipeline",
@@ -35,11 +35,11 @@ default_config = TRLConfig(
     ),
     model=ModelConfig(model_path=model_path, num_layers_unfrozen=-1),
     tokenizer=TokenizerConfig(tokenizer_path=model_path, truncation_side="right"),
-    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=1e-5, betas=(0.9, 0.999), eps=1.0e-8, weight_decay=1.0e-6)),
+    optimizer=OptimizerConfig(name="adamw", kwargs=dict(lr=5e-7, betas=(0.9, 0.99), eps=1.0e-8, weight_decay=1.0e-5)),
     scheduler=SchedulerConfig(name="cosine_annealing", kwargs=dict(T_max=1e12, eta_min=1.0e-4)),  # train.total_steps
     method=DPOConfig(
         name="DPOConfig",
-        gen_kwargs=dict(max_new_tokens=512, temperature=0.7, top_k=50, top_p=0.95, do_sample=True),
+        gen_kwargs=dict(max_new_tokens=768, temperature=0.7, top_k=50, top_p=0.95, do_sample=True),
         beta=0.1,
         label_pad_token_id=-100,
         padding_value=0,
@@ -89,7 +89,7 @@ def main(hparams={}):
     trlx.train(
         config=config,
         samples=dataset["dpo_train"],
-        eval_prompts=dataset["dpo_test"]["prompt"][:8],  # running eval on subset only
+        eval_prompts=dataset["dpo_test"]["prompt"][:2],  # running eval on subset only
         stop_sequences=["<|user|>", "<|User|>"],
     )
 

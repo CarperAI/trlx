@@ -400,4 +400,4 @@ class DPOStore(BaseRolloutStore):
 
             return padded_batch
 
-        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle)
+        return DataLoader(self, batch_size=batch_size, collate_fn=collate_fn, shuffle=shuffle, pin_memory=True)
