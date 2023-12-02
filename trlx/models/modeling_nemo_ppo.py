@@ -993,7 +993,7 @@ class PPOGPT(MegatronGPTModel):
                 start = batch.query_tensors.shape[1]
                 end = start + response_length
 
-                label_logprobs = logprobs_of_labels(logits[:, :-1, :], inputs[:, 1:])
+                label_logprobs = logprobs_of_labels(logits, inputs[:, 1:])
                 label_logprobs = label_logprobs[:, start:end]
 
                 advantages, returns = self.ppo_config.get_advantages_and_returns(
@@ -1079,11 +1079,11 @@ class PPOGPT(MegatronGPTModel):
                 # to save memory
 
                 if run_policy_model and compute_logprobs:
-                    logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+                    logprobs = logprobs_of_labels(logits, tokens[:, 1:])
                     return logprobs, dict(logprobs=logprobs, values=values)
 
                 if run_reference_model and compute_logprobs:
-                    ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], tokens[:, 1:])
+                    ref_logprobs = logprobs_of_labels(ref_logits, tokens[:, 1:])
                     return ref_logprobs, dict(ref_logprobs=ref_logprobs)
 
                 return logits, {"logits": logits, "values": values, "ref_logits": ref_logits}
