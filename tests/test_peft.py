@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import transformers
 from peft import get_peft_config, get_peft_model
-from peft.utils.config import PeftType, TaskType
+from peft.utils import PeftType, TaskType
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from trlx.data.configs import TokenizerConfig
