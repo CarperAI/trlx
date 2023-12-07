@@ -421,9 +421,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
 
                 if self.accelerator.is_main_process:
                     columns = ["prompt", "output"]
-                    columns_data = [str_prompts, str_outputs]
-                    if not self.config.train.reward_only_in_main_process:
-                        columns_data = self.accelerator.gather_for_metrics(columns_data)
+
+                # gather should be invoked in every process, not just the main process
+                columns_data = [str_prompts, str_outputs]
+                if not self.config.train.reward_only_in_main_process:
+                    columns_data = self.accelerator.gather_for_metrics(columns_data)
 
                 metadata, *xs = all_metadata
                 for k in metadata:
@@ -447,9 +449,11 @@ class AccelerateRLTrainer(BaseRLTrainer):
                     else:
                         rewards = torch.tensor(rewards, dtype=float)
 
+                    # gather should be invoked in every process, not just the main process
+                    if not self.config.train.reward_only_in_main_process:
+                        rewards = self.accelerator.gather(rewards)
+
                     if self.accelerator.is_main_process:
-                        if not self.config.train.reward_only_in_main_process:
-                            rewards = self.accelerator.gather(rewards)
                         mean_reward = rewards.mean().item()
 
                         columns.append("reward")
