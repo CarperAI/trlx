@@ -537,6 +537,7 @@ class AccelerateRLTrainer(BaseRLTrainer):
         else:
             results = self.evaluate()
             self.accelerator.log(results, step=self.iter_count)
+            ...
 
         tbar = logging.tqdm(
             initial=self.iter_count,
