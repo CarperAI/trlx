@@ -166,8 +166,8 @@ class MiniBatchIterator:
                 minibatch = BatchEncoding(sliced_data)
             elif is_dataclass(batch):
                 minibatch = batch.__class__(**sliced_data)
-            # else:
-            #     minibatch = sliced_data
+            else:
+                minibatch = sliced_data
 
             minibatches.append(minibatch)
 

@@ -133,7 +133,7 @@ class NeMoSFTTrainer(BaseRLTrainer):
         torch.set_float32_matmul_precision("medium")
         self.trainer.fit(self.model)
 
-    def make_experience(self, samples, seq_length):
+    def make_experience(self, samples, seq_length, **kwargs):
         if isinstance(samples[0], str):
             self.store = PromptPipeline(samples, seq_length, self.tokenizer)
         else:
