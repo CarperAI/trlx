@@ -163,7 +163,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
 
             logits = outputs.logits
             values_pred = outputs.value
-            logprobs = logprobs_of_labels(logits[:, :-1, :], decoder_input_ids[:, 1:])
+            logprobs = logprobs_of_labels(logits, decoder_input_ids[:, 1:])
             mask = decoder_input_ids.ne(self.tokenizer.pad_token_id).long().to(self.accelerator.device)
             start = 0
             end = start + response_length
@@ -181,7 +181,7 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
             logits = outputs.logits
             values_pred = outputs.value
             values_pred = values_pred[:, :-1]
-            logprobs = logprobs_of_labels(logits[:, :-1, :], tokens[:, 1:])
+            logprobs = logprobs_of_labels(logits, tokens[:, 1:])
 
             start = query_tensors.shape[1] - 1
             end = start + response_length
@@ -438,12 +438,12 @@ class AcceleratePPOTrainer(AccelerateRLTrainer):
                         ref_logits = ref_logits.to(device)
 
             if self.config.model.model_arch_type == "seq2seq":
-                logprobs = logprobs_of_labels(logits[:, :-1, :], sample_outputs[:, 1:])
-                ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], sample_outputs[:, 1:])
+                logprobs = logprobs_of_labels(logits, sample_outputs[:, 1:])
+                ref_logprobs = logprobs_of_labels(ref_logits, sample_outputs[:, 1:])
             else:
                 # NOTE: logprob[i] is (log)prob at which all_token[i+1] was sampled
-                logprobs = logprobs_of_labels(logits[:, :-1, :], all_tokens[:, 1:])
-                ref_logprobs = logprobs_of_labels(ref_logits[:, :-1, :], all_tokens[:, 1:])
+                logprobs = logprobs_of_labels(logits, all_tokens[:, 1:])
+                ref_logprobs = logprobs_of_labels(ref_logits, all_tokens[:, 1:])
 
             n_samples: int = samples.shape[0]
 
