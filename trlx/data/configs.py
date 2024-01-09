@@ -231,6 +231,8 @@ class TrainConfig:
 
     minibatch_size: Optional[int] = None
 
+    reward_only_in_main_process: bool = True
+
     @classmethod
     def from_dict(cls, config: Dict[str, Any]):
         return cls(**config)
