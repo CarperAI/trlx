@@ -37,7 +37,7 @@ if is_peft_available():
         PeftModel,
         get_peft_config,
         get_peft_model,
-        prepare_model_for_int8_training,
+        prepare_model_for_kbit_training,
     )
 
 
@@ -217,7 +217,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
                     )
 
                     if is_loaded_in_8bit:
-                        base_model = prepare_model_for_int8_training(
+                        base_model = prepare_model_for_kbit_training(
                             base_model,
                             **peft_int8_kwargs,
                         )
@@ -255,7 +255,7 @@ class PreTrainedModelWrapper(nn.Module, transformers.utils.PushToHubMixin):
 
             if peft_config is not None:
                 if is_loaded_in_8bit:
-                    base_model = prepare_model_for_int8_training(
+                    base_model = prepare_model_for_kbit_training(
                         base_model,
                         **peft_int8_kwargs,
                     )

@@ -10,7 +10,7 @@ certifi==2023.7.22
 charset-normalizer==3.2.0
 click==8.1.7
 cmake==3.25.0
-datasets==2.14.4
+datasets==2.15.0
 deepspeed==0.10.1
 dill==0.3.7
 docker-pycreds==0.4.0
