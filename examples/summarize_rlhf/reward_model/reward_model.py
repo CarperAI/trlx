@@ -51,6 +51,12 @@ class GPTRewardModel(nn.Module):
         # Split the inputs and rewards into two parts, chosen and rejected
         assert len(input_ids.shape) == 2
         bs = input_ids.shape[0] // 2
+        if bs == 0:
+            return {
+                "loss": torch.tensor(0.0, device=input_ids.device),
+                "chosen_end_scores": torch.tensor([], device=input_ids.device),
+                "rejected_end_scores": torch.tensor([], device=input_ids.device),
+            }
         chosen = input_ids[:bs]
         rejected = input_ids[bs:]
         chosen_rewards = rewards[:bs]
