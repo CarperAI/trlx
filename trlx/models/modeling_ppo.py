@@ -199,7 +199,8 @@ class PPOConfig(MethodConfig):
 
         vf_clipfrac = torch.sum((vf_loss2 > vf_loss1).float() * mask) / n
 
-        log_ratio = (logprobs - old_logprobs) * mask
+        # Select padding out before exp: (-inf - -inf) * 0 is still NaN.
+        log_ratio = torch.where(mask.bool(), logprobs - old_logprobs, torch.zeros_like(logprobs))
         ratio = torch.exp(log_ratio)
         # Unbiased KL-div estimates (`k3`). Ref: http://joschu.net/blog/kl-approx.html
         with torch.no_grad():
